@@ -5889,6 +5889,17 @@ Check: `windsurf_remove_asks_before_taking_an_edited_mcp_entry` (edited entry le
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
+### T246.3. Hook entries
+
+Same creator request as T246.1: `agents remove <host>` (and the plugin-supersedes strip) takes back only the hooks rtok wrote; an rtok hook the user edited is asked about.
+
+Result: `claude::strip_ours` — shared by claude `settings.json`, codex `hooks.json` and zcode `hooks.events` — takes the host's `entries`, timeout key and timeout. An rtok hook still exactly `{type, command, <timeout_key>: timeout}` on a listed `(event, matcher)` pair goes; any other rtok hook goes through the new `rtok_agent_sdk::keep_edited` (also used by `unregister_owned` now): `?` on a dry run, `--yes` or a yes removes it, else `leave hooks.<event> <matcher> in <file> (changed by you; remove by hand)`. `Apply::writes` now skips a report of only `leave`/`?` lines, so a kept edit never rewrites the file. cursor, gemini, kimi and codewhale have their own hook shapes and moved to T246.6.
+
+Check: `claude_remove_asks_before_taking_an_edited_hook` (an edited timeout stays, the rest go, a second remove writes nothing, `--yes` takes it) and `a_leave_only_report_writes_nothing`; SDK 27/27, `agent_remove`/`agents_install`/`singleton`/`cli_trycmd` 32/32; `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
 
 Creator request 2026-09-22 (voice): AirTalk/rtok agents must clean up junk after themselves. Add `rtok agents junk clear` that deletes temporary files, logs, and cache that rtok (and the work it leaves behind) owns. Separately, inventory where each connected host stores its own junk — which folders — by reading that host's documentation, and record the map so clear/cleanup can cover host-side scratch safely.

@@ -42,9 +42,12 @@ pub fn hooks_path(cfg: &Config) -> std::path::PathBuf {
 
 /// Register `PreCompact` → `pre_compact` and `PostCompact` → `session_start` source=compact.
 pub fn run_hooks(cfg: &Config, remove: bool) -> Result<String> {
-    edit_json(&apply(cfg), &hooks_path(cfg), |root| {
+    let (a, path) = (apply(cfg), hooks_path(cfg));
+    edit_json(&a, &path, |root| {
         if remove {
-            super::claude::strip_ours(root.get_mut("hooks"))
+            let hooks = root.get_mut("hooks");
+            let timeout = cfg.setup.hook_timeout_s;
+            super::claude::strip_ours(&a, &path, hooks, COMPACT, "timeout", timeout)
         } else {
             super::claude::insert_ours(
                 object_at(root, "hooks"),

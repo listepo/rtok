@@ -50,9 +50,12 @@ const NAME: &str = "rtok";
 
 /// Apply, dry-run, or remove the hook entries under `hooks.events` (and `hooks.enabled`).
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
-    edit_json(&apply(cfg), &cfg.setup.zcode.config_path, |root| {
+    let (a, path) = (apply(cfg), &cfg.setup.zcode.config_path);
+    let timeout_ms = cfg.setup.hook_timeout_s * 1000;
+    edit_json(&a, path, |root| {
         if remove {
-            return strip_ours(root.get_mut("hooks").and_then(|h| h.get_mut("events")));
+            let events_obj = root.get_mut("hooks").and_then(|h| h.get_mut("events"));
+            return strip_ours(&a, path, events_obj, events(), "timeoutMs", timeout_ms);
         }
         let hooks = object_at(root, "hooks");
         let enable = hooks.get("enabled") != Some(&json!(true));
@@ -62,7 +65,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
             events(),
             &desktop_command(),
             "timeoutMs",
-            cfg.setup.hook_timeout_s * 1000,
+            timeout_ms,
         );
         match (enable, report == NO_CHANGES) {
             (false, _) => report,

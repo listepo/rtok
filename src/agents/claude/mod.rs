@@ -5,11 +5,11 @@
 
 pub mod migrate;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use anyhow::Result;
-use rtok_agent_sdk::{KETCH_INSTALL, NO_CHANGES, array_at, edit_json, object_at};
+use rtok_agent_sdk::{Apply, KETCH_INSTALL, NO_CHANGES, array_at, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -63,9 +63,11 @@ pub(super) fn is_ours(cmd: &str, event: &str) -> bool {
 
 /// Apply, dry-run, or remove rtok hook entries.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
-    edit_json(&apply(cfg), &cfg.setup.claude.settings_path, |root| {
+    let (a, path) = (apply(cfg), &cfg.setup.claude.settings_path);
+    edit_json(&a, path, |root| {
         if remove {
-            strip_ours(root.get_mut("hooks"))
+            let timeout = cfg.setup.hook_timeout_s;
+            strip_ours(&a, path, root.get_mut("hooks"), ENTRIES, "timeout", timeout)
         } else {
             let bin = super::rtok_hook_bin();
             insert_ours(
@@ -202,27 +204,47 @@ fn prune_ours(hooks: &mut Value, entries: &[(&str, &str)]) -> Vec<String> {
     removed
 }
 
-/// Remove every `<rtok> hook <event>` entry under the given `hooks` object; empty arrays go.
-pub(super) fn strip_ours(hooks: Option<&mut Value>) -> String {
+/// Remove the `<rtok> hook <event>` hooks under `hooks` (T246.3); empty arrays go. One still as
+/// [`insert_ours`] writes it — on a pair `entries` lists, exactly `{type, command,
+/// <timeout_key>: timeout}` — goes; one the user changed goes only as
+/// [`rtok_agent_sdk::keep_edited`] decides, else a `leave …` line keeps it.
+pub(super) fn strip_ours(
+    apply: &Apply,
+    path: &Path,
+    hooks: Option<&mut Value>,
+    entries: &[(&str, &str)],
+    timeout_key: &str,
+    timeout: u64,
+) -> String {
     let Some(hooks) = hooks.and_then(Value::as_object_mut) else {
         return NO_CHANGES.into();
     };
-    let mut removed = 0usize;
-    for (event, entries) in hooks.iter_mut() {
-        let Some(arr) = entries.as_array_mut() else {
+    let (mut removed, mut kept) = (0usize, Vec::new());
+    for (event, arr) in hooks.iter_mut() {
+        let Some(arr) = arr.as_array_mut() else {
             continue;
         };
         for entry in arr.iter_mut() {
+            let matcher = entry["matcher"].as_str().unwrap_or("").to_string();
+            let listed = entries.contains(&(event.as_str(), matcher.as_str()));
             let Some(inner) = entry.get_mut("hooks").and_then(Value::as_array_mut) else {
                 continue;
             };
-            let n = inner.len();
             inner.retain(|h| {
-                !h.get("command")
-                    .and_then(Value::as_str)
-                    .is_some_and(|c| is_ours(c, event))
+                let Some(cmd) = h["command"].as_str().filter(|c| is_ours(c, event)) else {
+                    return true;
+                };
+                let want = json!({"type": "command", "command": cmd, timeout_key: timeout});
+                if !listed || *h != want {
+                    let at = format!("hooks.{event}{} in {}", show(&matcher), path.display());
+                    if let Some(leave) = rtok_agent_sdk::keep_edited(apply, &at) {
+                        kept.push(leave);
+                        return true;
+                    }
+                }
+                removed += 1;
+                false
             });
-            removed += n - inner.len();
         }
         arr.retain(|e| {
             e.get("hooks")
@@ -231,10 +253,13 @@ pub(super) fn strip_ours(hooks: Option<&mut Value>) -> String {
         });
     }
     hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
-    if removed == 0 {
+    if removed > 0 {
+        kept.push(format!("{removed} removed"));
+    }
+    if kept.is_empty() {
         NO_CHANGES.into()
     } else {
-        format!("{removed} removed")
+        kept.join("\n")
     }
 }
 
@@ -847,7 +872,12 @@ mod tests {
         let mut root: Value =
             serde_json::from_str(if raw.is_empty() { "{}" } else { raw }).unwrap();
         let report = if remove {
-            strip_ours(root.get_mut("hooks"))
+            let yes = Apply {
+                yes: true,
+                ..Apply::default()
+            };
+            let at = std::path::Path::new(path);
+            strip_ours(&yes, at, root.get_mut("hooks"), ENTRIES, "timeout", 5)
         } else {
             insert_ours(object_at(&mut root, "hooks"), ENTRIES, "rtok", "timeout", 5)
         };
