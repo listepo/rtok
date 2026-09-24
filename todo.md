@@ -3,7 +3,6 @@
 - T83.6. `agents_doc::agents_doc_table_matches_the_host_code` fails on Windows
 - T83.7. `cli_trycmd::cli` fails on Windows
 - T83.8. `commands_e2e::run_long_output_then_expand_round_trips` fails on Windows
-- T83.10. `plugins::cmd::formatters::tests::ten_families_and_aws_key_unredacted` fails on Windows
 - T83.11. `plugins::cmd::run::tests::identical_output_from_different_commands_dedups` fails on Windows (dedup count 1 ≠ 0)
 - T83.12. `plugins::read::cache::tests::vfs_small_change_is_hunks_large_is_full_missing_archive_is_full` fails on Windows
 - T83.13. `agent_remove::uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy` fails on Windows (os error 4390)
