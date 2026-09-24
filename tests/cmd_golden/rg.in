@@ -1,5 +1,6 @@
 argv: rg -l foo
 exit: 0
+min_saving: 79
 ---
 src/a0.rs
 src/a1.rs

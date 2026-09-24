@@ -1,5 +1,6 @@
 argv: ./gradlew test
 exit: 0
+min_saving: 13
 ---
 ok 0
 ok 1

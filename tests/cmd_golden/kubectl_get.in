@@ -1,5 +1,6 @@
 argv: kubectl get pods
 exit: 0
+min_saving: 58
 ---
 NAME                       READY   STATUS    RESTARTS   AGE     IP           NODE
 web-deploy-00-abcd   1/1     Running   0          3d2h    10.244.0.0   ip-10-0-4-0.us-east-2.compute.internal

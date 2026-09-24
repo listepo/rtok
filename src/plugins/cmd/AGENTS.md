@@ -33,4 +33,7 @@ to `bounded::MAX_BYTES`. `formatters::compress` reuses the same lexer
 programs to `[script]` in `rules/default.toml` — `cargo build && cargo test` or
 `cd x && cargo test` keep using `cargo`'s own formatter/rule.
 
-**Checks**: `plan.md` T3.1–T3.6. Golden tests live in `tests/cmd_golden/*.{in,out}`.
+**Checks**: `plan.md` T3.1–T3.6. Golden tests live in `tests/cmd_golden/*.{in,out}`. Each `.in`
+carries an `argv:` / `exit:` / `min_saving: <percent>` header before `---` (T238); the golden
+test in `formatters.rs` fails a file below its floor, one whose output outgrows its input, or
+one missing `min_saving:`.

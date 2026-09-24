@@ -1,5 +1,6 @@
 argv: tsc --noEmit
 exit: 0
+min_saving: 11
 ---
 ok 0
 ok 1

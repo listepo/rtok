@@ -1,5 +1,6 @@
 argv: tsc --noEmit
 exit: 0
+min_saving: 90
 ---
 src/f0.ts(0,1): error TS2322: Type 'string' is not assignable to type 'number'.
 src/f1.ts(1,1): error TS2322: Type 'string' is not assignable to type 'number'.

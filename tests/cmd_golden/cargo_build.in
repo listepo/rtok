@@ -1,5 +1,6 @@
 argv: cargo build
 exit: 0
+min_saving: 27
 ---
    Compiling foo v0.1.0
 error[E0308]: mismatched types

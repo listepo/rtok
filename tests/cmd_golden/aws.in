@@ -1,5 +1,6 @@
 argv: aws s3 ls s3://no-bucket
 exit: 0
+min_saving: 12
 ---
 ok 0
 ok 1
