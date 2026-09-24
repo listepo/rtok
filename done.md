@@ -5958,3 +5958,14 @@ Note: keeping only the newest N means the oldest copy — the pre-rtok original 
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+
+### T251. Plugin hook tests race a fail-open hook on stdin
+
+`codex_plugin::hook_commands_resolve_path_then_ketch_then_exit_open` (T250.1) failed ubuntu CI twice in a row on PR #300 with `BrokenPipe` at `stdin.write_all(b"{}").unwrap()`: with no `rtok` found the hook fails open and exits before reading stdin, so the write races the exit. Main auto-reverts on a red `check`, so the flake could throw out unrelated merges.
+
+Result: the codex test and the two same-shaped writes in `tests/claude_plugin.rs` drop the write's result, as `tests/plugins_e2e.rs` already did; the exit status and stdout asserts still judge the hook.
+
+Check: `cargo nextest --test claude_plugin --test codex_plugin` 11/11; `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5

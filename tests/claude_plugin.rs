@@ -140,7 +140,8 @@ fn hook_commands_exec_rtok_from_path_and_fall_back_to_hook_sh() {
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(b"{}").unwrap();
+        // A fail-open hook may exit before reading stdin: a broken pipe is fine (T251).
+        drop(child.stdin.take().unwrap().write_all(b"{}"));
         let out = child.wait_with_output().unwrap();
         assert!(out.status.success(), "{cmd}");
         String::from_utf8(out.stdout).unwrap()
@@ -190,7 +191,8 @@ fn hook_sh_fails_open_silently_except_one_session_start_note() {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(b"{}").unwrap();
+        // A fail-open hook may exit before reading stdin: a broken pipe is fine (T251).
+        drop(child.stdin.take().unwrap().write_all(b"{}"));
         let out = child.wait_with_output().unwrap();
         assert!(out.status.success(), "{event}: {out:?}");
         String::from_utf8(out.stdout).unwrap()
