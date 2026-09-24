@@ -102,7 +102,6 @@ default-filter = '''
 not (
     (binary(commands_e2e) & test(=run_long_output_then_expand_round_trips))
   | (binary(agents_install) & test(/^(list_reports_installed_modules_per_host|setup_twice_takes_one_backup_and_says_already_installed)$/))
-  | (binary(agents_doc) & test(=agents_doc_table_matches_the_host_code))
   | (binary(cli_trycmd) & test(=cli))
   | (binary(opencode_plugin) & test(=dry_run_offers_the_plugin_and_writes_nothing))
   | (binary(cursor_plugin) & test(/^(setup_cursor_dry_run_offers_plugin|setup_cursor_yes_links_plugin_without_mcp_json|setup_cursor_clears_leftover_mcp_when_plugin_already_linked)$/))

@@ -5207,6 +5207,21 @@ Check result: `just check` green on macOS; PR #336's `windows` CI job passes the
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
+### T83.6. `agents_doc::agents_doc_table_matches_the_host_code` fails on Windows
+
+`tests/agents_doc.rs` compares the generated `docs/agents.md` host table against the bless output; on Windows this likely differs by path separator or line endings (CRLF vs LF) rather than actual host-table content. Decide whether the generator needs `cfg(windows)` normalization or the comparison needs to normalize line endings. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Plan: the exclusion list was taken from run 35244082778 (2026-09-17), before T82's `.gitattributes` (`* text=auto eol=lf`) made the Windows checkout LF — the CRLF cause this card suspects is likely gone already, and nothing in `table()` or host `support()` branches on `cfg(windows)`. Drop the test's line from the `cfg(windows)` `default-filter` in `.config/nextest.toml` and let this PR's `windows` job run it; only if it still fails, fix from that job's diff.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): no code change. The failure came from CRLF checkouts, which T82's `.gitattributes` (`* text=auto eol=lf`) already removed. The test's line is dropped from the `cfg(windows)` `default-filter` in `.config/nextest.toml`.
+
+Check result: a probe branch ran every `cfg(windows)`-filtered test on `windows-latest` (ci run 36032362793, 2026-09-24): `agents_doc_table_matches_the_host_code` passed there (0.077 s). `just check` green on macOS.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T180. Research: filtering WebFetch, WebSearch and browser page text
 
 Found in the 2026-09-22 audit: `WebSearch` 1.9 MB, `WebFetch` 1.3 MB and `Claude_Browser` `get_page_text`/`read_page` 0.25 MB in 7 days with no rtok involvement. PostToolUse cannot change native results (see T134), so the path is unclear.
