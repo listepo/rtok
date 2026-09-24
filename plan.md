@@ -46,7 +46,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T213 | todo | P3 | 2 | 0% | |
 | T216 | todo | P3 | 2 | 0% | |
 | T223 | todo | P3 | 2 | 0% | |
-| T224 | todo | P3 | 1 | 0% | |
 | T235 | todo | P1 | 3 | 0% | |
 | T226 | todo | P2 | 2 | 0% | |
 | T228 | todo | P2 | 2 | 0% | |
@@ -612,14 +611,6 @@ Found 2026-09-22 in the docs pass: `Cargo.lock` holds `windows-sys` 0.52.0, 0.60
 Plan: `cargo tree -d` to find the 0.52/0.60 holders, bump those transitive parents within existing semver ranges (no direct dep version bumps) or nudge the lockfile (`cargo update -p windows-sys@…`); record the reason per the dependency rule.
 
 Check: `grep -c 'name = "windows-sys"' Cargo.lock` = 1 (or `mise exec -- cargo tree -d` shows no windows-sys entry); `just check` green on windows-latest.
-
-### T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
-
-Found 2026-09-22 in the docs pass: `report.html` and `report/jscpd-report.json` are stale jscpd outputs (`.jscpd.json` now sets `reporters: ["console"]`, so they are unreproducible) and `dump/` holds nine captured stdout/stderr files — all in the tree; `.gitignore` covers `rtok.db`/`/~/` but not `/report.html` or `/dump/`. The `.rtok/`/`~`/`rtok.db` half of the cleanup is T184; this is the other half of "an artifact that is not reproducible from a command should not be in the repo".
-
-Plan: `git rm --cached` `report.html`, `report/jscpd-report.json`, `dump/*`; extend `.gitignore` with `/report.html`, `/report/`, `/dump/`; the jscpd console workflow stays the way to regenerate reports.
-
-Check: `git ls-files report.html report/ dump/` prints nothing; after `just test` and `just dup`, `git status --porcelain` stays clean (T184's Check covers the rest); `just check` green.
 
 ### T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
 

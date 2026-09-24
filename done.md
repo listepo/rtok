@@ -6244,6 +6244,15 @@ Plan: cite each figure inline (`research.md §2 row …, <date>`) in the style o
 Check: a `just readme-check` number lint — any `N %` / `N MiB` / `N ms` figure in `README.md`/`docs/**` sits within a few words of `research.md`, a test name or a date, and the README target count equals `ls tests/*.rs | wc -l` at run time (fails on `main` today); `just check` green.
 
 Result: Dropped the untraceable ±15 % (README, docs/config.md, tokens.rs, lib.rs, plugin.rs, measure AGENTS.md) for 'uncalibrated heuristic'; cited 18.9 MiB / 98.1 % / +0.81 ms p95 inline to research.md with dates; README/Cargo.toml state the one-binary-per-tests/*.rs rule instead of '41 targets'. New tests/public_numbers.rs: every N %/MiB/ms figure in README/docs needs research.md, a date, a test name or an attribution word in its block ('10 ms' fail-open budget exempt by text); a stated README target count must equal tests/*.rs. Fails on the old docs (5 figures + 41≠73), passes now.
+### T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
+
+Found 2026-09-22 in the docs pass: `report.html` and `report/jscpd-report.json` are stale jscpd outputs (`.jscpd.json` now sets `reporters: ["console"]`, so they are unreproducible) and `dump/` holds nine captured stdout/stderr files — all in the tree; `.gitignore` covers `rtok.db`/`/~/` but not `/report.html` or `/dump/`. The `.rtok/`/`~`/`rtok.db` half of the cleanup is T184; this is the other half of "an artifact that is not reproducible from a command should not be in the repo".
+
+Plan: `git rm --cached` `report.html`, `report/jscpd-report.json`, `dump/*`; extend `.gitignore` with `/report.html`, `/report/`, `/dump/`; the jscpd console workflow stays the way to regenerate reports.
+
+Check: `git ls-files report.html report/ dump/` prints nothing; after `just test` and `just dup`, `git status --porcelain` stays clean (T184's Check covers the rest); `just check` green.
+
+Result: Untracked the stale report.html (report/jscpd-report.json and dump/ were already untracked); .gitignore now covers /report.html, /report/, /dump/. just dup leaves git status clean.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
