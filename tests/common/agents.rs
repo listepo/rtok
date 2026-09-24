@@ -82,6 +82,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".config/opencode",
         ".config/kilo",
         ".pi/agent",
+        ".omp/agent",
         ".zcode/cli",
         ".kimi-code",
         ".grok",
@@ -108,6 +109,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.opencode]\nconfig_path = \"{h}/.config/opencode/opencode.json\"\n\
              [setup.kilo]\nconfig_path = \"{h}/.config/kilo/kilo.json\"\n\
              [setup.pi]\nextensions_path = \"{h}/.pi/agent/extensions\"\n\
+             [setup.omp]\nextensions_path = \"{h}/.omp/agent/extensions\"\n\
+             mcp_path = \"{h}/.omp/agent/mcp.json\"\n\
              [setup.zcode]\nconfig_path = \"{h}/.zcode/cli/config.json\"\n\
              [setup.kimi]\nconfig_path = \"{h}/.kimi-code/config.toml\"\n\
              [setup.grok]\nconfig_path = \"{h}/.grok/config.toml\"\n\
