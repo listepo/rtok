@@ -123,7 +123,7 @@ jobs:
           echo "reverted=true" >> "$GITHUB_OUTPUT"
       # T84: main is green again; the work comes back as a draft PR to fix and re-land. Draft
       # because `check` skips drafts and this tree is known-red. Needs the repo setting
-      # "Allow GitHub Actions to create and approve pull requests".
+      # "Allow GitHub Actions to create and approve pull requests" (on since T253).
       - name: Open a PR that re-applies the reverted work
         if: steps.revert.outputs.reverted == 'true'
         env:
@@ -132,9 +132,13 @@ jobs:
         run: |
           set -euo pipefail
           short=$(git rev-parse --short "$AFTER")
-          # Merged PR -> its head branch; direct push to main -> the short sha.
-          name=$(gh api "repos/$GITHUB_REPOSITORY/commits/$AFTER/pulls" \
-            --jq '[.[] | select(.merged_at != null)][0].head.ref // empty' || true)
+          # Merged PR -> its head branch and title; direct push to main -> the short sha and
+          # the commit subject. T253: the title carries a `[Revert]` prefix.
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$AFTER/pulls" \
+            --jq '[.[] | select(.merged_at != null)][0] // {}' || echo '{}')
+          name=$(jq -r '.head.ref // empty' <<<"$pr")
+          title=$(jq -r '.title // empty' <<<"$pr")
+          title="[Revert] ${title:-$(git log -1 --format=%s "$AFTER")}"
           branch="revert-${name:-$short}"
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
             branch="$branch-$short"
@@ -145,5 +149,5 @@ jobs:
             -m "Reapply $short — reverted after main CI failed"
           git push origin "$branch"
           gh pr create --draft --base main --head "$branch" \
-            --title "Reapply $short — reverted after main CI failed" \
+            --title "$title" \
             --body "CI failed on main at $AFTER ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID), so the push was auto-reverted. This branch re-applies it on top of main: push the fix here, mark the PR ready for review, merge when CI is green."
