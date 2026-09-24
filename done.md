@@ -5356,3 +5356,16 @@ Do (2026-09-24): `model::pages()` gains `("stats", "stats")`; `Snapshot.stats` c
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T196. `linked()` at the plugin dest strips a working plain install (cursor, zcode)
+
+Found 2026-09-22 in the host-plugins pass: `plugin_is_mcp` (`src/agents/cursor/mod.rs:184-199`) and `plugin_serves` (`src/agents/zcode/mod.rs:173-175, 238-252`) key on `PluginLink::linked()` — true for **anything** at the dest, including a foreign directory `PluginLink::run` rightly refuses to overwrite. With a foreign dir present, cursor's `offer_plugin` still runs `unregister_mcp` (its error discarded with `let _ =`) and `plugin_is_mcp` suppresses `register_mcp`; zcode goes further — `run(cfg, remove || plugin_serves(…))` strips working `hooks.events` entries and drops `mcp.servers.rtok`. Net: one `agents install cursor|zcode` run deletes the functioning plain-install hooks + MCP and installs nothing. `installed()` already uses `ours()` (the T75 lesson); these two predicates missed it. D21 singleton inverts into self-sabotage.
+
+Plan: key `plugin_is_mcp`, `plugin_serves` and cursor's leftover-cleanup on `PLUGIN.ours(cfg)` (foreign dir ⇒ behave like a declined offer and run the config-file install); report the unregister line instead of discarding it.
+
+Check: unit tests beside `linked_plugin_clears_leftover_mcp_json_on_later_setup` (cursor) and `linked_plugin_is_the_only_call_path` (zcode): foreign dir at the dest (no owned marker, different bytes) + seeded `mcpServers.rtok`/hooks → after `apply(Install)` the entries survive or are re-added and the foreign dir is untouched; `just test` green.
+
+Do (2026-09-24): cursor `plugin_is_mcp` and the leftover-`mcpServers.rtok` cleanup in `offer_plugin`, and zcode `plugin_serves`, now check `PLUGIN.ours(cfg)` instead of `linked()`. A foreign directory at the dest is treated like a declined offer, and the plain config-file install runs. The unregister result is reported (`- mcpServers.rtok`) instead of dropped. Tests: `foreign_plugin_dir_keeps_plain_mcp_working` (cursor) and `foreign_plugin_dir_keeps_plain_hooks_and_mcp_working` (zcode). pi, kilo, omp and opencode already use `ours()`. `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)

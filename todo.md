@@ -55,7 +55,6 @@
 - T185. `rtok agents install codewhale` — CodeWhale host (MCP + hooks)
 - T186. `rtok agents install mimo` — MiMo Code CLI and MiMo Desktop
 - T195. pi extension: fail-open breaks on non-zero `rtok`, and the ketch hint regressed
-- T196. `linked()` at the plugin dest strips a working plain install (cursor, zcode)
 - T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 - T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
 - T201. Hook path does unbounded reads and hashes bodies it never archives

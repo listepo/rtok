@@ -166,12 +166,15 @@ fn plugin_dirs(cfg: &Config, remove: bool) -> Result<String> {
     })
 }
 
-/// True when the linked plugin is the call path for hooks and MCP (D21 singleton).
+/// True when the linked plugin is the call path for hooks and MCP (D21 singleton). Keyed on
+/// [`HostPlugin::ours`], not `linked`: a foreign directory at the dest is "linked" too, and
+/// treating it as the call path would strip a working plain install's `hooks.events` and
+/// `mcp.servers.rtok` with nothing left to serve them (T196).
 ///
 /// Judged only by the link, not `--yes`: a dry-run with `--yes` has not linked yet
 /// and must still show what the config would get if the offer is declined.
 pub fn plugin_serves(cfg: &Config, remove: bool) -> bool {
-    !remove && PLUGIN.linked(cfg)
+    !remove && PLUGIN.ours(cfg)
 }
 
 impl Agent for Zcode {
@@ -338,6 +341,45 @@ mod tests {
             .filter(|l| l != NO_CHANGES)
             .count();
         assert_eq!(steady, 0, "steady state must be no changes");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// T196: `plugin_serves` keyed on `linked()` treated a foreign directory at the plugin
+    /// dest (rightly refused by `PluginLink::run`) as though rtok's plugin were the call
+    /// path — stripping a working plain install's `hooks.events` and `mcp.servers.rtok`
+    /// with nothing left to serve them, so `agents install zcode` deleted both and
+    /// installed nothing.
+    #[test]
+    fn foreign_plugin_dir_keeps_plain_hooks_and_mcp_working() {
+        let (mut c, path) = cfg("foreign", false);
+        c.setup.yes = true;
+        // A foreign directory already sits at the plugin dest: not an rtok link, no owned
+        // marker, different bytes from the shipped plugin.
+        let dest = plugin_dest(&c);
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("mine.txt"), "not rtok's plugin").unwrap();
+        // Seed a working plain install: hooks + mcp.servers.rtok already present.
+        run(&c, false).unwrap();
+        register_mcp(&c).unwrap();
+        assert!(PLUGIN.linked(&c), "the foreign dir makes linked() true");
+        assert!(!PLUGIN.ours(&c), "but it is not ours");
+
+        let lines = Zcode
+            .apply(&c, Kind::Desktop, Mode::Install)
+            .unwrap()
+            .join("\n");
+        // The offer is declined (foreign dir refused), not silently treated as linked.
+        assert!(lines.contains("accept with --yes"), "{lines}");
+        assert_eq!(
+            fs::read_to_string(dest.join("mine.txt")).unwrap(),
+            "not rtok's plugin",
+            "foreign dir must stay untouched"
+        );
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains(" hook PreToolUse"), "{raw}");
+        let root: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(root["mcp"]["servers"]["rtok"]["args"][0], "mcp");
+        assert_eq!(Zcode.installed(&c, Kind::Desktop), ["hooks", "mcp"]);
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 

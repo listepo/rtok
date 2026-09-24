@@ -179,23 +179,30 @@ pub fn plugin_dest(cfg: &Config) -> PathBuf {
 
 /// [`PLUGIN`]'s offer plus Cursor's singleton rule: the plugin *is* the MCP, so a previous
 /// `mcpServers.rtok` entry from a plain install must go, else two writers serve one store.
-/// Cleared on every run while the plugin is linked — not only on the first `+ plugin` — so a
-/// leftover from a declined earlier offer is not kept.
+/// Cleared on every run while the plugin is ours — not only on the first `+ plugin` — so a
+/// leftover from a declined earlier offer is not kept. Keyed on [`HostPlugin::ours`], not
+/// `linked`: a foreign directory at the dest is "linked" too, and unregistering the plain
+/// MCP entry for it would strip a working install for nothing (T196).
 pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
     let report = PLUGIN.offer(cfg, remove)?;
-    if !remove && PLUGIN.linked(cfg) {
-        let _ = unregister_mcp(cfg);
+    if !remove && PLUGIN.ours(cfg) {
+        let cleared = unregister_mcp(cfg)?;
+        if cleared != NO_CHANGES {
+            return Ok(format!("{report}\n{cleared}"));
+        }
     }
     Ok(report)
 }
 
-/// True when the Cursor plugin is linked: it *is* the MCP (D21 singleton), so
-/// setup must not also register `mcpServers.rtok` in `mcp.json`.
+/// True when the Cursor plugin is ours: it *is* the MCP (D21 singleton), so
+/// setup must not also register `mcpServers.rtok` in `mcp.json`. A foreign directory at
+/// the dest is not ours (T196): `plugin_is_mcp` must stay false so the plain `mcp.json`
+/// install still runs instead of being silently suppressed.
 ///
 /// Judged only by the link, not `--yes`: a dry-run with `--yes` has not linked
 /// yet and must still show what `mcp.json` would do if the offer is declined.
 pub fn plugin_is_mcp(cfg: &Config, remove: bool) -> bool {
-    !remove && PLUGIN.linked(cfg)
+    !remove && PLUGIN.ours(cfg)
 }
 
 fn insert_ours(root: &mut Value) -> String {
@@ -345,7 +352,12 @@ mod tests {
             r#"{"mcpServers":{"rtok":{"type":"stdio","command":"rtok","args":["mcp"]},"other":{"command":"x"}}}"#,
         )
         .unwrap();
-        assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
+        // T196: the plugin offer itself is a no-op (already linked, up to date), but the
+        // cleared leftover must be reported, not silently discarded.
+        assert_eq!(
+            offer_plugin(&c, false).unwrap(),
+            format!("{NO_CHANGES}\n- mcpServers.rtok")
+        );
         let body = fs::read_to_string(&mcp).unwrap();
         assert!(
             !body.contains("\"rtok\""),
@@ -353,6 +365,49 @@ mod tests {
         );
         assert!(body.contains("other"), "foreign servers must stay: {body}");
         assert!(plugin_is_mcp(&c, false));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T196: `plugin_is_mcp`/`offer_plugin` keyed on `linked()` treated a foreign directory
+    /// at the plugin dest (rightly refused by `PluginLink::run`) as though rtok's plugin were
+    /// serving MCP — wiping a working plain install's `mcpServers.rtok` and then suppressing
+    /// `register_mcp`, so `agents install cursor` deleted the MCP entry and installed nothing.
+    #[test]
+    fn foreign_plugin_dir_keeps_plain_mcp_working() {
+        let dir = tmp("foreign");
+        let mut c = cfg(dir.join("hooks.json"), false);
+        c.setup.yes = true;
+        c.setup.backup = false;
+        // A foreign directory already sits at the plugin dest: not an rtok link, no owned
+        // marker, different bytes from the shipped plugin.
+        let dest = plugin_dest(&c);
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("mine.txt"), "not rtok's plugin").unwrap();
+        // Seed a working plain install: hooks + mcpServers.rtok already present.
+        run(&c, false).unwrap();
+        register_mcp(&c).unwrap();
+        assert!(PLUGIN.linked(&c), "the foreign dir makes linked() true");
+        assert!(!PLUGIN.ours(&c), "but it is not ours");
+
+        let lines = Cursor
+            .apply(&c, Kind::Desktop, Mode::Install)
+            .unwrap()
+            .join("\n");
+        // The offer is declined (foreign dir refused), not silently treated as linked.
+        assert!(lines.contains("accept with --yes"), "{lines}");
+        assert_eq!(
+            fs::read_to_string(dest.join("mine.txt")).unwrap(),
+            "not rtok's plugin",
+            "foreign dir must stay untouched"
+        );
+        let hooks_raw = fs::read_to_string(&c.setup.cursor.hooks_path).unwrap();
+        assert!(hooks_raw.contains(&pre_cmd()), "{hooks_raw}");
+        let mcp_raw = fs::read_to_string(mcp_path(&c)).unwrap();
+        assert!(
+            mcp_raw.contains("\"rtok\""),
+            "plain mcpServers.rtok must survive: {mcp_raw}"
+        );
+        assert_eq!(Cursor.installed(&c, Kind::Desktop), ["hooks", "mcp"]);
         let _ = fs::remove_dir_all(dir);
     }
 
