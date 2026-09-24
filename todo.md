@@ -48,7 +48,6 @@
 - T201. Hook path does unbounded reads and hashes bodies it never archives
 - T204. A panicking plugin is dropped silently — the error never reaches the log
 - T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
-- T212. Semantic-cache key omits sampling params and tool schemas
 - T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
 - T215. Host test matrices skip `omp` and five real-config hosts; pi loader probe skips on Windows
 - T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing

@@ -59,7 +59,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T201 | todo | P2 | 2 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
-| T212 | todo | P2 | 2 | 0% | |
 | T213 | todo | P3 | 2 | 0% | |
 | T215 | todo | P2 | 2 | 0% | |
 | T216 | todo | P3 | 2 | 0% | |
@@ -698,14 +697,6 @@ Found 2026-09-22 in the store/accounting pass: `inline_body` (`src/store/mod.rs:
 Plan: store inline bodies as BLOB (or base64 in the TEXT column) with the sha of the raw bytes, keeping the lossy text only as a derived display column; migrate with a nullable column filled lazily on read.
 
 Check: extend `inline_sha256_matches_stored_text` (src/store/mod.rs:3048-3095) — `call_io_request` returns the exact input bytes for the `[…0xff, 0xfe…]` fixture and the sha matches the raw bytes (fails today); `just test` green.
-
-### T212. Semantic-cache key omits sampling params and tool schemas
-
-Found 2026-09-22 in the surfaces pass: `CachePrompt` / `canonical_hash` (`src/proxy/semantic_cache.rs:150-173, 311-315`) cover provider/model/system/messages and a tools fingerprint — but not `max_tokens`, `temperature`, `top_p`, `tool_choice`, `thinking`, stop sequences, and `tools_fingerprint` (:388-397) hashes tool *names* only. Requests differing only in generation params or tool schemas hash equal and the cached body is replayed — I-23's "a hit can be a wrong answer" (a temperature-0 extraction sharing an entry with a temperature-1 brainstorm for `ttl_s`). I-23 tracks the general false-hit risk; these key omissions are the concrete ones (the T55.14 fix covered tool_result text only).
-
-Plan: fold all non-message request fields into `canonical_hash` (serialize the body minus `messages`/`stream`) and hash each tool's full definition in `tools_fingerprint`.
-
-Check: `sampling_params_join_the_cache_key` and `tool_schemas_join_the_cache_key` — bodies differing only in `max_tokens`/`temperature`/tool schema hash differently; `p9_fixture_audit_zero_false_hits` green; `just test` green.
 
 ### T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
 
