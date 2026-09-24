@@ -307,24 +307,30 @@ pub fn fake_claude_path(home: &Path) -> std::ffi::OsString {
         fs::create_dir_all(&dir).unwrap();
         let claude = dir.join("claude");
         if !claude.exists() {
-            fs::write(
-                &claude,
-                r#"#!/bin/sh
+            // T132: a real `claude plugin install` copies the plugin tree into its cache
+            // (`plugins/claude/README.md`), `agents/` included — mirror that here with the
+            // repo's actual shipped file, so an install/removal e2e can assert on it without
+            // hardcoding the agent's contents twice.
+            let scout_src =
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/claude/agents/rtok-scout.md");
+            let script = r#"#!/bin/sh
 [ "$1" = --version ] && { echo "2.0.0 (Claude Code)"; exit 0; }
 echo "$*" >> "$HOME/claude.log"
 plugins="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins"
 case "$*" in
-  "plugin install rtok@rtok") mkdir -p "$plugins"
+  "plugin install rtok@rtok") mkdir -p "$plugins/cache/rtok/agents"
+    cp "__SCOUT_SRC__" "$plugins/cache/rtok/agents/rtok-scout.md"
     printf '{"version":2,"plugins":{"rtok@rtok":[{"scope":"user"}]}}' > "$plugins/installed_plugins.json" ;;
-  "plugin uninstall rtok@rtok") rm -f "$plugins/installed_plugins.json" ;;
+  "plugin uninstall rtok@rtok") rm -f "$plugins/installed_plugins.json"
+    rm -rf "$plugins/cache/rtok" ;;
   "plugin update rtok@rtok")
     [ -f "$HOME/fake-claude-fail-update" ] && { echo "update failed" >&2; exit 1; }
     mkdir -p "$plugins"
     printf '{"version":2,"plugins":{"rtok@rtok":[{"scope":"user","version":"latest"}]}}' > "$plugins/installed_plugins.json" ;;
 esac
-"#,
-            )
-            .unwrap();
+"#
+            .replace("__SCOUT_SRC__", &scout_src.display().to_string());
+            fs::write(&claude, script).unwrap();
             fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
         }
         let codex = dir.join("codex");

@@ -70,6 +70,9 @@ fn installs_the_plugin_by_default_as_the_only_call_path_and_remove_uninstalls() 
         plain.contains("+ plugin plugins/claude → rtok@rtok"),
         "{plain}"
     );
+    // T132: the plugin's `agents/rtok-scout.md` rides along with the rest of the plugin tree.
+    let scout = home.join(".claude/plugins/cache/rtok/agents/rtok-scout.md");
+    assert!(scout.is_file(), "{}", scout.display());
     let log = claude_log(&home);
     let calls: Vec<&str> = log.lines().collect();
     assert_eq!(calls.len(), 2, "{log}");
@@ -96,6 +99,7 @@ fn installs_the_plugin_by_default_as_the_only_call_path_and_remove_uninstalls() 
 
     let removed = rtok(&["agents", "remove", "claude"], &cfg, &home);
     assert!(removed.contains("- plugin rtok@rtok"), "{removed}");
+    assert!(!scout.exists(), "removal must take the agent file with it");
     let log = claude_log(&home);
     let tail: Vec<&str> = log.lines().skip(2).collect();
     assert_eq!(

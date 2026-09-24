@@ -37,6 +37,11 @@ Files:
 - `scripts/hook.sh`, `scripts/mcp.sh` — resolve `rtok` from PATH or the ketch store; a missing
   `rtok` fails the hook open (exit 0) and the MCP loudly (exit 1), both printing
   `ketch install listepo/rtok`.
+- `agents/rtok-scout.md` — a `model: haiku` sub-agent (T132) scoped to the rtok MCP's `read`,
+  `search`, `outline`, `explore`, `expand` tools (named `mcp__plugin_rtok_rtok__<tool>`, the
+  plugin-scoped form: plugin `rtok` + MCP server `rtok` from this directory's `.mcp.json`), so
+  code-lookup questions default to the cheap path instead of a full-price general-purpose agent.
+  Discovered automatically from `agents/` — no manifest entry needed.
 
 Windows: Claude Code runs hook commands through Git Bash, so `hook.sh` works; the MCP launcher is
 POSIX too, so on Windows prefer the plain `rtok agents install claude`.
@@ -49,3 +54,4 @@ Host documentation this plugin is written against. Re-check every link when the 
 - Plugins reference (`${CLAUDE_PLUGIN_ROOT}`, hooks and MCP in a plugin): https://code.claude.com/docs/en/plugins-reference
 - Marketplaces (`marketplace.json`, relative `source`, `claude plugin marketplace add`): https://code.claude.com/docs/en/plugin-marketplaces
 - Hooks (`hooks.json` shape, events, `timeout`): https://code.claude.com/docs/en/hooks
+- Sub-agents (frontmatter: `name`, `description`, `tools`, `model`): https://code.claude.com/docs/en/sub-agents
