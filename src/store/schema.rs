@@ -40,6 +40,10 @@ diesel::table! {
         bytes -> BigInt,
         path -> Text,
         sha256 -> Text,
+        // 0019 (T127): the context that wrote this row — a sub-agent's `agent_id`, or NULL
+        // for the main window. Scopes `archive_in_session` so a pointer never names a body
+        // a different context never saw.
+        agent_id -> Nullable<Text>,
     }
 }
 

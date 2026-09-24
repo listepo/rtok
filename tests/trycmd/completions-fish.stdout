@@ -241,6 +241,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand setup" -l desktop -d 'Only the
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -l all -d 'All variants (the default when neither `--cli` nor `--desktop` is given)'
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand run" -l agent -d 'Sub-agent id from PreToolUse; scopes the dedup pointer (T127)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand run" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand run" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand filter" -l cmd -d 'Command family hint (`git status`, `cargo test`, …)' -r

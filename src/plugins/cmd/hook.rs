@@ -70,6 +70,27 @@ fn skip_wrap_host(
     false
 }
 
+/// T127: only bare `[A-Za-z0-9_-]`, 1–64 bytes. Anything else is dropped rather than
+/// embedded — a malformed or hostile `agent_id` must never reach the rewritten argv, and
+/// missing/unknown stays exactly today's un-scoped dispatch (fail open).
+fn is_valid_agent_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// `--agent <id> ` when `cx` carries a validly-shaped sub-agent id, else empty — spliced
+/// before the quoted command so `rtok run` can scope its dedup pointer to the same window
+/// this dispatch came from (T127).
+fn agent_flag(cx: &Ctx) -> String {
+    match cx.agent_id() {
+        Some(id) if is_valid_agent_id(id) => format!("--agent {id} "),
+        _ => String::new(),
+    }
+}
+
 /// Wrap a Bash command unless the skip rules fire.
 pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
     let cfg = cx.plugin_config::<crate::config::Cmd>("cmd");
@@ -81,8 +102,14 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
         return None;
     }
     let mut input = ev.tool_input.clone();
-    // One argv so the outer shell cannot split on `&&`, `|`, `;`, or redirects.
-    input["command"] = json!(format!("rtok run -- {}", super::run::wrap_quote(cmd)));
+    // One argv so the outer shell cannot split on `&&`, `|`, `;`, or redirects. The
+    // `--agent` token (alnum/`_`/`-` only, validated above) sits before `--` and never
+    // touches the quoting that protects `cmd` on either the POSIX or Windows path.
+    input["command"] = json!(format!(
+        "rtok run {}-- {}",
+        agent_flag(cx),
+        super::run::wrap_quote(cmd)
+    ));
     Some(PreToolDecision::Rewrite {
         input,
         reason: "wrapped by rtok".into(),
@@ -101,6 +128,16 @@ mod tests {
             tool_input: &input,
         };
         pre_tool(&ev, &Ctx::new(&cx))
+    }
+
+    fn decide_as(agent_id: Option<&str>, command: &str) -> Option<PreToolDecision> {
+        let cx = crate::plugin::Runtime::in_memory("wrap").unwrap();
+        let input = json!({"command": command, "description": "t"});
+        let ev = PreToolUse {
+            tool_name: "Bash",
+            tool_input: &input,
+        };
+        pre_tool(&ev, &Ctx::with_agent(&cx, agent_id))
     }
 
     fn wrapped(d: &PreToolDecision) -> &str {
@@ -293,5 +330,30 @@ mod tests {
         assert_ne!(sh_words(&ps_form), [cmd]);
         // The POSIX form does round-trip, which is why only the Windows path skips.
         assert_eq!(sh_words(&super::super::run::sh_quote(cmd)), [cmd]);
+    }
+
+    /// T127: a sub-agent's `agent_id` rides along in the rewrite so `rtok run` can scope
+    /// its dedup pointer to the same window that dispatched the command.
+    #[test]
+    fn sub_agent_dispatch_embeds_its_agent_id() {
+        let d = decide_as(Some("agent-a1"), "git status").unwrap();
+        assert_eq!(wrapped(&d), "rtok run --agent agent-a1 -- 'git status'");
+    }
+
+    /// The main window carries no `agent_id`; the rewrite is unchanged from before T127.
+    #[test]
+    fn main_window_dispatch_has_no_agent_flag() {
+        let d = decide_as(None, "git status").unwrap();
+        assert_eq!(wrapped(&d), "rtok run -- 'git status'");
+    }
+
+    /// A shape outside `[A-Za-z0-9_-]{1,64}` is dropped rather than embedded — fail open,
+    /// never a chance to inject into the rewritten argv.
+    #[test]
+    fn malformed_agent_id_is_dropped() {
+        for bad in ["has space", "semi;colon", "", &"a".repeat(65), "quote'here"] {
+            let d = decide_as(Some(bad), "git status").unwrap();
+            assert_eq!(wrapped(&d), "rtok run -- 'git status'", "bad id: {bad:?}");
+        }
     }
 }

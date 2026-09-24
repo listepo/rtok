@@ -149,8 +149,11 @@ pub(crate) fn read_with(
     ) {
         return Ok(hit);
     }
-    // A same-session content-hash hit on those bytes is a pointer.
-    if let Some(msg) = crate::plugin::identical_result(&**cx, "read", payload) {
+    // A same-session content-hash hit on those bytes is a pointer. T127: this call runs
+    // only inside the MCP `read` tool (`src/mcp.rs`), which has no per-request signal for
+    // which context — parent or sub-agent — is asking; `context` stays `None` here until
+    // the creator picks between "no pointer on MCP" and today's session-only behaviour.
+    if let Some(msg) = crate::plugin::identical_result(&**cx, "read", payload, None) {
         let _ = cache::remember(cx, &key, payload);
         return Ok(msg);
     }

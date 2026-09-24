@@ -160,6 +160,9 @@ enum Cmd {
     Setup(SetupArgs),
     /// Execute a command, archive its raw output, print the filtered version
     Run {
+        /// Sub-agent id from PreToolUse; scopes the dedup pointer (T127)
+        #[arg(long, value_name = "ID")]
+        agent: Option<String>,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
@@ -1100,9 +1103,9 @@ pub fn run() -> Result<()> {
             setup_host(config_file.as_deref(), args)?;
         }
         #[cfg(feature = "cmd")]
-        Cmd::Run { command } => {
+        Cmd::Run { agent, command } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let code = crate::plugins::cmd::run::run(&cfg, &command)?;
+            let code = crate::plugins::cmd::run::run(&cfg, &command, agent.as_deref())?;
             std::process::exit(code);
         }
         #[cfg(feature = "cmd")]
@@ -1117,7 +1120,9 @@ pub fn run() -> Result<()> {
                 let mut buf = Vec::new();
                 let _ = io::stdin().read_to_end(&mut buf);
                 let argv: Vec<String> = hint.split_whitespace().map(str::to_string).collect();
-                crate::plugins::cmd::run::emit_filtered(&cfg, &argv, &buf, 0);
+                // No dispatch-time context reaches this surface (OpenCode's
+                // `tool.execute.after`, not the Claude Code PreToolUse rewrite).
+                crate::plugins::cmd::run::emit_filtered(&cfg, &argv, &buf, 0, None);
             } else {
                 let mut buf = String::new();
                 let _ = io::stdin().read_to_string(&mut buf);

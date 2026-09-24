@@ -46,16 +46,21 @@ pub fn fit_budget(cx: &Ctx, text: &str, class: Class, budget: u32) -> String {
 
 /// T65.1: same-session content-hash hit. Looks up before the caller archives.
 /// Empty or shorter-than-the-pointer bodies stay as they are (fail open / no inflation).
+///
+/// T127: `context` scopes the hit to the caller's window — a sub-agent's `agent_id`, or
+/// `None` for the main window. A surface with no way to know its context (today: the MCP
+/// `read` tool) passes `None`, which keeps this exactly as it behaved before T127.
 pub fn identical_result(
     host: &dyn Capabilities,
     plugin: &'static str,
     body: &[u8],
+    context: Option<&str>,
 ) -> Option<String> {
     if body.is_empty() {
         return None;
     }
     let sha = crate::store::hex_sha256(body);
-    let hit = host.archive_in_session(&sha).ok().flatten()?;
+    let hit = host.archive_in_session(&sha, context).ok().flatten()?;
     let n = hit.turns.max(1);
     let id = hit.id;
     let msg =
@@ -337,9 +342,16 @@ impl Archive for Runtime {
             .archive_size(id, Some(&self.config.core.archive_dir))
     }
 
-    fn archive_in_session(&self, sha256: &str) -> Result<Option<ArchiveHit>> {
+    fn archive_in_session(
+        &self,
+        sha256: &str,
+        context: Option<&str>,
+    ) -> Result<Option<ArchiveHit>> {
         // Errors fail open: the caller prints the body instead of a pointer.
-        match self.store.archive_in_session(&self.session, sha256) {
+        match self
+            .store
+            .archive_in_session(&self.session, sha256, context)
+        {
             Ok(Some((id, turns))) => Ok(Some(ArchiveHit { id, turns })),
             _ => Ok(None),
         }
@@ -347,6 +359,11 @@ impl Archive for Runtime {
 
     fn session_live_archives(&self, session: &str) -> Result<Vec<(String, String, i64)>> {
         self.store.session_live_archives(session)
+    }
+
+    fn put_archive_for(&self, body: &[u8], context: Option<&str>) -> Result<String> {
+        self.store
+            .put_archive_for(&self.session, body, &self.config.core.archive_dir, context)
     }
 }
 
@@ -630,5 +647,31 @@ mod tests {
         cx.log("error", "plugin", "read", "boom");
         assert!(cx.config.log.path.exists(), "file line written, row not");
         let _ = std::fs::remove_file(&cx.config.log.path);
+    }
+
+    /// T127: `identical_result` must not hand a sub-agent a pointer to bytes only a
+    /// different context in the same session archived — that context never saw the body,
+    /// so `expand` would answer for something it never received. The writer's own context
+    /// still dedups its own repeat.
+    #[test]
+    fn identical_result_is_scoped_to_the_writer_context() {
+        let cx = Runtime::in_memory("t127").unwrap();
+        // Long enough to stay past the pointer message's own length (it embeds two
+        // sha256 ids), so a same-context hit actually returns a pointer.
+        let body = "repeated tool output ".repeat(50);
+        let body = body.as_bytes();
+        cx.put_archive_for(body, Some("agent-a")).unwrap();
+        assert!(
+            identical_result(&cx, "cmd", body, Some("agent-b")).is_none(),
+            "a different sub-agent never saw agent-a's body"
+        );
+        assert!(
+            identical_result(&cx, "cmd", body, None).is_none(),
+            "the main window never saw agent-a's body either"
+        );
+        assert!(
+            identical_result(&cx, "cmd", body, Some("agent-a")).is_some(),
+            "agent-a's own repeat still dedups"
+        );
     }
 }

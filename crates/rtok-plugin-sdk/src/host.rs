@@ -208,6 +208,14 @@ pub trait Archive {
     /// Store `body` and return its handle. Storing the same bytes twice returns the same id.
     fn put_archive(&self, body: &[u8]) -> Result<String>;
 
+    /// [`Archive::put_archive`], tagged with the context window that wrote it (T127): a
+    /// sub-agent's `agent_id`, or `None` for the main window — see
+    /// [`Archive::archive_in_session`]. Default drops the context and delegates, so a host
+    /// that has not opted into context scoping needs no change.
+    fn put_archive_for(&self, body: &[u8], _context: Option<&str>) -> Result<String> {
+        self.put_archive(body)
+    }
+
     /// The bytes behind a handle, or `None` if the host no longer has them.
     fn get_archive(&self, id: &str) -> Result<Option<Vec<u8>>>;
 
@@ -234,9 +242,16 @@ pub trait Archive {
     /// Mark an archived blob as expanded by the user; returns how many rows changed.
     fn mark_expanded(&self, archive_id: &str) -> Result<usize>;
 
-    /// The archive row for `sha256` written in this session, if any. Default `Ok(None)`
-    /// so a host that cannot look it up fails open (the caller prints the body).
-    fn archive_in_session(&self, _sha256: &str) -> Result<Option<ArchiveHit>> {
+    /// The archive row for `sha256` written in this session under `context` — a sub-agent's
+    /// `agent_id`, or `None` for the main window (T127). A body one context window archived
+    /// is a hit only for that same window: a different one never saw those bytes, so a
+    /// pointer to them would send the caller to `expand` a body it does not have. Default
+    /// `Ok(None)` so a host that cannot look it up fails open (the caller prints the body).
+    fn archive_in_session(
+        &self,
+        _sha256: &str,
+        _context: Option<&str>,
+    ) -> Result<Option<ArchiveHit>> {
         Ok(None)
     }
 

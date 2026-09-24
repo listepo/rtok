@@ -33,7 +33,6 @@
 - T132. Ship a Haiku scout agent definition with the Claude Code plugin
 - T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?
 
-- T127. A dedup pointer reaches a sub-agent that never saw the body
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
 - T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`

@@ -84,7 +84,7 @@ fn cmd(kind: &str, body: &[u8]) -> usize {
     let mut cfg = rtok::config::Config::default();
     cfg.core.db_path = dir.join("rtok.db");
     cfg.core.archive_dir = dir.join("archive");
-    rtok::plugins::cmd::run::emit_filtered(&cfg, &["fixture".into()], body, 0);
+    rtok::plugins::cmd::run::emit_filtered(&cfg, &["fixture".into()], body, 0, None);
     let cx = rtok::plugin::Runtime::open(cfg, format!("t102-cmd-{kind}")).unwrap();
     let n = match last_ref_id(&cx, "cmd") {
         Some(ref_id) => {
