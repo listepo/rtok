@@ -201,6 +201,10 @@ pub(crate) fn with_stale(cx: &Ctx, root: &Path, text: String) -> Result<String> 
 /// MCP dispatch for the four tools (`mcp.rs` `invoke`). An `Err` becomes an `isError` result.
 pub fn call(cx: &Ctx, name: &str, args: &Value) -> Result<String> {
     let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    // T263: every tool but `outline` walks `root` (index or LSP server).
+    if name != "outline" {
+        crate::plugins::read::walk_root_ok(&root)?;
+    }
     let arg = |k: &str| args[k].as_str().unwrap_or("");
     let filter = Filter {
         path: arg("path").to_string(),

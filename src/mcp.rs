@@ -52,9 +52,18 @@ pub fn run(cfg: &Config) -> Result<()> {
     std::thread::scope(|s| {
         #[cfg(feature = "graph")]
         if let Some(root) = &watch_root {
-            s.spawn(|| {
-                crate::plugins::graph::watch::run(&crate::plugin::Ctx::new(&server.cx), root, &stop)
-            });
+            // T263: never watch `/` or the home directory.
+            if let Err(e) = crate::plugins::read::walk_root_ok(root) {
+                eprintln!("rtok mcp: watcher skipped: {e:#}");
+            } else {
+                s.spawn(|| {
+                    crate::plugins::graph::watch::run(
+                        &crate::plugin::Ctx::new(&server.cx),
+                        root,
+                        &stop,
+                    )
+                });
+            }
         }
         let res: Result<()> = (|| {
             let mut stdin = std::io::stdin().lock();
@@ -137,6 +146,25 @@ const MAX_LINE: u64 = 8 << 20;
 
 fn rpc_error(id: Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
+}
+
+/// T263: the first `file://` root of a `roots/list` answer becomes the cwd, so every tool's
+/// `current_dir()` is the project even when the host launched us in `/` (Claude.app).
+/// Anything else keeps the launch cwd.
+fn apply_roots_response(result: &Value) {
+    let Some(path) = result["roots"].as_array().and_then(|roots| {
+        roots
+            .iter()
+            .filter_map(|r| r["uri"].as_str())
+            .find(|uri| uri.starts_with("file://"))
+            .and_then(|uri| url::Url::parse(uri).ok())
+            .and_then(|url| url.to_file_path().ok())
+    }) else {
+        return;
+    };
+    if path.is_dir() {
+        let _ = std::env::set_current_dir(path);
+    }
 }
 
 /// Protocol dialects `rtok mcp` has been built and tested against, oldest first. Per the
@@ -233,6 +261,8 @@ struct Listed {
 struct Server {
     cx: Runtime,
     listed: Vec<Listed>,
+    /// T263: `initialize` declared `capabilities.roots`.
+    roots_capable: AtomicBool,
 }
 
 impl Server {
@@ -269,7 +299,11 @@ impl Server {
                 t.def.name == "expand" || cfg.mcp.tools.iter().any(|n| n.as_str() == t.def.name)
             });
         }
-        Ok(Self { cx, listed })
+        Ok(Self {
+            cx,
+            listed,
+            roots_capable: AtomicBool::new(false),
+        })
     }
 
     fn tools(&self) -> Vec<Tool> {
@@ -307,14 +341,33 @@ impl Server {
         };
         let method = obj.get("method").and_then(|m| m.as_str()).unwrap_or("");
         if obj.get("id").is_none() || method.starts_with("notifications/") {
+            // T263: the one server-to-client request: ask for roots once the client can answer.
+            if self.roots_capable.load(Ordering::Relaxed)
+                && matches!(
+                    method,
+                    "notifications/initialized" | "notifications/roots/list_changed"
+                )
+            {
+                return Some(json!({"jsonrpc":"2.0","id":"rtok-roots","method":"roots/list"}));
+            }
             return None;
         }
         let id = obj["id"].clone();
         if method.is_empty() {
+            // T263: the answer to our `roots/list` (result or error) is a response, not a request.
+            if id == "rtok-roots" {
+                if let Some(result) = obj.get("result") {
+                    apply_roots_response(result);
+                }
+                return None;
+            }
             return Some(rpc_error(id, -32600, "invalid request"));
         }
         let result = match method {
             "initialize" => {
+                if !req["params"]["capabilities"]["roots"].is_null() {
+                    self.roots_capable.store(true, Ordering::Relaxed);
+                }
                 // Default `Implementation` still comes from rmcp's build env (`name: "rmcp"`).
                 // 3.x types are non_exhaustive; construct via the public builders.
                 let version = negotiate_protocol_version(&req["params"]["protocolVersion"]);
