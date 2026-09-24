@@ -82,6 +82,50 @@ fn latency_hook_post_tool_p95_under_10ms() {
     );
 }
 
+/// T201: guard's `post_tool` used to sha256 + write to disk synchronously on every cached
+/// Read/Bash, and the hook's stdin read was unbounded — a multi-MB `PostToolUse` body paid
+/// two full hashing passes plus disk I/O on top of the JSON parse. With the archive cap in
+/// `src/plugins/guard/mod.rs` and the sha skip in `Store::spill`, only the (unavoidable) JSON
+/// parse is left, so an in-process dispatch of a 5 MB body stays well under this looser bound.
+/// Same debug skip as the p95 gates above: under `just check`'s fully parallel `nextest run`
+/// every logical CPU is busy with other tests, and even this 50 ms budget is not safe from
+/// that contention (measured 152 ms under full-suite load, ~1 ms in isolation) — run with
+/// `cargo test --release --test latency` for a real measurement.
+#[test]
+fn hook_dispatches_a_5mb_post_tool_body_under_50ms() {
+    if cfg!(debug_assertions) {
+        eprintln!("skip: T201 Check is `cargo test --release --test latency`");
+        return;
+    }
+    let tmp = std::env::temp_dir().join(format!("rtok-latency-5mb-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).expect("temp home");
+    let mut cfg = rtok::config::Config::default();
+    cfg.core.db_path = tmp.join("rtok.db");
+    cfg.core.archive_dir = tmp.join("archive");
+
+    let raw = include_str!("fixtures/hooks/post_tool.json");
+    let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
+    v["tool_response"]["stdout"] = serde_json::Value::String("x".repeat(5 * 1024 * 1024));
+    let stdin = serde_json::to_vec(&v).unwrap();
+
+    let mut out = Vec::new();
+    let start = std::time::Instant::now();
+    rtok::hooks::run("PostToolUse", stdin.as_slice(), &mut out, &cfg);
+    let took = start.elapsed();
+
+    assert!(
+        serde_json::from_slice::<serde_json::Value>(&out).is_ok(),
+        "hook must print valid JSON"
+    );
+    assert!(
+        took < Duration::from_millis(50),
+        "5 MB PostToolUse dispatch took {took:?}"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 /// T200: a second connection holding `BEGIN EXCLUSIVE` for 500 ms must not stall
 /// the hook. `hooks::run` fails open through its few-ms lock bound and still
 /// prints valid JSON, well under 100 ms.
