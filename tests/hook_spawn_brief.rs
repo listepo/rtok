@@ -77,6 +77,20 @@ fn brief_of(v: &Value) -> Option<&str> {
     v["hookSpecificOutput"]["additionalContext"].as_str()
 }
 
+/// T131: the `memory`/`brief` row from [`rtok::store::Store::measurement_totals`], if the
+/// home's store has ever recorded one. Opened after the `rtok hook` subprocess exits, from
+/// the same `<home>/config.toml` it wrote through (`Config::load_from` resolves the same
+/// `db_path` the CLI used under `RTOK_HOME`).
+fn brief_measurement(home: &Home) -> Option<rtok::store::MeasurementTotal> {
+    let cfg = rtok::config::Config::load_from(&home.0).expect("config");
+    let cx = rtok::plugin::Runtime::open(cfg, "check").unwrap();
+    cx.store
+        .measurement_totals()
+        .unwrap()
+        .into_iter()
+        .find(|t| t.plugin == "memory" && t.kind == "brief")
+}
+
 #[test]
 fn flag_off_is_a_passthrough() {
     let home = tmp("off");
@@ -109,6 +123,37 @@ fn brief_carries_pointers_an_expand_id_and_stays_under_budget() {
 
     let second = hook(&home, "SubagentStart", &subagent_start(session));
     assert_eq!(first, second, "an unchanged ledger must be byte-stable");
+}
+
+/// T131: a brief that fires must leave exactly one cost `Measurement` row (`plugin: "memory"`,
+/// `kind: "brief"`) with `before = 0` and `after > 0` — a saving that is not a `Measurement`
+/// row does not exist, and the brief is a cost first.
+#[test]
+fn a_fired_brief_writes_exactly_one_cost_measurement() {
+    let home = tmp("measured");
+    enable_spawn_brief(&home);
+    let session = "s-measured";
+    let _ = hook(&home, "PreToolUse", &read_tool(session, "/repo/a.rs"));
+    let out = hook(&home, "SubagentStart", &subagent_start(session));
+    assert!(brief_of(&out).is_some(), "a brief must have fired");
+
+    let m = brief_measurement(&home).expect("a fired brief must leave a Measurement row");
+    assert_eq!(m.rows, 1, "{m:?}");
+    assert_eq!(m.est_before, 0, "{m:?}");
+    assert!(m.est_after > 0, "{m:?}");
+}
+
+/// No brief emitted (flag off, or an empty ledger) → no row: `plugin.rs`'s `record` is only
+/// ever called from inside `build_brief`'s `Some` path.
+#[test]
+fn no_brief_leaves_no_cost_measurement() {
+    let home = tmp("unmeasured");
+    enable_spawn_brief(&home);
+    // Empty ledger: nothing read or edited before `SubagentStart`, so `build_brief` returns
+    // `None` and never reaches `cx.record`.
+    let out = hook(&home, "SubagentStart", &subagent_start("s-unmeasured"));
+    assert!(brief_of(&out).is_none());
+    assert!(brief_measurement(&home).is_none(), "no brief, no row");
 }
 
 #[test]

@@ -75,6 +75,11 @@ pub struct Parsed {
     pub thinking: Vec<ThinkingBlock>,
     pub images: Vec<ImageBlock>,
     pub turns: u32,
+    /// T131: the first `user`-role turn's flattened content, whole. This is where a
+    /// `SubagentStart` spawn brief's `additionalContext` lands in a sub-agent's own
+    /// transcript — whether Claude wraps it as its own record ahead of the task prompt or
+    /// folds it into that prompt, either shape is turn 0 (`ingest`'s `is_turn` counts both).
+    pub first_user_text: Option<String>,
     seen_ids: HashSet<String>,
 }
 
@@ -175,6 +180,9 @@ fn ingest(v: &Value, out: &mut Parsed) {
         out.duplicates += 1;
     }
     let turn = out.turns.saturating_sub(1);
+    if ty == "user" && turn == 0 && out.first_user_text.is_none() {
+        out.first_user_text = Some(flatten_content(msg.get("content")));
+    }
     if ty == "user"
         && v.get("isMeta").and_then(Value::as_bool).unwrap_or(false)
         && let Some(id) = v.get("sourceToolUseID").and_then(Value::as_str)
