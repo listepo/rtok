@@ -157,6 +157,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0022.sql",
         include_str!("../../migrations/0022_call_io_raw_bodies/up.sql"),
     ),
+    (
+        "0023.sql",
+        include_str!("../../migrations/0023_measurements_session_ts/up.sql"),
+    ),
 ];
 
 pub struct Store {
@@ -3685,6 +3689,103 @@ mod tests {
             .unwrap()
             .expect("agent-a still hits its own row");
         assert_eq!(hit.0, sha);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// T210: `measurements` is never pruned (`purge_calls_older_than` keeps it forever), and
+    /// `archive_in_session`'s correlated subquery scans it by `(session, ts)` on every dedup
+    /// hit. `EXPLAIN QUERY PLAN` on the query's real shape (mirroring the Diesel-generated
+    /// SQL: `archive` filtered by `id`/`session`/`agent_id`, joined to the correlated
+    /// `COUNT(*) FROM measurements WHERE session = archive.session AND ts > archive.ts`)
+    /// must show the subquery using `measurements_session_ts`, never a full table scan.
+    #[test]
+    fn archive_in_session_query_plan_uses_the_session_ts_index() {
+        let store = Store::open_in_memory().unwrap();
+        #[derive(QueryableByName)]
+        struct PlanRow {
+            #[diesel(sql_type = Text)]
+            detail: String,
+        }
+        let mut conn = store.lock().unwrap();
+        // Raw SQL: Diesel has no `EXPLAIN QUERY PLAN`, so the query is restated by hand.
+        let rows: Vec<PlanRow> = sql_query(
+            "EXPLAIN QUERY PLAN SELECT archive.id, \
+             (SELECT COUNT(*) FROM measurements \
+              WHERE measurements.session = archive.session AND measurements.ts > archive.ts) \
+             FROM archive \
+             WHERE archive.id = 'x' AND archive.session = 's' AND archive.agent_id IS NULL",
+        )
+        .load(&mut *conn)
+        .unwrap();
+        let plan = rows
+            .iter()
+            .map(|r| r.detail.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            plan.contains("USING COVERING INDEX measurements_session_ts")
+                || plan.contains("USING INDEX measurements_session_ts"),
+            "expected the (session, ts) index on measurements, got: {plan}"
+        );
+        assert!(
+            !plan.contains("SCAN measurements"),
+            "measurements scanned: {plan}"
+        );
+    }
+
+    /// T210: with 100k unrelated `measurements` rows ahead of it, one `archive_in_session`
+    /// lookup must stay a `(session, ts)` index search, not a linear scan — the query-plan
+    /// test above is the hard check; this is a generous, non-flaky wall-clock guard against
+    /// a regression that keeps the plan right but still degrades in practice.
+    #[test]
+    fn archive_in_session_stays_fast_with_100k_measurements() {
+        let store = Store::open_in_memory().unwrap();
+        let dir = std::env::temp_dir().join(format!("rtok-t210-perf-{}", std::process::id()));
+        let sha = store.put_archive("s-target", b"needle", &dir).unwrap();
+
+        {
+            let mut conn = store.lock().unwrap();
+            conn.transaction::<_, anyhow::Error, _>(|conn| {
+                // 1000 rows × 8 binds per statement stays under SQLite's 32766-variable cap.
+                for chunk in (0..100_000i64).collect::<Vec<_>>().chunks(1000) {
+                    let rows: Vec<_> = chunk
+                        .iter()
+                        .map(|&i| {
+                            // Mostly other sessions, so a scan would pay for rows the index skips.
+                            let session = if i % 7 == 0 { "s-target" } else { "s-other" };
+                            (
+                                measurements::ts.eq(i),
+                                measurements::session.eq(session),
+                                measurements::plugin.eq("cmd"),
+                                measurements::kind.eq("rule"),
+                                measurements::before_bytes.eq(1i64),
+                                measurements::after_bytes.eq(1i64),
+                                measurements::est_before.eq(1),
+                                measurements::est_after.eq(1),
+                            )
+                        })
+                        .collect();
+                    diesel::insert_into(measurements::table)
+                        .values(&rows)
+                        .execute(conn)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        }
+
+        let start = std::time::Instant::now();
+        let hit = store
+            .archive_in_session("s-target", &sha, None)
+            .unwrap()
+            .expect("writer session still hits its own row");
+        let elapsed = start.elapsed();
+        assert_eq!(hit.0, sha);
+        assert!(
+            elapsed.as_millis() < 200,
+            "archive_in_session took {elapsed:?} against 100k measurements rows \
+             (index-backed lookup expected)"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 

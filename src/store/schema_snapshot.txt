@@ -10,6 +10,7 @@ index|logs_ts|logs|CREATE INDEX logs_ts ON logs (ts)
 index|measurements_call|measurements|CREATE INDEX measurements_call ON measurements (call_id)
 index|measurements_once|measurements|CREATE UNIQUE INDEX measurements_once ON measurements (once_key)
 index|measurements_plugin|measurements|CREATE INDEX measurements_plugin ON measurements (plugin, ts)
+index|measurements_session_ts|measurements|CREATE INDEX measurements_session_ts ON measurements (session, ts)
 index|note_embeddings_model|note_embeddings|CREATE INDEX note_embeddings_model ON note_embeddings (model)
 index|notes_topic|notes|CREATE UNIQUE INDEX notes_topic ON notes (COALESCE(project, ''), kind, title)
 index|sqlite_autoindex_archive_1|archive|
