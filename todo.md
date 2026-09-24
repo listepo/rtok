@@ -35,7 +35,6 @@
 - T163.8. Retention without raw SQL; close T163
 - T163.9. Window and CTE queries through the shared extension module
 - T178. Hook wall-clock time as Claude Code sees it
-- T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
 - T223. `windows-sys` linked in three versions
 - T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
 - T260. Web Sessions page: live-only filter and a help overlay

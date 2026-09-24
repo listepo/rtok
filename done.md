@@ -6248,6 +6248,15 @@ Result: `site/content/docs/reference/_content.gotmpl` mounts `docs/otel.md` and 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
+### T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
+
+Found 2026-09-22 in the host-plugins pass: `tests/trycmd/agents-list*.toml` match `stdout = """…"""` / `[…]` — wildcards that assert nothing, so a lost host row, a broken block header or a malformed `--json` array all pass and "re-blessing" is a no-op. And `tests/host_docs.rs:20-40` slices `text.split("## Docs").nth(1)` to end-of-file and requires `links >= 1` — a `## Docs` list with zero links passes when any later section has an `https://` line, and nothing checks the links are the host's current config/plugin docs. Both blind spots are why drift like T197's README contradiction survives.
+
+Plan: normalize machine-specific lines and snapshot the remainder per host id (or one Rust test looping `HOSTS` × `variants()` asserting block headers); slice `## Docs` to the next `\n## ` heading and require ≥ 2 links with per-host URL needles (extending the `SKILL_HOSTS` pattern).
+
+Check: deleting one variant from a host's `VARIANTS` fails `cargo nextest run --test cli_trycmd` (or the header-loop test); an emptied `## Docs` list with links only in a later section fails `host_docs`; `RTOK_BLESS=1` re-bless restores; `just check` green.
+
+Result: New tests/agents_list_content.rs asserts every host × variant (literal 26-row table) in agents list text headers and --json rows; host_docs slices ## Docs to the next ## heading, needs ≥2 links and ≥2 on the host's own docs domain (DOC_DOMAINS). Verified by deleting a VARIANTS entry and emptying/mis-domaining a Docs list.
 ### T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 
 Found 2026-09-22 in the store/accounting pass: `inline_body` (`src/store/mod.rs:1823-1828`) stores bodies under the inline cap through `String::from_utf8_lossy` and hashes the *lossy* text, so `request_sha256`/`response_sha256` are not hashes of the wire bytes and `call_io_request` (:736-750) returns U+FFFD-corrupted bytes as if they were the original request. Consumers like `src/measure/cache.rs:106` see different bytes than the proxy sent; the stored sha cannot verify the true payload. Lossless-by-default holds for archived content but not for inline-kept content.

@@ -40,7 +40,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
-| T216 | todo | P3 | 2 | 0% | |
 | T223 | todo | P3 | 2 | 0% | |
 | T235 | todo | P1 | 3 | 0% | |
 | T260 | todo | P2 | 2 | 0% | |
@@ -546,13 +545,6 @@ Already covered: `assert_cmd`, `divan`, `httpmock`, `insta`, `rstest`,
 `testcontainers` / `bolero`/`honggfuzz` only if a measured e2e/fuzz gap appears.
 
 
-### T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
-
-Found 2026-09-22 in the host-plugins pass: `tests/trycmd/agents-list*.toml` match `stdout = """…"""` / `[…]` — wildcards that assert nothing, so a lost host row, a broken block header or a malformed `--json` array all pass and "re-blessing" is a no-op. And `tests/host_docs.rs:20-40` slices `text.split("## Docs").nth(1)` to end-of-file and requires `links >= 1` — a `## Docs` list with zero links passes when any later section has an `https://` line, and nothing checks the links are the host's current config/plugin docs. Both blind spots are why drift like T197's README contradiction survives.
-
-Plan: normalize machine-specific lines and snapshot the remainder per host id (or one Rust test looping `HOSTS` × `variants()` asserting block headers); slice `## Docs` to the next `\n## ` heading and require ≥ 2 links with per-host URL needles (extending the `SKILL_HOSTS` pattern).
-
-Check: deleting one variant from a host's `VARIANTS` fails `cargo nextest run --test cli_trycmd` (or the header-loop test); an emptied `## Docs` list with links only in a later section fails `host_docs`; `RTOK_BLESS=1` re-bless restores; `just check` green.
 
 ### T223. `windows-sys` linked in three versions
 
