@@ -128,6 +128,7 @@ Commands:
   install    Install hooks, MCP server and proxy into a host
   uninstall  Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link [alias:
              remove]
+  update     Bring what rtok installed up to date: in place where it can, reinstalled where not
   list       Every known app: kind and name, path and version, config files, rtok modules
   info       One host: the same block `agents list` prints, just for that app
   sessions   What is running in this project: host, provider, model, tokens, start, run time
@@ -175,6 +176,23 @@ Arguments:
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --dry-run        Print what would be removed and exit
+      --no-restart     Skip closing/reopening a running desktop app around the write (T141)
+  -h, --help           Print help
+
+$ rtok agents update --help
+Bring what rtok installed up to date: in place where it can, reinstalled where not
+
+Usage: rtok agents update [OPTIONS] [HOST]
+
+Arguments:
+  [HOST]  Host(s), comma-separated; omitted = every host rtok is installed in
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --dry-run        Print the planned edits and exit
+      --cli            Only the CLI app (default is all)
+      --desktop        Only the desktop app (default is all)
+      --all            All variants (the default when neither `--cli` nor `--desktop` is given)
       --no-restart     Skip closing/reopening a running desktop app around the write (T141)
   -h, --help           Print help
 
