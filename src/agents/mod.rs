@@ -18,6 +18,7 @@ pub mod gemini;
 pub mod grok;
 pub mod kilo;
 pub mod kimi;
+pub mod mimo;
 pub mod omp;
 pub mod opencode;
 pub mod pi;
@@ -34,6 +35,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use rtok_agent_sdk::NO_CHANGES;
 use rtok_plugin_sdk::Surface;
+use serde_json::json;
 use toml_edit::DocumentMut;
 
 use crate::config::Config;
@@ -57,6 +59,7 @@ pub const HOSTS: &[&str] = &[
     "zed",
     "gemini",
     "codewhale",
+    "mimo",
 ];
 
 /// Every module an rtok install can carry, in print order.
@@ -82,6 +85,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "zed" => Some(&zed::Zed),
         "gemini" => Some(&gemini::Gemini),
         "codewhale" => Some(&codewhale::Codewhale),
+        "mimo" => Some(&mimo::Mimo),
         _ => None,
     }
 }
@@ -914,6 +918,74 @@ pub(crate) fn apply_hook_and_mcp(
     Ok(lines)
 }
 
+/// Register `rtok mcp` under `<key>.rtok` as `{type: "local", command: [..], enabled: true}` —
+/// the local-server shape OpenCode and its MiMo Code fork both read (T186 confirmed the fork
+/// kept it verbatim). One body for both hosts keeps `just dup` from flagging the near-clone.
+pub(crate) fn register_local_mcp(
+    cfg: &Config,
+    path: &std::path::Path,
+    key: &str,
+) -> Result<String> {
+    let cmd = rtok_command();
+    let entry = json!({"type": "local", "command": [cmd.as_str(), "mcp"], "enabled": true});
+    rtok_agent_sdk::register_server(&apply(cfg), path, key, "rtok", entry, &format!("{cmd} mcp"))
+}
+
+/// [`register_local_mcp`]'s remove.
+pub(crate) fn unregister_local_mcp(
+    cfg: &Config,
+    path: &std::path::Path,
+    key: &str,
+) -> Result<String> {
+    rtok_agent_sdk::unregister_server(&apply(cfg), path, key, "rtok")
+}
+
+/// `Agent::installed` for a host whose only module is `mcp`: present iff `path` mentions
+/// `"rtok"`. Shared by every MCP-only host (T186) instead of each repeating the same
+/// contains-check.
+pub(crate) fn installed_mcp_only(path: &std::path::Path) -> Vec<&'static str> {
+    if read(path).contains("\"rtok\"") {
+        vec!["mcp"]
+    } else {
+        Vec::new()
+    }
+}
+
+/// `Agent::apply` for a host whose only module is `mcp`: register/unregister and nothing
+/// else to run. Shared by every MCP-only host (T186) instead of each repeating the same
+/// remove/register-if-enabled/else-no_changes branch.
+pub(crate) fn apply_mcp_only(
+    cfg: &Config,
+    mode: Mode,
+    register: impl FnOnce(&Config) -> Result<String>,
+    unregister: impl FnOnce(&Config) -> Result<String>,
+) -> Result<Vec<String>> {
+    if mode == Mode::Remove {
+        Ok(vec![unregister(cfg)?])
+    } else if cfg.setup.mcp {
+        Ok(vec![register(cfg)?])
+    } else {
+        Ok(vec![rtok_agent_sdk::NO_CHANGES.into()])
+    }
+}
+
+/// `Agent::support` for a host whose only module is `mcp`: the mcp/hooks/proxy/plugin
+/// four-way match every MCP-only host repeats, with just the No-reasons varying. Shared
+/// (T186) instead of each restating the same branch shape.
+pub(crate) fn support_mcp_only(
+    module: &str,
+    hooks_reason: &'static str,
+    proxy_reason: &'static str,
+    plugin_reason: &'static str,
+) -> Support {
+    match module {
+        "mcp" => Support::Yes,
+        "hooks" => Support::No(hooks_reason),
+        "proxy" => Support::No(proxy_reason),
+        _ => Support::No(plugin_reason),
+    }
+}
+
 /// The `ANTHROPIC_BASE_URL` `agent setup claude --proxy` writes, and the one it reads back.
 pub(crate) fn anthropic_proxy_url(cfg: &crate::config::Config) -> String {
     format!("http://{}:{}", cfg.proxy.bind, cfg.proxy.port)
@@ -1132,6 +1204,57 @@ fn ketch_store_plugin(
         }
     }
     None
+}
+
+/// Build a `Config` pointed at a scratch `file` under a fresh temp dir, via `set_path`. Shared
+/// test scaffold (T186) for hosts whose test `cfg()` only needs a tempdir, a `Config::default`,
+/// and `dry_run`/`backup` set — instead of each repeating the same four lines.
+#[cfg(test)]
+pub(crate) fn test_scratch_cfg(
+    host: &str,
+    name: &str,
+    file: &str,
+    dry: bool,
+    set_path: impl FnOnce(&mut Config, PathBuf),
+) -> (Config, PathBuf) {
+    let dir = std::env::temp_dir().join(format!("rtok-{host}-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(file);
+    let mut c = Config::default();
+    set_path(&mut c, path.clone());
+    c.setup.dry_run = dry;
+    c.setup.backup = false;
+    (c, path)
+}
+
+/// Shared assertion for hosts whose MCP entry is OpenCode's local-argv shape
+/// (`{type: "local", command: [rtok, mcp], enabled: true}`, written by [`register_local_mcp`]):
+/// register is idempotent, remove keeps foreign entries, both surface through `installed`.
+/// `opencode` and its MiMo Code fork call this one body instead of duplicating the round-trip
+/// (T186).
+#[cfg(test)]
+pub(crate) fn assert_local_mcp_roundtrip(
+    path: &Path,
+    register: impl Fn() -> Result<String>,
+    unregister: impl Fn() -> Result<String>,
+    installed: impl Fn() -> Vec<&'static str>,
+) {
+    use serde_json::Value;
+    std::fs::write(path, r#"{"mcp":{"other":{"type":"remote","url":"x"}}}"#).unwrap();
+    let first = register().unwrap();
+    assert!(first.starts_with("mcp.rtok: "), "{first}");
+    assert_eq!(register().unwrap(), NO_CHANGES);
+    let root: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(root["mcp"]["rtok"]["type"], "local");
+    assert_eq!(root["mcp"]["rtok"]["command"][1], "mcp");
+    assert_eq!(root["mcp"]["rtok"]["enabled"], true);
+    assert_eq!(installed(), ["mcp"]);
+    assert_eq!(unregister().unwrap(), "- mcp.rtok");
+    assert_eq!(unregister().unwrap(), NO_CHANGES);
+    let root: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    assert!(root["mcp"]["rtok"].is_null(), "{root}");
+    assert_eq!(root["mcp"]["other"]["url"], "x");
 }
 
 #[cfg(test)]

@@ -234,6 +234,8 @@ config_path   = "~/.config/zed/settings.json"
 dir           = "~/.gemini"                  # settings.json (hooks, mcpServers)
 [setup.codewhale]
 dir           = "~/.codewhale"               # config.toml ([[hooks.hooks]]), mcp.json (mcpServers)
+[setup.mimo]
+config_path   = "~/.config/mimocode/mimocode.json" # mcp (OpenCode-fork shape)
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)

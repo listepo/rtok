@@ -1261,6 +1261,27 @@ Top 20 `bash_default` stems by filtered after-bytes:
 
 T50.1 added `[stem]` rules (and golden fixtures) for: `gh`, `pip`, `uv`, `python`, `python3`, `go`, `aws`, `mvn`, `gradle`, `dotnet`, `tsc`, `eslint`, `brew`, `apt`, `cmake`. T58.5 shipped table formatters (one row per object, `kind = formatter`) that beat `Rule::default()` on those fixtures: `docker ps` 3147→1190 vs rule 1311, `kubectl get` 4542→1731 vs rule 1770, `ps aux` 2341→870 vs rule 990 (`tests/cmd_golden/{docker_ps,kubectl_get,ps_aux}`).
 
+### 15.4 MiMo Code host probe (T186, fetched 2026-09-24)
+
+Confirmed against https://github.com/XiaomiMiMo/MiMo-Code, https://mimo.xiaomi.com/mimocode/start,
+`/config-files`, `/config-overrides`, `/mcp-servers`, `/env-vars`, `/tools`: binary `mimo`
+(install via `curl -fsSL https://mimo.xiaomi.com/install | bash`, `powershell -ep Bypass -c
+"irm https://mimo.xiaomi.com/install.ps1 | iex"`, or `npm i -g @mimo-ai/cli`); global config
+`~/.config/mimocode/mimocode.json` (`.jsonc` also accepted), moved by `MIMOCODE_HOME` /
+`MIMOCODE_CONFIG`; project config `.mimocode/mimocode.json`, searched upward, parent-first
+merge. MCP under `mcp.<name>`: local servers are `{type: "local", command: [..], enabled,
+environment?, timeout?}` — the exact shape OpenCode kept from upstream, so `mimo`'s installer
+reuses `opencode`'s `register_mcp`/`unregister_mcp` path (`src/agents/mod.rs::register_local_mcp`,
+factored out in this task to keep `just dup` under budget); remote servers add
+`{type: "remote", url, headers?, oauth?}`, unused here. No documented base-URL/proxy override
+env var — `MIMOCODE_MODELS_URL` only relocates the model manifest fetch, not the API endpoint —
+so `proxy` is `Support::No`. The only hook-shaped mention found is `tool.execute.before`/
+`tool.execute.after` on the Custom Tools page, OpenCode's in-process plugin surface; no
+`/mimocode/plugins` page exists (404) and no `@mimo-ai/plugin` package is documented, so v1
+ships no plugin and `hooks`/`plugin` are both `Support::No` (creator instruction: do not guess
+the plugin package). MiMo Desktop is confirmed to exist (early access, "powered by MiMo Code
+as its core engine") but no separate config path is documented, so no Desktop variant ships.
+
 ## 16. Token savings beyond the shipped surface (2026-09-21)
 
 Creator request: what else can save LLM tokens in an agent product like rtok (AirTalk), after inventorying what already ships. Sources: `plan.md` plugin catalogue, `ideas.md`, §§2/4/6/9–15 of this file, and the in-tree plugins under `src/plugins/`. Vendor % claims stay claims unless marked *measured*.

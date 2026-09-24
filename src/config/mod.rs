@@ -371,6 +371,7 @@ section! {
         zed: SetupZed = SetupZed::default(),
         gemini: SetupGemini = SetupGemini::default(),
         codewhale: SetupCodewhale = SetupCodewhale::default(),
+        mimo: SetupMimo = SetupMimo::default(),
     }
 }
 
@@ -472,6 +473,12 @@ section! {
     /// `[setup.codewhale]` — CodeWhale's `config.toml` (`[[hooks.hooks]]`) and sibling
     /// `mcp.json` live under `dir` (T185, `$CODEWHALE_HOME`).
     SetupCodewhale { dir: PathBuf = p("~/.codewhale") }
+}
+
+section! {
+    /// `[setup.mimo]` — MiMo Code's `mimocode.json` (`mcp`), the OpenCode-fork config file
+    /// (T186, `MIMOCODE_HOME`/`MIMOCODE_CONFIG` move it).
+    SetupMimo { config_path: PathBuf = p("~/.config/mimocode/mimocode.json") }
 }
 
 section! {
@@ -969,6 +976,7 @@ impl Config {
             &mut self.setup.zed.config_path,
             &mut self.setup.gemini.dir,
             &mut self.setup.codewhale.dir,
+            &mut self.setup.mimo.config_path,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.cmd.rules_dir,
             &mut self.plugins.inject.modes_dir,
