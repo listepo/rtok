@@ -18,14 +18,9 @@
 - T95. Cline plugin tree (`plugins/cline/`)
 - T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
-- T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
 
-- T122. A dedup pointer reaches a context that never saw the body
 - T124. Realized `tools_rewrite` saving as a dated `research.md` row
-- T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
 
-- T125. `rtok stats`: thinking-block share — the gate for I-86
-- T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
 - T130.2. Spawn brief: wire the `SubagentStart` hook into the Claude installer, bless docs, add outline ranges
 - T131. Measure the spawn brief: cost row and on/off re-read share
 - T132. Ship a Haiku scout agent definition with the Claude Code plugin
@@ -43,7 +38,6 @@
 - T171. Claude Code sees the rtok MCP server twice
 - T178. Hook wall-clock time as Claude Code sees it
 - T184. rtok never resolves its home to a relative `.rtok`
-- T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 - T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
 - T201. Hook path does unbounded reads and hashes bodies it never archives
 - T204. A panicking plugin is dropped silently — the error never reaches the log
