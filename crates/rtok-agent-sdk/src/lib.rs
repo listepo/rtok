@@ -793,6 +793,11 @@ impl SkillCopy {
                 self.dest.display()
             )),
             SkillPlan::Remove => {
+                if edited_since_marked(&self.dest)
+                    && let Some(leave) = keep_edited(apply, &self.dest.display().to_string())
+                {
+                    return Ok(leave);
+                }
                 let report = if apply.dry_run {
                     format!("- skill {}", self.dest_desc())
                 } else {
@@ -815,6 +820,26 @@ impl SkillCopy {
             }
         }
     }
+}
+
+/// True when something under the owned copy `dest` is newer than its [`OWNED_MARKER`] (T246.4):
+/// [`copy_owned`] writes the marker last, so a later write is the user's — an edited or an
+/// added file. An older rtok's copy is not an edit. An unreadable time proves nothing.
+fn edited_since_marked(dest: &Path) -> bool {
+    fn mtime(p: &Path) -> Option<SystemTime> {
+        fs::metadata(p).and_then(|m| m.modified()).ok()
+    }
+    fn newer(dir: &Path, marked: SystemTime) -> bool {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return false;
+        };
+        entries.flatten().any(|e| {
+            let p = e.path();
+            e.file_name() != OWNED_MARKER
+                && (mtime(&p).is_some_and(|t| t > marked) || (p.is_dir() && newer(&p, marked)))
+        })
+    }
+    mtime(&dest.join(OWNED_MARKER)).is_some_and(|marked| newer(dest, marked))
 }
 
 /// True when every file under `src` sits in `dest` with the same bytes — extra files in
@@ -1789,6 +1814,43 @@ mod tests {
         );
         assert_eq!(copy.run(&apply(), true).unwrap(), NO_CHANGES);
         assert!(foreign.join("SKILL.md").is_file());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T246.4: a skill copy the user wrote to after rtok marked it stays unless `--yes`; with
+    /// no terminal here nobody answers, so the remove leaves it and says why.
+    #[test]
+    fn skill_copy_remove_asks_before_taking_an_edited_copy() {
+        let dir = tmp("skill-edited");
+        let src = dir.join("src");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("SKILL.md"), "hub body\n").unwrap();
+        let dest = dir.join("skills/rtok");
+        let copy = SkillCopy {
+            src,
+            dest: dest.clone(),
+            label: None,
+        };
+        copy.run(&apply(), false).unwrap();
+        let later = SystemTime::now() + std::time::Duration::from_secs(60);
+        let file = fs::File::options()
+            .write(true)
+            .open(dest.join("SKILL.md"))
+            .unwrap();
+        file.set_modified(later).unwrap();
+
+        let out = copy.run(&apply(), true).unwrap();
+        assert!(
+            out.starts_with("leave ") && out.contains("changed by you"),
+            "{out}"
+        );
+        assert!(dest.join("SKILL.md").is_file());
+        let yes = Apply {
+            yes: true,
+            ..apply()
+        };
+        assert!(copy.run(&yes, true).unwrap().starts_with("- skill"));
+        assert!(!dest.exists());
         let _ = fs::remove_dir_all(dir);
     }
 
