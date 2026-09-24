@@ -419,7 +419,8 @@ impl Agent for Claude {
 
     fn installed(&self, cfg: &Config, kind: Kind) -> Vec<&'static str> {
         if kind == Kind::Desktop {
-            return if super::read(&desktop_path()).contains("\"rtok\"") {
+            // The installed plugin serves the Code tab's MCP instead of this file (T243).
+            return if super::read(&desktop_path()).contains("\"rtok\"") || plugin_installed(cfg) {
                 vec!["mcp"]
             } else {
                 vec![]
@@ -455,8 +456,10 @@ impl Agent for Claude {
         if kind == Kind::Desktop {
             let (a, path) = (apply(cfg), desktop_path());
             // `--replace` is about Claude Code's hooks; on the desktop it is a plain install.
+            // The desktop app's Code tab loads this file *and* the Claude Code plugin, so with
+            // the plugin installed the entry would be a second rtok server there (D21, T243).
             return Ok(vec![
-                if remove {
+                if remove || plugin_installed(cfg) {
                     rtok_agent_sdk::unregister_mcp(&a, &path, "rtok")?
                 } else {
                     rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"])?

@@ -5654,3 +5654,16 @@ Result: Migration `0020_notes_topic_unique` drops pre-existing duplicates (newes
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T243. The Claude Code plugin supersedes the Claude Desktop `mcpServers.rtok`
+
+Found 2026-09-24 on this machine: a Claude Code session in the desktop app's Code tab lists two rtok MCP servers — `mcp__plugin_rtok_rtok__*` from the plugin and `mcp__rtok__*` from `claude_desktop_config.json`, which `rtok agents install claude` writes for the Desktop variant. Two servers, two call paths: D21 broken, and the model sees every tool twice. Creator's decision: when the plugin is installed it is the one call path, so the Desktop entry goes (Claude Desktop chat loses rtok MCP).
+
+Result: `Claude::apply`'s Desktop branch unregisters `mcpServers.rtok` instead of writing it while `plugin_installed(cfg)` (the CLI variant runs first, so a fresh plugin install already counts); Desktop `installed()` reports `mcp` when the plugin serves it, so a rerun says `already installed`. README mcp (desktop) row updated. Test `claude_plugin::the_plugin_supersedes_the_desktop_mcp_entry`: desktop-only install writes the entry, a plain install then drops it and keeps a foreign server, a rerun and `--desktop` never write it back. Deviations: `installed()` for Desktop is no longer file-only (plan said it would stay so) — otherwise every rerun would show desktop MCP as missing; the `agents_install` host matrix runs claude with `--cli`, because with the plugin in the desktop variant has nothing to write on the first run.
+
+T171 (same symptom, found in the 2026-09-22 audit) is narrowed to its doctor half.
+
+Check: `cargo nextest --test claude_plugin --test agents_install --test agent_remove` 29/29; `just check` 1619 passed.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5

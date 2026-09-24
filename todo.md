@@ -73,7 +73,6 @@
 - T239. `Measurement` rows match the bytes each surface actually returned
 - T240. Golden files for rule families without one
 - T241. Replay bench: saving over a fixed session corpus
-- T243. The Claude Code plugin supersedes the Claude Desktop `mcpServers.rtok`
 - T244. No surface sees rtok twice after `agents install`
 - T245. One tool call is processed once
 - T246. Removal takes back only what rtok wrote, and asks about what the user changed

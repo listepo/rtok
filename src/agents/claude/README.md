@@ -23,7 +23,7 @@ copied twice.
 | proxy | `--proxy` | `env.ANTHROPIC_BASE_URL` → `http://<bind>:<port>`; opt-in because it routes every request through `rtok proxy` |
 | plugin | yes | runs `claude plugin marketplace add listepo/rtok` (skipped once Claude already knows the `rtok` marketplace) and `claude plugin install rtok@rtok` (remove: `uninstall` + `marketplace remove`); installed by default once `claude` is on PATH — no `--yes` needed; Claude Code loads it in the CLI and the desktop Code tab; while it is installed it is the only call path, so setup strips its own settings-file hooks and `mcpServers.rtok`; a missing or failing `claude` leaves the offer open instead of failing the install |
 | hooks (desktop) | no | Claude Desktop has no hook events |
-| mcp (desktop) | yes | `mcpServers.rtok` → `<abs rtok> mcp` in `claude_desktop_config.json` |
+| mcp (desktop) | yes | `mcpServers.rtok` → `<abs rtok> mcp` in `claude_desktop_config.json`; skipped (and a leftover entry removed) while the Claude Code plugin is installed, because the desktop Code tab loads this file and the plugin both (T243) |
 | proxy (desktop) | no | Claude Desktop has no base-URL setting; its requests do not pass through the proxy |
 | plugin (desktop) | no | Claude Desktop loads MCP from claude_desktop_config.json; there is no plugin directory to link |
 

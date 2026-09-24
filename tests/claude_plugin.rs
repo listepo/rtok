@@ -7,8 +7,38 @@
 
 mod common;
 
-use common::agents::{claude_log, rtok, tmp, write_cfg};
+use common::agents::{claude_desktop_config, claude_log, json, rtok, tmp, write_cfg};
 use std::fs;
+
+/// T243: the desktop app's Code tab loads `claude_desktop_config.json` and the Claude Code
+/// plugin both, so with the plugin installed a desktop `mcpServers.rtok` is a second rtok
+/// server there. A plain install drops a leftover entry and keeps the foreign ones.
+#[test]
+fn the_plugin_supersedes_the_desktop_mcp_entry() {
+    let home = tmp("claude-plugin-desktop");
+    let cfg = write_cfg(&home);
+    let file = claude_desktop_config(&home);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, r#"{"mcpServers":{"foreign":{"command":"x"}}}"#).unwrap();
+
+    // Desktop alone, no plugin yet: the entry is written.
+    rtok(&["agents", "install", "claude", "--desktop"], &cfg, &home);
+    assert!(json(&file)["mcpServers"]["rtok"].is_object());
+
+    // Both variants: the CLI installs the plugin first, then the desktop entry goes.
+    let out = rtok(&["agents", "install", "claude"], &cfg, &home);
+    assert!(out.contains("+ plugin plugins/claude → rtok@rtok"), "{out}");
+    let servers = json(&file);
+    assert!(servers["mcpServers"]["rtok"].is_null(), "{servers}");
+    assert!(servers["mcpServers"]["foreign"].is_object(), "{servers}");
+
+    // A rerun, or the desktop alone, never writes it back while the plugin is installed.
+    let again = rtok(&["agents", "install", "claude"], &cfg, &home);
+    assert!(again.contains("already installed"), "{again}");
+    rtok(&["agents", "install", "claude", "--desktop"], &cfg, &home);
+    assert!(json(&file)["mcpServers"]["rtok"].is_null());
+    let _ = fs::remove_dir_all(&home);
+}
 
 #[test]
 fn dry_run_offers_the_claude_commands_and_runs_nothing() {
