@@ -361,6 +361,7 @@ export component MainWindow inherits Window {
     in-out property <string> config-view;
     in-out property <string> config-filter;
     callback filter-config(string);
+    in property <string> services-text;
     in-out property <[string]> logs;
     in property <string> skills-header;
     in-out property <[SkillRow]> skills;
@@ -797,6 +798,17 @@ export component MainWindow inherits Window {
                     }
                     BodyText {
                         text: root.config-view;
+                    }
+                }
+
+                if page-id == "services": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-2;
+                    TitleText {
+                        text: "services";
+                    }
+                    BodyText {
+                        text: services-text;
                     }
                 }
             }
