@@ -16,10 +16,14 @@ use std::path::Path;
 #[test]
 fn cli() {
     let cases = trycmd::TestCases::new();
-    cases.case("tests/trycmd/*.toml").case("tests/trycmd/*.trycmd");
+    cases
+        .case("tests/trycmd/*.toml")
+        .case("tests/trycmd/*.trycmd");
     // POSIX-only by design: `/bin/echo`, `SHELL=/bin/sh` and `cat` do not exist on Windows (T83.7).
     if cfg!(windows) {
-        cases.skip("tests/trycmd/run.toml").skip("tests/trycmd/expand.trycmd");
+        cases
+            .skip("tests/trycmd/run.toml")
+            .skip("tests/trycmd/expand.trycmd");
     }
 }
 
