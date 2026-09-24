@@ -166,7 +166,8 @@ fn raw_with_path(args: &[&str], cfg: &Path, home: &Path, path: std::ffi::OsStrin
 /// A fake `claude` (T115) and a fake `codex` (T140) first on PATH, so no test ever runs
 /// either real CLI: `claude` answers the detection probe (`--version`), appends every other
 /// argv to `<home>/claude.log` and keeps `<config dir>/plugins/installed_plugins.json` the way
-/// `claude plugin install` / `uninstall` do; `codex` answers `--version` and edits
+/// `claude plugin install` / `uninstall` / `update` do (`update` fails while
+/// `<home>/fake-claude-fail-update` exists, T242.3); `codex` answers `--version` and edits
 /// `${CODEX_HOME:-$HOME/.codex}/config.toml`'s `[marketplaces.rtok]` / `[plugins."rtok@rtok"]`
 /// tables the way `codex plugin marketplace add|remove` / `plugin add|remove` do, including the
 /// real CLI's "already added from a different source" error on a second `marketplace add` with
@@ -254,6 +255,10 @@ case "$*" in
   "plugin install rtok@rtok") mkdir -p "$plugins"
     printf '{"version":2,"plugins":{"rtok@rtok":[{"scope":"user"}]}}' > "$plugins/installed_plugins.json" ;;
   "plugin uninstall rtok@rtok") rm -f "$plugins/installed_plugins.json" ;;
+  "plugin update rtok@rtok")
+    [ -f "$HOME/fake-claude-fail-update" ] && { echo "update failed" >&2; exit 1; }
+    mkdir -p "$plugins"
+    printf '{"version":2,"plugins":{"rtok@rtok":[{"scope":"user","version":"latest"}]}}' > "$plugins/installed_plugins.json" ;;
 esac
 "#,
             )
@@ -295,6 +300,11 @@ if "%ALLARGS%"=="plugin install rtok@rtok" (
 )
 if "%ALLARGS%"=="plugin uninstall rtok@rtok" (
   del /f /q "%PLUGINS%\installed_plugins.json" 2>nul
+)
+if "%ALLARGS%"=="plugin update rtok@rtok" (
+  if exist "%HOME%\fake-claude-fail-update" (echo update failed 1>&2 & exit /b 1)
+  mkdir "%PLUGINS%" 2>nul
+  >"%PLUGINS%\installed_plugins.json" echo {"version":2,"plugins":{"rtok@rtok":[{"scope":"user","version":"latest"}]}}
 )
 "#,
             )

@@ -5621,3 +5621,12 @@ Result: `rtok agents update [host,…]` (`--dry-run`, `--cli/--desktop/--all`, `
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+
+### T242.3. Claude plugin: `update` first, reinstall when update fails
+
+After T242.2. Under `Mode::Update` with `rtok@rtok` installed from the GitHub marketplace, run `claude plugin marketplace update rtok` then `claude plugin update rtok@rtok` (both exist in Claude Code's CLI, checked 2026-09-24: `plugin update <plugin>` "Update a plugin to the latest version"). If either fails, fall back to `plugin uninstall rtok@rtok` + `plugin install rtok@rtok`; a stale marketplace keeps T139's re-point path. Fake `claude` in `tests/common/agents.rs` learns `plugin update` / `marketplace update` and a `FAKE_CLAUDE_FAIL=update` switch. Check: argv log order for both paths, `installed_plugins.json` rewritten, plain `install` unchanged (still a no-op when installed).
+
+Result: under `Mode::Update`, with `rtok@rtok` installed and the `rtok` marketplace on GitHub, `claude::plugin_update` runs `claude plugin marketplace update rtok` then `claude plugin update rtok@rtok`; if either fails it runs `plugin uninstall` + `plugin install` and reports `~ plugin rtok@rtok reinstalled (update failed: …)`. Claude's `installed_plugins.json` is compared before and after, so an update that found nothing new is `NO_CHANGES` (`already current`). No `--yes` is passed: accepting a changed marketplace-declared command stays the user's decision; a non-TTY refusal takes the reinstall path. A stale marketplace or a missing plugin still goes through T139's `plugin()` path; plain `install` over an installed plugin is still a no-op. Fake `claude` answers `plugin update` (fails while `<home>/fake-claude-fail-update` exists). e2e in `tests/agents_update.rs`: in-place update argv and changed record, then `already current`; failing update → the four-call reinstall; `install` calls nothing.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5

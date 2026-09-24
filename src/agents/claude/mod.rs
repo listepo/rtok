@@ -402,6 +402,54 @@ fn plugin(cfg: &Config, remove: bool) -> Result<String> {
     })
 }
 
+/// `agents update` over a plugin already installed from the GitHub marketplace (T242.3):
+/// refresh the marketplace and `claude plugin update` in place; if either step fails,
+/// reinstall (`uninstall` + `install`). No `--yes`: accepting a changed marketplace-declared
+/// command stays the user's call, and a non-TTY refusal just takes the reinstall path.
+/// Claude's own `installed_plugins.json` is the evidence — unchanged bytes read as
+/// [`NO_CHANGES`], so an update that found nothing new says `already current`.
+fn plugin_update(cfg: &Config) -> Result<String> {
+    const UPDATE: [&[&str]; 2] = [
+        &["plugin", "marketplace", "update", "rtok"],
+        &["plugin", "update", PLUGIN_ID],
+    ];
+    const REINSTALL: [&[&str]; 2] = [
+        &["plugin", "uninstall", PLUGIN_ID],
+        &["plugin", "install", PLUGIN_ID],
+    ];
+    let shown = |steps: &[&[&str]]| {
+        steps
+            .iter()
+            .map(|s| format!("claude {}", s.join(" ")))
+            .collect::<Vec<_>>()
+            .join(" && ")
+    };
+    if apply(cfg).dry_run {
+        return Ok(format!("~ plugin {PLUGIN_ID} ({})", shown(&UPDATE)));
+    }
+    if super::find_on_path("claude").is_none() {
+        return Ok(NO_CHANGES.into());
+    }
+    let record = config_dir(cfg).join("plugins/installed_plugins.json");
+    let before = super::read(&record);
+    let Err(e) = UPDATE.iter().try_for_each(|s| claude_cli(cfg, s)) else {
+        return Ok(if super::read(&record) == before {
+            NO_CHANGES.into()
+        } else {
+            format!("~ plugin {PLUGIN_ID} updated")
+        });
+    };
+    match REINSTALL.iter().try_for_each(|s| claude_cli(cfg, s)) {
+        Ok(()) => Ok(format!(
+            "~ plugin {PLUGIN_ID} reinstalled (update failed: {e})"
+        )),
+        Err(e2) => Ok(format!(
+            "offer {PLUGIN_SRC} → {} (claude failed: {e2})",
+            shown(&REINSTALL)
+        )),
+    }
+}
+
 /// Where Claude Desktop reads `mcpServers`: its own file, not `~/.claude.json`.
 pub fn desktop_path() -> PathBuf {
     let home = super::home_dir();
@@ -552,7 +600,14 @@ impl Agent for Claude {
                 // singleton), so the settings-file hooks and MCP are stripped, not added —
                 // judged by Claude's own record, so a dry run or a declined offer still gets
                 // the settings-file install.
-                let mut lines = vec![plugin(cfg, false)?];
+                let current = mode == Mode::Update
+                    && plugin_installed(cfg)
+                    && marketplace_state(cfg) == MarketplaceState::Github;
+                let mut lines = vec![if current {
+                    plugin_update(cfg)?
+                } else {
+                    plugin(cfg, false)?
+                }];
                 if plugin_installed(cfg) {
                     lines.push(run(cfg, true)?);
                     lines.push(unregister_mcp(cfg)?);
