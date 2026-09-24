@@ -77,15 +77,25 @@ fn cursor_remove_strips_hooks_mcp_and_plugin_link() {
     let hooks = home.join(".cursor/hooks.json");
     let mcp = home.join(".cursor/mcp.json");
     fs::write(&mcp, r#"{"mcpServers":{"foreign":{"command":"x"}}}"#).unwrap();
+    // A pre-plugin install left our hook beside a foreign one.
+    fs::write(
+        &hooks,
+        r#"{"version":1,"hooks":{"beforeShellExecution":[{"command":"rtok hook PreToolUse --host cursor"},{"command":"foreign"}]}}"#,
+    )
+    .unwrap();
 
     rtok(&["agents", "install", "cursor", "--yes"], &cfg, &home);
-    assert!(fs::read_to_string(&hooks).unwrap().contains("rtok hook"));
     let link = home.join(".cursor/plugins/local/rtok");
     assert!(link.symlink_metadata().is_ok(), "plugin linked");
+    // The plugin carries the hooks, so `hooks.json` keeps none of ours (D21, T244).
+    let left = fs::read_to_string(&hooks).unwrap();
+    assert!(!left.contains("rtok hook"), "{left}");
+    assert!(left.contains("foreign"), "{left}");
 
     rtok(&["agents", "remove", "cursor"], &cfg, &home);
     let left = fs::read_to_string(&hooks).unwrap();
     assert!(!left.contains("rtok hook"), "{left}");
+    assert!(left.contains("foreign"), "{left}");
     assert!(link.symlink_metadata().is_err(), "plugin link unlinked");
     let servers = json(&mcp);
     assert!(servers["mcpServers"]["rtok"].is_null(), "{servers}");

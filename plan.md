@@ -84,7 +84,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T229 | todo | P2 | 2 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
 | T241 | todo | P2 | 3 | 0% | |
-| T244 | todo | P1 | 3 | 0% | |
 | T245 | todo | P2 | 3 | 0% | |
 | T246 | todo | P1 | 4 | 0% | |
 
@@ -529,14 +528,6 @@ The golden and surface tests measure one call at a time; no test shows the savin
 Plan: `tests/fixtures/replay/session.jsonl` — about 30 anonymised hook payloads shaped like a real Claude Code session (tool mix taken from `rtok stats` on this machine, bodies written or scrubbed by hand; no real paths, names or secrets). `tests/replay_bench.rs` feeds them through `rtok hook` in a temp home, sums the `Measurement` rows, prints a per-plugin table (`--nocapture`) and asserts the total saving stays over a floor set a few points below the first run. Record the first run as a dated `research.md` §2 row with the command.
 
 Check: the test fails when a plugin is disabled in the temp config; the `research.md` row cites the command; `just check` green. Needs T239.
-
-### T244. No surface sees rtok twice after `agents install`
-
-Generalises T243 to every host (creator request 2026-09-24): no test checks that one agent surface (CLI, desktop app, the desktop app's Code tab, IDE extension) ends up with at most one rtok MCP server and at most one rtok hook per event, counting every place that surface reads — plugin, user config, desktop config.
-
-Plan: `tests/singleton.rs` — for each host in `rtok agents list`, a temp home with fake bins/apps for all variants, `rtok agents install <host> --yes`, then a per-host table of which files and plugin dirs each surface loads (taken from each host's `README.md` `## Docs`), and assert rtok MCP entries ≤ 1 and rtok hook commands per event ≤ 1 per surface. Run install twice to catch appends. A host whose surfaces cannot be faked is listed in the test with the reason.
-
-Check: the test fails on `main` before T243 for Claude and passes after; `just check` green. Needs T243.
 
 ### T245. One tool call is processed once
 

@@ -5738,3 +5738,16 @@ Result: goldens added for `curl` (measured 22%, floor 19%), `node` (16% → 13%)
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T244. No surface sees rtok twice after `agents install`
+
+Generalises T243 to every host (creator request 2026-09-24): no test checks that one agent surface (CLI, desktop app, the desktop app's Code tab, IDE extension) ends up with at most one rtok MCP server and at most one rtok hook per event, counting every place that surface reads — plugin, user config, desktop config.
+
+Plan: `tests/singleton.rs` — for each host in `rtok agents list`, a temp home with fake bins/apps for all variants, `rtok agents install <host> --yes`, then a per-host table of which files and plugin dirs each surface loads (taken from each host's `README.md` `## Docs`), and assert rtok MCP entries ≤ 1 and rtok hook commands per event ≤ 1 per surface. Run install twice to catch appends. A host whose surfaces cannot be faked is listed in the test with the reason.
+
+Result: `tests/singleton.rs` installs all 17 hosts into one home twice — once with the Claude Code plugin (fake `claude`), once with Claude's settings files — then reads every variant's `config` and plugin state from `agents info --json`. It counts rtok MCP servers and rtok hooks per host event and matcher over each surface's files, the installed plugin's JSON under `plugins/`, and the cross-loads: the desktop Code tab loads Claude Code's files and plugin, and Grok `[compat.claude]` loads Claude's files. The test found three real duplicates, all fixed here: (1) Claude Desktop in plugin mode, fixed by T243 (the test fails on `main` before it); (2) Claude Desktop without the plugin — the Code tab loads `claude_desktop_config.json` and `~/.claude.json` both — so the Desktop branch now skips while `code_serves_mcp` (plugin, or `mcpServers.rtok` in `~/.claude.json`); (3) Cursor wrote its `hooks.json` hooks next to the linked plugin, which carries the same events, so every shell command fired rtok twice. `apply` now links the plugin first and strips our `hooks.json` entries while it is linked, keeping foreign ones; `installed()` reports hooks through the plugin. Updated: Cursor and Claude README rows, the `agents_install` host matrix (cursor writes no file with the plugin), and `agent_remove::cursor_remove_strips_hooks_mcp_and_plugin_link` (a leftover rtok hook is stripped on install and a foreign one is kept). Deviations: surfaces come from `agents info --json` rather than a hand-kept path table; VS Code and VS Code Insiders are one variant with two files, so each file is its own surface there; OMP's linked Pi extension leaves `registerTool` off, so it counts as carrying no MCP; the PR is over the 200-LOC guide (the test alone is about 300 lines after rustfmt, most of it the JSON/TOML walker), and half a walker would check nothing.
+
+Check: `cargo nextest --test singleton --test cursor_plugin --test agents_install --test claude_plugin --test agent_remove` green; `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5

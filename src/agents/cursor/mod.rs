@@ -89,7 +89,8 @@ impl Agent for Cursor {
         // that (rightly) left it alone.
         let plugin = PLUGIN.ours(cfg);
         let mut out = Vec::new();
-        if h.contains("rtok hook") {
+        // The linked plugin serves the hooks too (D21), and setup then strips `hooks.json`.
+        if h.contains("rtok hook") || plugin {
             out.push("hooks");
         }
         // The linked plugin serves the MCP itself (D21), and setup then skips `mcp.json`.
@@ -104,7 +105,10 @@ impl Agent for Cursor {
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
         let remove = mode == Mode::Remove;
-        let mut lines = vec![run(cfg, remove)?, offer_plugin(cfg, remove)?];
+        // Plugin first: once linked it carries the same hook events, so `hooks.json` keeps
+        // none of ours or every shell command would fire rtok twice (D21, T244).
+        let plugin = offer_plugin(cfg, remove)?;
+        let mut lines = vec![run(cfg, remove || PLUGIN.ours(cfg))?, plugin];
         if remove {
             lines.push(unregister_mcp(cfg)?);
         } else if cfg.setup.mcp && !plugin_is_mcp(cfg, remove) {
