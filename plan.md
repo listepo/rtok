@@ -9,7 +9,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T83.2 | todo | P1 | 3 | 0% | |
 | T83.4 | todo | P1 | 3 | 0% | |
 | T83.7 | todo | P1 | 2 | 0% | |
-| T83.11 | in progress | P1 | 3 | 10% | Claude Code / claude-opus-5-5 |
 | T83.12 | todo | P1 | 3 | 0% | |
 | T83.13 | todo | P1 | 3 | 0% | |
 | T83.14 | todo | P1 | 3 | 0% | |
@@ -52,14 +51,6 @@ Check: the ten tests pass in the `windows` CI job; `just check` stays green.
 ### T83.7. `cli_trycmd::cli` fails on Windows
 
 The `trycmd`-driven CLI snapshot test likely diffs on path separators, line endings, or a Unix-only fixture. Decide whether `rtok`'s own output needs a Windows-safe rendering or the `.toml`/`.stdout` fixtures need a Windows variant. One family split out of the original T83; see T83.2 for the closing criterion.
-
-Check: the test passes in the `windows` CI job; `just check` stays green.
-
-### T83.11. `plugins::cmd::run::tests::identical_output_from_different_commands_dedups` fails on Windows (dedup count 1 ≠ 0)
-
-From run 35576438155 (2026-09-21, after T93). The dedup path in `plugins/cmd/run.rs` counted 1 where the test expects 0 — a real behavior difference, not obviously a path/shell issue like T83.2's family. Read the dedup key construction and decide whether it hashes something platform-dependent (e.g. a path or line ending) that makes two "identical" commands look different on Windows, or the test's identical-output premise doesn't hold there. One family split out of the original T83; see T83.2 for the closing criterion.
-Found 2026-09-25: not the dedup key. The test builds its two "different commands" in POSIX shell — `printf` with an 80-line argument, then `sh -c "printf '%s\n' '…'"` — and on Windows `rtok run` goes through cmd.exe, where a newline ends the command line, so the two outputs differ and nothing dedups.
-Plan: `src/plugins/cmd/run.rs` test only — write the payload to two files and print each with the host's own file printer (`type` under cmd.exe, `cat` elsewhere): different argv, identical bytes, no POSIX syntax. Drop the test's line from `.config/nextest.toml`.
 
 Check: the test passes in the `windows` CI job; `just check` stays green.
 
