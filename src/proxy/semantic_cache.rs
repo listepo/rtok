@@ -23,6 +23,11 @@ pub struct CachePrompt {
     pub messages: Vec<(String, String)>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools_fingerprint: Option<String>,
+    /// Every other top-level request field (T212): `max_tokens`, `temperature`, `top_p`,
+    /// `tool_choice`, `thinking`, stop sequences, and anything else neither excluded nor
+    /// already covered by its own field above. Canonicalized (see `canonical_json`) so
+    /// key order alone never splits the cache.
+    pub params: Value,
 }
 
 pub struct CacheHit {
@@ -163,6 +168,7 @@ pub fn build_prompt(wire: &dyn Wire, body: &Value, cfg: &SemanticCache) -> Optio
         system: system_text(body),
         messages: messages_text(body),
         tools_fingerprint: tools_fingerprint(body),
+        params: extra_params(body),
     })
 }
 
@@ -385,6 +391,10 @@ fn block_text(b: &Value) -> String {
     }
 }
 
+/// Hashes each tool's full definition (T212), not just its name: Anthropic's
+/// `{name, description, input_schema}` and OpenAI Chat's `{type, function: {name,
+/// description, parameters}}` alike, so two tools sharing a name but differing in
+/// schema no longer collide. Canonicalized per tool so key order does not split it.
 fn tools_fingerprint(body: &Value) -> Option<String> {
     let tools = body.get("tools")?.as_array()?;
     if tools.is_empty() {
@@ -392,12 +402,51 @@ fn tools_fingerprint(body: &Value) -> Option<String> {
     }
     let mut h = Sha256::new();
     for t in tools {
-        if let Some(name) = t.get("name").and_then(Value::as_str) {
-            h.update(name.as_bytes());
-            h.update([0]);
-        }
+        h.update(serde_json::to_vec(&canonical_json(t)).unwrap_or_default());
+        h.update([0]);
     }
     Some(hex8(&h.finalize().into()))
+}
+
+/// Top-level request fields excluded from `extra_params`: `messages` (hashed
+/// separately, block-aware), `model`/`system`/`tools` (each already its own
+/// `CachePrompt` field, `model` gated by `cache_by_model`), `stream` (requests that
+/// set it never reach the cache — see `eligible`), and per-request tracking ids that
+/// do not affect generation (Anthropic `metadata.user_id`, OpenAI `user`).
+const EXCLUDED_PARAM_FIELDS: [&str; 7] = [
+    "messages", "model", "system", "tools", "stream", "metadata", "user",
+];
+
+/// Every other top-level request field — `max_tokens`, `temperature`, `top_p`,
+/// `tool_choice`, `thinking`, stop sequences, and so on — folded into the cache key
+/// (T212), canonicalized so key order alone never splits the cache.
+fn extra_params(body: &Value) -> Value {
+    let Some(map) = body.as_object() else {
+        return Value::Object(Default::default());
+    };
+    let filtered: serde_json::Map<String, Value> = map
+        .iter()
+        .filter(|(k, _)| !EXCLUDED_PARAM_FIELDS.contains(&k.as_str()))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    canonical_json(&Value::Object(filtered))
+}
+
+/// Recursively sorts object keys (array order is meaningful and left alone) so two
+/// JSON payloads differing only in key order hash identically (T212).
+fn canonical_json(v: &Value) -> Value {
+    match v {
+        Value::Object(map) => {
+            let sorted: std::collections::BTreeMap<&String, &Value> = map.iter().collect();
+            let mut out = serde_json::Map::with_capacity(map.len());
+            for (k, val) in sorted {
+                out.insert(k.clone(), canonical_json(val));
+            }
+            Value::Object(out)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonical_json).collect()),
+        other => other.clone(),
+    }
 }
 
 /// Everything but the last user message, hashed. The semantic tier compares only prompts
@@ -542,6 +591,134 @@ mod tests {
         let pa = build_prompt(wire, &body(&"aB3dE5g7".repeat(600)), &cfg).unwrap();
         let pb = build_prompt(wire, &body(&"7g5E3dBa".repeat(600)), &cfg).unwrap();
         assert_ne!(canonical_hash(&pa), canonical_hash(&pb));
+    }
+
+    /// T212: `max_tokens`/`temperature`/`top_p`/`tool_choice`/`thinking`/`stop_sequences`
+    /// must join the cache key — a hit on these fields alone used to replay a wrong
+    /// answer (a temperature-0 extraction sharing an entry with a temperature-1
+    /// brainstorm). Key order and request-tracking ids must not, though.
+    #[test]
+    fn sampling_params_join_the_cache_key() {
+        let wire = crate::proxy::wire::for_path("/v1/messages").unwrap();
+        let cfg = SemanticCache::default();
+        let body_with = |field: &str, value: Value| {
+            let mut body = serde_json::json!({
+                "model": "m",
+                "messages": [{"role": "user", "content": "hi"}]
+            });
+            body[field] = value;
+            body
+        };
+        let hash_of = |field: &str, value: Value| {
+            canonical_hash(&build_prompt(wire, &body_with(field, value), &cfg).unwrap())
+        };
+        assert_ne!(
+            hash_of("max_tokens", serde_json::json!(256)),
+            hash_of("max_tokens", serde_json::json!(1024))
+        );
+        assert_ne!(
+            hash_of("temperature", serde_json::json!(0.0)),
+            hash_of("temperature", serde_json::json!(1.0))
+        );
+        assert_ne!(
+            hash_of("top_p", serde_json::json!(0.1)),
+            hash_of("top_p", serde_json::json!(0.9))
+        );
+        assert_ne!(
+            hash_of("tool_choice", serde_json::json!({"type": "auto"})),
+            hash_of("tool_choice", serde_json::json!({"type": "none"}))
+        );
+        assert_ne!(
+            hash_of(
+                "thinking",
+                serde_json::json!({"type": "enabled", "budget_tokens": 1024})
+            ),
+            hash_of("thinking", serde_json::json!({"type": "disabled"}))
+        );
+        assert_ne!(
+            hash_of("stop_sequences", serde_json::json!(["a"])),
+            hash_of("stop_sequences", serde_json::json!(["b"]))
+        );
+
+        // Key order alone must not split the cache.
+        let a = serde_json::json!({
+            "model": "m", "max_tokens": 256, "temperature": 0.5,
+            "messages": [{"role": "user", "content": "hi"}]
+        });
+        let b = serde_json::json!({
+            "temperature": 0.5, "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 256, "model": "m"
+        });
+        assert_eq!(
+            canonical_hash(&build_prompt(wire, &a, &cfg).unwrap()),
+            canonical_hash(&build_prompt(wire, &b, &cfg).unwrap()),
+            "key order alone must not split the cache"
+        );
+
+        // A request-tracking id that does not affect generation must not split it.
+        let with_uid = |uid: &str| {
+            serde_json::json!({
+                "model": "m", "messages": [{"role": "user", "content": "hi"}],
+                "metadata": {"user_id": uid}
+            })
+        };
+        assert_eq!(
+            canonical_hash(&build_prompt(wire, &with_uid("u1"), &cfg).unwrap()),
+            canonical_hash(&build_prompt(wire, &with_uid("u2"), &cfg).unwrap()),
+            "metadata.user_id must not split the cache"
+        );
+    }
+
+    /// T212: `tools_fingerprint` used to hash tool *names* only, so two tools sharing
+    /// a name but differing in schema hashed equal. Full definitions must join the
+    /// key now, on both the Anthropic and OpenAI Chat tool shapes, order-independent.
+    #[test]
+    fn tool_schemas_join_the_cache_key() {
+        let wire = crate::proxy::wire::for_path("/v1/messages").unwrap();
+        let cfg = SemanticCache::default();
+        let body = |schema: Value| {
+            serde_json::json!({
+                "model": "m",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": [{"name": "run", "description": "run it", "input_schema": schema}]
+            })
+        };
+        let narrow = serde_json::json!({"type": "object", "properties": {}});
+        let wide = serde_json::json!({"type": "object", "properties": {"cmd": {"type": "string"}}});
+        let pa = build_prompt(wire, &body(narrow.clone()), &cfg).unwrap();
+        let pb = build_prompt(wire, &body(wide.clone()), &cfg).unwrap();
+        assert_ne!(canonical_hash(&pa), canonical_hash(&pb));
+
+        let chat = crate::proxy::wire::for_path("/v1/chat/completions").unwrap();
+        let chat_body = |params: Value| {
+            serde_json::json!({
+                "model": "m",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": [{"type": "function", "function": {"name": "run", "parameters": params}}]
+            })
+        };
+        let ca = build_prompt(chat, &chat_body(narrow), &cfg).unwrap();
+        let cb = build_prompt(chat, &chat_body(wide), &cfg).unwrap();
+        assert_ne!(canonical_hash(&ca), canonical_hash(&cb));
+
+        // Key order within a tool definition alone must not split the cache.
+        let t1 = serde_json::json!(
+            {"name": "run", "description": "d", "input_schema": {"type": "object"}}
+        );
+        let t2 = serde_json::json!(
+            {"input_schema": {"type": "object"}, "name": "run", "description": "d"}
+        );
+        let pt1 = build_prompt(wire, &body_with_tools(vec![t1]), &cfg).unwrap();
+        let pt2 = build_prompt(wire, &body_with_tools(vec![t2]), &cfg).unwrap();
+        assert_eq!(canonical_hash(&pt1), canonical_hash(&pt2));
+    }
+
+    fn body_with_tools(tools: Vec<Value>) -> Value {
+        serde_json::json!({
+            "model": "m",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": tools
+        })
     }
 
     #[test]
