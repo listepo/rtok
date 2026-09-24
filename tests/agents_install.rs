@@ -39,6 +39,9 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             Some(home.join(".config/kilo/kilo.json")),
         ),
         ("pi", vec!["--yes"], None),
+        // omp (a pi fork) keeps `default_install: false` (T164 left it asking): `--yes`
+        // is required, not just kept for symmetry, or the plugin offer never links.
+        ("omp", vec!["--yes"], Some(home.join(".omp/agent/mcp.json"))),
         (
             "zcode",
             vec!["--yes"],

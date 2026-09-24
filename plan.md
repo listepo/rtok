@@ -47,7 +47,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T204 | todo | P3 | 2 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
 | T213 | todo | P3 | 2 | 0% | |
-| T215 | todo | P2 | 2 | 0% | |
 | T216 | todo | P3 | 2 | 0% | |
 | T218 | todo | P2 | 2 | 0% | |
 | T221 | todo | P2 | 2 | 0% | |
@@ -619,14 +618,6 @@ Found 2026-09-22 in the surfaces pass: `initialize` (`src/mcp.rs:208-231`) disca
 Plan: return the client's `protocolVersion` when supported (else a pinned constant) and pin it in tests; `message: "Method not found"`; one `require_str`/`require_int` helper per handler enforcing each schema's `required` list before any store write, mapped to `-32602` in `call_tool`.
 
 Check: `initialize_names_the_server_rtok` asserts the pinned `result.protocolVersion`; `batch_answers_with_an_array` asserts "Method not found"; `mem_save` with `{"title":"t"}` returns `isError` "invalid params: missing `body`" and the notes table stays empty; `just test` green.
-
-### T215. Host test matrices skip `omp` and five real-config hosts; pi loader probe skips on Windows
-
-Found 2026-09-22 in the host-plugins pass: `tests/agents_install.rs:20-71` `hosts()` covers 14 of `HOSTS`' 15 ids — `omp` has no row anywhere, so its install idempotency, one-backup and remove-keeps-foreign guarantees are unguarded at the integration level (exactly where T196-class bugs live), and `tests/common/agents.rs:118-140` `write_cfg` seeds no `.omp/agent`/`[setup.omp]` to support one. `tests/agents_real_config.rs:31-60` additionally omits kilo, grok, copilot and aider (all with real config files to seed). Separately `plugins/pi/tests/load.test.ts:16-33` probes `pi` with no PATHEXT variants, so on Windows `piPackage()` is null and the loader test — the one proving pi accepts the linked extension (T48.1) — skips silently.
-
-Plan: add `[setup.omp]` keys + the `.omp/agent` fixture to `write_cfg`, an `omp` row to `hosts()`, the four file-owning hosts to `agents_real_config.rs::HOSTS`; probe `pi`/`pi.cmd`/`pi.exe`/`pi.ps1` in the loader test and warn visibly on a skip.
-
-Check: `cargo nextest run --test agents_install --test agent_remove` shows omp in `setup_twice_takes_one_backup_and_says_already_installed` and `remove_twice_says_no_changes…`; `ci_hides_what_this_machine_really_has` iterates the extended list; on Windows with pi installed the loader test runs rather than skips; `just check` green.
 
 ### T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
 
