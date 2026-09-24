@@ -20,9 +20,10 @@
 }}
 
 {{/*
-  Exempt from this list: docs/plugin-plan-template.md. It's a scaffold contributors copy
-  verbatim into src/plugins/<id>/PLAN.md (see docs/plugin-authoring.md), not prose for
-  readers of the published site — same reasoning that keeps CONTRIBUTING.md off the site.
+  Exempt from this list: docs/plugin-plan-template.md (scaffold copied into
+  src/plugins/<id>/PLAN.md — see docs/plugin-authoring.md) and docs/sonarcloud-setup.md
+  (maintainer CI setup, not end-user reference). Same reasoning keeps CONTRIBUTING.md
+  off the site.
 */}}
 
 {{ range $i, $p := $pages }}
