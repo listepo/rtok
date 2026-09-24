@@ -228,6 +228,21 @@ Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
 
+### T262.1. Claude hook entries come from `plugins/claude/hooks/hooks.json`
+
+Creator request 2026-09-24: the hook list lives in the plugin folder, and every install path takes it from there. Today `CLAUDE_ENTRIES` in `src/agents/claude/mod.rs` is the source and a test compares `hooks.json` against it, so a new event has to be written twice. Read the `(event, matcher)` pairs from `hooks.json` via `include_str!` at build time (no plugin build step; the GitHub plugin install and `rtok agents install claude` share one file). The shared `ENTRIES` list that Kimi and ZCode take stays a Rust constant.
+
+Plan: replace the `CLAUDE_ENTRIES` const with a `LazyLock` that parses `hooks.json` in file order (a small serde map visitor; `serde_json` here has no `preserve_order`, so a `Value` would sort events and reorder install reports); `plugin_tree_matches_the_installer` keeps checking each entry's command and timeout, plus that the file starts with `ENTRIES`.
+
+Check: `rtok agents install claude --dry-run` output is unchanged; `just check` green.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): `claude_entries()` parses `hooks.json` once through a `LazyLock` with a borrowed serde map visitor that keeps file order; the `CLAUDE_ENTRIES` const is gone. `plugin_tree_matches_the_installer` asserts the file starts with `ENTRIES` and carries `SubagentStart`. Merged as PR #351.
+
+Check result: the 190 `agents::` unit tests pass (install report order unchanged); `just check` green except `pi_plugin::setup_pi_yes_links_remove_unlinks`, a vitest 5 s timeout under load that passed on rerun.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T116. Copilot CLI plugin
 
 Do (2026-09-22): verified against the Copilot docs first (plugins-creating + cli-plugin-reference, fetched 2026-09-22): Copilot finds manifests in `.claude-plugin/` but its plugin hooks are the camelCase `preToolUse` shape, not Claude's `hook_event_name` — the T114 tree is not readable **as is**, so this is the card's else-branch: a `plugins/copilot/` tree in Copilot's legacy format (root `plugin.json` with `hooks`/`mcpServers` component paths, `hooks/hooks.json`, `.mcp.json`). The tree's hooks file IS `hooks_doc("rtok", 5)` — the same document `~/.copilot/hooks/rtok.json` writes, pinned by test (one shape, two surfaces, D21). Installer mirrors T115: `Support::Flag("--yes")` runs `copilot plugin install <resolved plugins/copilot>` (the documented local-path spec — not `marketplace add`, which registers marketplaces), `remove` uninstalls by the manifest's `name`; `installed()` reads the `installed-plugins/` manifest marker (`copilot plugin list --json` reports the same state), `COPILOT_HOME` redirects a non-default `[setup.copilot] dir`. D21 singleton: while the plugin is installed — including on the same run that installs it — `hooks/rtok.json` and `mcpServers.rtok` are taken back instead of added. `plugins/README.md` row, `## Docs` links, `docs/agents.md` blessed.
