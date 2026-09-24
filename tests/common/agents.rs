@@ -304,7 +304,11 @@ if "%ALLARGS%"=="plugin uninstall rtok@rtok" (
   del /f /q "%PLUGINS%\installed_plugins.json" 2>nul
 )
 if "%ALLARGS%"=="plugin update rtok@rtok" (
-  if exist "%HOME%\fake-claude-fail-update" (echo update failed 1>&2 & exit /b 1)
+  rem `exit`, not `exit /b`: cmd /C loses a nested `exit /b` code and reports 0.
+  if exist "%HOME%\fake-claude-fail-update" (
+    echo update failed 1>&2
+    exit 1
+  )
   mkdir "%PLUGINS%" 2>nul
   >"%PLUGINS%\installed_plugins.json" echo {"version":2,"plugins":{"rtok@rtok":[{"scope":"user","version":"latest"}]}}
 )
