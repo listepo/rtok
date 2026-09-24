@@ -23,8 +23,11 @@ The Read path stays Grok's own for now: Grok's file read is `read_file`, and Gro
 whose `updatedInput` fails the tool's schema, so the `read_file` → `Read` mapping lands only
 after a live payload confirms the shape (plan T100).
 
-`rtok` must be on `PATH` in whatever environment Grok runs hooks (`ketch install listepo/rtok`);
-every hook fails open when it is missing.
+The plugin is macOS/Linux only: each hook resolves `rtok` from `PATH`, then
+`~/.ketch/bin/rtok`, else exits 0 silently (fail open; `ketch install listepo/rtok` fixes a
+missing binary). Grok runs the same command through PowerShell on Windows, where that shell
+one-liner does not work — Windows users should run `rtok agents install claude` instead (Grok
+imports Claude's hooks, see above).
 
 ## Modules
 

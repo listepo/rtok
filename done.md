@@ -5995,3 +5995,14 @@ Result: Migration 0023 adds `measurements_session_ts (session, ts)`; `archive_in
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T250.4. Grok plugin hooks find `rtok` off `PATH`
+
+`plugins/grok/hooks/hooks.json`: every event gets the resolver, silent on every event (Grok ignores SessionStart stdout, `plugins/grok/README.md`). Grok runs the same field through PowerShell on Windows and installs the plugin itself, so the plugin becomes macOS/Linux only; its README sends Windows users to `rtok agents install claude` (Grok imports Claude's hooks). rtok's Grok installer writes no hooks, so nothing else changes.
+
+Check: `tests/grok_plugin.rs` runs each command with `/bin/sh -c`, empty PATH, temp HOME: exit 0, empty stdout; a fake `~/.ketch/bin/rtok` is exec'd; `just check` green.
+
+Result: Every event in `plugins/grok/hooks/hooks.json` now runs `command -v rtok >/dev/null 2>&1 && exec rtok hook <event> --host grok; [ -x "$HOME/.ketch/bin/rtok" ] && exec "$HOME/.ketch/bin/rtok" hook <event> --host grok; exit 0`. It prints no note on any event, because Grok ignores SessionStart stdout. Grok's runner sends a command with shell metacharacters through `sh -c` on Unix and through PowerShell on Windows, with no per-OS field, so the plugin is now macOS/Linux only. `plugins/grok/README.md`, `plugins/grok/AGENTS.md` and `src/agents/grok/README.md` say so and send Windows users to `rtok agents install claude`. On Windows, `rtok agents install grok --yes` prints a `skip plugins/grok (macOS/Linux only …)` note instead of the `grok plugin install` offer; the decision is a pure `plugin_offer_windows_note(windows)` with a unit test for both values. The stale "No `src/agents/grok` module" line in `plugins/grok/AGENTS.md` is corrected. Tests: `tests/grok_plugin.rs` pins every command and runs each with `/bin/sh -c`, an empty PATH and a temp HOME: silent exit 0 without rtok (SessionStart included), and the fake `~/.ketch/bin/rtok` exec'd when present.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)

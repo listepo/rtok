@@ -191,10 +191,22 @@ pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
     if !apply(cfg).yes {
         return Ok(NO_CHANGES.into());
     }
+    if let Some(note) = plugin_offer_windows_note(cfg!(windows)) {
+        return Ok(note.into());
+    }
     Ok(format!(
         "offer plugins/grok → grok plugin install {} --trust {KETCH_INSTALL}",
         super::plugin_src("plugins/grok").display()
     ))
+}
+
+/// T250.4: the plugin's hooks are a POSIX shell one-liner; Grok runs hooks through PowerShell
+/// on Windows, where that does not run, so install skips the offer there instead of printing
+/// a command for a plugin whose hooks would never fire.
+fn plugin_offer_windows_note(windows: bool) -> Option<&'static str> {
+    windows.then_some(
+        "skip plugins/grok (macOS/Linux only: its hooks are POSIX shell; Grok imports rtok's Claude hooks — rtok agents install claude)",
+    )
 }
 
 /// `[mcp_servers.rtok]` in `config.toml` — Grok's documented MCP shape. Written only while
@@ -271,6 +283,17 @@ mod tests {
         c
     }
 
+    /// T250.4: the decision is pure so both OSes are covered without a real Windows box.
+    #[test]
+    fn plugin_offer_windows_note_skips_only_on_windows() {
+        assert_eq!(plugin_offer_windows_note(false), None);
+        let note = plugin_offer_windows_note(true).unwrap();
+        assert!(note.contains("macOS/Linux only"), "{note}");
+        assert!(note.contains("rtok agents install claude"), "{note}");
+    }
+
+    // Windows skips the offer (T250.4); `plugin_offer_windows_note_skips_only_on_windows` covers it.
+    #[cfg(not(windows))]
     #[test]
     fn dry_run_offer_names_the_grok_plugin_command() {
         let dir = tmp("offer");
