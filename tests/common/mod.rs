@@ -23,18 +23,15 @@ pub fn vitest(file: &str, envs: &[(&str, &Path)]) {
     cmd.args(["run", file])
         .envs(envs.iter().copied())
         .current_dir(env!("CARGO_MANIFEST_DIR"));
-    // Windows mise leaves `@vitest/mocker` with a broken `vite` peer symlink; put `npm:vite`'s
-    // `node_modules` on `NODE_PATH` so `import "vite"` resolves (Mac/Linux already ship vite
-    // inside the vitest install tree).
-    if let Some(vite_nm) = mise_npm_node_modules("vite") {
-        let sep = if cfg!(windows) { ";" } else { ":" };
-        let node_path = match std::env::var("NODE_PATH") {
-            Ok(existing) if !existing.is_empty() => {
-                format!("{}{}{}", vite_nm.display(), sep, existing)
-            }
-            _ => vite_nm.display().to_string(),
-        };
-        cmd.env("NODE_PATH", node_path);
+    // Windows mise leaves `@vitest/mocker` without its `vite` peer, and ESM ignores NODE_PATH:
+    // preload a resolve hook that retries `vite` from the `npm:vite` install (T83.4).
+    if let Some(vite) = mise_npm_root("vite") {
+        let hook = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/node/vite-peer.mjs");
+        let path = agents::slash(hook.to_string_lossy());
+        let url = format!("file:///{}", path.trim_start_matches('/'));
+        let opts = std::env::var("NODE_OPTIONS").unwrap_or_default();
+        cmd.env("NODE_OPTIONS", format!("--import=\"{url}\" {opts}"))
+            .env("RTOK_VITE_ROOT", vite);
     }
     let status = cmd
         .status()
@@ -42,24 +39,14 @@ pub fn vitest(file: &str, envs: &[(&str, &Path)]) {
     assert!(status.success(), "{file}");
 }
 
-/// Root `node_modules` of a mise `npm:<pkg>` install, if `mise where` finds one.
-fn mise_npm_node_modules(pkg: &str) -> Option<std::path::PathBuf> {
+/// Install root of a mise `npm:<pkg>` tool, if `mise where` finds one.
+fn mise_npm_root(pkg: &str) -> Option<std::path::PathBuf> {
     let output = Command::new("mise")
         .args(["where", &format!("npm:{pkg}")])
         .output()
         .ok()?;
-    if !output.status.success() {
-        return None;
-    }
     let root = std::path::PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-    let nm = root.join("node_modules");
-    if nm.is_dir() {
-        Some(nm)
-    } else if root.is_dir() {
-        Some(root)
-    } else {
-        None
-    }
+    (output.status.success() && root.join("node_modules").is_dir()).then_some(root)
 }
 
 /// Nearest-rank p95 of sorted samples: the smallest sample at or above 95 % of them. The old

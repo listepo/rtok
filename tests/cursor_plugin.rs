@@ -40,7 +40,8 @@ fn write_cfg(home: &Path) -> PathBuf {
         &cfg,
         format!(
             "[setup.cursor]\nhooks_path = \"{}/hooks.json\"\n",
-            cursor.display()
+            // `/`: a `\` in a TOML basic string starts an escape (T83.4).
+            cursor.display().to_string().replace('\\', "/")
         ),
     )
     .unwrap();

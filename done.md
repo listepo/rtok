@@ -5427,6 +5427,19 @@ Check result: the four tests PASS in PR #372's `windows` job (1723 run, 1723 pas
 Status: done 2026-09-25
 Model: Claude Code / claude-opus-5-5
 
+### T83.4. `agents_install` / `cursor_plugin` / `pi_plugin` / `opencode_plugin` symlink and path expectations fail on Windows
+
+Ten tests across four binaries: `agents_install::{list_reports_installed_modules_per_host, setup_twice_takes_one_backup_and_says_already_installed}`, `opencode_plugin::dry_run_offers_the_plugin_and_writes_nothing`, `cursor_plugin::{setup_cursor_dry_run_offers_plugin, setup_cursor_yes_links_plugin_without_mcp_json, setup_cursor_clears_leftover_mcp_when_plugin_already_linked}`, `pi_plugin::{setup_pi_dry_run_offers_plugin, setup_pi_yes_links_remove_unlinks, pi_extension_unit_test_with_fake_rtok}`, `filter::opencode_plugin_unit_test_with_api_mock`. Likely a symlink family: `std::fs::symlink` needs Developer Mode or admin on Windows, and/or the assertions compare `/`-joined paths against a host that prints `\`. Decide per test whether the installer needs a Windows fallback (junction/hardlink/copy) or the fixtures need `Path`-based comparison instead of string paths. One family split out of the original T83. It is the last family: once its line is gone the `cfg(windows)` override in `.config/nextest.toml` is empty, so delete the override and move `windows` out of `continue-on-error` into `revert-on-failure`'s `needs` (or into the `check` matrix if `just check` runs on Windows). The closing criterion for the whole split came from T83.2.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-25): no installer changes; four test-side causes. (1) `cursor_plugin` and `pi_plugin` wrote their own `config.toml` with raw Windows paths, and `\` starts a TOML escape; they now `/`-join like `common::agents::write_cfg`. (2) `agents_install` and `opencode_plugin` compared `Path::display()` against output that mixes `/` (the configured path) and `\` (OS-joined children); both sides now go through the new `common::agents::slash`. (3) vitest failed to start: mise's npm installer (aube) leaves `@vitest/mocker` without its `vite` peer on Windows, and the old `NODE_PATH` workaround never applied to ESM imports. `tests/node/vite-peer.mjs`, preloaded with `--import`, registers a `module.registerHooks` resolve hook that retries a bare `vite` from the `npm:vite` install; the `NODE_PATH` code is gone. (4) `windows_ci::windows_exclusion_list_names_only_existing_tests` guarded a list that no longer exists and was deleted. Closing criterion for the whole T83 split: the `cfg(windows)` override is gone from `.config/nextest.toml`, the `windows` job lost `continue-on-error`, and it joined `revert-on-failure`'s `needs`.
+
+Check: the ten tests pass in the `windows` CI job; `just check` stays green.
+
+Check result: PR #374's `windows` job ran the full suite with no `cfg(windows)` override: 1735 run, 1735 passed, all ten tests among them. The ten pass on macOS too (`cargo nextest run` over the six touched binaries: 33/33). `just check`: every step green (`just js` after an `oxfmt` pass on the new `.mjs`); its tests passed except `pi_plugin::setup_pi_yes_links_remove_unlinks` (the 5 s vitest timeout under host load seen on main in T83.7 and T83.2; green in the targeted run and in every CI job).
+
+Status: done 2026-09-25
+Model: Claude Code / claude-opus-5-5
+
 ### T83.7. `cli_trycmd::cli` fails on Windows
 
 The `trycmd`-driven CLI snapshot test likely diffs on path separators, line endings, or a Unix-only fixture. Decide whether `rtok`'s own output needs a Windows-safe rendering or the `.toml`/`.stdout` fixtures need a Windows variant. One family split out of the original T83; see T83.2 for the closing criterion.
