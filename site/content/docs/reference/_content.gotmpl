@@ -10,12 +10,20 @@
   (dict "path" "cmd-rules"        "title" "Command filter rules" "file" "repo/docs/cmd-rules.md"         "edit" "docs/cmd-rules.md")
   (dict "path" "colima"           "title" "Colima"           "file" "repo/docs/colima.md"           "edit" "docs/colima.md")
   (dict "path" "lsp"              "title" "LSP backend"      "file" "repo/docs/lsp.md"               "edit" "docs/lsp.md")
+  (dict "path" "otel"             "title" "OpenTelemetry"    "file" "repo/docs/otel.md"              "edit" "docs/otel.md")
   (dict "path" "plugin-authoring" "title" "Plugin authoring" "file" "repo/docs/plugin-authoring.md"  "edit" "docs/plugin-authoring.md")
   (dict "path" "prompt-cache"     "title" "Prompt cache"     "file" "repo/docs/prompt-cache.md"      "edit" "docs/prompt-cache.md")
   (dict "path" "report"           "title" "Report"           "file" "repo/docs/report.md"             "edit" "docs/report.md")
+  (dict "path" "release"          "title" "Release process"  "file" "repo/docs/release.md"           "edit" "docs/release.md")
   (dict "path" "roadmap"          "title" "Roadmap"          "file" "repo/roadmap.md"                "edit" "roadmap.md")
   (dict "path" "changelog"        "title" "Changelog"        "file" "repo/CHANGELOG.md"              "edit" "CHANGELOG.md")
 }}
+
+{{/*
+  Exempt from this list: docs/plugin-plan-template.md. It's a scaffold contributors copy
+  verbatim into src/plugins/<id>/PLAN.md (see docs/plugin-authoring.md), not prose for
+  readers of the published site — same reasoning that keeps CONTRIBUTING.md off the site.
+*/}}
 
 {{ range $i, $p := $pages }}
   {{ $r := resources.Get $p.file }}

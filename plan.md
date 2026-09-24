@@ -48,7 +48,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T211 | todo | P2 | 3 | 0% | |
 | T213 | todo | P3 | 2 | 0% | |
 | T216 | todo | P3 | 2 | 0% | |
-| T218 | todo | P2 | 2 | 0% | |
 | T221 | todo | P2 | 2 | 0% | |
 | T223 | todo | P3 | 2 | 0% | |
 | T224 | todo | P3 | 1 | 0% | |
@@ -626,14 +625,6 @@ Found 2026-09-22 in the host-plugins pass: `tests/trycmd/agents-list*.toml` matc
 Plan: normalize machine-specific lines and snapshot the remainder per host id (or one Rust test looping `HOSTS` × `variants()` asserting block headers); slice `## Docs` to the next `\n## ` heading and require ≥ 2 links with per-host URL needles (extending the `SKILL_HOSTS` pattern).
 
 Check: deleting one variant from a host's `VARIANTS` fails `cargo nextest run --test cli_trycmd` (or the header-loop test); an emptied `## Docs` list with links only in a later section fails `host_docs`; `RTOK_BLESS=1` re-bless restores; `just check` green.
-
-### T218. `docs/*.md` pages missing from the site nav; a hand-copied getting-started twin
-
-Found 2026-09-22 in the docs pass: `site/content/docs/reference/_content.gotmpl:5-18` lists 12 pages but omits `docs/otel.md`, `docs/release.md`, `docs/plugin-plan-template.md` and `docs/getting-started.md` — mounted as assets yet never published (README/AGENTS point readers at `docs/otel.md` and `docs/release.md`). Separately `site/content/docs/getting-started.md:1-25` is a re-worded copy of `docs/getting-started.md` that already drifts — against "a repo file IS the page" and `site/hugo.toml:8-10` ("Nothing is copied").
-
-Plan: add rows for otel, release and plugin-plan-template (document an exemption if plugin-plan-template is internal); replace the site-local getting-started with a `_content.gotmpl` row mounting `repo/docs/getting-started.md` and delete the copy.
-
-Check: `tests/site_pages.rs` — every `docs/*.md` appears in `_content.gotmpl` (modulo a small explicit exemption list) and `site/content/docs/` holds no page duplicating a repo file; `just site` builds.
 
 ### T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
 
