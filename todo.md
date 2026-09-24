@@ -57,7 +57,6 @@
 - T215. Host test matrices skip `omp` and five real-config hosts; pi loader probe skips on Windows
 - T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
 - T218. `docs/*.md` pages missing from the site nav; a hand-copied getting-started twin
-- T220. Schema-drift guard compares column names only; seven tables escape it
 - T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
 - T223. `windows-sys` linked in three versions
 - T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`

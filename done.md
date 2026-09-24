@@ -5894,3 +5894,16 @@ Check: `cargo nextest --test host_docs --test surface_parity`.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+
+### T220. Schema-drift guard compares column names only; seven tables escape it
+
+Found 2026-09-22 in the store/accounting pass: `schema_rs_matches_the_migrated_tables` (`src/store/mod.rs:3306-3328`) checks only that each `table!` macro's column *name* set equals `PRAGMA table_info` — not types, NOT NULL, defaults, PKs, and not a single index; and seven migrated tables (`kv`, `archive_decisions`, `extractor`, `symbol_stale`, `note_embeddings`, `schema_migrations`, `notes_fts`) have no `table!` macro at all (they are reached via raw SQL — T163), so T104's guard cannot see them. A changed default or a dropped index passes today.
+
+Plan: extend the guard to compare `PRAGMA table_xinfo` type/notnull/dflt/pk tuples (mapping Diesel type names), add an expected-index manifest checked against `PRAGMA index_list`, and assert the migrated-table set equals `table!` names ∪ an explicit raw-SQL allowlist.
+
+Check: mutation tests in the T104 style — changing a default in a migration or dropping `CREATE INDEX usage_call` from 0013 fails the extended guard; deleting a column from `schema.rs` still fails as today; `just test` green.
+
+Result: The schema-drift guard (`src/store/mod.rs` tests) now checks four things. First, the migrated table set equals the `table!` names plus an explicit `RAW_SQL_TABLES` allowlist: `note_embeddings`, `notes_fts` and its four FTS5 shadow tables, and `schema_migrations`. The card's list was wrong, because `kv`, `extractor` and `symbol_stale` do have `table!` macros. Second, each `table!` column's type affinity, NOT NULL and PK are compared against `PRAGMA table_xinfo`; PK columns skip the NOT NULL check, because a bare SQLite `PRIMARY KEY` does not imply it. Third, defaults, indexes and triggers are pinned by a golden `sqlite_master` dump in `src/store/schema_snapshot.txt` (regenerate with `RTOK_BLESS=1`). Fourth, mutation tests confirm the guard catches a changed default, a dropped `usage_call` index and a removed column. `just check` green; `just dup` 1.98 %.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)

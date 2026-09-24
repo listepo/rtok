@@ -68,7 +68,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T215 | todo | P2 | 2 | 0% | |
 | T216 | todo | P3 | 2 | 0% | |
 | T218 | todo | P2 | 2 | 0% | |
-| T220 | todo | P3 | 3 | 0% | |
 | T221 | todo | P2 | 2 | 0% | |
 | T223 | todo | P3 | 2 | 0% | |
 | T224 | todo | P3 | 1 | 0% | |
@@ -765,14 +764,6 @@ Found 2026-09-22 in the docs pass: `site/content/docs/reference/_content.gotmpl:
 Plan: add rows for otel, release and plugin-plan-template (document an exemption if plugin-plan-template is internal); replace the site-local getting-started with a `_content.gotmpl` row mounting `repo/docs/getting-started.md` and delete the copy.
 
 Check: `tests/site_pages.rs` — every `docs/*.md` appears in `_content.gotmpl` (modulo a small explicit exemption list) and `site/content/docs/` holds no page duplicating a repo file; `just site` builds.
-
-### T220. Schema-drift guard compares column names only; seven tables escape it
-
-Found 2026-09-22 in the store/accounting pass: `schema_rs_matches_the_migrated_tables` (`src/store/mod.rs:3306-3328`) checks only that each `table!` macro's column *name* set equals `PRAGMA table_info` — not types, NOT NULL, defaults, PKs, and not a single index; and seven migrated tables (`kv`, `archive_decisions`, `extractor`, `symbol_stale`, `note_embeddings`, `schema_migrations`, `notes_fts`) have no `table!` macro at all (they are reached via raw SQL — T163), so T104's guard cannot see them. A changed default or a dropped index passes today.
-
-Plan: extend the guard to compare `PRAGMA table_xinfo` type/notnull/dflt/pk tuples (mapping Diesel type names), add an expected-index manifest checked against `PRAGMA index_list`, and assert the migrated-table set equals `table!` names ∪ an explicit raw-SQL allowlist.
-
-Check: mutation tests in the T104 style — changing a default in a migration or dropping `CREATE INDEX usage_call` from 0013 fails the extended guard; deleting a column from `schema.rs` still fails as today; `just test` green.
 
 ### T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
 
