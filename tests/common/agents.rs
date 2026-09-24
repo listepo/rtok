@@ -235,62 +235,6 @@ if "%ALLARGS%"=="plugin uninstall rtok" rmdir /s /q "%PLUGINS%\_direct\x" 2>nul
     }
 }
 
-/// A fake `gemini` (T118.3): `--version` answers deterministically, every other call logs to
-/// `$HOME/gemini.log`, and `extensions link <path>`/`extensions uninstall rtok` mirror the
-/// real CLI's `~/.gemini/extensions/<name>/gemini-extension.json` marker — a fixed manifest
-/// naming `rtok`, not an actual copy of `<path>`, the same shortcut `fake_copilot` takes for
-/// `plugin install`, since `plugin_installed` only reads the manifest's `name`.
-pub fn fake_gemini(home: &Path) {
-    let dir = home.join(".fake-bin");
-    fs::create_dir_all(&dir).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let bin = dir.join("gemini");
-        if !bin.exists() {
-            fs::write(
-                &bin,
-                r#"#!/bin/sh
-[ "$1" = --version ] && { echo "0.1.0 (fake gemini)"; exit 0; }
-echo "$*" >> "$HOME/gemini.log"
-ext="${GEMINI_CLI_HOME:-$HOME/.gemini}/extensions"
-case "$*" in
-  "extensions link "*) mkdir -p "$ext/rtok"
-    printf '{"name":"rtok","version":"0.0.1"}' > "$ext/rtok/gemini-extension.json" ;;
-  "extensions uninstall rtok") rm -rf "$ext/rtok" ;;
-esac
-"#,
-            )
-            .unwrap();
-            fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
-        }
-    }
-    #[cfg(windows)]
-    {
-        let bin = dir.join("gemini.cmd");
-        if !bin.exists() {
-            fs::write(
-                &bin,
-                r#"@echo off
-if "%~1"=="--version" (
-  echo 0.1.0 ^(fake gemini^)
-  exit /b 0
-)
-set "ALLARGS=%*"
-echo %ALLARGS%>>"%HOME%\gemini.log"
-if defined GEMINI_CLI_HOME (set "EXT=%GEMINI_CLI_HOME%\extensions") else (set "EXT=%HOME%\.gemini\extensions")
-echo %ALLARGS%| findstr /b /c:"extensions link " >nul && (
-  mkdir "%EXT%\rtok" 2>nul
-  >"%EXT%\rtok\gemini-extension.json" echo {"name":"rtok","version":"0.0.1"}
-)
-if "%ALLARGS%"=="extensions uninstall rtok" rmdir /s /q "%EXT%\rtok" 2>nul
-"#,
-            )
-            .unwrap();
-        }
-    }
-}
-
 pub fn fake_claude_path(home: &Path) -> std::ffi::OsString {
     // T168: the copilot shim lives beside claude/codex so every `raw`/`rtok` probe is
     // hermetic — without it `app_version` reached the real npm wrapper, whose

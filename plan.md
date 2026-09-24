@@ -26,6 +26,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T95 | todo | P1 | 2 | 0% | |
 | T96 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
+| T118.3 | todo | P2 | 3 | 0% | |
 | T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
 
 | T122 | in progress | P1 | 3 | 5% | Claude Code / claude-haiku-4-5 |
@@ -263,6 +264,12 @@ Extra tests: written and green (`agents::kilo::tests`); the dangling-link one fo
 Check: the unit tests above; `rtok agents list` shows `kilo`; `agents_doc`, `host_docs`, `config_coverage`, `opencode_plugin` green; `just check`.
 
 Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree unchanged byte for byte); a user's `kilo.jsonc` is byte-identical after install and remove; an existing foreign file at `plugin/rtok.ts` is neither overwritten nor removed; a dangling `rtok.ts` symlink is repaired; remove on a clean home prints `NO_CHANGES`.
+
+### T118.3. Gemini CLI extension tree: manifest, hooks.json, MCP, install
+
+Needs T118.2. Gemini CLI extensions install with `gemini extensions install <path>` / `link` (dev) / `uninstall <name>` (https://geminicli.com/docs/extensions/reference/). Add `plugins/gemini/`: `gemini-extension.json` (`name`, `version`, `description`, `mcpServers.rtok = {command: "rtok", args: ["mcp"]}` — `trust` is the one MCP field the manifest does not support) and `hooks/hooks.json` (Gemini's own shape: `{"hooks": {"<EventName>": [{"matcher": ..., "hooks": [{"type": "command", "command": "rtok hook <ClaudeEventName> --host gemini"}]}]}}` — confirm the extension file's event-name keys against a fresh fetch of the reference doc, since `docs/hooks/reference.md` documents `settings.json` and does not show a worked extension example verbatim). Wire install/remove into `src/agents/gemini/mod.rs`, offering the exact resolved `gemini extensions link <path>` line the way Copilot's plugin offer does. D21 singleton: while the plugin is installed, strip rtok's own hooks/MCP from any file setup would otherwise write directly (mirror `src/agents/copilot/mod.rs`).
+
+Check: `tests/host_docs.rs` (`## Docs` links); `tests/gemini_plugin.rs` (manifest shape, hooks command strings, dry-run/apply/remove, `RTOK_BLESS`-free); `just check` green.
 
 ### T130.2. Spawn brief: wire the `SubagentStart` hook into the Claude installer, bless docs, add outline ranges
 T130.1 (`done.md`) landed the mechanism — `SubagentStart` on the `Plugin` trait, the hook dispatch, config, and `memory::handoff::build_brief` shared with the `handoff` MCP tool — but nothing yet installs a `SubagentStart` matcher for real users, so the feature is inert until this lands. Needs: (1) `src/agents/claude/mod.rs`'s `ENTRIES` hook-install list gets a `SubagentStart` row so `rtok agents install claude` actually registers the hook; (2) `docs/agents.md` reblessed (`tests/agents_doc.rs` with `RTOK_BLESS=1`) and `tests/host_docs.rs` green; (3) `ledger()`'s pointers currently carry only a path and an optional archive id — add outline line ranges from the graph index where it has them, per the original card's plan, gated so `memory` still has no hard feature dependency on `graph`. Open: whether other Claude-compatible hosts (Gemini, Grok, Copilot, …) should also get `SubagentStart` in this task or a follow-up — flagging for the creator rather than deciding unilaterally.

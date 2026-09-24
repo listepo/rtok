@@ -390,7 +390,7 @@ agents
     hooks   not installed
     mcp     not installed
     proxy   not supported: Gemini CLI has no documented base-URL setting; its own HTTP_PROXY/HTTPS_PROXY covers MCP server transport only, not the model API
-    plugin  not installed (--yes)
+    plugin  not supported: the extension tree ships in T118.3; no local plugin directory to link yet
   codewhale (cli)
     hooks   not installed
     mcp     not installed

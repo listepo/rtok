@@ -5958,21 +5958,3 @@ Note: keeping only the newest N means the oldest copy — the pre-rtok original 
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
-
-### T118.3. Gemini CLI extension tree: manifest, hooks.json, MCP, install
-
-Needs T118.2. Gemini CLI extensions install with `gemini extensions install <path>` / `link` (dev) / `uninstall <name>` (https://geminicli.com/docs/extensions/reference/). Add `plugins/gemini/`: `gemini-extension.json` (`name`, `version`, `description`, `mcpServers.rtok = {command: "rtok", args: ["mcp"]}` — `trust` is the one MCP field the manifest does not support) and `hooks/hooks.json` (Gemini's own shape: `{"hooks": {"<EventName>": [{"matcher": ..., "hooks": [{"type": "command", "command": "rtok hook <ClaudeEventName> --host gemini"}]}]}}` — confirm the extension file's event-name keys against a fresh fetch of the reference doc, since `docs/hooks/reference.md` documents `settings.json` and does not show a worked extension example verbatim). Wire install/remove into `src/agents/gemini/mod.rs`, offering the exact resolved `gemini extensions link <path>` line the way Copilot's plugin offer does. D21 singleton: while the plugin is installed, strip rtok's own hooks/MCP from any file setup would otherwise write directly (mirror `src/agents/copilot/mod.rs`).
-
-Execution plan:
-- Fetched `https://geminicli.com/docs/extensions/reference/` and `https://geminicli.com/docs/hooks/reference/` (2026-09-24): confirmed `gemini-extension.json` fields (no `trust`), `hooks/hooks.json` at the extension root, `~/.gemini/extensions/<name>`, and `gemini extensions link/install/uninstall` syntax; cited in `plugins/gemini/README.md` `## Docs`.
-- `plugins/gemini/`: `gemini-extension.json`, `hooks/hooks.json` (built from `gemini::hooks_doc`, same `EVENTS` table `settings.json` merges from — no duplicate map), `README.md`, `AGENTS.md`.
-- `src/agents/gemini/mod.rs`: `hooks_doc`, `plugin_installed`, `gemini_cli`, `plugin` (mirrors `copilot::plugin`); D21 in `Agent::apply`/`installed`/`support`.
-- `tests/gemini_plugin.rs` (manifest shape, hooks parity, dry-run/apply/remove via a new `fake_gemini` shim in `tests/common/agents.rs`); `tests/host_docs.rs` green via the new `## Docs` sections.
-- `plugins/README.md`, `src/agents/gemini/README.md` table rows.
-
-Check: `tests/host_docs.rs` (`## Docs` links); `tests/gemini_plugin.rs` (manifest shape, hooks command strings, dry-run/apply/remove, `RTOK_BLESS`-free); `just check` green.
-
-Result: `plugins/gemini/` ships `gemini-extension.json` (`mcpServers.rtok`) and `hooks/hooks.json` (Gemini event keys → `rtok hook <ClaudeEvent> --host gemini`, from the same event map T118.2 installs). `rtok agents install gemini` offers the resolved `gemini extensions link <path>` line (applied behind `--yes`); while the extension is installed, D21 strips rtok's own hooks/MCP from `settings.json`. The shared `offer_plugin`/`manifest_names`/`d21_plugin_apply` helpers now back both Copilot and Gemini, so behaviour stays byte-identical and `just dup` is 1.96 %. Unverified against a live Gemini CLI: the extension-hooks file shape and the `~/.gemini/extensions/<name>` folder naming (both noted in the README). Tests `tests/gemini_plugin.rs`; `just check` green (1613 tests).
-
-Status: done 2026-09-24
-Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
