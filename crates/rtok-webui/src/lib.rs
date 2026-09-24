@@ -12,7 +12,7 @@ use std::rc::Rc;
 /// Page ids the WASM UI renders, in `model::pages()` order (D23 / T19.4).
 /// `tests/surface_parity.rs` asserts this equals `rtok::web::model::pages()`.
 pub const PAGE_IDS: &[&str] = &[
-    "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills",
+    "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats",
 ];
 
 /// Pure snapshot → view fields. Native-testable; the WASM `load_snapshot` applies these
@@ -38,6 +38,7 @@ pub mod snapshot {
         pub error: String,
         pub skills_header: String,
         pub skills: Vec<Skill>,
+        pub stats_text: String,
     }
 
     #[derive(Debug, Default, PartialEq, Eq)]
@@ -107,6 +108,7 @@ pub mod snapshot {
             error: v.get("error").and_then(|e| e.as_str()).unwrap_or("").to_string(),
             skills_header: v["skills"]["header"].as_str().unwrap_or("").to_string(),
             skills: skills_of(v),
+            stats_text: stats_of(&v["stats"]),
         }
     }
 
@@ -421,6 +423,15 @@ pub mod snapshot {
         out
     }
 
+    /// The Stats page (T227): the wire already carries `rtok stats --price`'s table
+    /// plus `stats --cache`'s table as one rendered string — no reconstruction here,
+    /// unlike [`doctor_of`], since the model sends the text itself.
+    fn stats_of(v: &Value) -> String {
+        v.as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| "stats did not answer this tick — `rtok stats` has the details".into())
+    }
+
     fn savings_text(v: &Value) -> String {
         let Some(plugins) = v["plugins"].as_array() else {
             return "no measured savings yet".into();
@@ -527,6 +538,7 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
     ui.set_overview_savings(SharedString::from(view.overview_savings));
     ui.set_overview_turns(SharedString::from(view.overview_turns));
     ui.set_doctor_text(SharedString::from(view.doctor_text));
+    ui.set_stats_text(SharedString::from(view.stats_text));
 
     let plugins: Vec<PluginRow> = view
         .plugins
@@ -840,7 +852,7 @@ mod tests {
         assert_eq!(
             PAGE_IDS,
             [
-                "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills"
+                "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats"
             ]
         );
     }
@@ -881,7 +893,8 @@ mod tests {
                 "auto_compact_window": null,
                 "instructions": null
             },
-            "logs": ["2026-09-10 07:00:00 info web/serve: up"]
+            "logs": ["2026-09-10 07:00:00 info web/serve: up"],
+            "stats": "sessions 1  compact 0  checkpoint 0  no_checkpoint 1  lines 1  malformed 0\n"
         });
         let view = snapshot::parse(&v);
         assert!(
@@ -891,7 +904,8 @@ mod tests {
                 && PAGE_IDS.contains(&"logs")
                 && PAGE_IDS.contains(&"doctor")
                 && PAGE_IDS.contains(&"plugins")
-                && PAGE_IDS.contains(&"skills"),
+                && PAGE_IDS.contains(&"skills")
+                && PAGE_IDS.contains(&"stats"),
             "every model page id is a WASM tab"
         );
         assert_eq!(view.usage_ctt, 5);
@@ -907,6 +921,7 @@ mod tests {
         assert!(view.doctor_text.contains("hooks 3"));
         assert!(view.doctor_text.contains("rtok"));
         assert_eq!(view.logs, vec!["2026-09-10 07:00:00 info web/serve: up"]);
+        assert!(view.stats_text.contains("sessions 1"));
     }
 
     #[test]
@@ -969,5 +984,12 @@ mod tests {
         let v = json!({"type": "snapshot", "doctor": null, "plugins": [], "calls": [], "sessions": [], "logs": [], "usage": {}});
         let view = snapshot::parse(&v);
         assert!(view.doctor_text.contains("did not answer"));
+    }
+
+    #[test]
+    fn missing_stats_is_a_failed_tick_not_empty() {
+        let v = json!({"type": "snapshot", "stats": null, "plugins": [], "calls": [], "sessions": [], "logs": [], "usage": {}});
+        let view = snapshot::parse(&v);
+        assert!(view.stats_text.contains("did not answer"));
     }
 }

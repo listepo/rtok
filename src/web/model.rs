@@ -50,6 +50,11 @@ pub struct Snapshot {
     /// queries the store for an expand handle (D23 / D27).
     #[serde(default)]
     pub ref_ids: BTreeMap<i32, String>,
+    /// Stats page (T227): `stats --price`'s table plus `stats --cache`'s table, folded
+    /// into one page (D27) — [`stats_page_text`], built from the same transcript scan
+    /// [`stats_skills`] already runs for the Skills page (no second aggregation). `None`
+    /// when this tick's transcripts read failed.
+    pub stats: Option<String>,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -296,6 +301,7 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
         ("doctor", "doctor"),
         ("logs", "logs"),
         ("skills", "skills"),
+        ("stats", "stats"),
     ]
 }
 
@@ -999,9 +1005,22 @@ pub fn skills_from(
     }
 }
 
-fn stats_skills(cfg: &Config) -> (Option<BTreeMap<String, stats::SkillRow>>, u64, bool) {
+/// T63.1 / T227: one transcript scan feeds both the Skills page (T61.3 listing joined
+/// to T61.1 resident/invocations) and the Stats page ([`stats_page_text`]) — cached
+/// briefly so `rtok tui` / `rtok web` ticks do not re-parse every transcript every two
+/// seconds, the same shape as [`doctor_for_snapshot`]'s cache. `rtok stats` itself
+/// still goes through [`stats_report`] uncached.
+#[allow(clippy::type_complexity)]
+fn stats_skills(
+    cfg: &Config,
+) -> (
+    Option<BTreeMap<String, stats::SkillRow>>,
+    u64,
+    bool,
+    Option<String>,
+) {
     if cfg!(test) {
-        return (None, 0, false);
+        return (None, 0, false, None);
     }
     use std::sync::{Mutex, OnceLock};
     use std::time::Instant;
@@ -1011,6 +1030,7 @@ fn stats_skills(cfg: &Config) -> (Option<BTreeMap<String, stats::SkillRow>>, u64
         skills: Option<BTreeMap<String, stats::SkillRow>>,
         usage_input: u64,
         scanned: bool,
+        text: Option<String>,
     }
     static CACHE: OnceLock<Mutex<Option<Entry>>> = OnceLock::new();
     let key = format!("{}{}", cfg.stats.transcripts_dir.display(), cfg.stats.since);
@@ -1020,11 +1040,18 @@ fn stats_skills(cfg: &Config) -> (Option<BTreeMap<String, stats::SkillRow>>, u64
         && e.key == key
         && e.at.elapsed() < DOCTOR_SNAPSHOT_TTL
     {
-        return (e.skills.clone(), e.usage_input, e.scanned);
+        return (e.skills.clone(), e.usage_input, e.scanned, e.text.clone());
     }
-    let (skills, usage_input, scanned) = match stats_report(cfg) {
-        Ok(r) => (r.skills, r.usage_input, true),
-        Err(_) => (None, 0, false),
+    // T227: cost costs no network (`[stats.prices]` is a local table), so the page
+    // always carries it — `rtok stats` still needs `--price` to print it.
+    let mut priced = cfg.clone();
+    priced.stats.price = true;
+    let (skills, usage_input, scanned, text) = match stats_report(&priced) {
+        Ok(report) => {
+            let text = Some(stats_page_text(cfg, &report));
+            (report.skills, report.usage_input, true, text)
+        }
+        Err(_) => (None, 0, false, None),
     };
     if let Ok(mut guard) = lock.lock() {
         *guard = Some(Entry {
@@ -1033,9 +1060,22 @@ fn stats_skills(cfg: &Config) -> (Option<BTreeMap<String, stats::SkillRow>>, u64
             skills: skills.clone(),
             usage_input,
             scanned,
+            text: text.clone(),
         });
     }
-    (skills, usage_input, scanned)
+    (skills, usage_input, scanned, text)
+}
+
+/// The Stats page (T227): [`stats_skills`]'s one scan rendered as `rtok stats
+/// --price`'s table (D24), plus `rtok stats --cache`'s table appended below — D27's
+/// one page for two commands, neither re-aggregated.
+fn stats_page_text(cfg: &Config, report: &stats::Report) -> String {
+    let mut out = report.to_table();
+    if let Ok(health) = cache_health(cfg) {
+        out.push_str("\ncache health\n");
+        out.push_str(&cache::table(&health));
+    }
+    out
 }
 
 /// One row of the `rtok config show` page: an effective key, its value, and which layer
@@ -1082,7 +1122,7 @@ impl<'a> Model<'a> {
             })
             .unwrap_or_default();
         let doctor = doctor_for_snapshot(self.cfg);
-        let (st, usage, scanned) = stats_skills(self.cfg);
+        let (st, usage, scanned, stats_text) = stats_skills(self.cfg);
         let skills = skills_from(
             doctor.as_ref().and_then(|d| d.skills.as_ref()),
             st.as_ref(),
@@ -1103,6 +1143,8 @@ impl<'a> Model<'a> {
             error: None,
             skills,
             ref_ids,
+            // T227: the same scan `stats_skills` already ran for the Skills page.
+            stats: stats_text,
         }
     }
 

@@ -344,6 +344,7 @@ export component MainWindow inherits Window {
     in-out property <int> session-cursor: 0;
     out property <SessionRow> selected-session: sessions[session-cursor];
     in property <string> doctor-text;
+    in property <string> stats-text;
     in-out property <[string]> logs;
     in property <string> skills-header;
     in-out property <[SkillRow]> skills;
@@ -718,6 +719,17 @@ export component MainWindow inherits Window {
                                 color: s.never ? RtokTheme.ink-muted : RtokTheme.ink;
                             }
                         }
+                    }
+                }
+
+                if page-id == "stats": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-2;
+                    TitleText {
+                        text: "stats";
+                    }
+                    BodyText {
+                        text: stats-text;
                     }
                 }
             }

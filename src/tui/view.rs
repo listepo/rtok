@@ -174,6 +174,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
         "doctor" => frame.render_widget(doctor(app), area),
         "logs" => frame.render_widget(logs_text(app), area),
         "skills" => render_skills(frame, app, area),
+        "stats" => frame.render_widget(stats(app), area),
         page => unreachable!("page `{page}` has no TUI body — surface_parity holds the list"),
     }
 }
@@ -400,6 +401,16 @@ fn doctor(app: &App) -> Paragraph<'static> {
         })
         .collect::<Vec<_>>();
     Paragraph::new(lines)
+}
+
+/// The model's Stats page (T227), verbatim: `rtok stats --price`'s table plus `rtok
+/// stats --cache`'s table, from the same scan the snapshot already carries (D27) — a
+/// rendering, not a second scan. `None` is a failed tick, not an empty page.
+fn stats(app: &App) -> Paragraph<'static> {
+    let Some(text) = app.snapshot().stats.as_ref() else {
+        return empty("stats did not answer this tick — `rtok stats` has the details");
+    };
+    Paragraph::new(text.clone())
 }
 
 /// The model's Calls page (T15.5): the ledger's recent rows, newest first — surface,
