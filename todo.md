@@ -37,6 +37,8 @@
 - T171. Claude Code sees the rtok MCP server twice
 - T178. Hook wall-clock time as Claude Code sees it
 - T204. A panicking plugin is dropped silently — the error never reaches the log
+- T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
+- T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 - T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
 - T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
 - T223. `windows-sys` linked in three versions

@@ -6253,6 +6253,15 @@ Plan: `git rm --cached` `report.html`, `report/jscpd-report.json`, `dump/*`; ext
 Check: `git ls-files report.html report/ dump/` prints nothing; after `just test` and `just dup`, `git status --porcelain` stays clean (T184's Check covers the rest); `just check` green.
 
 Result: Untracked the stale report.html (report/jscpd-report.json and dump/ were already untracked); .gitignore now covers /report.html, /report/, /dump/. just dup leaves git status clean.
+### T204. A panicking plugin is dropped silently — the error never reaches the log
+
+Found 2026-09-22 in the core pass: every plugin call is wrapped in `catch_unwind` (`src/hooks/mod.rs:340-344, 381-385, 493-508, 202-205`) but the payload is discarded with `.ok()`/`let _` — no `logs` row, no stderr. architecture.md §4 and the Working agreement promise "that plugin's output is dropped, **the event is logged with the error**". Today a panicking plugin is indistinguishable from one returning `None`, so T233-class failures stay invisible in `rtok doctor` / `rtok logs`.
+
+Plan: one funnel helper for the four loops matching the `Err`, extracting the panic payload string and calling `cx.log("error", …)` with the plugin id before dropping the output.
+
+Check: `a_panicking_plugin_is_logged_and_the_rest_survives` — a registry with one panicking and one returning plugin: stdout keeps the good plugin's context and the store holds one `level = "error"` log row naming the plugin; `just test` green.
+
+Result: The four per-plugin `catch_unwind` loops in `src/hooks/mod.rs` (PreCompact, PreToolUse, PostToolUse, the inject events) route an `Err` through one `log_panic` helper: it takes the `&str`/`String` payload (else "non-string panic payload") and writes one `cx.log("error", "plugin", <id>, "<event> panicked: …")` before dropping that plugin's output. The non-panic path is unchanged. There is no `catch_unwind` outside hooks. Test: `a_panicking_plugin_is_logged_and_the_rest_survives`.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
