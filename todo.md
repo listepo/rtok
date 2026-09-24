@@ -45,4 +45,3 @@
 - T241. Replay bench: saving over a fixed session corpus
 - T246.5. zed and grok MCP entries
 - T250.3. Cursor hooks find `rtok` off `PATH`
-- T246.6. Hook entries of cursor, gemini, kimi and codewhale

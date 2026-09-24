@@ -152,7 +152,7 @@ pub(super) fn insert_ours(
 }
 
 /// ` <matcher>` for a report line; nothing for an empty matcher.
-fn show(matcher: &str) -> String {
+pub(super) fn show(matcher: &str) -> String {
     if matcher.is_empty() {
         String::new()
     } else {
@@ -235,15 +235,10 @@ pub(super) fn strip_ours(
                     return true;
                 };
                 let want = json!({"type": "command", "command": cmd, timeout_key: timeout});
-                if !listed || *h != want {
-                    let at = format!("hooks.{event}{} in {}", show(&matcher), path.display());
-                    if let Some(leave) = rtok_agent_sdk::keep_edited(apply, &at) {
-                        kept.push(leave);
-                        return true;
-                    }
-                }
-                removed += 1;
-                false
+                let at = || format!("hooks.{event}{} in {}", show(&matcher), path.display());
+                let take = super::takes_hook(apply, listed && *h == want, at, &mut kept);
+                removed += usize::from(take);
+                !take
             });
         }
         arr.retain(|e| {
@@ -253,14 +248,7 @@ pub(super) fn strip_ours(
         });
     }
     hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
-    if removed > 0 {
-        kept.push(format!("{removed} removed"));
-    }
-    if kept.is_empty() {
-        NO_CHANGES.into()
-    } else {
-        kept.join("\n")
-    }
+    super::with_kept(kept, super::removed_report(removed))
 }
 
 /// Add `rtok mcp` to `mcpServers` in `~/.claude.json` (T4.7).

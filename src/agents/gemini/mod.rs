@@ -14,10 +14,10 @@
 //! `settings.json` (mirrors `src/agents/copilot/mod.rs`).
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use rtok_agent_sdk::{NO_CHANGES, array_at, edit_json, object_at};
+use rtok_agent_sdk::{Apply, NO_CHANGES, array_at, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -65,21 +65,13 @@ fn is_ours(cmd: &str, claude_event: &str) -> bool {
         .is_some_and(|bin| super::is_rtok_bin(super::unquote_bin(bin)))
 }
 
-fn has_ours(entry: &Value, claude_event: &str) -> bool {
-    let Some(cmds) = entry.get("hooks").and_then(Value::as_array) else {
-        return false;
-    };
-    cmds.iter()
-        .filter_map(|h| h.get("command").and_then(Value::as_str))
-        .any(|c| is_ours(c, claude_event))
-}
-
 /// Apply, dry-run, or remove rtok's `hooks.<Event>[]` entries; foreign entries survive.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
-    edit_json(&apply(cfg), &settings_path(cfg), |root| {
+    let (a, path) = (apply(cfg), settings_path(cfg));
+    edit_json(&a, &path, |root| {
         let hooks = object_at(root, "hooks");
         if remove {
-            strip_ours(hooks)
+            strip_ours(&a, &path, hooks, cfg.setup.hook_timeout_s)
         } else {
             insert_ours(hooks, &super::rtok_hook_bin(), cfg.setup.hook_timeout_s)
         }
@@ -128,25 +120,42 @@ fn insert_ours(hooks: &mut Value, bin: &str, timeout_s: u64) -> String {
     }
 }
 
-fn strip_ours(hooks: &mut Value) -> String {
+/// Remove rtok's hooks (T246.6); emptied entries and arrays go. One still as [`insert_ours`]
+/// writes it — an entry of only `hooks`, the hook exactly `{type, command, timeout}` — goes;
+/// one the user changed goes only as [`rtok_agent_sdk::keep_edited`] decides.
+fn strip_ours(apply: &Apply, path: &Path, hooks: &mut Value, timeout_s: u64) -> String {
     let Some(obj) = hooks.as_object_mut() else {
         return NO_CHANGES.into();
     };
-    let mut removed = 0usize;
+    let (mut removed, mut kept) = (0usize, Vec::new());
     for &(gevent, cevent) in EVENTS {
         let Some(arr) = obj.get_mut(gevent).and_then(Value::as_array_mut) else {
             continue;
         };
-        let n = arr.len();
-        arr.retain(|e| !has_ours(e, cevent));
-        removed += n - arr.len();
+        for entry in arr.iter_mut() {
+            let bare = entry.as_object().is_some_and(|o| o.len() == 1);
+            let Some(inner) = entry.get_mut("hooks").and_then(Value::as_array_mut) else {
+                continue;
+            };
+            inner.retain(|h| {
+                let Some(cmd) = h["command"].as_str().filter(|c| is_ours(c, cevent)) else {
+                    return true;
+                };
+                let want = json!({"type": "command", "command": cmd, "timeout": timeout_s * 1000});
+                let at = || format!("hooks.{gevent} in {}", path.display());
+                let take = super::takes_hook(apply, bare && *h == want, at, &mut kept);
+                removed += usize::from(take);
+                !take
+            });
+        }
+        arr.retain(|e| {
+            e.get("hooks")
+                .and_then(Value::as_array)
+                .is_none_or(|a| !a.is_empty())
+        });
     }
     obj.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
-    if removed == 0 {
-        NO_CHANGES.into()
-    } else {
-        format!("{removed} removed")
-    }
+    super::with_kept(kept, super::removed_report(removed))
 }
 
 /// The `mcpServers.rtok` entry [`register_mcp`] writes.
