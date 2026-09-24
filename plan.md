@@ -59,7 +59,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T182 | todo | P2 | 3 | 0% | |
 | T184 | todo | P1 | 2 | 0% | |
-| T186 | todo | P1 | 3 | 0% | |
 | T198 | todo | P2 | 2 | 0% | |
 | T199 | todo | P2 | 1 | 0% | |
 | T201 | todo | P2 | 2 | 0% | |
@@ -698,22 +697,6 @@ Already covered: `assert_cmd`, `divan`, `httpmock`, `insta`, `rstest`,
 `trycmd`, `similar`. Skip `test-case` / `expect-test` / `mockito` duplicates;
 `testcontainers` / `bolero`/`honggfuzz` only if a measured e2e/fuzz gap appears.
 
-
-### T186. `rtok agents install mimo` — MiMo Code CLI and MiMo Desktop
-
-Creator request 2026-09-22: host for Xiaomi MiMo — both the coding CLI (MiMo Code / `mimo`) and MiMo Desktop. Mobile/Termux builds of MiMo Code share the same config family where proven; treat Desktop as a second variant once its config paths are documented.
-
-What MiMo is (research): Xiaomi’s AI coding stack. **MiMo Code** is an open-source terminal-native coding agent (https://github.com/XiaomiMiMo/MiMo-Code, docs https://mimo.xiaomi.com/mimocode/start), a fork of OpenCode with persistent memory, Compose mode, skills, LSP, and MCP; install via `curl -fsSL https://mimo.xiaomi.com/install | bash` or `npm i -g @mimo-ai/cli`, run `mimo`. Config: `~/.config/mimocode/mimocode.json` and project `.mimocode/mimocode.json` (`mcp`, `plugin`, agents build/plan/compose). File hooks live under `~/.config/mimocode/hooks/` (`*.ts` / `*.js`, `@mimo-ai/plugin`). **MiMo Desktop** is Xiaomi’s separate all-in-one desktop app (early access on mimo.mi.com) for office/design/coding — probe whether it shares `mimocode.json` MCP or has its own store before writing a Desktop variant. Community Android/Termux forks exist; only claim mobile if the same config paths apply.
-
-Integration analysis: closest existing host is `opencode` (same fork lineage) — reuse MCP edit patterns, but packages are `@mimo-ai/*` not `@opencode-ai/*`, so an OpenCode plugin path will not load as-is (see also rtk-ai/rtk#2380). v1 should (1) write local MCP `rtok` into `mimocode.json`, (2) optionally drop a file hook that rewrites shell through `rtok run` like the OpenCode plugin, (3) add a Desktop variant only after confirming paths. D21 singleton: strip duplicate MCP when a linked plugin already carries it.
-
-Plan:
-1. Probe: `mimo` on PATH; read/write `~/.config/mimocode/mimocode.json` MCP; confirm Desktop config location (or document “CLI-only until Desktop paths known”). Note in `research.md` §15.
-2. `src/agents/mimo/` — variants CLI (`mimo`) and Desktop (when paths known); MCP install/remove; optional `plugins/mimo/` or hooks file if the OpenCode-style plugin API is the honest bash-rewrite path.
-3. Tests + `agents_doc` bless; trycmd list row.
-4. Do not claim Termux/mobile as a separate variant unless install detection is distinct and stable.
-
-Check: `rtok agents list` shows `mimo`; install adds rtok under `mcp` in mimocode.json; `just check`.
 
 ### T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 

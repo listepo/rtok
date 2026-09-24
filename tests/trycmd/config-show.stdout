@@ -163,6 +163,7 @@ setup.hook_timeout_s = 5
 setup.kilo.config_path = ~/.config/kilo/kilo.json
 setup.kimi.config_path = ~/.kimi-code/config.toml
 setup.mcp = true
+setup.mimo.config_path = ~/.config/mimocode/mimocode.json
 setup.modes = []
 setup.omp.extensions_path = ~/.omp/agent/extensions
 setup.omp.mcp_path = ~/.omp/agent/mcp.json

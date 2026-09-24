@@ -73,6 +73,11 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             vec!["--yes"],
             Some(home.join(".codewhale/config.toml")),
         ),
+        (
+            "mimo",
+            vec![],
+            Some(home.join(".config/mimocode/mimocode.json")),
+        ),
     ]
 }
 

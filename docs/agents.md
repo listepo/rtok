@@ -36,6 +36,7 @@ Check what is installed on this machine with `rtok agents list`; `rtok doctor` r
 | [`zed`](https://github.com/listepo/rtok/blob/main/src/agents/zed/README.md) | Zed | Desktop | — | yes | — | — | read, archive, memory, graph, toon |
 | [`gemini`](https://github.com/listepo/rtok/blob/main/src/agents/gemini/README.md) | Gemini CLI | CLI | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon |
 | [`codewhale`](https://github.com/listepo/rtok/blob/main/src/agents/codewhale/README.md) | CodeWhale | CLI | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon |
+| [`mimo`](https://github.com/listepo/rtok/blob/main/src/agents/mimo/README.md) | MiMo Code | CLI | — | yes | — | — | read, archive, memory, graph, toon |
 <!-- agents-table:end -->
 
 The table is generated from the host code (`src/agents/<host>/mod.rs` and the plugin catalogue) by `tests/agents_doc.rs`, which fails when it is stale. After changing a host, adding one, or changing a plugin's surfaces, regenerate it:

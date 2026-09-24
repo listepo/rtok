@@ -12,7 +12,7 @@ use rtok_agent_sdk::{NO_CHANGES, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::plugin::HostPlugin;
-use super::{Agent, Kind, Mode, Support, Variant, apply};
+use super::{Agent, Kind, Mode, Support, Variant, apply, register_local_mcp, unregister_local_mcp};
 use crate::config::Config;
 
 /// OpenCode: `env.OPENAI_BASE_URL`, `mcp.rtok` and a linked plugin. The CLI and the desktop
@@ -138,25 +138,14 @@ impl Agent for OpenCode {
     }
 }
 
-const NAME: &str = "rtok";
-
 /// Register `rtok mcp` as `mcp.rtok` — OpenCode's local server shape, `command` as argv.
 pub fn register_mcp(cfg: &Config) -> Result<String> {
-    let cmd = super::rtok_command();
-    let entry = json!({"type": "local", "command": [cmd.as_str(), "mcp"], "enabled": true});
-    rtok_agent_sdk::register_server(
-        &apply(cfg),
-        &cfg.setup.opencode.config_path,
-        "mcp",
-        NAME,
-        entry,
-        &format!("{cmd} mcp"),
-    )
+    register_local_mcp(cfg, &cfg.setup.opencode.config_path, "mcp")
 }
 
 /// Drop `mcp.rtok` (`rtok agents remove opencode`).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::unregister_server(&apply(cfg), &cfg.setup.opencode.config_path, "mcp", NAME)
+    unregister_local_mcp(cfg, &cfg.setup.opencode.config_path, "mcp")
 }
 
 /// Offer / link / unlink `plugins/opencode/rtok.ts` (D21, T44.5). Dry-run and the unaccepted
@@ -271,20 +260,12 @@ mod tests {
     #[test]
     fn mcp_entry_is_local_argv_idempotent_and_remove_keeps_foreign() {
         let (c, path) = cfg("mcp", false);
-        fs::write(&path, r#"{"mcp":{"other":{"type":"remote","url":"x"}}}"#).unwrap();
-        let first = register_mcp(&c).unwrap();
-        assert!(first.starts_with("mcp.rtok: "), "{first}");
-        assert_eq!(register_mcp(&c).unwrap(), NO_CHANGES);
-        let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(root["mcp"]["rtok"]["type"], "local");
-        assert_eq!(root["mcp"]["rtok"]["command"][1], "mcp");
-        assert_eq!(root["mcp"]["rtok"]["enabled"], true);
-        assert_eq!(OpenCode.installed(&c, Kind::Cli), ["mcp"]);
-        assert_eq!(unregister_mcp(&c).unwrap(), "- mcp.rtok");
-        assert_eq!(unregister_mcp(&c).unwrap(), NO_CHANGES);
-        let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert!(root["mcp"]["rtok"].is_null(), "{root}");
-        assert_eq!(root["mcp"]["other"]["url"], "x");
+        crate::agents::assert_local_mcp_roundtrip(
+            &path,
+            || register_mcp(&c),
+            || unregister_mcp(&c),
+            || OpenCode.installed(&c, Kind::Cli),
+        );
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
