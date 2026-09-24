@@ -5330,3 +5330,16 @@ Do (2026-09-24): `read_frame` in `src/mcp/wrap.rs` returns `None` only at real E
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T190. `after_mcp` shortens MCP results on a second, divergent path
+
+Found 2026-09-22 in the core pass: the `AfterMCPExecution` handler (`src/hooks/mod.rs:249-332`) re-implements MCP-result shortening beside the sanctioned `PostToolUse` → `wrap::shorten_result` path (D21: one call path per capability) and drifts on every axis: no `Measurement` row (only `put_archive`) — and a saving that is not a `Measurement` row does not exist; `isError` results are shortened instead of skipped; `mcp_result_text` joins all `content[].text` blocks with `\n`, archives the join, and `set_mcp_result_text` writes the shortened join into the first block only (blocks 2..n duplicated, structure destroyed); the output key serializes camelCase while the documented key is snake `updated_mcp_tool_output` (T70.4 records "no documented replacement" — likely a silent no-op); the threshold differs (`mcp.max_result_chars` vs `rule.max_lines`). On Cursor both events fire for one MCP call, so one result is processed twice.
+
+Plan: verify the host's documented output key first; then either delete the `after_mcp` shorten (return `HookOutput::default()`) so `postToolUse`'s `wrap::shorten_result` is the single call path, or delegate verbatim to `mcp::wrap::shorten_result` (per-block, `isError` skip, `Measurement`) and emit the documented key shape.
+
+Check: fixture test on `AfterMCPExecution` with two text blocks and with `isError: true` asserts byte-passthrough `{}` or exactly one `Measurement { plugin: "archive" }`, no block duplication, and an `expand` round trip of the original per-block bytes (mirror of `cursor_mcp_post_tool_use_shortens_only_foreign_long_results`); `just test` green.
+
+Do (2026-09-24): Cursor documents no output for `afterMCPExecution` (https://cursor.com/docs/agent/hooks, read 2026-09-24): only `postToolUse` can replace an MCP result, via `updated_mcp_tool_output`. So `after_mcp` in `src/hooks/mod.rs` returns `{}` and the second shortening path is deleted (`shorten_mcp_result`, `mcp_result_text`, `set_mcp_result_text`). `postToolUse` → `mcp::wrap::shorten_result` is the only path. Test `cursor_after_mcp_execution_is_byte_passthrough`: a two-block oversized result and an `isError` result both give `{}` and no `Measurement` row. The Cursor installer still registers the event; the no-op handler is harmless. `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
