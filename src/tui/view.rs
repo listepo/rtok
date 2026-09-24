@@ -177,6 +177,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
         "stats" => frame.render_widget(stats(app), area),
         "graph" => frame.render_widget(graph_page(app), area),
         "hosts" => frame.render_widget(hosts_page(app), area),
+        "config" => frame.render_widget(config_page(app), area),
         page => unreachable!("page `{page}` has no TUI body — surface_parity holds the list"),
     }
 }
@@ -431,6 +432,23 @@ fn graph_page(app: &App) -> Paragraph<'static> {
 /// snapshot already carries (D27), never a second spawn per tick.
 fn hosts_page(app: &App) -> Paragraph<'static> {
     Paragraph::new(app.snapshot().hosts.clone())
+}
+
+/// The model's Config page (T228), from the snapshot (D27). `/` filters through
+/// [`crate::expand::filter_lines`], the Calls expand pane's filter (T60.4).
+fn config_page(app: &App) -> Paragraph<'static> {
+    let Some(text) = app.snapshot().config.as_ref() else {
+        return empty("config did not answer this tick — `rtok config show` has the details");
+    };
+    let (filtering, filter) = app.config_filter();
+    if !filtering && filter.is_empty() {
+        return Paragraph::new(text.clone());
+    }
+    let filtered = crate::expand::filter_lines(text, None, Some(filter), 0)
+        .ok()
+        .map(|v| v.join("\n"))
+        .unwrap_or_else(|| text.clone());
+    Paragraph::new(format!("/{filter}\n{filtered}"))
 }
 
 /// The model's Calls page (T15.5): the ledger's recent rows, newest first — surface,
@@ -901,7 +919,9 @@ mod tests {
     /// failed on this file, not on a rendering bug — a little headroom for the next
     /// page too.
     fn screen(app: &App) -> String {
-        let mut terminal = ratatui::Terminal::new(TestBackend::new(98, 24)).unwrap();
+        // T228 widened the tab bar to 11 tabs — 98 cols clipped the last one off the
+        // pane's border before its text ever hit the buffer.
+        let mut terminal = ratatui::Terminal::new(TestBackend::new(112, 24)).unwrap();
         terminal.draw(|frame| draw(frame, app)).unwrap();
         terminal
             .backend()

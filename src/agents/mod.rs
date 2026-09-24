@@ -9,6 +9,7 @@
 //! `rtok agents list` and `rtok doctor` read the same files back through the same contract.
 
 pub mod aider;
+pub mod antigravity;
 pub mod claude;
 pub mod codewhale;
 pub mod codex;
@@ -62,6 +63,7 @@ pub const HOSTS: &[&str] = &[
     "gemini",
     "codewhale",
     "mimo",
+    "antigravity",
 ];
 
 /// Every module an rtok install can carry, in print order.
@@ -88,6 +90,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "gemini" => Some(&gemini::Gemini),
         "codewhale" => Some(&codewhale::Codewhale),
         "mimo" => Some(&mimo::Mimo),
+        "antigravity" => Some(&antigravity::Antigravity),
         _ => None,
     }
 }
@@ -1117,6 +1120,32 @@ pub(crate) fn offer_plugin(
         }),
         Err(e) => Ok(format!("offer {src_rel} → {shown} ({bin} failed: {e})")),
     }
+}
+
+/// A plugin whose store only the host writes (T86, `Support::Offer("--yes")`: Kimi's
+/// `/plugins install`, Antigravity CLI's `agy plugin install`). rtok prints `install` behind
+/// `--yes` — dry-run and apply alike — and never runs it; the flag never turns the line into
+/// state (`installed` is the caller's own marker read). Remove leaves a staged copy alone and
+/// says so with `keep`.
+pub(crate) fn print_offer(
+    cfg: &Config,
+    remove: bool,
+    installed: bool,
+    src_rel: &str,
+    install: &str,
+    keep: &str,
+) -> String {
+    let a = apply(cfg);
+    if remove && !a.dry_run {
+        return if installed { keep } else { NO_CHANGES }.into();
+    }
+    if !a.yes {
+        return NO_CHANGES.into();
+    }
+    format!(
+        "offer {src_rel} → {install} {}",
+        rtok_agent_sdk::KETCH_INSTALL
+    )
 }
 
 /// The per-host fn items [`d21_plugin_apply`] threads through: Copilot's and Gemini's own

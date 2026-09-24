@@ -452,6 +452,25 @@ Check: `host_docs` and the new manifest test green; `just check`.
 
 Check result (2026-09-21): `--test antigravity_plugin` 3 passed, `--test host_docs` 2 passed. The `just check` steps, run one by one: `fmt-check` exit 0, `lint` green, `cargo nextest run --workspace --no-fail-fast` 1083 passed / 4 skipped, `build-min` and `dup` green. An earlier `just check` in the same shared checkout stopped at `fmt-check` on another session's in-progress `src/hooks/types.rs` and once failed `cli_trycmd` while that session was re-blessing `tests/trycmd/`; neither repeated once those edits settled, and nothing under `src/` or `tests/trycmd/` names `antigravity`. Not verified live: `agy` and the Antigravity desktop apps are not installed on this machine, so the plugin has not been loaded by a real host — T91 carries that check.
 
+### T91.1. `rtok agents install antigravity` — host, plugin offer, config
+
+After T90 (done): `plugins/antigravity/` carries `plugin.json` + `mcp_config.json` and **no hooks** — creator decisions 2026-09-21: the plugin is the only install path (no direct edit of `~/.gemini/config/mcp_config.json`), and per https://antigravity.google/docs/hooks/ `PreToolUse` cannot rewrite tool input and `PostToolUse` cannot add context. New host `antigravity` in `src/agents/antigravity/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()`. Variants: CLI (`agy` on PATH) and Desktop (`Antigravity.app`), same files. `hooks` → `No` with the reason from T90; `mcp` → through the plugin only; `proxy` → `No` (no documented base-URL override). Missing `rtok`: the offer names `ketch install listepo/rtok`.
+
+Creator decision 2026-09-24 (symlink behaviour is still undocumented, neither surface is installed here): **CLI** prints the `agy plugin install <resolved plugins/antigravity path>` line behind `--yes` and never writes `~/.gemini/antigravity-cli/plugins/` (the Kimi rule, `Support::Offer("--yes")`); `installed()` reads `<cli_plugins_path>/rtok/plugin.json` naming `rtok`; remove keeps that copy with the `agy plugin uninstall rtok` line. **Desktop** links `plugins/antigravity` to `<plugins_path>/rtok` (default `~/.gemini/config/plugins/rtok`) through `HostPlugin` behind `--yes` (`Support::Flag("--yes")`, `default_install: false`); `installed()` reads `PLUGIN.ours`.
+
+Plan:
+1. `src/agents/antigravity/{mod.rs,README.md}`; register in `HOSTS` / `host()`; `HostPlugin` table in `src/agents/plugin.rs` gets `Antigravity` → `false`.
+2. `[setup.antigravity] plugins_path` / `cli_plugins_path` in `config/default.toml`, `src/config/mod.rs` (section + path expansion), `docs/config.md`.
+3. Unit tests: CLI dry-run without `--yes` is `NO_CHANGES`, with `--yes` names `plugins/antigravity`, `agy plugin install` and the ketch line and writes nothing; a staged CLI copy is reported installed and kept on remove. Desktop: dry-run writes nothing; `--yes` links, a second apply is `NO_CHANGES`, remove takes back exactly ours; a foreign directory is left alone and not reported installed.
+4. Bless `docs/agents.md` (`RTOK_BLESS=1 tests/agents_doc.rs`), `tests/agents_install.rs` / `tests/common/agents.rs` host rows, trycmd config/report goldens (restore `v[..]` in `man.stdout`).
+
+Result: new host `antigravity` (CLI + Desktop) in `src/agents/antigravity/`; shared `agents::print_offer` now backs both Kimi's `/plugins install` line and the `agy plugin install` line (no behaviour change for Kimi); `[setup.antigravity] plugins_path` / `cli_plugins_path`; `docs/agents.md`, config and report goldens re-blessed. Skill roots and the research sentence stay in T91.2.
+
+Check: the unit tests above; `rtok agents list` shows `antigravity`; `agents_doc`, `host_docs`, `config_coverage` green; `just check`.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T80. `demon status` names the proxy endpoint (bind:port)
 
 Creator 2026-09-21. `rtok demon status` said whether a service was running but never *where*: the proxy row carried no host/port, so answering "is the proxy up and on what address?" meant `rtok proxy --dry-run` or reading config by hand.
@@ -5163,6 +5182,31 @@ Check result: `cargo nextest run --test demon` — 6/6 passed locally on macOS (
 Status: done 2026-09-23
 Model: Claude Code / claude-sonnet-5
 
+### T83.5. `agents::claude::tests::desktop_writes_absolute_rtok_into_claude_desktop_config` fails on Windows
+
+The desktop Claude config path assertion assumes a Unix absolute path or a Unix `rtok` binary name (no `.exe`). Read `src/agents/claude/mod.rs`'s desktop-config writer and decide whether it needs a `cfg(windows)` path/extension branch or the test's expected string needs a platform-aware fixture. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Result: not a product bug — the test matched `desktop_command()` as a substring of the raw JSON, and a Windows path's `\` is written as `\\` there. The test now compares the parsed `mcpServers.rtok.command`; `desktop_path()` / `desktop_command()` were already Windows-correct (`%APPDATA%\Claude`, absolute `current_exe`). Its line left the `cfg(windows)` `default-filter` in `.config/nextest.toml`.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
+
+### T83.9. `otel::hooks_stay_fast_with_an_unreachable_endpoint` times out on Windows (131 s)
+
+Connecting to an unreachable endpoint should fail fast (the point of the test — hooks must stay under budget even when otel can't be reached), but on Windows it apparently blocks for 131 s. Likely a difference in how Windows resolves/connects to an unreachable address (DNS or TCP connect timeout defaults) versus Unix. Decide whether the otel client needs an explicit Windows-safe connect timeout or the test's "unreachable" address needs to be one that fails fast cross-platform. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes well under its slow-timeout in the `windows` CI job; `just check` stays green.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): not a connect timeout — the same inherited-pipe hang as T83.3. Every hook (`rtok hook Stop` here) calls `otel::export::spawn_child`, which spawns a detached `rtok otel flush --coalesce` with `Stdio::null()` on all three streams. On Windows that child still inherits the hook's own inheritable stdout/stderr handles, i.e. the write end of the test's `wait_with_output()` pipe, and keeps it open until the flush gives up on `127.0.0.1:9` (Windows retries a refused loopback connect for about two seconds per attempt). Each of the test's samples therefore waits for the flush child instead of the hook, and the retry-to-deadline loop runs into the 131 s timeout. Fix: `rtok_sys::stop_inheriting_own_stdio()` right before the spawn in `spawn_child`, as `demon::start` does; no-op on Unix. Removed the test from the `cfg(windows)` override in `.config/nextest.toml`.
+
+Check result: `just check` green on macOS; PR #336's `windows` CI job passes the test (ci run before the rebase).
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T180. Research: filtering WebFetch, WebSearch and browser page text
 
 Found in the 2026-09-22 audit: `WebSearch` 1.9 MB, `WebFetch` 1.3 MB and `Claude_Browser` `get_page_text`/`read_page` 0.25 MB in 7 days with no rtok involvement. PostToolUse cannot change native results (see T134), so the path is unclear.
@@ -5306,6 +5350,38 @@ Done: `emit_filtered` (`src/plugins/cmd/run.rs`) now short-circuits when `body.l
 
 Check result: `cargo nextest run` for `plugins::cmd::run::tests` (18/18, including `tiny_body_passes_through_verbatim_with_no_negative_saving` and the padded `archive_keeps_bytes_that_are_not_utf8`), `plugins::cmd::filter::tests` (3/3) and `--test lossless_roundtrip` (2/2) all green; `just check` (fmt, clippy, full test suite) green.
 Model: Claude Code / claude-sonnet-5
+
+### T235.1. `rtok run` waits for the wrapped process, not for EOF on its pipe
+
+Findings from a load incident on the creator's machine (16 cores, load average ~120). The load came from a stress script in another agent session (24 busy loops plus repeated `cargo nextest`), not from rtok: every rtok process sat at ~0% CPU — 15 `rtok mcp` (one per agent session, every parent alive, ~15 MB RSS each) and `rtok demon supervise proxy` with its `rtok proxy`. Two rtok costs still showed up:
+
+- `rtok run` hangs after the wrapped command has exited when a detached grandchild inherits its output pipe. Reproduced with `rtok run -- ... wt.sh new ...` in a repository with `core.fsmonitor=true`: `git worktree add` started `git fsmonitor--daemon run --detach`, which keeps fd 6 — the write end of rtok's capture pipe (`lsof` shows the pair `rtok 6 PIPE ->` / `git 6 PIPE ->`). The child zsh was already `<defunct>` (exited, not reaped) while `rtok run` still blocked reading for EOF, so the agent's call ran into its 60 s timeout and had to be killed. Any daemonising command (fsmonitor, `gradle --daemon`, `sccache`, a backgrounded server) triggers it.
+
+Done means: `rtok run` waits for the wrapped process, not for EOF — once the child exits it reaps it, drains what is already buffered (short bounded wait) and returns the child's exit code even if a descendant still holds the pipe, covered by a test that spawns a detached grandchild. Split 2026-09-24 into T235.1–T235.3 (one PR each). 
+
+Execution plan: (1) `plugins/cmd/run.rs::run` — spawn with piped stdout/stderr instead of `output()`; one reader thread per pipe appends into a shared buffer; `wait()` the child, then give the readers a bounded drain (200 ms) and take what is buffered, leaving a reader still blocked by a grandchild behind (the process exits anyway); (2) unit test: `rtok run` of a script that backgrounds `sleep 30` holding stdout returns in well under the sleep with the parent's output and exit code; (3) `just check`.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): `run` used `Command::output()`, which reads both pipes to EOF, so any descendant holding the write end kept `rtok run` blocked after the shell had exited. New `capture` in `plugins/cmd/run.rs`: stdout and stderr each go to a reader thread appending into a shared buffer; the main thread `wait()`s the shell, then waits at most `DRAIN_AFTER_EXIT` (200 ms) for both readers to reach EOF and takes what is buffered. A reader still blocked by a grandchild is left behind and dies with the process. Output order (stdout, then stderr) and exit code are unchanged; stdin stays null as with `output()`. Without a descendant both readers hit EOF right away, so the common path gains no wait.
+
+Check result: new unit test `capture_returns_when_the_child_exits_though_a_grandchild_holds_the_pipe` (`sh -c 'echo hi; sleep 20 & exit 4'`) returns `hi\n` and exit 4 in 0.28 s. With `output()` it would block for the full 20 s. `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
+### T235.3. `rtok logs watch` exits when its parent goes away
+
+Load-incident context in `done.md` → T235.1.
+
+- An `apps/rtok/target/debug/rtok logs watch --lines 5` had been running for 5.5 days with ppid 1: `logs watch` does not exit when the terminal or agent that started it goes away.
+
+Check: `rtok logs watch` exits when its parent dies or its stdout closes (SIGHUP/SIGPIPE, or ppid becoming 1), covered by a test.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): `log::watch_loop`, shared by `rtok logs watch` and every other watch command, now records its parent pid at start. It stops once the pid changes (reparented to a subreaper) or is 1 (reparented to init; this also covers a parent that exited before rtok read it). New `rtok_sys::parent_pid()` is rustix `getppid` on Unix and `None` on Windows, where a parent pid is never updated, so the check is off there. SIGHUP already ended an attached watch when its terminal closed, and a closed stdout ends it on the next failed write. The orphan in the card had neither: its stdout never errored, and it had nothing to print.
+
+Check result: new `tests/logs.rs::watch_exits_once_its_parent_is_gone` backgrounds `rtok logs watch` (stdout `/dev/null`) from an `sh` that exits at once; the watch is gone within one poll. Before the ppid-1 rule it was still running after 10 s. `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
 
 ### T170. A slow hook is logged, not only printed to stderr
 
@@ -6159,6 +6235,21 @@ Result: `src/agents/mod.rs` gains `hook_resolver(args, note)`, the POSIX line T1
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
+### T250.3. Cursor hooks find `rtok` off `PATH`
+
+T250.1–T250.4, creator request 2026-09-24, the follow-up T174 left open: the Codex, Copilot, Cursor and Grok plugin `hooks.json` files call a bare `rtok hook …` with no fallback, so a host whose hook shell lacks `~/.ketch/bin` (a GUI app started from the Dock) hits `rtok: command not found` (exit 127) on every event. Each gets T174's resolver — PATH, then `~/.ketch/bin/rtok`, then exit 0 silently — with any missing-rtok note only on the host's session-start event, in that host's own output shape. How each host runs a hook (read from its shipped code, 2026-09-24): Codex `$SHELL -lc` on Unix and `%COMSPEC% /C` with an optional `commandWindows` on Windows; Copilot separate `bash` and `powershell` fields; Cursor one `command`, `sh -c "<command> <<'CURSOR_HOOK_EOF' …"` on Unix and PowerShell `@'…'@ | & <command>` on Windows; Grok `sh -c` on Unix and PowerShell on Windows, no per-OS field.
+
+Cursor appends a heredoc to the command on Unix, so the resolver is one brace group `{ …; }` or the payload would reach only its last command. `plugins/cursor/hooks/hooks.json` gets the resolver on all six events (sessionStart's note is Cursor's flat `{"additional_context": "…"}`). Windows runs the same field through PowerShell, and there the plugin is already a copy (`PluginLink`), so the copy step writes each hook back to the bare `rtok hook … --host cursor`. `src/agents/cursor/mod.rs` `pre_cmd`/`post_cmd`/`compact_cmd` write the resolver for a bare bin off Windows, and `is_ours` recognises both shapes so reinstall and remove stay idempotent.
+
+
+Execution: `cursor::hook_cmd(event, note)` wraps `agents::hook_resolver` in `{ …; }` for a bare `rtok` off Windows (plain line otherwise); `pre_cmd`/`post_cmd`/`compact_cmd` use it and `is_ours` also takes the `exec rtok hook <event> --host cursor;` marker. `plugins/cursor/hooks/hooks.json` gets that form on all six events, sessionStart with the flat `additional_context` note. Windows copy: `rtok_agent_sdk::PluginLink::run_with(apply, remove, fix)` (`run` = no fix) passes a `CopyFix` into the copy and into `up_to_date`'s byte compare, so a fixed copy stays up to date; `HostPlugin::offer_with` carries it and Cursor's fix maps each resolver back to `rtok hook … --host cursor`. Tests: SDK unit (fixed copy is up to date), cursor unit (fix and installer round trip), `tests/cursor_plugin.rs` heredoc run.
+Check: `tests/cursor_plugin.rs` runs each plugin command as Cursor does (`/bin/sh -c "<command> <<'CURSOR_HOOK_EOF' …"`), empty PATH, temp HOME: silent exit 0, one sessionStart note, a fake `~/.ketch/bin/rtok` receives the payload on stdin; a unit test shows the Windows copy holds the bare lines; installer round trip idempotent; `just check` green. The test's stdin write tolerates a broken pipe: the fail-open hook may exit before reading it (T251).
+
+Result: `plugins/cursor/hooks/hooks.json` runs `{ command -v rtok … && exec rtok hook <event> --host cursor; [ -x "$HOME/.ketch/bin/rtok" ] && exec … ; true; exit 0; }` on all six events; only sessionStart prints Cursor's flat `{"additional_context": "…ketch install listepo/rtok…"}` when no rtok is found. The brace group is what makes Cursor's appended `<<'CURSOR_HOOK_EOF'` heredoc reach the resolved `rtok`. The installer writes the same line (`cursor::hook_cmd`, a bare bin off Windows only) and `is_ours` takes the `exec rtok hook <event> --host cursor;` marker, so reinstall/remove stay idempotent. Windows: `rtok_agent_sdk::PluginLink::run_with(apply, remove, fix)` and `HostPlugin::offer_with` pass a `CopyFix` into the owned copy and into the up-to-date byte compare; Cursor's `windows_copy` maps each resolver back to `rtok hook … --host cursor`, so the copy PowerShell runs holds bare lines and a rerun is `no changes`. The copy keeps `fs::copy` (mode bits, a skill's scripts) and rewrites only when the fix changed the bytes. Tests: SDK `a_fixed_owned_copy_is_up_to_date`; cursor units `plugin_hooks_are_the_installer_resolver`, `windows_copy_writes_back_the_bare_lines`; `tests/cursor_plugin.rs::hooks_resolve_rtok_from_path_then_ketch_else_exit_0` runs every hook the way Cursor does (empty PATH, temp HOME, builtins-only fake ketch rtok that echoes the heredoc payload). `just check` green (1739 tests).
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T172. MCP tool failures always set `is_error`
 
 Found in the 2026-09-22 audit: 40 `read`/`expand`/`search` results carried `path outside cwd: …` as plain text without `is_error` (the flag is set only for the other 77 failures), so the model may treat the refusal as file content. Timeouts read `Error: Error: Request timed out` (doubled prefix), and `read` rejects a range the model quoted, `"975-1015"`, with `invalid line range`.
@@ -6267,15 +6358,6 @@ Result: `site/content/docs/reference/_content.gotmpl` mounts `docs/otel.md` and 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
-### T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
-
-Found 2026-09-22 in the host-plugins pass: `tests/trycmd/agents-list*.toml` match `stdout = """…"""` / `[…]` — wildcards that assert nothing, so a lost host row, a broken block header or a malformed `--json` array all pass and "re-blessing" is a no-op. And `tests/host_docs.rs:20-40` slices `text.split("## Docs").nth(1)` to end-of-file and requires `links >= 1` — a `## Docs` list with zero links passes when any later section has an `https://` line, and nothing checks the links are the host's current config/plugin docs. Both blind spots are why drift like T197's README contradiction survives.
-
-Plan: normalize machine-specific lines and snapshot the remainder per host id (or one Rust test looping `HOSTS` × `variants()` asserting block headers); slice `## Docs` to the next `\n## ` heading and require ≥ 2 links with per-host URL needles (extending the `SKILL_HOSTS` pattern).
-
-Check: deleting one variant from a host's `VARIANTS` fails `cargo nextest run --test cli_trycmd` (or the header-loop test); an emptied `## Docs` list with links only in a later section fails `host_docs`; `RTOK_BLESS=1` re-bless restores; `just check` green.
-
-Result: New tests/agents_list_content.rs asserts every host × variant (literal 26-row table) in agents list text headers and --json rows; host_docs slices ## Docs to the next ## heading, needs ≥2 links and ≥2 on the host's own docs domain (DOC_DOMAINS). Verified by deleting a VARIANTS entry and emptying/mis-domaining a Docs list.
 ### T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 
 Found 2026-09-22 in the store/accounting pass: `inline_body` (`src/store/mod.rs:1823-1828`) stores bodies under the inline cap through `String::from_utf8_lossy` and hashes the *lossy* text, so `request_sha256`/`response_sha256` are not hashes of the wire bytes and `call_io_request` (:736-750) returns U+FFFD-corrupted bytes as if they were the original request. Consumers like `src/measure/cache.rs:106` see different bytes than the proxy sent; the stored sha cannot verify the true payload. Lossless-by-default holds for archived content but not for inline-kept content.
@@ -6342,3 +6424,14 @@ Result: initialize negotiates protocolVersion (echo a supported client version, 
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T228. Config page: `config show` / `config get` on `tui` and `web`
+
+Found 2026-09-23 in the D27 audit: `config show` and `config get` are exempt (`tests/surface_parity.rs:401-408`) although `model::config_entries` (`src/web/model.rs:1055`) already lists every key with its value and D12 source.
+
+Plan: page `("config", "config")` — key, effective value, source (default / user file / project file / env / flag); read-only on both surfaces (writes stay CLI, D27); TUI tab with a `/` filter, Slint list with a filter box; both commands move to `COMMAND_PAGES`.
+
+Check: `config_page_exists_on_both_surfaces`; a `tests/web.rs` case on a temp config with one env override shows the env source; `just check` green.
+
+Result: New Config page ("config","config") on both surfaces: model::config_page_text renders config_entries rows as key = value (source) each tick; TUI tab with a / filter, Slint page with a filter box; read-only. config get gained --json {key,value,source}; config show/get moved from EXEMPT to COMMAND_PAGES/JSON_READERS. Tests: config_page_exists_on_both_surfaces, config_page_source_reflects_an_env_override (RTOK_PROXY_PORT → source env), webui snapshot parse.
+

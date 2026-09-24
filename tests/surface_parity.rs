@@ -289,6 +289,36 @@ fn hosts_page_exists_on_both_surfaces() {
     );
 }
 
+/// T228: both surfaces render the Config page — `config show`'s rows, key/value/D12
+/// source — from the same model accessor, so `config show`/`config get` can leave
+/// EXEMPT for COMMAND_PAGES.
+#[test]
+fn config_page_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        web,
+        slint,
+        ..
+    } = SURFACES;
+    assert!(
+        model.contains("(\"config\", \"config\")"),
+        "pages() offers config"
+    );
+    assert!(
+        model.contains("fn config_page_text"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("\"config\" =>"),
+        "the TUI renders the config page"
+    );
+    assert!(
+        web.contains("config_text") && slint.contains("page-id == \"config\""),
+        "the web Config page renders the same text"
+    );
+}
+
 #[test]
 fn wasm_ui_renders_every_model_page() {
     let lib = include_str!(concat!(
@@ -347,6 +377,9 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     // the Hosts page rides the snapshot since T231, so both render it
     ("agents list", "hosts"),
     ("agents info", "hosts"),
+    // the Config page rides the snapshot since T228, so both render it
+    ("config show", "config"),
+    ("config get", "config"),
 ];
 
 /// The commands D27 exempts, each with its reason. Streaming commands print a stream,
@@ -481,14 +514,6 @@ const EXEMPT: &[(&str, &str)] = &[
     ("graph impact", "need a target; CLI/MCP only"),
     ("graph affected", "need a target; CLI/MCP only"),
     (
-        "config show",
-        "renders model::config_entries; no snapshot page yet",
-    ),
-    (
-        "config get",
-        "renders model::config_entries; no snapshot page yet",
-    ),
-    (
         "logs export",
         "the same Logs selection, unnumbered and uncoloured",
     ),
@@ -561,6 +586,7 @@ const JSON_READERS: &[&str] = &[
     "stats",
     "info",
     "config show",
+    "config get",
     "doctor",
     "plugins",
     "agents list",

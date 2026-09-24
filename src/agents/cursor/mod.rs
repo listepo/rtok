@@ -119,15 +119,52 @@ impl Agent for Cursor {
 }
 
 fn pre_cmd() -> String {
-    format!("{} hook PreToolUse --host cursor", super::rtok_hook_bin())
+    hook_cmd(&super::rtok_hook_bin(), "PreToolUse", None)
 }
 
 fn post_cmd() -> String {
-    format!("{} hook PostToolUse --host cursor", super::rtok_hook_bin())
+    hook_cmd(&super::rtok_hook_bin(), "PostToolUse", None)
 }
 
 fn compact_cmd() -> String {
-    format!("{} hook PreCompact --host cursor", super::rtok_hook_bin())
+    hook_cmd(&super::rtok_hook_bin(), "PreCompact", None)
+}
+
+/// T250.3: a bare `rtok` off Windows resolves at hook time ([`super::hook_resolver`]). Cursor
+/// runs `sh -c "<command> <<'CURSOR_HOOK_EOF' …"`, so the payload heredoc binds to the last
+/// command; the `{ …; }` group hands it to the whole resolver. Windows runs the field through
+/// PowerShell, and an absolute bin names one file already: both keep the plain line.
+fn hook_cmd(bin: &str, event: &str, note: Option<&str>) -> String {
+    let args = format!("hook {event} --host cursor");
+    if cfg!(windows) || bin != "rtok" {
+        return format!("{bin} {args}");
+    }
+    format!("{{ {}; }}", super::hook_resolver(&args, note))
+}
+
+/// The `plugins/cursor` hook lines as the Windows copy needs them (T250.3): PowerShell cannot
+/// parse the POSIX resolver, so each goes back to the bare `rtok hook … --host cursor`.
+fn windows_copy(rel: &Path, bytes: Vec<u8>) -> Vec<u8> {
+    if rel != Path::new("hooks/hooks.json") {
+        return bytes;
+    }
+    let Ok(mut doc) = serde_json::from_slice::<Value>(&bytes) else {
+        return bytes;
+    };
+    let Some(hooks) = doc.get_mut("hooks").and_then(Value::as_object_mut) else {
+        return bytes;
+    };
+    for entry in hooks.values_mut().filter_map(Value::as_array_mut).flatten() {
+        let bare = entry
+            .get("command")
+            .and_then(Value::as_str)
+            .and_then(|cmd| cmd.split_once("exec rtok ")?.1.split_once(';'))
+            .map(|(args, _)| format!("rtok {args}"));
+        if let Some(bare) = bare {
+            entry["command"] = json!(bare);
+        }
+    }
+    serde_json::to_vec_pretty(&doc).unwrap_or(bytes)
 }
 
 /// Apply, dry-run, or remove Cursor before/after shell hook entries.
@@ -189,7 +226,7 @@ pub fn plugin_dest(cfg: &Config) -> PathBuf {
 /// `linked`: a foreign directory at the dest is "linked" too, and unregistering the plain
 /// MCP entry for it would strip a working install for nothing (T196).
 pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
-    let report = PLUGIN.offer(cfg, remove)?;
+    let report = PLUGIN.offer_with(cfg, remove, windows_copy)?;
     if !remove && PLUGIN.ours(cfg) {
         let cleared = unregister_mcp(cfg)?;
         if cleared != NO_CHANGES {
@@ -266,7 +303,9 @@ fn strip_ours(apply: &Apply, path: &Path, root: &mut Value) -> String {
         let before = arr.len();
         arr.retain(|e| {
             let unchanged = e.as_object().is_some_and(|o| o.len() == 1)
-                && e["command"].as_str().is_some_and(|c| c.ends_with(&suffix));
+                && e["command"].as_str().is_some_and(|c| {
+                    c.ends_with(&suffix) || c == hook_cmd("rtok", rtok_event, None)
+                });
             let at = || format!("hooks.{event} in {}", path.display());
             !is_ours(e) || !super::takes_hook(apply, unchanged, at, &mut kept)
         });
@@ -300,7 +339,10 @@ fn is_ours(entry: &Value) -> bool {
             return true;
         }
     }
-    false
+    // The T250.3 resolver, whose `exec rtok <args>;` only an rtok entry carries.
+    ["PreToolUse", "PostToolUse", "PreCompact"]
+        .iter()
+        .any(|event| cmd.contains(&format!("exec rtok hook {event} --host cursor;")))
 }
 
 #[cfg(test)]
@@ -428,7 +470,10 @@ mod tests {
             "foreign dir must stay untouched"
         );
         let hooks_raw = fs::read_to_string(&c.setup.cursor.hooks_path).unwrap();
-        assert!(hooks_raw.contains(&pre_cmd()), "{hooks_raw}");
+        assert!(
+            hooks_raw.contains(&json!(pre_cmd()).to_string()),
+            "{hooks_raw}"
+        );
         let mcp_raw = fs::read_to_string(mcp_path(&c)).unwrap();
         assert!(
             mcp_raw.contains("\"rtok\""),
@@ -464,9 +509,9 @@ mod tests {
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("\"version\""));
-        assert!(raw.contains(&pre_cmd()));
-        assert!(raw.contains(&post_cmd()));
-        assert!(raw.contains(&compact_cmd()));
+        assert!(raw.contains(&json!(pre_cmd()).to_string()));
+        assert!(raw.contains(&json!(post_cmd()).to_string()));
+        assert!(raw.contains(&json!(compact_cmd()).to_string()));
         assert!(raw.contains("afterShellExecution"));
         assert!(raw.contains("preCompact"));
         let _ = fs::remove_dir_all(dir);
@@ -602,5 +647,67 @@ mod tests {
         let current = root.clone();
         assert_eq!(insert_ours(&mut root), NO_CHANGES);
         assert_eq!(root, current);
+    }
+
+    /// Cursor's flat sessionStart output, printed only when no rtok is found (T250.3).
+    const MISSING_RTOK_NOTE: &str = r#"{"additional_context":"rtok is not installed; run ketch install listepo/rtok to enable it."}"#;
+
+    fn plugin_hooks() -> Vec<u8> {
+        include_bytes!("../../../plugins/cursor/hooks/hooks.json").to_vec()
+    }
+
+    /// Each Cursor event in `plugins/cursor/hooks/hooks.json` → the rtok event it runs.
+    const PLUGIN_EVENTS: [(&str, &str); 6] = [
+        ("beforeShellExecution", "PreToolUse"),
+        ("afterShellExecution", "PostToolUse"),
+        ("sessionStart", "SessionStart"),
+        ("preCompact", "PreCompact"),
+        ("afterMCPExecution", "AfterMCPExecution"),
+        ("postToolUse", "PostToolUse"),
+    ];
+
+    /// T250.3: the plugin's hook lines are the installer's own resolver, sessionStart alone
+    /// carrying the missing-rtok note — one source for both surfaces.
+    #[cfg(not(windows))]
+    #[test]
+    fn plugin_hooks_are_the_installer_resolver() {
+        let doc: Value = serde_json::from_slice(&plugin_hooks()).unwrap();
+        for (event, rtok_event) in PLUGIN_EVENTS {
+            let note = (event == "sessionStart").then_some(MISSING_RTOK_NOTE);
+            assert_eq!(
+                doc["hooks"][event][0]["command"],
+                hook_cmd("rtok", rtok_event, note),
+                "{event}"
+            );
+        }
+        assert!(is_ours(&json!({"command": pre_cmd()})));
+        assert!(is_ours(
+            &json!({"command": hook_cmd("rtok", "PreCompact", None)})
+        ));
+        assert_eq!(
+            hook_cmd("/opt/rtok", "PreToolUse", None),
+            "/opt/rtok hook PreToolUse --host cursor"
+        );
+    }
+
+    /// T250.3: the Windows copy (PowerShell runs it) gets the bare line back on every event;
+    /// every other plugin file is copied as it is.
+    #[test]
+    fn windows_copy_writes_back_the_bare_lines() {
+        let fixed = windows_copy(Path::new("hooks/hooks.json"), plugin_hooks());
+        let doc: Value = serde_json::from_slice(&fixed).unwrap();
+        for (event, rtok_event) in PLUGIN_EVENTS {
+            assert_eq!(
+                doc["hooks"][event][0]["command"],
+                format!("rtok hook {rtok_event} --host cursor"),
+                "{event}"
+            );
+        }
+        assert_eq!(doc["hooks"]["postToolUse"][0]["matcher"], "MCP:");
+        let manifest = include_bytes!("../../../plugins/cursor/plugin.json").to_vec();
+        assert_eq!(
+            windows_copy(Path::new("plugin.json"), manifest.clone()),
+            manifest
+        );
     }
 }

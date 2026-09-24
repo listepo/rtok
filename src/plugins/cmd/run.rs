@@ -3,7 +3,10 @@
 use crate::config::Config;
 use anyhow::{Result, bail};
 use rtok_plugin_sdk::{Archive, Class, Measurement};
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::{Duration, Instant};
 
 use super::{formatters, rules};
 
@@ -274,14 +277,61 @@ pub fn run(cfg: &Config, args: &[String], agent: Option<&str>) -> Result<i32> {
     }
     let sh = shell(cfg);
     let sh_kind = shell_kind(&sh);
-    let out = Command::new(&sh)
-        .args(shell_args(&sh, &script_for(sh_kind, args)))
-        .output()?;
-    let mut body = out.stdout;
-    body.extend_from_slice(&out.stderr);
-    let code = out.status.code().unwrap_or(1);
+    let mut cmd = Command::new(&sh);
+    cmd.args(shell_args(&sh, &script_for(sh_kind, args)));
+    let (body, code) = capture(cmd)?;
     emit_filtered(cfg, args, &body, code, agent);
     Ok(code)
+}
+
+/// How long [`capture`] keeps reading once the wrapped process has exited. A descendant it
+/// left running (`git fsmonitor--daemon`, `gradle --daemon`, a backgrounded server) can hold
+/// the pipe's write end for good, so waiting for EOF would hang the agent's call (T235.1).
+const DRAIN_AFTER_EXIT: Duration = Duration::from_millis(200);
+
+/// `cmd`'s stdout then stderr, and its exit code. Waits for the process rather than for EOF
+/// (unlike `Command::output`): after it exits, what its pipes already hold is drained for up
+/// to [`DRAIN_AFTER_EXIT`], and a reader still blocked by a descendant is left behind.
+fn capture(mut cmd: Command) -> Result<(Vec<u8>, i32)> {
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let (tx, rx) = mpsc::channel();
+    let out = drain(child.stdout.take(), tx.clone());
+    let err = drain(child.stderr.take(), tx);
+    let code = child.wait()?.code().unwrap_or(1);
+    let deadline = Instant::now() + DRAIN_AFTER_EXIT;
+    for _ in 0..2 {
+        if rx
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .is_err()
+        {
+            break;
+        }
+    }
+    let mut body = std::mem::take(&mut *out.lock().unwrap_or_else(|e| e.into_inner()));
+    body.append(&mut err.lock().unwrap_or_else(|e| e.into_inner()));
+    Ok((body, code))
+}
+
+/// Read `pipe` to EOF on its own thread into the returned buffer; signal `done` at EOF.
+fn drain(pipe: Option<impl Read + Send + 'static>, done: mpsc::Sender<()>) -> Arc<Mutex<Vec<u8>>> {
+    let buf = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&buf);
+    std::thread::spawn(move || {
+        if let Some(mut pipe) = pipe {
+            let mut chunk = [0u8; 8192];
+            while let Ok(n @ 1..) = pipe.read(&mut chunk) {
+                sink.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .extend_from_slice(&chunk[..n]);
+            }
+        }
+        let _ = done.send(());
+    });
+    buf
 }
 
 /// Archive `body` when the shortening dropped something, print the filtered text plus
@@ -566,6 +616,23 @@ mod tests {
         let code = run(&c, &["sh".into(), "-c".into(), "exit 3".into()], None).unwrap();
         assert_eq!(code, 3);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// T235.1: a backgrounded grandchild keeps the capture pipe open after the shell exits.
+    /// `capture` returns on the shell's exit with its output and code, not at the pipe's EOF.
+    #[cfg(unix)]
+    #[test]
+    fn capture_returns_when_the_child_exits_though_a_grandchild_holds_the_pipe() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "echo hi; sleep 20 & exit 4"]);
+        let start = Instant::now();
+        let (body, code) = capture(cmd).unwrap();
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            start.elapsed()
+        );
+        assert_eq!((body.as_slice(), code), (&b"hi\n"[..], 4));
     }
 
     #[test]

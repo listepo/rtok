@@ -68,6 +68,9 @@ pub struct Snapshot {
     /// behind a cache: never blocks a 2 s tick on a cold or stale probe — the tick
     /// renders the last known text, or "probing hosts…" before the first one lands.
     pub hosts: String,
+    /// Config page (T228): `rtok config show --sources`'s rows, through
+    /// [`config_page_text`] (D27, no second layering). `None` on a failed tick.
+    pub config: Option<String>,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -317,6 +320,7 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
         ("stats", "stats"),
         ("graph", "graph"),
         ("hosts", "hosts"),
+        ("config", "config"),
     ]
 }
 
@@ -1188,6 +1192,19 @@ fn hosts_page_text(cfg: &Config) -> String {
         .unwrap_or_else(|| "probing hosts…\n".to_string())
 }
 
+/// The Config page (T228): [`config_entries`]'s rows, the same ones `config
+/// show`/`config get` already build (D27). `cfg.home` keeps a `--config`-rooted
+/// snapshot reading that home, never the real one. Read-only: unlike `config show`, a
+/// snapshot tick never runs `ensure_user_file` — a page view must not create files.
+fn config_page_text(cfg: &Config) -> Option<String> {
+    let fig = layers::figment(&cfg.home, None, None);
+    let mut out = String::new();
+    for (key, value, source) in layers::entries(&fig) {
+        out.push_str(&format!("{key} = {value} ({source})\n"));
+    }
+    Some(out)
+}
+
 /// One row of the `rtok config show` page: an effective key, its value, and which layer
 /// (`default|user|project|env|flag`) set it.
 #[derive(Debug, Serialize)]
@@ -1259,6 +1276,8 @@ impl<'a> Model<'a> {
             graph: graph_page_text(self.cfg),
             // T231: cached in the background — see `hosts_page_text`.
             hosts: hosts_page_text(self.cfg),
+            // T228: reads the layered figment fresh each tick — see `config_page_text`.
+            config: config_page_text(self.cfg),
         }
     }
 
