@@ -427,6 +427,7 @@ Arguments:
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON `{key,value,source}` instead of the bare value (T228)
   -h, --help           Print help
 
 $ rtok config validate --help

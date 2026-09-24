@@ -36,7 +36,6 @@
 - T223. `windows-sys` linked in three versions
 - T235.2. `rtok run` starts no login shell per call
 - T260. Web Sessions page: live-only filter and a help overlay
-- T228. Config page: `config show` / `config get` on `tui` and `web`
 - T229. Services page: `demon status` and `otel status` on `tui` and `web`
 - T232. Worktrees page: `worktree list` on `tui` and `web`
 - T241. Replay bench: saving over a fixed session corpus

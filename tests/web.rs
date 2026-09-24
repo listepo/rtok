@@ -130,6 +130,31 @@ async fn snapshot_error_when_store_path_is_a_directory() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// T228: `config get` and the Config page share `model::config_entries` (D27), so
+/// the CLI seeing a `RTOK_*` var as D12's `env` source proves the page would too.
+/// `unsafe_code = "forbid"` rules out `std::env::set_var` on this process; a spawned
+/// process's env is safe to set (`Command::env`, `dry_run.rs`'s pattern).
+#[test]
+fn config_page_source_reflects_an_env_override() {
+    let dir = std::env::temp_dir().join(format!("rtok-web-config-env-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_rtok"))
+        .args(["config", "get", "proxy.port", "--json"])
+        .env("RTOK_HOME", &dir)
+        .env("RTOK_PROXY_PORT", "9911")
+        .output()
+        .expect("run rtok config get");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    assert_eq!(v["source"], "env", "{v}");
+    assert_eq!(v["value"], "9911", "{v}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[tokio::test]
 async fn ws_set_accepts_plugin_enabled() {
     let (_addr, state, dir, task) = serve("set-ok").await;
