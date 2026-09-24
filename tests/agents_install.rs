@@ -20,8 +20,10 @@ use std::path::{Path, PathBuf};
 fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)> {
     vec![
         // T115: the plugin installs by default (fake `claude`), which then serves hooks
-        // and MCP, so rtok itself writes no settings file there (D21).
-        ("claude", vec!["--yes"], None),
+        // and MCP, so rtok itself writes no settings file there (D21). `--cli`: with the
+        // plugin in, the desktop variant has nothing to write from the first run (T243,
+        // covered in `claude_plugin.rs`).
+        ("claude", vec!["--yes", "--cli"], None),
         (
             "cursor",
             vec!["--yes"],

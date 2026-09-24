@@ -84,7 +84,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T239 | todo | P1 | 3 | 0% | |
 | T240 | todo | P2 | 2 | 0% | |
 | T241 | todo | P2 | 3 | 0% | |
-| T243 | in progress | P1 | 2 | 10% | Claude Code / opus-5-5 |
 | T244 | todo | P1 | 3 | 0% | |
 | T245 | todo | P2 | 3 | 0% | |
 | T246 | todo | P1 | 4 | 0% | |
@@ -434,9 +433,9 @@ Check: no `sql_query` left in the three functions; tests unchanged and green; `j
 
 Found in the 2026-09-22 audit: every Claude Code session lists both `mcp__rtok__*` and `mcp__plugin_rtok_rtok__*` (700+ deferred-tool listings in 7 days); only `mcp__rtok__*` is ever called (854 calls, 0 on the plugin name). `rtok doctor` shows `mcp ✓ installed` and `plugin ✓ installed` for `claude (cli)` at once. Two registrations break the D21 singleton and pay the tool descriptions twice.
 
-Plan: find which path writes the direct `mcpServers.rtok` entry next to the plugin (`src/agents/claude/`), make install keep only the plugin's server and remove a stale direct entry, and make doctor flag the pair as a duplicate.
+Plan: the install half is done by T243 — the direct entry was the Claude Desktop `mcpServers.rtok` in `claude_desktop_config.json`, which the desktop app's Code tab loads next to the plugin; install now drops it while the plugin is installed. Left: make doctor flag the pair (plugin installed + an rtok entry in `claude_desktop_config.json` or `~/.claude.json`) as a duplicate.
 
-Check: install on a fake home with the plugin present leaves one rtok MCP server; doctor reports a duplicate on a fixture that has both; `tests/agents_doc.rs` re-blessed if the host table changes; `just test` green.
+Check: doctor reports a duplicate on a fixture that has both; `tests/agents_doc.rs` re-blessed if the host table changes; `just test` green.
 
 ### T172. MCP tool failures always set `is_error`
 
@@ -546,14 +545,6 @@ The golden and surface tests measure one call at a time; no test shows the savin
 Plan: `tests/fixtures/replay/session.jsonl` — about 30 anonymised hook payloads shaped like a real Claude Code session (tool mix taken from `rtok stats` on this machine, bodies written or scrubbed by hand; no real paths, names or secrets). `tests/replay_bench.rs` feeds them through `rtok hook` in a temp home, sums the `Measurement` rows, prints a per-plugin table (`--nocapture`) and asserts the total saving stays over a floor set a few points below the first run. Record the first run as a dated `research.md` §2 row with the command.
 
 Check: the test fails when a plugin is disabled in the temp config; the `research.md` row cites the command; `just check` green. Needs T239.
-
-### T243. The Claude Code plugin supersedes the Claude Desktop `mcpServers.rtok`
-
-Found 2026-09-24 on this machine: a Claude Code session in the desktop app's Code tab lists two rtok MCP servers — `mcp__plugin_rtok_rtok__*` from the plugin and `mcp__rtok__*` from `claude_desktop_config.json`, which `rtok agents install claude` writes for the Desktop variant. Two servers, two call paths: D21 broken, and the model sees every tool twice. Creator's decision: when the plugin is installed it is the one call path, so the Desktop entry goes (Claude Desktop chat loses rtok MCP).
-
-Plan: in `src/agents/claude/mod.rs` `Claude::apply`, the Desktop branch calls `unregister_mcp` instead of `register_mcp` when `plugin_installed(cfg)` (the Cli variant runs first, so a fresh plugin install already counts) and says why in the report line; `installed()` for Desktop stays file-based. Update `src/agents/claude/README.md` (mcp desktop row). Tests in `tests/claude_plugin.rs`: with the plugin installed, an existing desktop `mcpServers.rtok` is removed and a fresh install never writes it; without the plugin the desktop entry is still written (existing `agents_install` test).
-
-Check: both tests green; `just check` green.
 
 ### T244. No surface sees rtok twice after `agents install`
 
