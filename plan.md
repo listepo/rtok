@@ -83,7 +83,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T228 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
-| T241 | todo | P2 | 3 | 0% | |
 | T244 | todo | P1 | 3 | 0% | |
 | T245 | todo | P2 | 3 | 0% | |
 | T246 | todo | P1 | 4 | 0% | |
@@ -521,14 +520,6 @@ Found 2026-09-23 in the D27 audit: `worktree list` and `worktree gc --dry-run` a
 Plan: page `("worktrees", "worktrees")` — path, branch, owner (lock reason), age, `target/` size, prunable flag: the same rows as `worktree list --json`, read through one accessor; `gc`/`clean` stay CLI. Bound the filesystem walk (cached size, TTL) so the snapshot tick stays cheap (T206).
 
 Check: `worktrees_page_exists_on_both_surfaces`; a fixture repo with one locked worktree renders its owner; `just check` green.
-
-### T241. Replay bench: saving over a fixed session corpus
-
-The golden and surface tests measure one call at a time; no test shows the saving over a whole session mix of Bash, Read, Grep and MCP results, so a change that helps one family and hurts the mix goes unnoticed.
-
-Plan: `tests/fixtures/replay/session.jsonl` — about 30 anonymised hook payloads shaped like a real Claude Code session (tool mix taken from `rtok stats` on this machine, bodies written or scrubbed by hand; no real paths, names or secrets). `tests/replay_bench.rs` feeds them through `rtok hook` in a temp home, sums the `Measurement` rows, prints a per-plugin table (`--nocapture`) and asserts the total saving stays over a floor set a few points below the first run. Record the first run as a dated `research.md` §2 row with the command.
-
-Check: the test fails when a plugin is disabled in the temp config; the `research.md` row cites the command; `just check` green. Needs T239.
 
 ### T244. No surface sees rtok twice after `agents install`
 
