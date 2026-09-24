@@ -26,7 +26,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T95 | todo | P1 | 2 | 0% | |
 | T96 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
-| T117 | todo | P2 | 3 | 0% | |
 | T118.3 | todo | P2 | 3 | 0% | |
 | T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
 
@@ -269,12 +268,6 @@ Extra tests: written and green (`agents::kilo::tests`); the dangling-link one fo
 Check: the unit tests above; `rtok agents list` shows `kilo`; `agents_doc`, `host_docs`, `config_coverage`, `opencode_plugin` green; `just check`.
 
 Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree unchanged byte for byte); a user's `kilo.jsonc` is byte-identical after install and remove; an existing foreign file at `plugin/rtok.ts` is neither overwritten nor removed; a dangling `rtok.ts` symlink is repaired; remove on a clean home prints `NO_CHANGES`.
-
-### T117. VS Code agent plugins
-
-VS Code agent plugins carry hooks and MCP and are registered by path in the `chat.pluginLocations` setting (https://code.visualstudio.com/docs/agent-customization/agent-plugins). Verify the accepted format (Claude-format plugins?) and the hook event names first. `rtok agents install vscode --yes` adds the plugin path to `chat.pluginLocations` in the user `settings.json` (JSONC — see T79 before writing it) and strips its own MCP entry while the plugin is listed (D21).
-
-Check: settings round-trip test (add, idempotent, remove keeps foreign entries); `just check` green.
 
 ### T118.3. Gemini CLI extension tree: manifest, hooks.json, MCP, install
 

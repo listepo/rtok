@@ -64,9 +64,13 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             Some(home.join(".codeium/windsurf/mcp_config.json")),
         ),
         (
+            // T117: the plugin needs `--yes` to link (no `default_install`, since it also
+            // edits the user's own settings.json); once accepted, D21 strips the plain
+            // `mcp.json` entry, so `settings.json` (`chat.pluginLocations`) is the file that
+            // actually stays written and backed up.
             "vscode",
-            vec![],
-            Some(home.join("Library/Application Support/Code/User/mcp.json")),
+            vec!["--yes"],
+            Some(home.join("Library/Application Support/Code/User/settings.json")),
         ),
         ("zed", vec![], Some(home.join(".config/zed/settings.json"))),
         ("gemini", vec![], Some(home.join(".gemini/settings.json"))),
