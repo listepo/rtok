@@ -71,7 +71,15 @@ fn display_rel(path: &Path, root: &Path, base: &Path) -> String {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
     }
-    rel.display().to_string()
+    // One spelling on every OS (T83.16): `src\main.rs` on Windows missed every caller and test
+    // looking for `src/main.rs`, and Windows takes `/` back in any path. Unix keeps `\`, a legal
+    // file-name byte there.
+    let shown = rel.display().to_string();
+    if cfg!(windows) {
+        shown.replace('\\', "/")
+    } else {
+        shown
+    }
 }
 
 /// `WalkBuilder::hidden(false)` also descends into `.git/`; no tool wants object files,
