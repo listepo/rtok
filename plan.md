@@ -421,7 +421,7 @@ Plan (a draft PR; each change measured with `workflow_dispatch` runs on the bran
 3. `CARGO_PROFILE_DEV_DEBUG=0` in CI only (smaller test binaries, less linking).
 4. Estimate folding `tests/*.rs` into one integration binary (78 links become 1); report it, do not do it here.
 
-Done when the draft PR holds the changes with before/after timings for the creator.
+Check: warm-cache `workflow_dispatch` runs on the draft PR are green, and a PR comment gives before/after timings per job.
 
 ## Reference
 
