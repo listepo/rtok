@@ -65,7 +65,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T184 | todo | P1 | 2 | 0% | |
 | T185 | todo | P1 | 3 | 0% | |
 | T186 | todo | P1 | 3 | 0% | |
-| T190 | todo | P1 | 3 | 0% | |
 | T195 | todo | P1 | 3 | 0% | |
 | T196 | todo | P1 | 3 | 0% | |
 | T198 | todo | P2 | 2 | 0% | |
@@ -770,14 +769,6 @@ Plan:
 4. Do not claim Termux/mobile as a separate variant unless install detection is distinct and stable.
 
 Check: `rtok agents list` shows `mimo`; install adds rtok under `mcp` in mimocode.json; `just check`.
-
-### T190. `after_mcp` shortens MCP results on a second, divergent path
-
-Found 2026-09-22 in the core pass: the `AfterMCPExecution` handler (`src/hooks/mod.rs:249-332`) re-implements MCP-result shortening beside the sanctioned `PostToolUse` → `wrap::shorten_result` path (D21: one call path per capability) and drifts on every axis: no `Measurement` row (only `put_archive`) — and a saving that is not a `Measurement` row does not exist; `isError` results are shortened instead of skipped; `mcp_result_text` joins all `content[].text` blocks with `\n`, archives the join, and `set_mcp_result_text` writes the shortened join into the first block only (blocks 2..n duplicated, structure destroyed); the output key serializes camelCase while the documented key is snake `updated_mcp_tool_output` (T70.4 records "no documented replacement" — likely a silent no-op); the threshold differs (`mcp.max_result_chars` vs `rule.max_lines`). On Cursor both events fire for one MCP call, so one result is processed twice.
-
-Plan: verify the host's documented output key first; then either delete the `after_mcp` shorten (return `HookOutput::default()`) so `postToolUse`'s `wrap::shorten_result` is the single call path, or delegate verbatim to `mcp::wrap::shorten_result` (per-block, `isError` skip, `Measurement`) and emit the documented key shape.
-
-Check: fixture test on `AfterMCPExecution` with two text blocks and with `isError: true` asserts byte-passthrough `{}` or exactly one `Measurement { plugin: "archive" }`, no block duplication, and an `expand` round trip of the original per-block bytes (mirror of `cursor_mcp_post_tool_use_shortens_only_foreign_long_results`); `just test` green.
 
 ### T195. pi extension: fail-open breaks on non-zero `rtok`, and the ketch hint regressed
 

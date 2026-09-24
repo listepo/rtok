@@ -54,7 +54,6 @@
 - T184. rtok never resolves its home to a relative `.rtok`
 - T185. `rtok agents install codewhale` — CodeWhale host (MCP + hooks)
 - T186. `rtok agents install mimo` — MiMo Code CLI and MiMo Desktop
-- T190. `after_mcp` shortens MCP results on a second, divergent path
 - T195. pi extension: fail-open breaks on non-zero `rtok`, and the ketch hint regressed
 - T196. `linked()` at the plugin dest strips a working plain install (cursor, zcode)
 - T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model

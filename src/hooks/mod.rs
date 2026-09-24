@@ -266,94 +266,14 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     bytes
 }
 
-#[cfg(not(feature = "cmd"))]
+/// Cursor's `afterMCPExecution` docs (https://cursor.com/docs/agent/hooks, fetched 2026-09-24)
+/// list no output shape for this event — it is audit-only. `postToolUse`'s
+/// `updated_mcp_tool_output` is the documented replacement key (T70.4), and `post_tool`'s
+/// `cursor_mcp_output` already fills it via `mcp::wrap::shorten_result` (per-block, `isError`
+/// skip, `Measurement` row — D21: one call path). So `afterMCPExecution` stays byte-passthrough
+/// rather than re-shortening the same result a second time on a second, divergent path (T190).
 fn after_mcp(_input: &HookInput, _cx: &Runtime) -> HookOutput {
     HookOutput::default()
-}
-
-#[cfg(feature = "cmd")]
-fn after_mcp(input: &HookInput, cx: &Runtime) -> HookOutput {
-    if input.hook_event_name != "AfterMCPExecution" {
-        return HookOutput::default();
-    }
-    let server = input.mcp_server_name().unwrap_or("");
-    if server.eq_ignore_ascii_case("rtok") {
-        return HookOutput::default();
-    }
-    let tool = input.tool_name.as_deref().unwrap_or("mcp");
-    let raw = input
-        .tool_response
-        .as_ref()
-        .and_then(|v| v.as_str())
-        .or_else(|| input.extra.get("result_json").and_then(|v| v.as_str()))
-        .unwrap_or("");
-    if raw.is_empty() {
-        return HookOutput::default();
-    }
-    let modified = shorten_mcp_result(cx, server, tool, raw);
-    modified
-        .map(|m| HookOutput {
-            updated_mcp_tool_output: Some(serde_json::json!({"modified": m})),
-            ..HookOutput::default()
-        })
-        .unwrap_or_default()
-}
-
-#[cfg(feature = "cmd")]
-fn shorten_mcp_result(
-    cx: &Runtime,
-    _server: &str,
-    _tool: &str,
-    result_json: &str,
-) -> Option<String> {
-    use crate::plugins::cmd::rules::{self, Settings};
-    use serde_json::Value;
-    let mut v: Value = serde_json::from_str(result_json).ok()?;
-    let text = mcp_result_text(&v)?;
-    let max = cx.config.mcp.max_result_chars as usize;
-    if text.chars().count() <= max {
-        return None;
-    }
-    let id = rtok_plugin_sdk::Archive::put_archive(cx, text.as_bytes()).ok()?;
-    let settings = Settings::from_config(&cx.config);
-    let rule = settings.pick("mcp");
-    let cut = rules::apply(&settings, &text, 0, &rule, &id);
-    let printed = format!("{cut}\n[rtok {id} · expand: rtok expand {id}]");
-    set_mcp_result_text(&mut v, printed);
-    serde_json::to_string(&v).ok()
-}
-
-#[cfg(feature = "cmd")]
-fn mcp_result_text(v: &serde_json::Value) -> Option<String> {
-    if let Some(s) = v.as_str() {
-        return Some(s.to_string());
-    }
-    if let Some(arr) = v.get("content").and_then(|c| c.as_array()) {
-        let mut parts = Vec::new();
-        for block in arr {
-            if let Some(t) = block.get("text").and_then(|x| x.as_str()) {
-                parts.push(t);
-            }
-        }
-        if !parts.is_empty() {
-            return Some(parts.join("\n"));
-        }
-    }
-    None
-}
-
-#[cfg(feature = "cmd")]
-fn set_mcp_result_text(v: &mut serde_json::Value, text: String) {
-    if v.is_string() {
-        *v = serde_json::Value::String(text);
-        return;
-    }
-    if let Some(arr) = v.get_mut("content").and_then(|c| c.as_array_mut())
-        && let Some(first) = arr.first_mut()
-        && first.get("text").is_some()
-    {
-        first["text"] = serde_json::Value::String(text);
-    }
 }
 
 fn pre_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput {
@@ -1103,6 +1023,86 @@ mod tests {
                 .filter(|r| r.kind == "mcp")
                 .count(),
             1
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn after_mcp_stdin(server: &str, tool: &str, content: &serde_json::Value) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "hook_event_name": "afterMCPExecution",
+            "tool_name": tool,
+            "conversation_id": "s-after-mcp",
+            "mcp_server_name": server,
+            "result_json": content.to_string()
+        }))
+        .unwrap()
+    }
+
+    /// T190: Cursor's `afterMCPExecution` docs (https://cursor.com/docs/agent/hooks, fetched
+    /// 2026-09-24) list no output shape for this event — it is audit-only. `postToolUse`
+    /// already shortens the same MCP result via `updated_mcp_tool_output`
+    /// (`cursor_mcp_post_tool_use_shortens_only_foreign_long_results` above), so
+    /// `AfterMCPExecution` must stay a pure byte-passthrough: no second shortening, no block
+    /// duplication, and no `Measurement` row of its own — for an oversized two-block result
+    /// and for an `isError` result alike.
+    #[test]
+    fn cursor_after_mcp_execution_is_byte_passthrough() {
+        let dir = std::env::temp_dir().join(format!(
+            "rtok-hook-after-mcp-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let cfg = cursor_cfg(&dir);
+
+        let long: String = (1..=200).map(|i| format!("line {i}\n")).collect();
+        let two_blocks = serde_json::json!({
+            "content": [
+                {"type": "text", "text": long},
+                {"type": "text", "text": "second block\n"}
+            ]
+        });
+        let out = dispatch_owned_strict(
+            &after_mcp_stdin("linear", "list_issues", &two_blocks),
+            "AfterMCPExecution",
+            &cfg,
+        )
+        .unwrap();
+        assert_eq!(
+            out, b"{}",
+            "AfterMCPExecution has no documented output shape; postToolUse shortens instead"
+        );
+        assert_eq!(
+            two_blocks["content"].as_array().unwrap().len(),
+            2,
+            "the original blocks must not have been touched"
+        );
+
+        let err = serde_json::json!({
+            "isError": true,
+            "content": [{"type": "text", "text": long}]
+        });
+        let out_err = dispatch_owned_strict(
+            &after_mcp_stdin("linear", "list_issues", &err),
+            "AfterMCPExecution",
+            &cfg,
+        )
+        .unwrap();
+        assert_eq!(out_err, b"{}");
+
+        let store = crate::store::Store::open(&cfg.core.db_path).unwrap();
+        assert_eq!(
+            store
+                .list_measurements("archive")
+                .unwrap()
+                .iter()
+                .filter(|r| r.kind == "mcp")
+                .count(),
+            0,
+            "AfterMCPExecution alone must not record a Measurement"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
