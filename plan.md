@@ -45,7 +45,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T204 | todo | P3 | 2 | 0% | |
 | T199 | todo | P2 | 1 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
-| T213 | todo | P3 | 2 | 0% | |
 | T216 | todo | P3 | 2 | 0% | |
 | T223 | todo | P3 | 2 | 0% | |
 | T235 | todo | P1 | 3 | 0% | |
@@ -604,14 +603,6 @@ Found 2026-09-22 in the store/accounting pass: `inline_body` (`src/store/mod.rs:
 Plan: store inline bodies as BLOB (or base64 in the TEXT column) with the sha of the raw bytes, keeping the lossy text only as a derived display column; migrate with a nullable column filled lazily on read.
 
 Check: extend `inline_sha256_matches_stored_text` (src/store/mod.rs:3048-3095) — `call_io_request` returns the exact input bytes for the `[…0xff, 0xfe…]` fixture and the sha matches the raw bytes (fails today); `just test` green.
-
-### T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
-
-Found 2026-09-22 in the surfaces pass: `initialize` (`src/mcp.rs:208-231`) discards `params.protocolVersion` and returns whatever `ServerInfo` serializes — no negotiation, and no test pins `result.protocolVersion`, so a dependency bump can silently change the advertised dialect (`src/doctor.rs:862` probes `2024-11-05` while tests send `2025-06-18`). `-32601` carries the raw method name as `message` instead of "Method not found". And `tools/call` coerces instead of validating: `mem_save` without `body` stores an empty note (`unwrap_or("")`, :332-339), a missing `expand` `id` becomes "unknown archive id: ", `handoff` truncates `budget_tokens` u64→u32 (:438-444) — schema-vs-handler drift turning client bugs into corrupt data.
-
-Plan: return the client's `protocolVersion` when supported (else a pinned constant) and pin it in tests; `message: "Method not found"`; one `require_str`/`require_int` helper per handler enforcing each schema's `required` list before any store write, mapped to `-32602` in `call_tool`.
-
-Check: `initialize_names_the_server_rtok` asserts the pinned `result.protocolVersion`; `batch_answers_with_an_array` asserts "Method not found"; `mem_save` with `{"title":"t"}` returns `isError` "invalid params: missing `body`" and the notes table stays empty; `just test` green.
 
 ### T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
 
