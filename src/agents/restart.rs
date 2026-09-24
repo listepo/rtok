@@ -495,6 +495,7 @@ mod tests {
             "Claude Desktop" => "Claude",
             "GitHub Copilot" => "GitHub Copilot",
             "Cursor" => "Cursor",
+            "Cline for VS Code" => "Visual Studio Code",
             "Kilo Code for VS Code" => "Visual Studio Code",
             "Kimi Code Desktop" => "Kimi Code",
             "OpenCode Desktop" => "OpenCode",

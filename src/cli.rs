@@ -32,7 +32,7 @@ enum Cmd {
     Hook {
         #[arg(required_unless_present = "serve")]
         event: Option<String>,
-        /// Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin`)
+        /// Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin` | `cline`)
         #[arg(long)]
         host: Option<String>,
         /// Run the resident hook process `rtok-hook` talks to (T178, D32)
