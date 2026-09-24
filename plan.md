@@ -10,7 +10,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T83.4 | todo | P1 | 3 | 0% | |
 | T83.7 | todo | P1 | 2 | 0% | |
 | T83.13 | todo | P1 | 3 | 0% | |
-| T83.14 | todo | P1 | 3 | 0% | |
+| T83.14 | in progress | P1 | 3 | 10% | Claude Code / claude-opus-5-5 |
 | T87 | in progress | P1 | 2 | 70% | Claude Code / claude-fable-5-1 |
 | T88 | todo | P1 | 2 | 0% | |
 | T89 | todo | P1 | 3 | 0% | |
@@ -61,6 +61,8 @@ Check: the test passes in the `windows` CI job; `just check` stays green.
 ### T83.14. `plugins_e2e::graph_session_start_map_off_by_default_and_on_when_capped` fails on Windows (empty `{}`)
 
 From run 35576438155. The `SessionStart` graph-map payload came back empty on Windows where the test expects populated content — likely a path-walk or capped-map computation that silently no-ops on a Windows path shape. Read the `graph` plugin's `SessionStart` map builder and decide whether it has a real Windows path-handling bug or the test's fixture repo isn't discoverable under Windows path conventions. One family split out of the original T83; see T83.2 for the closing criterion.
+Found 2026-09-25: not the graph plugin — the test. It splices `repo.display()` into a JSON literal with `format!`; on Windows the path's `\` makes an invalid escape (`\U…`), the hook cannot parse its stdin, fails open and prints `{}`.
+Plan: `tests/plugins_e2e.rs` only — build the hook input with `json!`; drop the test's line from `.config/nextest.toml`.
 
 Check: the test passes in the `windows` CI job; `just check` stays green.
 
