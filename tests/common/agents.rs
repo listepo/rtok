@@ -9,6 +9,13 @@ pub fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_rtok")
 }
 
+/// `s` with every `\` as `/`. [`write_cfg`] hands rtok `/`-joined paths and rtok joins what it
+/// derives with the OS separator, so Windows output mixes both; compare both sides through this
+/// (T83.4).
+pub fn slash(s: impl AsRef<str>) -> String {
+    s.as_ref().replace('\\', "/")
+}
+
 /// A fresh empty directory, unique per test and process.
 pub fn tmp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
