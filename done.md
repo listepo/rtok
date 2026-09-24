@@ -5555,3 +5555,24 @@ Result: page `("hosts","hosts")` on tui and web renders `agents::list(cfg)` verb
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T208. Multi-step store writes commit separately — freezes without a Measurement, orphan archives
+
+Found 2026-09-22 in the store/accounting pass: `expand::fetch` (`src/expand.rs:15-42`) commits `mark_expanded` (the decision freezes — every later request stops shortening the id) and only afterwards records the expand `Measurement` in a second transaction; a crash or `record()` error in between leaves the state permanently frozen with no ledger row and `report_expand.cost` under-counted. Similarly `insert_call_io` (`src/store/mod.rs:511-539`) chains `call_session`, up to two `write_archive` calls (file + `archive` row each) and the `call_io` insert as separate implicit transactions, and `upsert_model` (:249-272) chains four statements — a crash or `SQLITE_BUSY` after the spill strands `archive` rows and payload files the retention purge never collects (its `doomed` walk follows only `call_io`/decisions/read-cache references, :1741-1761).
+
+Plan: one `immediate_transaction` around each sequence — a single `Store::mark_expanded_recorded` (freeze + measurement) called from `fetch`, one around `insert_call_io`'s spills + insert (sha-named file writes are idempotent) and one around `upsert_model`.
+
+Execution plan:
+- Split `mark_expanded`, `insert_measurement`, and the `archive` row insert behind `write_archive` into `conn`-taking free functions (`mark_expanded_conn`, `insert_measurement_conn`, `insert_archive_row_conn`), reused by both the existing public methods and the new atomic ones — no behavior change for existing callers.
+- Add `Store::mark_expanded_recorded(session, archive_id, &Measurement)`: one `immediate_transaction` running `mark_expanded_conn` then, only if it froze something, `insert_measurement_conn`. Wire `expand::fetch` to call it instead of `mark_expanded` + `cx.record`.
+- Split `write_archive_file` (file write, content-addressed, reports whether this call created it) out of `write_archive`/`spill`. `insert_call_io` writes both payload files first (outside the transaction), then runs one `immediate_transaction` for the up-to-two `archive` row inserts + the `call_io` insert; on failure it removes only the files it created.
+- Wrap `upsert_model`'s four statements in one `immediate_transaction` (read-then-write race across two writers).
+- Tests (`src/store/mod.rs`): `mark_and_record_are_atomic` (bad `before_bytes` overflow fails the measurement insert after the freeze already ran, so the whole transaction rolls back — decision stays unexpanded, `measurements` count 0); `insert_call_io_failure_leaves_no_orphan_archive` (a pre-existing `call_io` row for the same `call_id` conflicts on the final insert; archive row count and payload file must both be gone after rollback).
+- Verify: targeted nextest selection, clippy -D warnings, fmt, `just check`.
+
+Check: `mark_and_record_are_atomic` — a forced measurement failure rolls back and the decision stays unexpanded; `insert_call_io_failure_leaves_no_orphan_archive` — a failed final insert leaves `SELECT COUNT(*) FROM archive` at 0; `write_api_round_trip_and_spill` and `retention_keeps_plugin_archives_without_call_io` green; `just test` green.
+
+Result: `expand::fetch` freezes the decision and records its expand `Measurement` in one `immediate_transaction` (`Store::mark_expanded_recorded`); `insert_call_io` writes payload files first, then commits the `archive` rows and the `call_io` row together, and on failure removes only files it created that no committed row references; `upsert_model` runs in one immediate transaction. Tests `mark_and_record_are_atomic` and `insert_call_io_failure_leaves_no_orphan_archive`; `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)

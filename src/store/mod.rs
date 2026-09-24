@@ -328,25 +328,8 @@ impl Store {
 
     /// One `measurements` row. Prefer `Runtime::record`, which supplies the session.
     pub fn insert_measurement(&self, session: &str, m: &Measurement) -> Result<()> {
-        let before_bytes = i64::try_from(m.before_bytes).context("measurement before_bytes")?;
-        let after_bytes = i64::try_from(m.after_bytes).context("measurement after_bytes")?;
-        let est_before = i32::try_from(m.est_before).context("measurement est_before")?;
-        let est_after = i32::try_from(m.est_after).context("measurement est_after")?;
         let mut conn = self.lock()?;
-        diesel::insert_into(measurements::table)
-            .values((
-                measurements::session.eq(session),
-                measurements::plugin.eq(m.plugin),
-                measurements::kind.eq(m.kind),
-                measurements::before_bytes.eq(before_bytes),
-                measurements::after_bytes.eq(after_bytes),
-                measurements::est_before.eq(est_before),
-                measurements::est_after.eq(est_after),
-                measurements::ref_id.eq(m.ref_id.as_deref()),
-                measurements::call_id.eq(m.call_id),
-            ))
-            .execute(&mut *conn)?;
-        Ok(())
+        insert_measurement_conn(&mut conn, session, m)
     }
 
     /// Count `measurements` for one plugin. Used by `examples/hello_plugin.rs`.
@@ -404,34 +387,40 @@ impl Store {
 
     /// Upsert provider + model; returns `(provider_id, model_id)`. Proxy ground truth:
     /// the request `model` must resolve to a `models` row (plan T5.1 Check).
+    /// T208: `BEGIN IMMEDIATE` — the select-then-insert-then-select below would otherwise
+    /// start as a read and race another writer's upgrade to the same rows ("database is
+    /// locked" even inside `wait.busy`); an immediate transaction takes the write lock up
+    /// front and serializes instead.
     pub fn upsert_model(&self, provider_slug: &str, model_slug: &str) -> Result<(i32, i32)> {
         let mut conn = self.lock()?;
-        diesel::insert_or_ignore_into(providers::table)
-            .values((
-                providers::slug.eq(provider_slug),
-                providers::name.eq(provider_slug),
-            ))
-            .execute(&mut *conn)?;
-        let provider_id: i32 = providers::table
-            .filter(providers::slug.eq(provider_slug))
-            .select(providers::id)
-            .first(&mut *conn)
-            .optional()?
-            .context("provider")?;
-        diesel::insert_or_ignore_into(schema::models::table)
-            .values((
-                schema::models::provider_id.eq(provider_id),
-                schema::models::slug.eq(model_slug),
-            ))
-            .execute(&mut *conn)?;
-        let model_id: i32 = schema::models::table
-            .filter(schema::models::provider_id.eq(provider_id))
-            .filter(schema::models::slug.eq(model_slug))
-            .select(schema::models::id)
-            .first(&mut *conn)
-            .optional()?
-            .context("model")?;
-        Ok((provider_id, model_id))
+        conn.immediate_transaction(|conn| -> Result<(i32, i32)> {
+            diesel::insert_or_ignore_into(providers::table)
+                .values((
+                    providers::slug.eq(provider_slug),
+                    providers::name.eq(provider_slug),
+                ))
+                .execute(&mut *conn)?;
+            let provider_id: i32 = providers::table
+                .filter(providers::slug.eq(provider_slug))
+                .select(providers::id)
+                .first(&mut *conn)
+                .optional()?
+                .context("provider")?;
+            diesel::insert_or_ignore_into(schema::models::table)
+                .values((
+                    schema::models::provider_id.eq(provider_id),
+                    schema::models::slug.eq(model_slug),
+                ))
+                .execute(&mut *conn)?;
+            let model_id: i32 = schema::models::table
+                .filter(schema::models::provider_id.eq(provider_id))
+                .filter(schema::models::slug.eq(model_slug))
+                .select(schema::models::id)
+                .first(&mut *conn)
+                .optional()?
+                .context("model")?;
+            Ok((provider_id, model_id))
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -646,6 +635,10 @@ impl Store {
             .with_context(|| format!("call {call_id} has no session"))
     }
 
+    /// T208: the up-to-two payload files are written before the transaction (SQLite cannot
+    /// hold them), then their `archive` rows and the `call_io` row commit together. A failed
+    /// insert rolls back the rows and removes only the files this call created — a body
+    /// that repeats an existing sha is left alone, since another row may still reference it.
     pub fn insert_call_io(
         &self,
         call_id: i32,
@@ -655,49 +648,77 @@ impl Store {
         archive_dir: Option<&Path>,
     ) -> Result<()> {
         let session = self.call_session(call_id)?;
-        let (req_json, req_arch, req_bytes, req_sha) =
-            self.spill(&session, request, inline_cap, archive_dir)?;
-        let (res_json, res_arch, res_bytes, res_sha) =
-            self.spill(&session, response, inline_cap, archive_dir)?;
+        let (req_json, req_arch, req_bytes, req_sha, req_path, req_created) =
+            self.spill(request, inline_cap, archive_dir)?;
+        let (res_json, res_arch, res_bytes, res_sha, res_path, res_created) =
+            self.spill(response, inline_cap, archive_dir)?;
+        let mut created_files = Vec::new();
+        if req_created {
+            created_files.extend(req_path.clone());
+        }
+        if res_created {
+            created_files.extend(res_path.clone());
+        }
         let mut conn = self.lock()?;
-        diesel::insert_into(call_io::table)
-            .values((
-                call_io::call_id.eq(call_id),
-                call_io::request_bytes.eq(req_bytes),
-                call_io::response_bytes.eq(res_bytes),
-                call_io::request_sha256.eq(req_sha.as_deref()),
-                call_io::response_sha256.eq(res_sha.as_deref()),
-                call_io::request_json.eq(req_json.as_deref()),
-                call_io::response_json.eq(res_json.as_deref()),
-                call_io::request_archive.eq(req_arch.as_deref()),
-                call_io::response_archive.eq(res_arch.as_deref()),
-            ))
-            .execute(&mut *conn)?;
-        Ok(())
+        let result = conn.immediate_transaction(|conn| -> Result<()> {
+            if let (Some(sha), Some(path)) = (&req_arch, &req_path) {
+                insert_archive_row_conn(&mut *conn, sha, &session, req_bytes, path, None)?;
+            }
+            if let (Some(sha), Some(path)) = (&res_arch, &res_path) {
+                insert_archive_row_conn(&mut *conn, sha, &session, res_bytes, path, None)?;
+            }
+            diesel::insert_into(call_io::table)
+                .values((
+                    call_io::call_id.eq(call_id),
+                    call_io::request_bytes.eq(req_bytes),
+                    call_io::response_bytes.eq(res_bytes),
+                    call_io::request_sha256.eq(req_sha.as_deref()),
+                    call_io::response_sha256.eq(res_sha.as_deref()),
+                    call_io::request_json.eq(req_json.as_deref()),
+                    call_io::response_json.eq(res_json.as_deref()),
+                    call_io::request_archive.eq(req_arch.as_deref()),
+                    call_io::response_archive.eq(res_arch.as_deref()),
+                ))
+                .execute(&mut *conn)?;
+            Ok(())
+        });
+        if result.is_err() {
+            for p in &created_files {
+                // Another writer may have committed a row for the same sha after our write.
+                let sha = p.file_name().map(|f| f.to_string_lossy().into_owned());
+                let referenced = archive::table
+                    .filter(archive::id.eq(sha.unwrap_or_default()))
+                    .count()
+                    .get_result::<i64>(&mut *conn)
+                    .map_or(true, |n| n > 0);
+                if !referenced {
+                    let _ = std::fs::remove_file(p);
+                }
+            }
+        }
+        result
     }
 
-    fn spill(
-        &self,
-        session: &str,
-        body: Option<&[u8]>,
-        cap: usize,
-        archive_dir: Option<&Path>,
-    ) -> Result<Spill> {
+    /// Stages a body for `insert_call_io`: over `cap` it is written to `archive_dir` right
+    /// away (files live outside SQLite), but its `archive` row is left to the caller's
+    /// transaction. The last two fields are `Some`/`true` only when this call's write
+    /// created the file, so a failed transaction knows which files are safe to remove.
+    fn spill(&self, body: Option<&[u8]>, cap: usize, archive_dir: Option<&Path>) -> Result<Spill> {
         let Some(body) = body else {
-            return Ok((None, None, 0, None));
+            return Ok((None, None, 0, None, None, false));
         };
         let n = i64::try_from(body.len()).unwrap_or(i64::MAX);
         if body.len() <= cap {
             let (text, sha) = inline_body(body);
-            return Ok((Some(text), None, n, Some(sha)));
+            return Ok((Some(text), None, n, Some(sha), None, false));
         }
         // Over cap: metadata always. Archive only when a directory is supplied (never on hook).
         let sha = hex_sha256(body);
         if let Some(dir) = archive_dir {
-            self.write_archive(session, body, &sha, dir, None)?;
-            return Ok((None, Some(sha.clone()), n, Some(sha)));
+            let (path, created) = write_archive_file(dir, &sha, body)?;
+            return Ok((None, Some(sha.clone()), n, Some(sha), Some(path), created));
         }
-        Ok((None, None, n, Some(sha)))
+        Ok((None, None, n, Some(sha), None, false))
     }
 
     /// Write `body` to `dir/<sha256>` and upsert the `archive` row. Returns the id.
@@ -757,10 +778,11 @@ impl Store {
         Ok(row.map(|(id, turns)| (id, turns.unwrap_or(0).max(0) as u64)))
     }
 
-    /// The one archive write behind [`Self::put_archive`] and `call_io` spills: the body under
-    /// its sha256 in `dir`, then one row per distinct body (the same body twice — T5.3 repeat
-    /// requests — is one row). `tool` stays NULL: neither caller knows which plugin archived, and
-    /// the column used to say `cmd` for every plugin.
+    /// The one archive write behind [`Self::put_archive`]: the body under its sha256 in
+    /// `dir`, then one row per distinct body (the same body twice — T5.3 repeat requests —
+    /// is one row). `tool` stays NULL: neither caller knows which plugin archived, and the
+    /// column used to say `cmd` for every plugin. `call_io` spills stage the file the same
+    /// way ([`write_archive_file`]) but insert the row inside their own transaction (T208).
     fn write_archive(
         &self,
         session: &str,
@@ -769,24 +791,14 @@ impl Store {
         dir: &Path,
         agent_id: Option<&str>,
     ) -> Result<()> {
-        std::fs::create_dir_all(dir)?;
-        let path = dir.join(sha);
-        std::fs::write(&path, body)?;
+        let (path, created) = write_archive_file(dir, sha, body)?;
         let n = i64::try_from(body.len()).unwrap_or(i64::MAX);
         let mut conn = self.lock()?;
-        diesel::insert_into(archive::table)
-            .values((
-                archive::id.eq(sha),
-                archive::session.eq(session),
-                archive::bytes.eq(n),
-                archive::path.eq(path.to_string_lossy().as_ref()),
-                archive::sha256.eq(sha),
-                archive::agent_id.eq(agent_id),
-            ))
-            .on_conflict(archive::id)
-            .do_nothing()
-            .execute(&mut *conn)?;
-        Ok(())
+        let result = insert_archive_row_conn(&mut conn, sha, session, n, &path, agent_id);
+        if result.is_err() && created {
+            let _ = std::fs::remove_file(&path);
+        }
+        result
     }
 
     /// T5.3: the persisted decision for this `tool_use_id`, scoped to `session`.
@@ -875,17 +887,33 @@ impl Store {
     /// alone: every session following that pointer starts receiving the original from its
     /// next request (more tokens; never wrong bytes — the archive holds the exact payload).
     /// Returns how many decisions changed (0 = nothing pointed at the id).
+    ///
+    /// Prefer [`Self::mark_expanded_recorded`] when the freeze and its expand `Measurement`
+    /// must commit together.
     pub fn mark_expanded(&self, archive_id: &str) -> Result<usize> {
         let mut conn = self.lock()?;
-        // `unixepoch()` has no typed-DSL form; bind Rust's now.
-        let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
-        Ok(diesel::update(
-            archive_decisions::table
-                .filter(archive_decisions::archive_id.eq(archive_id))
-                .filter(archive_decisions::expanded_ts.is_null()),
-        )
-        .set(archive_decisions::expanded_ts.eq(now))
-        .execute(&mut *conn)?)
+        mark_expanded_conn(&mut conn, archive_id)
+    }
+
+    /// T208: freeze the decision and insert its expand `Measurement` in one transaction — a
+    /// crash or a failed insert (e.g. an overflowing `Measurement` field) rolls back the
+    /// freeze too, instead of leaving the decision expanded with no ledger row and
+    /// `report_expand.cost` under-counted. `m` is only recorded when something was actually
+    /// frozen, matching [`Self::mark_expanded`]'s callers. Returns the freeze count.
+    pub fn mark_expanded_recorded(
+        &self,
+        session: &str,
+        archive_id: &str,
+        m: &Measurement,
+    ) -> Result<usize> {
+        let mut conn = self.lock()?;
+        conn.immediate_transaction(|conn| -> Result<usize> {
+            let n = mark_expanded_conn(&mut *conn, archive_id)?;
+            if n > 0 {
+                insert_measurement_conn(&mut *conn, session, m)?;
+            }
+            Ok(n)
+        })
     }
 
     /// `(decisions, expanded)` — the expand rate is the archive plugin's honesty metric (T5.4).
@@ -2051,7 +2079,17 @@ impl Store {
     }
 }
 
-type Spill = (Option<String>, Option<String>, i64, Option<String>);
+/// `(inline json, archive sha, byte count, content sha, archive file path, file created by
+/// this call)`. The last two are `Some`/`true` together only when the body was spilled to
+/// disk — see [`Store::spill`] (T208).
+type Spill = (
+    Option<String>,
+    Option<String>,
+    i64,
+    Option<String>,
+    Option<PathBuf>,
+    bool,
+);
 
 /// `(host slug, project, cwd)` — [`Store::session_row`].
 #[cfg(test)]
@@ -2069,6 +2107,84 @@ pub(crate) fn hex_sha256(bytes: &[u8]) -> String {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+/// Write `body` to `dir/<sha>`, content-addressed so the same body written twice is the same
+/// file (T208: `insert_call_io`'s two spills can share a body with an earlier archive row).
+/// The bool says whether this call created the file (`false` when it already held this exact
+/// content) — only a file this call created is safe to remove if the caller's insert fails.
+fn write_archive_file(dir: &Path, sha: &str, body: &[u8]) -> Result<(PathBuf, bool)> {
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join(sha);
+    let created = !path.exists();
+    std::fs::write(&path, body)?;
+    Ok((path, created))
+}
+
+/// The `archive` row behind a file [`write_archive_file`] already wrote. `on_conflict …
+/// do_nothing`: the same body archived twice (T5.3 repeat requests) is one row.
+fn insert_archive_row_conn(
+    conn: &mut SqliteConnection,
+    sha: &str,
+    session: &str,
+    bytes: i64,
+    path: &Path,
+    agent_id: Option<&str>,
+) -> Result<()> {
+    diesel::insert_into(archive::table)
+        .values((
+            archive::id.eq(sha),
+            archive::session.eq(session),
+            archive::bytes.eq(bytes),
+            archive::path.eq(path.to_string_lossy().as_ref()),
+            archive::sha256.eq(sha),
+            archive::agent_id.eq(agent_id),
+        ))
+        .on_conflict(archive::id)
+        .do_nothing()
+        .execute(conn)?;
+    Ok(())
+}
+
+/// The `archive_decisions.expanded_ts` update behind [`Store::mark_expanded`] and
+/// [`Store::mark_expanded_recorded`].
+fn mark_expanded_conn(conn: &mut SqliteConnection, archive_id: &str) -> Result<usize> {
+    // `unixepoch()` has no typed-DSL form; bind Rust's now.
+    let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
+    Ok(diesel::update(
+        archive_decisions::table
+            .filter(archive_decisions::archive_id.eq(archive_id))
+            .filter(archive_decisions::expanded_ts.is_null()),
+    )
+    .set(archive_decisions::expanded_ts.eq(now))
+    .execute(conn)?)
+}
+
+/// The `measurements` insert behind [`Store::insert_measurement`] and
+/// [`Store::mark_expanded_recorded`].
+fn insert_measurement_conn(
+    conn: &mut SqliteConnection,
+    session: &str,
+    m: &Measurement,
+) -> Result<()> {
+    let before_bytes = i64::try_from(m.before_bytes).context("measurement before_bytes")?;
+    let after_bytes = i64::try_from(m.after_bytes).context("measurement after_bytes")?;
+    let est_before = i32::try_from(m.est_before).context("measurement est_before")?;
+    let est_after = i32::try_from(m.est_after).context("measurement est_after")?;
+    diesel::insert_into(measurements::table)
+        .values((
+            measurements::session.eq(session),
+            measurements::plugin.eq(m.plugin),
+            measurements::kind.eq(m.kind),
+            measurements::before_bytes.eq(before_bytes),
+            measurements::after_bytes.eq(after_bytes),
+            measurements::est_before.eq(est_before),
+            measurements::est_after.eq(est_after),
+            measurements::ref_id.eq(m.ref_id.as_deref()),
+            measurements::call_id.eq(m.call_id),
+        ))
+        .execute(conn)?;
+    Ok(())
 }
 
 #[derive(QueryableByName)]
@@ -2494,11 +2610,11 @@ mod tests {
         assert!(err.is_err(), "bad host_id must fail FK");
     }
 
-    #[test]
-    fn write_api_round_trip_and_spill() {
-        let dir = std::env::temp_dir().join(format!("rtok-io-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    /// A clean `dir` plus an in-memory store holding one `mcp_call` row in session `s1`: the
+    /// call `insert_call_io` tests attach request/response bodies to.
+    fn io_fixture(dir: &Path) -> (Store, i32) {
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
         let store = Store::open_in_memory().unwrap();
         store
             .upsert_session("s1", Some(1), None, None, None)
@@ -2515,6 +2631,13 @@ mod tests {
                 Some("read"),
             )
             .unwrap();
+        (store, id)
+    }
+
+    #[test]
+    fn write_api_round_trip_and_spill() {
+        let dir = std::env::temp_dir().join(format!("rtok-io-{}", std::process::id()));
+        let (store, id) = io_fixture(&dir);
         store
             .insert_call_io(
                 id,
@@ -2585,6 +2708,42 @@ mod tests {
         assert!(request_json.is_none());
         assert!(request_archive.is_some());
         drop(conn);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// T208: `insert_call_io`'s archive-row inserts and its final `call_io` insert commit
+    /// together. A pre-existing `call_io` row for the same call (its `call_id` is a
+    /// `PRIMARY KEY`) makes the real call's final insert fail after its archive row already
+    /// went in inside the same transaction — the rollback must leave no `archive` row and no
+    /// payload file behind.
+    #[test]
+    fn insert_call_io_failure_leaves_no_orphan_archive() {
+        let dir = std::env::temp_dir().join(format!("rtok-io-orphan-{}", std::process::id()));
+        let (store, id) = io_fixture(&dir);
+        {
+            let mut conn = store.lock().unwrap();
+            diesel::insert_into(call_io::table)
+                .values(call_io::call_id.eq(id))
+                .execute(&mut *conn)
+                .unwrap();
+        }
+        let big = vec![b'x'; 70 * 1024];
+        let err = store
+            .insert_call_io(id, Some(&big), None, 64 * 1024, Some(&dir))
+            .unwrap_err();
+        assert!(err.to_string().contains("UNIQUE"), "{err}");
+        let mut conn = store.lock().unwrap();
+        let archive_n: i64 = archive::table.count().get_result(&mut *conn).unwrap();
+        assert_eq!(
+            archive_n, 0,
+            "a failed call_io insert must not strand an archive row"
+        );
+        drop(conn);
+        let sha = hex_sha256(&big);
+        assert!(
+            !dir.join(&sha).exists(),
+            "the orphan payload file must be removed on rollback"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -3177,6 +3336,41 @@ mod tests {
                 .expanded
         );
         assert_eq!(store.archive_decision_counts().unwrap(), (2, 2));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// T208: `mark_expanded_recorded` freezes the decision and inserts its `Measurement` in
+    /// one transaction. A `before_bytes` that overflows `i64` makes the measurement insert
+    /// fail before it issues any SQL — the already-applied freeze inside the same
+    /// transaction must roll back with it, so the decision stays unexpanded and no
+    /// `measurements` row is stranded.
+    #[test]
+    fn mark_and_record_are_atomic() {
+        let dir = std::env::temp_dir().join(format!("rtok-t208-mark-{}", std::process::id()));
+        let store = Store::open_in_memory().unwrap();
+        let id = store.put_archive("a", b"body", &dir).unwrap();
+        store.put_archive_decision("tu-1", &id, "a", "p").unwrap();
+        let bad = Measurement {
+            plugin: "archive",
+            kind: "expand",
+            before_bytes: u64::MAX,
+            after_bytes: 4,
+            est_before: 0,
+            est_after: 1,
+            ref_id: Some(id.clone()),
+            call_id: None,
+        };
+        let err = store.mark_expanded_recorded("a", &id, &bad).unwrap_err();
+        assert!(err.to_string().contains("before_bytes"), "{err}");
+        assert!(
+            !store
+                .archive_decision("a", "tu-1")
+                .unwrap()
+                .unwrap()
+                .expanded,
+            "a rolled-back measurement insert must roll back the freeze too"
+        );
+        assert_eq!(store.measurement_count("archive").unwrap(), 0);
         let _ = std::fs::remove_dir_all(dir);
     }
 
