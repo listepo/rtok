@@ -36,13 +36,10 @@
 - T163.9. Window and CTE queries through the shared extension module
 - T171. Claude Code sees the rtok MCP server twice
 - T178. Hook wall-clock time as Claude Code sees it
-- T204. A panicking plugin is dropped silently — the error never reaches the log
-- T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
-- T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 - T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
 - T223. `windows-sys` linked in three versions
 - T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
-- T226. Web Sessions page: live-only filter and a help overlay
+- T260. Web Sessions page: live-only filter and a help overlay
 - T228. Config page: `config show` / `config get` on `tui` and `web`
 - T229. Services page: `demon status` and `otel status` on `tui` and `web`
 - T232. Worktrees page: `worktree list` on `tui` and `web`
