@@ -23,9 +23,15 @@ fn tmp(name: &str) -> Home {
 }
 
 fn hook(home: &Home, event: &str, body: &Value) -> Value {
+    hook_as(home, &[], event, body)
+}
+
+/// `rtok hook <event> [extra…]`, e.g. `--host copilot`.
+fn hook_as(home: &Home, extra: &[&str], event: &str, body: &Value) -> Value {
     let out = AssertCmd::cargo_bin("rtok")
         .unwrap()
         .args(["hook", event])
+        .args(extra)
         .env("RTOK_HOME", &home.0)
         .env("HOME", &home.0)
         .write_stdin(serde_json::to_vec(body).unwrap())
@@ -127,4 +133,19 @@ fn non_subagent_events_are_untouched() {
             || out["hookSpecificOutput"]["additionalContext"].is_null(),
         "{out}"
     );
+}
+
+/// T262.5: a host adapter's input reaches the ledger. Copilot sends camelCase (`toolName: view`,
+/// `toolArgs.path`); the call row used to keep that raw body, which the ledger's `tool_name`
+/// scan never matched, so a Copilot session's brief was always empty.
+#[test]
+fn copilot_reads_reach_the_brief() {
+    let home = tmp("copilot");
+    enable_spawn_brief(&home);
+    let session = "s-copilot";
+    let read = json!({"sessionId": session, "cwd": "/tmp", "toolName": "view", "toolArgs": {"path": "/repo/c.rs"}});
+    let _ = hook_as(&home, &["--host", "copilot"], "PreToolUse", &read);
+    let out = hook(&home, "SubagentStart", &subagent_start(session));
+    let text = brief_of(&out).expect("the Copilot read must reach the ledger");
+    assert!(text.contains("/repo/c.rs"), "{text}");
 }
