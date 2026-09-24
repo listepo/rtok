@@ -1,3 +1,41 @@
+# T255: every test runs with `HOME` (and `USERPROFILE` on Windows) under `target/test-home`, so
+# a path that slips past `Config` lands there instead of in this machine's `~/.claude` or
+# `~/.codex`. A setup script, not cargo's `[env]`, which would reach `cargo run` too. The tool
+# homes keep their real values so `rustup`, `rust-analyzer` and `mise where` still find the
+# toolchain; tests that commit pass their own git `user.*`. Each run starts from an empty home.
+experimental = ["setup-scripts"]
+
+[scripts.setup.test-home-unix]
+command = ['sh', '-c', '''
+h="$PWD/target/test-home" && rm -rf "$h" && mkdir -p "$h" && {
+  echo "HOME=$h"
+  echo "CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}"
+  echo "RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}"
+  echo "MISE_DATA_DIR=${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"
+  echo "MISE_CONFIG_DIR=${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}"
+  echo "MISE_STATE_DIR=${MISE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/mise}"
+} >> "$NEXTEST_ENV"
+''']
+
+# LF-only lines: `Add-Content` would end each with CRLF and the `\r` would stay in the value.
+[scripts.setup.test-home-windows]
+command = ['powershell', '-NoProfile', '-NonInteractive', '-Command', '''
+$h = Join-Path (Get-Location) "target\test-home"
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path $h
+New-Item -ItemType Directory -Force -Path $h | Out-Null
+$c = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
+$r = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $env:USERPROFILE ".rustup" }
+[IO.File]::AppendAllText($env:NEXTEST_ENV, "HOME=$h`nUSERPROFILE=$h`nCARGO_HOME=$c`nRUSTUP_HOME=$r`n")
+''']
+
+[[profile.default.scripts]]
+platform = { host = "cfg(unix)" }
+setup = "test-home-unix"
+
+[[profile.default.scripts]]
+platform = { host = "cfg(windows)" }
+setup = "test-home-windows"
+
 # Windows CI previously hung forever in `cargo nextest` after the wasm LNK stubs
 # landed (run 35225713659 job windows: nextest still in_progress after >2h;
 # earlier Windows jobs failed at link in ~5m and never reached the suite).

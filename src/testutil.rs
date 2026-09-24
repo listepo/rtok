@@ -280,6 +280,20 @@ mod tests {
         }
     }
 
+    /// T255: nextest's `test-home` setup script moves `HOME` under `target/`, so a path that
+    /// slips past `Config` lands there instead of in this machine's real home. A plain
+    /// `cargo test` runs no setup script and is not checked.
+    #[test]
+    fn nextest_runs_under_the_test_home() {
+        if std::env::var_os("NEXTEST").is_none() {
+            return;
+        }
+        let home = std::path::PathBuf::from(std::env::var_os("HOME").expect("HOME"));
+        assert!(home.ends_with("target/test-home"), "{}", home.display());
+        #[cfg(windows)]
+        assert_eq!(std::env::var_os("USERPROFILE"), Some(home.into_os_string()));
+    }
+
     #[test]
     fn vfs_symlink_resolve_key_and_exists() {
         let mut v = super::Vfs::new();
