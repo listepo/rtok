@@ -108,6 +108,27 @@ fn note_slow(cx: &Runtime, event: &str, ms: f64) {
     }
 }
 
+/// T204: a panicking plugin used to be indistinguishable from one returning `None` — the
+/// `catch_unwind` `Err` was dropped with `.ok()`/`let _`, so `rtok doctor` / `rtok logs` never
+/// saw it. One funnel for the four per-plugin loops below: extract the payload and log it at
+/// `error` before the caller drops the plugin's output and moves on (fail open, D1). Runs only
+/// on the panic path, so the budget stays untouched the rest of the time.
+fn log_panic(cx: &Runtime, plugin: &str, event: &str, err: Box<dyn std::any::Any + Send>) {
+    let payload = err
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| err.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "non-string panic payload".into());
+    // `source = "plugin"`, `name = <plugin id>` matches the funnel's existing convention
+    // (see `insert_log`'s callers) — a `rtok logs`/`doctor` reader can filter on the plugin.
+    cx.log(
+        "error",
+        "plugin",
+        plugin,
+        &format!("{event} panicked: {payload}"),
+    );
+}
+
 fn dispatch_owned(stdin: &[u8], event: &str, cfg: &Config) -> Vec<u8> {
     match panic::catch_unwind(AssertUnwindSafe(|| {
         dispatch_owned_strict(stdin, event, cfg)
@@ -280,8 +301,11 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         "PreCompact" => {
             if let Some(ev) = input.pre_compact() {
                 for p in registry.enabled() {
-                    let _ =
-                        panic::catch_unwind(AssertUnwindSafe(|| p.pre_compact(&ev, &Ctx::new(cx))));
+                    if let Err(e) =
+                        panic::catch_unwind(AssertUnwindSafe(|| p.pre_compact(&ev, &Ctx::new(cx))))
+                    {
+                        log_panic(cx, p.manifest().id, "PreCompact", e);
+                    }
                 }
             }
             HookOutput::default()
@@ -335,11 +359,15 @@ fn pre_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput 
     };
     let mut rewrite: Option<PreToolDecision> = None;
     for p in registry.enabled() {
-        let got = panic::catch_unwind(AssertUnwindSafe(|| {
+        let got = match panic::catch_unwind(AssertUnwindSafe(|| {
             p.pre_tool(&ev, &Ctx::with_agent(cx, input.agent_id.as_deref()))
-        }))
-        .ok()
-        .flatten();
+        })) {
+            Ok(v) => v,
+            Err(e) => {
+                log_panic(cx, p.manifest().id, "PreToolUse", e);
+                None
+            }
+        };
         match got {
             Some(PreToolDecision::Deny { reason }) => {
                 return HookOutput {
@@ -376,10 +404,12 @@ fn post_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput
     };
     let mut parts = Vec::new();
     for p in registry.enabled() {
-        if let Ok(Some(s)) = panic::catch_unwind(AssertUnwindSafe(|| {
+        match panic::catch_unwind(AssertUnwindSafe(|| {
             p.post_tool(&ev, &Ctx::with_agent(cx, input.agent_id.as_deref()))
         })) {
-            parts.push(s);
+            Ok(Some(s)) => parts.push(s),
+            Ok(None) => {}
+            Err(e) => log_panic(cx, p.manifest().id, "PostToolUse", e),
         }
     }
     let text = cap_budget(cx, &parts.join("\n"));
@@ -488,7 +518,7 @@ fn cursor_mcp_output(input: &HookInput, cx: &Runtime) -> Option<serde_json::Valu
 fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput {
     let mut inj = Vec::new();
     for p in registry.enabled() {
-        let one = panic::catch_unwind(AssertUnwindSafe(|| {
+        let one = match panic::catch_unwind(AssertUnwindSafe(|| {
             if let Some(ev) = input.session_start() {
                 p.session_start(&ev, &Ctx::new(cx))
             } else if let Some(ev) = input.prompt_submit() {
@@ -501,9 +531,13 @@ fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOut
             } else {
                 None
             }
-        }))
-        .ok()
-        .flatten();
+        })) {
+            Ok(v) => v,
+            Err(e) => {
+                log_panic(cx, p.manifest().id, &input.hook_event_name, e);
+                None
+            }
+        };
         if let Some(i) = one {
             inj.push(i);
         }
@@ -595,6 +629,7 @@ fn cap_budget(cx: &Runtime, text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::{DashboardPage, Manifest, Plugin, PostToolUse, Surface};
     use types::{post_out, pre_out};
 
     /// Shared by every per-host `_output` test below: hook stdout bytes back to `Value`.
@@ -1181,5 +1216,78 @@ mod tests {
             "AfterMCPExecution alone must not record a Measurement"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    struct PanicsOnPostTool;
+    impl Plugin for PanicsOnPostTool {
+        fn manifest(&self) -> Manifest {
+            Manifest {
+                id: "t204-panics",
+                surfaces: &[Surface::Hook],
+                default_on: true,
+            }
+        }
+        fn dashboard_page(&self) -> DashboardPage {
+            DashboardPage::new("t204-panics", "T204 test fixture.", true)
+        }
+        fn post_tool(&self, _ev: &PostToolUse, _cx: &Ctx) -> Option<String> {
+            panic!("boom");
+        }
+    }
+
+    struct SurvivesPostTool;
+    impl Plugin for SurvivesPostTool {
+        fn manifest(&self) -> Manifest {
+            Manifest {
+                id: "t204-survives",
+                surfaces: &[Surface::Hook],
+                default_on: true,
+            }
+        }
+        fn dashboard_page(&self) -> DashboardPage {
+            DashboardPage::new("t204-survives", "T204 test fixture.", true)
+        }
+        fn post_tool(&self, _ev: &PostToolUse, _cx: &Ctx) -> Option<String> {
+            Some("good context".into())
+        }
+    }
+
+    /// T204: a plugin that panics in `post_tool` must not take the rest of the dispatch down
+    /// with it — the surviving plugin's context still reaches stdout — and its panic must land
+    /// as one `level = "error"` row in the `logs` table naming the plugin, not vanish silently.
+    #[test]
+    fn a_panicking_plugin_is_logged_and_the_rest_survives() {
+        let cx = Runtime::in_memory("t204-panic").unwrap();
+        let registry = Registry::from_plugins(
+            vec![Box::new(PanicsOnPostTool), Box::new(SurvivesPostTool)],
+            &cx.config,
+        );
+        let input: HookInput =
+            serde_json::from_str(include_str!("../../tests/fixtures/hooks/post_tool.json"))
+                .unwrap();
+
+        let out = post_tool(&input, &cx, &registry);
+
+        let ctx = out
+            .hook_specific_output
+            .as_ref()
+            .and_then(|h| h.additional_context.as_deref())
+            .unwrap_or("");
+        assert_eq!(ctx, "good context", "the surviving plugin's output {out:?}");
+        assert!(
+            !ctx.contains("boom"),
+            "the panic payload must not leak into stdout"
+        );
+
+        assert_eq!(
+            cx.store.count_logs("error", "t204-panics").unwrap(),
+            1,
+            "the panic must be logged exactly once, naming the plugin"
+        );
+        assert_eq!(
+            cx.store.count_logs("error", "t204-survives").unwrap(),
+            0,
+            "the plugin that did not panic must not be logged"
+        );
     }
 }

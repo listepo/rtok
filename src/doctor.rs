@@ -1429,12 +1429,9 @@ mod tests {
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command"}]}]}}"#,
         )
         .unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.doctor.settings_path = dir.join("settings.json");
         cfg.setup.claude.settings_path = dir.join("settings.json");
-        cfg.doctor.claude_json = dir.join("missing-claude.json");
-        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
-        cfg.stats.transcripts_dir = dir.clone();
         let report = page(&cfg).unwrap();
         assert_eq!(report.hooks_total, 1, "{:?}", report.hooks_by_event);
         assert_eq!(report.hooks_by_event["PreToolUse"], 1);
@@ -1454,12 +1451,9 @@ mod tests {
             r#"{"env":{"ANTHROPIC_BASE_URL":"https://api.anthropic.com"}}"#,
         )
         .unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.doctor.settings_path = dir.join("settings.json");
         cfg.setup.claude.settings_path = dir.join("settings.json");
-        cfg.doctor.claude_json = dir.join("missing-claude.json");
-        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
-        cfg.stats.transcripts_dir = dir.clone();
         let report = page(&cfg).unwrap();
         assert!(!report.mcp_tool_search_disabled);
         assert!(!report.to_text().contains("mcp_tool_search"), "{report:?}");
@@ -1505,7 +1499,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(dir.join("settings.json"), "{}").unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.doctor.settings_path = dir.join("settings.json");
         cfg.doctor.claude_json = dir.join("claude.json");
         cfg.doctor.instructions = true;
@@ -1540,10 +1534,7 @@ mod tests {
                 + &pair("a3", "u-glob", "Glob", "r3", &"g".repeat(12)),
         )
         .unwrap();
-        let mut cfg = Config::default();
-        cfg.doctor.settings_path = dir.join("settings.json");
-        cfg.doctor.claude_json = dir.join("missing-claude.json");
-        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.stats.transcripts_dir = dir.clone();
         let s = page(&cfg).unwrap().to_text();
         assert!(
@@ -1558,10 +1549,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-t504-empty-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut cfg = Config::default();
-        cfg.doctor.settings_path = dir.join("settings.json");
-        cfg.doctor.claude_json = dir.join("missing-claude.json");
-        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.stats.transcripts_dir = dir.clone();
         let s = page(&cfg).unwrap().to_text();
         assert!(s.contains("read-share no data"), "{s}");
@@ -1583,12 +1571,9 @@ mod tests {
             r#"{"env":{"OPENAI_BASE_URL":"http://127.0.0.1:8790/v1"}}"#,
         )
         .unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.doctor.settings_path = dir.join("settings.json");
-        cfg.doctor.claude_json = dir.join("missing-claude.json");
-        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
         cfg.setup.opencode.config_path = dir.join("opencode.json");
-        cfg.setup.codex.config_path = dir.join("missing-codex.toml");
         let s = page(&cfg).unwrap().to_text();
         assert!(
             s.lines().any(|l| l.starts_with("proxy ")

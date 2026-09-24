@@ -1066,7 +1066,7 @@ mod tests {
     fn plugins_toggle_shows_in_the_row_and_the_status_line() {
         let dir = std::env::temp_dir().join(format!("rtok-tui-plugins-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let cfg = Config::load_from(&dir).expect("config");
+        let cfg = crate::testutil::config_file_in(&dir);
         let mut app = crate::tui::app::tests::cursor_on_plugin(&cfg, "toon");
         app.key(KeyCode::Char(' '), KeyModifiers::NONE);
         assert!(
@@ -1092,7 +1092,7 @@ mod tests {
             DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let _ = std::fs::remove_dir_all(&dir);
-        let cfg = crate::tui::app::tests::hermetic(Config::load_from(&dir).expect("config"), &dir);
+        let cfg = crate::testutil::config_file_in(&dir);
         let store = crate::store::Store::open(&cfg.core.db_path).expect("seed store");
         (cfg, store)
     }
@@ -1225,7 +1225,7 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("rtok-tui-logs-{lines}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let mut cfg = Config::load_from(&dir).expect("config");
+        let mut cfg = crate::testutil::config_file_in(&dir);
         cfg.log.lines = lines;
         std::fs::create_dir_all(cfg.log.path.parent().expect("log dir")).unwrap();
         let body = markers
@@ -1234,8 +1234,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         std::fs::write(&cfg.log.path, format!("{body}\n")).unwrap();
-        // Hermetic probes — App::new ticks the snapshot (T15.6).
-        crate::tui::app::tests::hermetic(cfg, &dir)
+        cfg
     }
 
     /// T15.5: the Calls tab lists the ledger's rows newest first — surface, kind,
@@ -1708,10 +1707,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-tui-store-err-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut cfg = Config::load_from(&dir).expect("config");
+        let mut cfg = crate::testutil::config_file_in(&dir);
         cfg.core.db_path = dir.join("not-a-db");
         std::fs::create_dir_all(&cfg.core.db_path).unwrap();
-        let cfg = crate::tui::app::tests::hermetic(cfg, &dir);
         let app = App::new(&cfg);
         assert!(app.snapshot().error.is_some(), "{:?}", app.snapshot().error);
         let screen = screen(&app);

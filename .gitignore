@@ -7,7 +7,10 @@
 /site/resources/
 /site/_vendor/
 /site/.hugo_build.lock
-report/jscpd-report.json
+# T224: stale jscpd/debug outputs; `.jscpd.json` reporters are console-only
+/report.html
+/report/
+/dump/
 
 # Agent worktrees must not be indexed by graph walk
 .worktrees/

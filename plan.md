@@ -32,7 +32,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T132 | todo | P2 | 2 | 0% | |
 | T134 | todo | P1 | 2 | 0% | |
 | T156 | todo | P3 | 3 | 0% | |
-| T157 | todo | P2 | 1 | 0% | |
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T163.1 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
@@ -43,14 +42,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T171 | todo | P1 | 2 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
-| T199 | todo | P2 | 1 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
+| T199 | todo | P2 | 1 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
-| T213 | todo | P3 | 2 | 0% | |
 | T216 | todo | P3 | 2 | 0% | |
-| T221 | todo | P2 | 2 | 0% | |
 | T223 | todo | P3 | 2 | 0% | |
-| T224 | todo | P3 | 1 | 0% | |
 | T235 | todo | P1 | 3 | 0% | |
 | T226 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
@@ -59,6 +55,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T246.5 | todo | P1 | 2 | 0% | |
 | T250.3 | todo | P1 | 3 | 0% | |
 | T246.6 | todo | P1 | 3 | 0% | |
+| T255 | todo | P2 | 3 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -269,14 +266,6 @@ Plan: throwaway hook script (scratch, not committed) that logs the payloads for 
 
 Check: `research.md` §18 gains the hook payloads and a dated table (cold vs seeded: seconds, bytes); T159's card is corrected against the recorded payloads; seeding gets a follow-up task or an `ideas.md` entry from the numbers; no file under `src/` changes.
 
-### T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
-
-No product code. The 18 GB orphan came from absolute worktree links breaking when the repository moved; git ≥ 2.48 can write relative links, but doing so sets `extensions.relativeWorktrees`, and a tool that does not know the extension refuses to open the repository (`research.md` §18.2).
-
-Plan: in a scratch clone, enable `worktree.useRelativePaths`, add a worktree, then open the repository with every git reader in `toolchain.md` and the workspace (git CLI, `gh`, cargo's VCS check in `cargo package --list`, the editors' git integrations, any `git2`/`gix`-based tool found in `toolchain.md`). Move the clone and confirm the link survives and `git worktree repair` is not needed.
-
-Check: `research.md` §18.2 gains a dated compatibility table; if every reader passes, the `worktrees` skill (T155) and `AGENTS.md` gain the one-line setting; if any fails, the finding is recorded and the setting stays off.
-
 ### T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 
 Depends on T156 (the real payloads), T158 (create) and T153 (remove). A skill is advice an agent may skip; the host's own worktree hooks are the only place where the rules cannot be skipped: `claude --worktree`, the desktop app and sub-agent `isolation: worktree` all create worktrees without asking the agent, which is where the `agent-<hex>` directories and reason-less locks come from (`research.md` §18.1, §18.3).
@@ -422,6 +411,12 @@ Check: `tests/cursor_plugin.rs` runs each plugin command as Cursor does (`/bin/s
 T246.3 did the Claude-shaped hooks (claude, codex `hooks.json`, zcode) through `claude::strip_ours`. cursor (`hooks.json` flat entries), gemini (`hooks.<Event>[]` with its own event names), kimi and codewhale (TOML `[[hooks]]` tables) each have their own `strip_ours`: each compares an rtok hook with the shape its installer writes and hands a changed one to `rtok_agent_sdk::keep_edited`.
 
 Check: `tests/agent_remove.rs` leaves an edited rtok hook of each host without `--yes` and takes it with `--yes`; `just check` green.
+
+### T255. Tests run under a fake `HOME`
+
+Creator request 2026-09-24. T254 closes the leaks through `Config`, but code that resolves home itself (`agents::home_dir`, `Config::home_dir`, `env_user_home`) still sees the real `HOME` in any test that does not set it. Give every test process a throwaway `HOME` (and `USERPROFILE`) under `target/` so a missed path lands in a sandbox, never in `~/.claude` or `~/.codex`. The obvious place is cargo's `[env]` in `.cargo/config.toml` with `force = true`, provided nextest honours it and build scripts are not affected; if either fails, use a nextest setup script instead. Tests that need git settings from the home (commits in fixtures) get an explicit `user.name`/`user.email` instead.
+
+Check: a canary test asserts `HOME` is not the real user home; `just check` green on macOS, Ubuntu and Windows CI.
 
 ## Reference
 
@@ -577,14 +572,6 @@ Already covered: `assert_cmd`, `divan`, `httpmock`, `insta`, `rstest`,
 `testcontainers` / `bolero`/`honggfuzz` only if a measured e2e/fuzz gap appears.
 
 
-### T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
-
-Found 2026-09-22 in the docs pass: I-86 sits in the Open table and in Rejected at once (the Rejected entry already carries T125's dated gate result while T125 is still `in progress`); I-87 appears twice in Open with contradictory states (unpromoted and "promoted T135"); the Promoted section is a headerless four-column pseudo-table whose `| ID | Became | Date |` header appears only at the bottom with three columns, and the I-28 row is truncated mid-word ("under the `inje"); the Open table also splits on a blank line. Breaks "an idea must not appear twice, or in both Open and Rejected".
-
-Plan: drop the Open I-86 row (Rejected carries the evidence) or revert the Rejected entry until T125 closes — pick one; delete the duplicate I-87 keeping "promoted T135"; give Promoted one matching header and repair the I-28 cell; remove the blank line inside the Open table. Docs only.
-
-Check: `ideas_ids_unique_and_disjoint` — every `I-NN` occurs in exactly one of Open/Later/Rejected/Promoted and every pipe-table has a header + separator before its rows; `just site` builds.
-
 ### T204. A panicking plugin is dropped silently — the error never reaches the log
 
 Found 2026-09-22 in the core pass: every plugin call is wrapped in `catch_unwind` (`src/hooks/mod.rs:340-344, 381-385, 493-508, 202-205`) but the payload is discarded with `.ok()`/`let _` — no `logs` row, no stderr. architecture.md §4 and the Working agreement promise "that plugin's output is dropped, **the event is logged with the error**". Today a panicking plugin is indistinguishable from one returning `None`, so T233-class failures stay invisible in `rtok doctor` / `rtok logs`.
@@ -592,6 +579,13 @@ Found 2026-09-22 in the core pass: every plugin call is wrapped in `catch_unwind
 Plan: one funnel helper for the four loops matching the `Err`, extracting the panic payload string and calling `cx.log("error", …)` with the plugin id before dropping the output.
 
 Check: `a_panicking_plugin_is_logged_and_the_rest_survives` — a registry with one panicking and one returning plugin: stdout keeps the good plugin's context and the store holds one `level = "error"` log row naming the plugin; `just test` green.
+### T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
+
+Found 2026-09-22 in the docs pass: I-86 sits in the Open table and in Rejected at once (the Rejected entry already carries T125's dated gate result while T125 is still `in progress`); I-87 appears twice in Open with contradictory states (unpromoted and "promoted T135"); the Promoted section is a headerless four-column pseudo-table whose `| ID | Became | Date |` header appears only at the bottom with three columns, and the I-28 row is truncated mid-word ("under the `inje"); the Open table also splits on a blank line. Breaks "an idea must not appear twice, or in both Open and Rejected".
+
+Plan: drop the Open I-86 row (Rejected carries the evidence) or revert the Rejected entry until T125 closes — pick one; delete the duplicate I-87 keeping "promoted T135"; give Promoted one matching header and repair the I-28 cell; remove the blank line inside the Open table. Docs only.
+
+Check: `ideas_ids_unique_and_disjoint` — every `I-NN` occurs in exactly one of Open/Later/Rejected/Promoted and every pipe-table has a header + separator before its rows; `just site` builds.
 
 ### T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 
@@ -601,14 +595,6 @@ Plan: store inline bodies as BLOB (or base64 in the TEXT column) with the sha of
 
 Check: extend `inline_sha256_matches_stored_text` (src/store/mod.rs:3048-3095) — `call_io_request` returns the exact input bytes for the `[…0xff, 0xfe…]` fixture and the sha matches the raw bytes (fails today); `just test` green.
 
-### T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
-
-Found 2026-09-22 in the surfaces pass: `initialize` (`src/mcp.rs:208-231`) discards `params.protocolVersion` and returns whatever `ServerInfo` serializes — no negotiation, and no test pins `result.protocolVersion`, so a dependency bump can silently change the advertised dialect (`src/doctor.rs:862` probes `2024-11-05` while tests send `2025-06-18`). `-32601` carries the raw method name as `message` instead of "Method not found". And `tools/call` coerces instead of validating: `mem_save` without `body` stores an empty note (`unwrap_or("")`, :332-339), a missing `expand` `id` becomes "unknown archive id: ", `handoff` truncates `budget_tokens` u64→u32 (:438-444) — schema-vs-handler drift turning client bugs into corrupt data.
-
-Plan: return the client's `protocolVersion` when supported (else a pinned constant) and pin it in tests; `message: "Method not found"`; one `require_str`/`require_int` helper per handler enforcing each schema's `required` list before any store write, mapped to `-32602` in `call_tool`.
-
-Check: `initialize_names_the_server_rtok` asserts the pinned `result.protocolVersion`; `batch_answers_with_an_array` asserts "Method not found"; `mem_save` with `{"title":"t"}` returns `isError` "invalid params: missing `body`" and the notes table stays empty; `just test` green.
-
 ### T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
 
 Found 2026-09-22 in the host-plugins pass: `tests/trycmd/agents-list*.toml` match `stdout = """…"""` / `[…]` — wildcards that assert nothing, so a lost host row, a broken block header or a malformed `--json` array all pass and "re-blessing" is a no-op. And `tests/host_docs.rs:20-40` slices `text.split("## Docs").nth(1)` to end-of-file and requires `links >= 1` — a `## Docs` list with zero links passes when any later section has an `https://` line, and nothing checks the links are the host's current config/plugin docs. Both blind spots are why drift like T197's README contradiction survives.
@@ -617,14 +603,6 @@ Plan: normalize machine-specific lines and snapshot the remainder per host id (o
 
 Check: deleting one variant from a host's `VARIANTS` fails `cargo nextest run --test cli_trycmd` (or the header-loop test); an emptied `## Docs` list with links only in a later section fails `host_docs`; `RTOK_BLESS=1` re-bless restores; `just check` green.
 
-### T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
-
-Found 2026-09-22 in the docs pass: `README.md:399` and `Cargo.toml:157` claim "41 integration targets" — `ls tests/*.rs` is 64; `README.md:269, 385` cite an "±15 % error margin" that appears nowhere in `research.md`; `docs/comparison.md:130` cites "39 % on Fable/Mythos 5.1", likewise untraceable; `docs/comparison.md:180` ("18.9 MiB") and :215 ("+0.81 ms p95") match `research.md` rows but cite nothing. Two are vendor-style claims, two are staleness-undetectable — breaking "every number in `README.md`, `docs/` or the site cites a measured row, `research.md`, or a dated command".
-
-Plan: cite each figure inline (`research.md §2 row …, <date>`) in the style of `docs/comparison.md:173`; for ±15 % and 39 % either add the missing measurement to `research.md` or drop/soften the number; fix the integration-target count with a dated count command or state the rule instead of a number.
-
-Check: a `just readme-check` number lint — any `N %` / `N MiB` / `N ms` figure in `README.md`/`docs/**` sits within a few words of `research.md`, a test name or a date, and the README target count equals `ls tests/*.rs | wc -l` at run time (fails on `main` today); `just check` green.
-
 ### T223. `windows-sys` linked in three versions
 
 Found 2026-09-22 in the docs pass: `Cargo.lock` holds `windows-sys` 0.52.0, 0.60.2 and 0.61.2 simultaneously (transitive users at 0.52/0.60 beside `rtok-sys`'s 0.61) — the only multi-version crate of note (the tree-sitter grammar family is single-version). On Windows three copies of the bindings compile and link, growing the binary and the T178 cold-start cost that is already over the 10 ms hook budget.
@@ -632,14 +610,6 @@ Found 2026-09-22 in the docs pass: `Cargo.lock` holds `windows-sys` 0.52.0, 0.60
 Plan: `cargo tree -d` to find the 0.52/0.60 holders, bump those transitive parents within existing semver ranges (no direct dep version bumps) or nudge the lockfile (`cargo update -p windows-sys@…`); record the reason per the dependency rule.
 
 Check: `grep -c 'name = "windows-sys"' Cargo.lock` = 1 (or `mise exec -- cargo tree -d` shows no windows-sys entry); `just check` green on windows-latest.
-
-### T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
-
-Found 2026-09-22 in the docs pass: `report.html` and `report/jscpd-report.json` are stale jscpd outputs (`.jscpd.json` now sets `reporters: ["console"]`, so they are unreproducible) and `dump/` holds nine captured stdout/stderr files — all in the tree; `.gitignore` covers `rtok.db`/`/~/` but not `/report.html` or `/dump/`. The `.rtok/`/`~`/`rtok.db` half of the cleanup is T184; this is the other half of "an artifact that is not reproducible from a command should not be in the repo".
-
-Plan: `git rm --cached` `report.html`, `report/jscpd-report.json`, `dump/*`; extend `.gitignore` with `/report.html`, `/report/`, `/dump/`; the jscpd console workflow stays the way to regenerate reports.
-
-Check: `git ls-files report.html report/ dump/` prints nothing; after `just test` and `just dup`, `git status --porcelain` stays clean (T184's Check covers the rest); `just check` green.
 
 ### T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
 
