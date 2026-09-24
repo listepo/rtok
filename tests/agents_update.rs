@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::agents::{backups, json, rtok, rtok_without_claude, tmp, write_cfg};
+use common::agents::{backups, claude_log, json, rtok, rtok_without_claude, tmp, write_cfg};
 use std::fs;
 
 /// What an older install left in `~/.claude/settings.json`: a hook on a versioned store path
@@ -188,4 +188,80 @@ fn update_dry_run_writes_nothing() {
     assert!(out.contains("mcpServers.rtok"), "{out}");
     assert_eq!(fs::read_to_string(&path).unwrap(), STALE_WINDSURF);
     assert!(backups(&path).is_empty());
+}
+
+/// Claude Code's record of `rtok@rtok` installed from the GitHub marketplace, as an older
+/// plugin version left it (T242.3).
+fn seed_claude_plugin(home: &std::path::Path) -> std::path::PathBuf {
+    let dir = home.join(".claude/plugins");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("known_marketplaces.json"),
+        r#"{"rtok":{"source":{"source":"github","repo":"listepo/rtok"}}}"#,
+    )
+    .unwrap();
+    let record = dir.join("installed_plugins.json");
+    fs::write(&record, OLD_PLUGIN_RECORD).unwrap();
+    record
+}
+
+const OLD_PLUGIN_RECORD: &str =
+    r#"{"version":2,"plugins":{"rtok@rtok":[{"scope":"user","version":"0.1.0"}]}}"#;
+
+/// T242.3: an installed plugin is updated in place — marketplace refresh, then `plugin
+/// update` — never uninstalled; Claude's record changes once, and a second update finds
+/// nothing new and says `already current`.
+#[test]
+fn update_runs_claude_plugin_update_in_place() {
+    let home = tmp("update-plugin");
+    let cfg = write_cfg(&home);
+    let record = seed_claude_plugin(&home);
+
+    let out = rtok(&["agents", "update", "claude", "--cli"], &cfg, &home);
+    assert!(out.contains("~ plugin rtok@rtok updated"), "{out}");
+    assert_eq!(
+        claude_log(&home),
+        "plugin marketplace update rtok\nplugin update rtok@rtok\n"
+    );
+    let after = fs::read_to_string(&record).unwrap();
+    assert_ne!(after, OLD_PLUGIN_RECORD);
+
+    let again = rtok(&["agents", "update", "claude", "--cli"], &cfg, &home);
+    assert!(again.contains("Claude Code — already current"), "{again}");
+    assert!(!claude_log(&home).contains("uninstall"));
+    assert_eq!(fs::read_to_string(&record).unwrap(), after);
+}
+
+/// T242.3: when `plugin update` fails, update falls back to a reinstall — uninstall, then
+/// install — and says why.
+#[test]
+fn update_reinstalls_the_claude_plugin_when_update_fails() {
+    let home = tmp("update-plugin-fail");
+    let cfg = write_cfg(&home);
+    let record = seed_claude_plugin(&home);
+    fs::write(home.join("fake-claude-fail-update"), "").unwrap();
+
+    let out = rtok(&["agents", "update", "claude", "--cli"], &cfg, &home);
+    assert!(
+        out.contains("~ plugin rtok@rtok reinstalled (update failed"),
+        "{out}"
+    );
+    assert_eq!(
+        claude_log(&home),
+        "plugin marketplace update rtok\nplugin update rtok@rtok\n\
+         plugin uninstall rtok@rtok\nplugin install rtok@rtok\n"
+    );
+    assert_ne!(fs::read_to_string(&record).unwrap(), OLD_PLUGIN_RECORD);
+}
+
+/// T242.3: plain `install` over an installed plugin stays the no-op it was — updating is
+/// `agents update`'s job.
+#[test]
+fn install_leaves_an_installed_claude_plugin_alone() {
+    let home = tmp("install-plugin-noop");
+    let cfg = write_cfg(&home);
+    let record = seed_claude_plugin(&home);
+    rtok(&["agents", "install", "claude", "--cli"], &cfg, &home);
+    assert_eq!(claude_log(&home), "");
+    assert_eq!(fs::read_to_string(&record).unwrap(), OLD_PLUGIN_RECORD);
 }
