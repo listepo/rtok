@@ -33,8 +33,6 @@ Inventory of shipped levers vs further options: [`research.md` §16](research.md
 |----|-------------|------|-------------|---------------------------|
 | I-84 | Anthropic / OpenAI prompt caching; `stats --price` cache rates (T49.1) | `proxy` / hosts | Stable byte-prefix for system+tools+modes and sticky upstream routing so provider **prompt-cache hits** dominate billed input. Not semantic cache (I-23). | Decision-shaped; needs a Check on cache-hit rate before/after and a false “sticky” routing failure mode. Measured hit rate here is already 98.1 % (`research.md` §2, Cache row), so the head-room on this workload is small. |
 | I-85 | Host Tool Search / deferred tools; doctor `mcp_tool_search` | `proxy` / MCP | Deferred full tool schemas: short stubs every turn, expand schema on first call. Complements I-45 text rewrite. | Overlaps host-native Tool Search; only worth it when search is off and tools[] still dominate input. |
-| I-87 | T74 investigation (2026-09-21) | `doctor` / `tui` / `web` | `doctor::read_share` synchronously parses the whole `stats.transcripts_dir` JSONL on the snapshot path (`Model::snapshot` → `doctor_for_snapshot`, 30 s TTL). On a machine with a heavy Claude Code history that is ~36 s CPU per cache miss (measured via `sample` on `rtok doctor`), i.e. `rtok tui` / `rtok web` freeze for most of every TTL window. Bound it: parse budget, persisted aggregates, or move `read_share` off the tick path. | Not a task in plan.md; needs a decision on where read-share numbers belong (D19 keeps observability a projection of ledgers — this parser is a second recorder). |
-
 | I-86 | Reasoning-model transcripts; provider “thinking” blocks | `archive` / `proxy` | Strip or pointer prior reasoning/thinking blocks on replay; keep finals + tool I/O. | Host/provider specific; risk if the model needs its own traces — needs an A/B on a reasoning-heavy corpus. |
 | I-87 | T74 investigation (2026-09-21) | `doctor` / `tui` / `web` | **promoted T135** — `doctor::read_share` synchronously parses the whole `stats.transcripts_dir` JSONL on the snapshot path (`Model::snapshot` → `doctor_for_snapshot`, 30 s TTL). On a machine with a heavy Claude Code history that is ~36 s CPU per cache miss (measured via `sample` on `rtok doctor`), i.e. `rtok tui` / `rtok web` freeze for most of every TTL window. Bound it: parse budget, persisted aggregates, or move `read_share` off the tick path. | Not a task in plan.md; needs a decision on where read-share numbers belong (D19 keeps observability a projection of ledgers — this parser is a second recorder). |
 | I-89 | `research.md` §17; Anthropic prompt caching (min prefix, 5 min TTL) | `memory` / `proxy` | Sibling sub-agents spawned within one cache TTL share a byte-stable brief placed first in the prompt, so the second sibling's first request reads it from cache. | Unknown whether Claude Code's cache breakpoints let a prefix inside the first user message hit; needs a `rtok proxy` capture of `cache_read_input_tokens` on sibling first requests before it is worth a card. Depends on T130. |
@@ -159,6 +157,8 @@ Scope by version (Open / Later) first; this list is only for ideas that will nev
 
 ## Promoted
 
+| ID | Became | Proposition | Date |
+|----|--------|-------------|------|
 | I-27 | P20 T20.1 | `rtok demon` supervises `proxy`/`mcp`/`dashboard` (D22) | 2026-09-09 |
 | I-34 | P19 T19.1–T19.3 | Slint WASM + axum WebSocket `rtok dashboard` (D20) | 2026-09-08 |
 | I-17 (pi only) | T10.6 | pi host plugin: `plugins/pi/` package + `rtok setup pi` | 2026-09-08 |
@@ -177,7 +177,7 @@ Scope by version (Open / Later) first; this list is only for ideas that will nev
 | I-14 | T52.1 | A small query language over the tags index (beyond `symbol`/`callers`/`outline`). | 2026-09-17 |
 | I-15 | covered (no task) | `impact(path)` / changed-symbol fan-out for reviews. Already shipped: MCP `impact` (T8.7). | 2026-09-17 |
 | I-16 | T52.2 | More grammars + compressed index payloads. | 2026-09-17 |
-| I-28 | T52.3 | SessionStart map of the most-referenced definitions, ranked by reference count from the `symbols` table, under the `inje | 2026-09-17 |
+| I-28 | T52.3 | SessionStart map of the most-referenced definitions, ranked by reference count from the `symbols` table, under the `inject` budget | 2026-09-17 |
 | I-29 | T52.4 | Definitions with zero reference sites in the index. | 2026-09-17 |
 | I-31 | T52.5 | rtok's own tags query on top of the grammar's, for type positions and `scoped_identifier` calls. | 2026-09-17 |
 | I-17 | T48.5–T48.8 | Installers beyond Claude / Cursor / OpenCode / Codex (T10.1–T10.3). Pi agent promoted 2026-09-08 → T10.6; the rest stays — promoted T48.5–T48.8 | 2026-09-17 |
