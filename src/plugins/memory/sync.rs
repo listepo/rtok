@@ -131,7 +131,7 @@ pub fn run(
         print!("{}", crate::render::file_diff(&path, &before, &after));
     } else {
         if after != before {
-            rtok_agent_sdk::backup(&path)?;
+            rtok_agent_sdk::backup(&path, cfg.setup.backup_files as usize)?;
             rtok_agent_sdk::write(
                 &rtok_agent_sdk::Apply::default(),
                 &path,

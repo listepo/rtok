@@ -198,6 +198,7 @@ instructions    = false               # run the instruction audit by default (--
 dry_run      = false
 yes          = false                  # required by --replace
 backup       = true                   # <name>.bak-<ts> beside each file, before setup and remove touch it
+backup_files = 5                      # .bak-* generations kept per file; older ones are deleted (0 = keep all)
 hook_timeout_s = 5                    # timeout written into each hook entry
 modes        = []                     # e.g. ["terse", "yagni"]   (--mode)
 mcp          = true                   # also register the MCP server   (--mcp)

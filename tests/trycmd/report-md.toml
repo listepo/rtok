@@ -198,6 +198,7 @@ Every effective key with its origin — the `config show --sources` page.
 | report.since | 30d | default |
 | setup.aider.config_path | ~/.aider.conf.yml | default |
 | setup.backup | true | default |
+| setup.backup_files | 5 | default |
 | setup.claude.settings_path | ~/.claude/settings.json | default |
 | setup.codewhale.dir | ~/.codewhale | default |
 | setup.codex.config_path | ~/.codex/config.toml | default |
@@ -254,7 +255,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-208 keys.
+209 keys.
 
 ## Doctor
 

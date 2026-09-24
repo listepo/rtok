@@ -430,3 +430,32 @@ fn a_missing_rtok_on_path_is_a_warning_at_the_top() {
         "remove never warns"
     );
 }
+
+/// T249: `[setup] backup_files` caps the copies per file, and only a run that changed
+/// something prunes — a no-change run deletes its own copy and must not cost an older one.
+#[test]
+fn backup_files_caps_copies_and_a_no_change_run_prunes_nothing() {
+    let home = tmp("backup-cap");
+    let cfg = write_cfg(&home);
+    let mut toml = fs::read_to_string(&cfg).unwrap();
+    toml.push_str("[setup]\nbackup_files = 1\n");
+    fs::write(&cfg, toml).unwrap();
+    let file = home.join(".codex/config.toml");
+    fs::write(&file, "# mine\n").unwrap();
+    rtok(&setup_args("codex", &[]), &cfg, &home);
+    let first = backups(&file);
+    assert_eq!(first.len(), 1);
+    // Edited since, still installed: the up-front copy is taken, then dropped.
+    let mut body = fs::read_to_string(&file).unwrap();
+    body.push_str("# edited\n");
+    fs::write(&file, &body).unwrap();
+    let again = rtok(&setup_args("codex", &[]), &cfg, &home);
+    assert!(again.contains("already installed"), "{again}");
+    assert_eq!(backups(&file), first, "no change, nothing pruned");
+    // A run that changes the file keeps its copy and prunes down to the cap.
+    rtok(&["agents", "remove", "codex"], &cfg, &home);
+    let after = backups(&file);
+    assert_eq!(after.len(), 1, "{after:?}");
+    assert!(fs::read_to_string(&after[0]).unwrap().contains("# edited"));
+    let _ = fs::remove_dir_all(home);
+}

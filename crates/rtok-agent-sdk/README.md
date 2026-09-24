@@ -20,7 +20,7 @@ The report line *is* the write gate: `Apply` refuses to write when the report is
 ```rust,ignore
 use rtok_agent_sdk::{Apply, PluginLink, register_mcp};
 
-let apply = Apply { dry_run: false, backup: true, yes: false };
+let apply = Apply { dry_run: false, backup: true, backup_files: 0, yes: false };
 
 // A host that reads `mcpServers` — Claude Code's `~/.claude.json`, Cursor's `~/.cursor/mcp.json`.
 let report = register_mcp(&apply, path, "rtok", "rtok", &["mcp"])?;
