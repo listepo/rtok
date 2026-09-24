@@ -17,8 +17,15 @@ Files:
   slot to wire them into, so there is no `scripts/` tree).
 - `plugin.json` — Agent Plugins manifest (root `plugin.json`) for other hosts of that spec.
 
-`rtok` must be on `PATH`. If it is missing, the MCP server does not start;
-install it with ketch: `ketch install listepo/rtok`.
+Each hook line finds `rtok` on `PATH`, then at `~/.ketch/bin/rtok` (a Cursor started from
+the Dock has no shell `PATH`), and otherwise exits 0 without output; only `sessionStart`
+then prints one `additional_context` note naming the ketch install. The line is a
+`{ …; }` group because Cursor appends the payload as a heredoc to the command. On Windows
+the plugin is a copy and its hooks keep the bare `rtok hook … --host cursor` line
+(PowerShell runs them).
+
+The MCP server needs `rtok` on `PATH`; if it is missing, it does not start.
+Install it with ketch: `ketch install listepo/rtok`.
 
 ## Docs
 

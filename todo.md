@@ -43,4 +43,3 @@
 - T232. Worktrees page: `worktree list` on `tui` and `web`
 - T241. Replay bench: saving over a fixed session corpus
 - T246.5. zed and grok MCP entries
-- T250.3. Cursor hooks find `rtok` off `PATH`
