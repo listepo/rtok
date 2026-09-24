@@ -16,7 +16,6 @@
 
 - T124. Realized `tools_rewrite` saving as a dated `research.md` row
 
-- T130.3. Spawn brief: outline line ranges on pointers
 - T131. Measure the spawn brief: cost row and on/off re-read share
 - T132. Ship a Haiku scout agent definition with the Claude Code plugin
 - T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?

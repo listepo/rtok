@@ -22,7 +22,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T91.2 | todo | P1 | 2 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
 | T124 | todo | P3 | 2 | 0% | |
-| T130.3 | todo | P2 | 3 | 0% | |
 | T131 | todo | P2 | 3 | 0% | |
 | T132 | todo | P2 | 2 | 70% | |
 | T134 | todo | P1 | 2 | 0% | |
@@ -170,12 +169,6 @@ Extra tests: written and green (`agents::kilo::tests`); the dangling-link one fo
 Check: the unit tests above; `rtok agents list` shows `kilo`; `agents_doc`, `host_docs`, `config_coverage`, `opencode_plugin` green; `just check`.
 
 Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree unchanged byte for byte); a user's `kilo.jsonc` is byte-identical after install and remove; an existing foreign file at `plugin/rtok.ts` is neither overwritten nor removed; a dangling `rtok.ts` symlink is repaired; remove on a clean home prints `NO_CHANGES`.
-
-### T130.3. Spawn brief: outline line ranges on pointers
-
-Split from T130.2 (2026-09-24). `ledger()`'s pointers carry only a path and an optional archive id — add outline line ranges from the graph index where it has them, gated so `memory` still has no hard feature dependency on `graph`. Open before claiming, for the creator: which range a pointer gets (the symbols the session's own `Read(range)` / `Edit` touched, or the file's whole outline), and the budget it may take in the brief.
-Plan: reuse the existing graph-index outline lookup used by `expand`/`outline` (read-only, behind the same `#[cfg(feature = "graph")]` gate `memory` does not otherwise pull in — resolve via an optional method on a capability trait or a cfg'd call site, whichever keeps `memory = []` dependency-free when `graph` is off).
-Check: a `handoff.rs` unit test with a `graph`-enabled fixture asserts a pointer's line range appears in the brief when the index has one, and is silently omitted when it does not (no error, no panic); `just check` green.
 
 ### T131. Measure the spawn brief: cost row and on/off re-read share
 Rule: a saving that is not a `Measurement` row does not exist, and the brief is a cost first. Needs T128 and T130.2.
