@@ -8,15 +8,15 @@ import { pathToFileURL } from "node:url";
 
 const root = process.env.RTOK_VITE_ROOT;
 if (root) {
-  const parentURL = pathToFileURL(join(root, "peer.mjs")).href;
-  registerHooks({
-    resolve(specifier, context, next) {
-      try {
-        return next(specifier, context);
-      } catch (error) {
-        if (specifier !== "vite" && !specifier.startsWith("vite/")) throw error;
-        return next(specifier, { ...context, parentURL });
-      }
-    },
-  });
+    const parentURL = pathToFileURL(join(root, "peer.mjs")).href;
+    registerHooks({
+        resolve(specifier, context, next) {
+            try {
+                return next(specifier, context);
+            } catch (error) {
+                if (specifier !== "vite" && !specifier.startsWith("vite/")) throw error;
+                return next(specifier, { ...context, parentURL });
+            }
+        },
+    });
 }

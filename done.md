@@ -5435,7 +5435,7 @@ Do (Claude Code / claude-opus-5-5, 2026-09-25): no installer changes; four test-
 
 Check: the ten tests pass in the `windows` CI job; `just check` stays green.
 
-Check result: PR #374's `windows` job ran the full suite with no `cfg(windows)` override: 1735 run, 1735 passed, all ten tests among them. The ten pass on macOS too (`cargo nextest run` over the six touched binaries: 33/33). `just check` passed every test except `pi_plugin::setup_pi_yes_links_remove_unlinks` (the 5 s vitest timeout under host load seen on main in T83.7 and T83.2; green in the targeted run and in every CI job).
+Check result: PR #374's `windows` job ran the full suite with no `cfg(windows)` override: 1735 run, 1735 passed, all ten tests among them. The ten pass on macOS too (`cargo nextest run` over the six touched binaries: 33/33). `just check`: every step green (`just js` after an `oxfmt` pass on the new `.mjs`); its tests passed except `pi_plugin::setup_pi_yes_links_remove_unlinks` (the 5 s vitest timeout under host load seen on main in T83.7 and T83.2; green in the targeted run and in every CI job).
 
 Status: done 2026-09-25
 Model: Claude Code / claude-opus-5-5
