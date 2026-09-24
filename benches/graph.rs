@@ -1,5 +1,10 @@
 //! Divan benches for the graph index: cold index + warm walk + warm symbol query.
 //!
+//! Tags vs LSP token/latency comparison (tool-output into context) lives in
+//! `tests/graph_backend_bench.rs` — run:
+//! `mise exec -- cargo test --release --test graph_backend_bench -- --ignored --nocapture --test-threads=1`
+//!
+//!
 //! Each case builds its own store and repo outside the timed region (`with_inputs`) and
 //! drops them outside it too (`bench_refs` — `bench_values` would move the fixture into the
 //! closure and time the removal of the files), so a number is one cold index or one warm
