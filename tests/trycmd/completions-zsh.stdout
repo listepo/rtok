@@ -271,6 +271,19 @@ _arguments "${_arguments_options[@]}" : /
 ':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`):_default' /
 && ret=0
 ;;
+(update)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Print the planned edits and exit]' /
+'--cli[Only the CLI app (default is all)]' /
+'--desktop[Only the desktop app (default is all)]' /
+'--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
+'--no-restart[Skip closing/reopening a running desktop app around the write (T141)]' /
+'-h[Print help]' /
+'--help[Print help]' /
+'::host -- Host(s), comma-separated; omitted = every host rtok is installed in:_default' /
+&& ret=0
+;;
 (list)
 _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
@@ -358,6 +371,10 @@ _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
 (uninstall)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(update)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -455,6 +472,19 @@ _arguments "${_arguments_options[@]}" : /
 ':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`):_default' /
 && ret=0
 ;;
+(update)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Print the planned edits and exit]' /
+'--cli[Only the CLI app (default is all)]' /
+'--desktop[Only the desktop app (default is all)]' /
+'--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
+'--no-restart[Skip closing/reopening a running desktop app around the write (T141)]' /
+'-h[Print help]' /
+'--help[Print help]' /
+'::host -- Host(s), comma-separated; omitted = every host rtok is installed in:_default' /
+&& ret=0
+;;
 (list)
 _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
@@ -542,6 +572,10 @@ _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
 (uninstall)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(update)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -1499,6 +1533,10 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
+(update)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
 (list)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
@@ -1878,6 +1916,7 @@ _rtok__subcmd__agents_commands() {
 'install:Install hooks, MCP server and proxy into a host' /
 'uninstall:Take rtok back out of a host/: hooks, MCP entry, proxy variable, plugin link' /
 'remove:Take rtok back out of a host/: hooks, MCP entry, proxy variable, plugin link' /
+'update:Bring what rtok installed up to date/: in place where it can, reinstalled where not' /
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
@@ -1890,6 +1929,7 @@ _rtok__subcmd__agents__subcmd__help_commands() {
     local commands; commands=(
 'install:Install hooks, MCP server and proxy into a host' /
 'uninstall:Take rtok back out of a host/: hooks, MCP entry, proxy variable, plugin link' /
+'update:Bring what rtok installed up to date/: in place where it can, reinstalled where not' /
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
@@ -1933,6 +1973,11 @@ _rtok__subcmd__agents__subcmd__help__subcmd__sessions__subcmd__watch_commands() 
 _rtok__subcmd__agents__subcmd__help__subcmd__uninstall_commands() {
     local commands; commands=()
     _describe -t commands 'rtok agents help uninstall commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__update_commands] )) ||
+_rtok__subcmd__agents__subcmd__help__subcmd__update_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents help update commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__agents__subcmd__info_commands] )) ||
 _rtok__subcmd__agents__subcmd__info_commands() {
@@ -1984,6 +2029,11 @@ _rtok__subcmd__agents__subcmd__sessions__subcmd__watch_commands() {
 _rtok__subcmd__agents__subcmd__uninstall_commands() {
     local commands; commands=()
     _describe -t commands 'rtok agents uninstall commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__update_commands] )) ||
+_rtok__subcmd__agents__subcmd__update_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents update commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__archive_commands] )) ||
 _rtok__subcmd__archive_commands() {
@@ -2390,6 +2440,7 @@ _rtok__subcmd__help__subcmd__agents_commands() {
     local commands; commands=(
 'install:Install hooks, MCP server and proxy into a host' /
 'uninstall:Take rtok back out of a host/: hooks, MCP entry, proxy variable, plugin link' /
+'update:Bring what rtok installed up to date/: in place where it can, reinstalled where not' /
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
@@ -2427,6 +2478,11 @@ _rtok__subcmd__help__subcmd__agents__subcmd__sessions__subcmd__watch_commands() 
 _rtok__subcmd__help__subcmd__agents__subcmd__uninstall_commands() {
     local commands; commands=()
     _describe -t commands 'rtok help agents uninstall commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__update_commands] )) ||
+_rtok__subcmd__help__subcmd__agents__subcmd__update_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help agents update commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help__subcmd__archive_commands] )) ||
 _rtok__subcmd__help__subcmd__archive_commands() {

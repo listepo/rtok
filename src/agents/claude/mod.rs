@@ -547,7 +547,7 @@ impl Agent for Claude {
                 crate::proxy::cli::unregister_proxy(cfg)?,
                 super::skill::sync("claude", cfg, true)?,
             ]),
-            Mode::Install => {
+            Mode::Install | Mode::Update => {
                 // Offer first: once the plugin is installed it is the only call path (D21
                 // singleton), so the settings-file hooks and MCP are stripped, not added —
                 // judged by Claude's own record, so a dry run or a declined offer still gets

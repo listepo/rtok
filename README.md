@@ -98,6 +98,11 @@ listed the same way from the surfaces each one declares (`(off)` when disabled).
 same blocks without writing; `rtok doctor` lists modules for every host under
 `agents`.
 
+After upgrading rtok, `rtok agents update` refreshes every host rtok is
+installed in (or only the hosts named): a hook or MCP entry written by an older
+binary path or with an old timeout is rewritten in place, and a
+host that has nothing of rtok is skipped rather than installed into.
+
 `rtok agents uninstall claude` takes it all back out: hook entries, MCP
 registration, and the proxy variable. Both install and uninstall copy every file
 they touch to `_backup/<name>.bak-<ts>` first; a no-op run leaves no copy,
@@ -290,6 +295,7 @@ What keeps that `hit=` high with rtok installed: [docs/prompt-cache.md](docs/pro
 |---|---|
 | `rtok agents install claude` | install Claude Code hooks and MCP registration (`--dry-run`) |
 | `rtok agents uninstall claude` | take hooks, MCP registration and proxy variable back out (`--dry-run`) |
+| `rtok agents update [claude,…]` | bring every installed host (or the named ones) up to date after an rtok upgrade: stale hooks, MCP command, proxy URL and plugin links rewritten in place, the rest reinstalled (`--dry-run`) |
 | `rtok agents install cursor` / `codex` / `opencode` / `kilo` / `pi` / `zcode` / `kimi` / `copilot` / `aider --proxy` / `windsurf` / `zed` / `vscode` | register the other supported host integrations |
 | `rtok hook <event>` | hook entry point (JSON on stdin, JSON on stdout) |
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |

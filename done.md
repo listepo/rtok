@@ -5610,3 +5610,14 @@ Result: `claude::insert_ours` now refreshes as well as adds — a stale rtok hoo
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+
+### T242.2. `rtok agents update [host,…]`: refresh or reinstall what rtok already installed
+
+After T242.1. New `AgentCmd::Update` (`--dry-run`, `--no-restart`, `--cli/--desktop/--all`) and `Mode::Update`. No host given → every host with at least one rtok module installed; a named host with nothing installed is skipped with `not installed — rtok agents install <host>` and no file is touched. Per variant, update runs the install path with the flag modules it already has switched on (`proxy` read back → `--proxy`, an installed plugin → `--yes`), so a changed binary path or MCP command lands and nothing new the user never chose appears. Same one-backup-per-file rule as install; a no-op run removes its backups and says `already current`. Every host that matches on `Mode` handles `Update` (today only Claude matches exhaustively).
+
+Check: `tests/agents_update.rs` e2e — stale hooks and MCP commands are rewritten and the files differ from the seed; a current install leaves bytes and backups unchanged; an untouched host's files stay absent; `--dry-run` writes nothing. trycmd fence, `surface_parity`, `config_coverage`, `docs/agents.md`.
+
+Result: `rtok agents update [host,…]` (`--dry-run`, `--cli/--desktop/--all`, `--no-restart`) runs `Mode::Update` through the install path with install's backup and restart handling. No host named → `agents::installed_hosts` (every host with an rtok module in a present variant); nothing installed anywhere → `nothing to update`. A variant with no rtok module prints `— not installed` and a `rtok agents install <host>` hint and is never written; a variant with rtok gets `carry_flags` (`proxy` read back → `setup.proxy`, `plugin` → `setup.yes`). A no-op run says `— already current` and keeps no backup. Claude matches `Install | Update`; every other host already treats any non-`Remove` mode as install. The proxy port case is not covered: `installed()` only reads a proxy back at the current URL, so a moved port is not detected as installed. e2e `tests/agents_update.rs`: Claude hooks + MCP rewritten, Windsurf rewritten once then `already current` with the same bytes and one backup, no-host update touches only installed hosts, not-installed skip, `--dry-run`. Gates: trycmd help + completions, `surface_parity` exemption, README.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
