@@ -10,7 +10,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T83.4 | todo | P1 | 3 | 0% | |
 | T83.7 | todo | P1 | 2 | 0% | |
 | T83.13 | todo | P1 | 3 | 0% | |
-| T83.14 | todo | P1 | 3 | 0% | |
 | T87 | in progress | P1 | 2 | 70% | Claude Code / claude-fable-5-1 |
 | T88 | todo | P1 | 2 | 0% | |
 | T89 | todo | P1 | 3 | 0% | |
@@ -55,12 +54,6 @@ Check: the test passes in the `windows` CI job; `just check` stays green.
 ### T83.13. `agent_remove::uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy` fails on Windows (os error 4390)
 
 From run 35576438155. Windows os error 4390 is `ERROR_NOT_A_REPARSE_POINT` — the uninstall path expects a symlink/junction (reparse point) and finds a plain materialized copy instead, matching the card's "not a reparse point" note. Read `agent_remove`'s uninstall and decide whether the installer needs to detect a non-symlinked (materialized/copied) plugin directory on Windows and remove it by content instead of by reparse-point semantics, or the test fixture needs to actually create a reparse point. One family split out of the original T83; see T83.2 for the closing criterion.
-
-Check: the test passes in the `windows` CI job; `just check` stays green.
-
-### T83.14. `plugins_e2e::graph_session_start_map_off_by_default_and_on_when_capped` fails on Windows (empty `{}`)
-
-From run 35576438155. The `SessionStart` graph-map payload came back empty on Windows where the test expects populated content — likely a path-walk or capped-map computation that silently no-ops on a Windows path shape. Read the `graph` plugin's `SessionStart` map builder and decide whether it has a real Windows path-handling bug or the test's fixture repo isn't discoverable under Windows path conventions. One family split out of the original T83; see T83.2 for the closing criterion.
 
 Check: the test passes in the `windows` CI job; `just check` stays green.
 

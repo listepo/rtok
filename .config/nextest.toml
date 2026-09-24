@@ -108,6 +108,5 @@ not (
   | (binary(filter) & test(=opencode_plugin_unit_test_with_api_mock))
   | test(/^plugins::cmd::run::tests::(one_arg_compound_command_runs_as_one_script|exit_3_is_preserved|printf_two_lines_exit_0_no_trailer|three_runs_stats_plugin_cmd_json_has_rows)$/)
   | (binary(agent_remove) & test(=uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy))
-  | (binary(plugins_e2e) & test(=graph_session_start_map_off_by_default_and_on_when_capped))
 )
 '''

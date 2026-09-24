@@ -5388,6 +5388,19 @@ Check result: `just check` on macOS passed every test but `pi_plugin::setup_pi_y
 Status: done 2026-09-25
 Model: Claude Code / claude-opus-5-5
 
+### T83.14. `plugins_e2e::graph_session_start_map_off_by_default_and_on_when_capped` fails on Windows (empty `{}`)
+
+From run 35576438155. The `SessionStart` graph-map payload came back empty on Windows where the test expects populated content — likely a path-walk or capped-map computation that silently no-ops on a Windows path shape. Read the `graph` plugin's `SessionStart` map builder and decide whether it has a real Windows path-handling bug or the test's fixture repo isn't discoverable under Windows path conventions. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-25): not the graph plugin — the test. It spliced `repo.display()` into a JSON literal with `format!`; on Windows the temp path's `\` makes invalid escapes (`\U…`), so the hook could not parse its stdin, failed open and printed `{}`. The hook input is now built with `json!`. Its line left the `cfg(windows)` filter in `.config/nextest.toml`.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+Check result: `just check` green on macOS (1772 passed); PR merged only with a green `windows` job.
+
+Status: done 2026-09-25
+Model: Claude Code / claude-opus-5-5
+
 ### T83.6. `agents_doc::agents_doc_table_matches_the_host_code` fails on Windows
 
 `tests/agents_doc.rs` compares the generated `docs/agents.md` host table against the bless output; on Windows this likely differs by path separator or line endings (CRLF vs LF) rather than actual host-table content. Decide whether the generator needs `cfg(windows)` normalization or the comparison needs to normalize line endings. One family split out of the original T83; see T83.2 for the closing criterion.
