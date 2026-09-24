@@ -4071,9 +4071,28 @@ mod tests {
         assert_eq!(listed, dir_versions, "MIGRATIONS drifted from migrations/");
     }
 
-    /// `(table, columns)` for every `diesel::table!` in `schema.rs`, with `#[sql_name]`
-    /// resolved — the SQL column name, not the Rust one.
-    fn schema_tables() -> Vec<(String, std::collections::BTreeSet<String>)> {
+    // T220: schema-drift guard — per-column type/NOT NULL/PK, the full table set, and (since
+    // `table!` models neither) defaults/indexes/triggers via a golden `sqlite_master` dump.
+    /// A migrated table with no `table!` macro, and why.
+    const RAW_SQL_TABLES: &[&str] = &[
+        "note_embeddings",   // 0012: brute-force cosine KNN beside FTS5, sql_query only
+        "notes_fts",         // 0001: FTS5 virtual table, sql_query only (T13.1)
+        "notes_fts_data",    // FTS5 shadow table for notes_fts
+        "notes_fts_idx",     // FTS5 shadow table for notes_fts
+        "notes_fts_docsize", // FTS5 shadow table for notes_fts
+        "notes_fts_config",  // FTS5 shadow table for notes_fts
+        "schema_migrations", // written by Store::migrate itself, not a migrations/*.sql file
+    ];
+
+    /// One `diesel::table!`: its name, declared PK columns, and (SQL name, Diesel type) pairs.
+    struct SchemaTable {
+        name: String,
+        pk: Vec<String>,
+        cols: Vec<(String, String)>,
+    }
+
+    /// Every `diesel::table!` in `schema.rs`, parsed from source.
+    fn schema_tables() -> Vec<SchemaTable> {
         let src = include_str!("schema.rs");
         let mut out = Vec::new();
         let mut lines = src.lines().map(str::trim);
@@ -4083,7 +4102,12 @@ mod tests {
             }
             let head = lines.next().unwrap();
             let name = head.split_whitespace().next().unwrap().to_string();
-            let mut cols = std::collections::BTreeSet::new();
+            // No PK column carries `#[sql_name]` today, so the head's names are SQL names too.
+            let pk = head[head.find('(').unwrap() + 1..head.find(')').unwrap()]
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            let mut cols = Vec::new();
             let mut rename = None;
             for l in lines.by_ref() {
                 if l == "}" {
@@ -4094,36 +4118,192 @@ mod tests {
                     .and_then(|r| r.strip_suffix("\"]"))
                 {
                     rename = Some(n.to_string());
-                } else if let Some((col, _)) = l.split_once(" -> ") {
-                    cols.insert(rename.take().unwrap_or_else(|| col.to_string()));
+                } else if let Some((col, ty)) = l.split_once(" -> ") {
+                    let name = rename.take().unwrap_or_else(|| col.to_string());
+                    cols.push((name, ty.trim_end_matches(',').to_string()));
                 }
             }
-            out.push((name, cols));
+            out.push(SchemaTable { name, pk, cols });
         }
         out
     }
 
-    /// After every migration each `table!` column set equals `PRAGMA table_info`.
-    #[test]
-    fn schema_rs_matches_the_migrated_tables() {
+    /// SQLite's column-type-affinity rule, collapsed to the 3 affinities `schema.rs` uses:
+    /// `table_xinfo` returns the declared type verbatim (`BIGINT`, not `INTEGER`).
+    fn sqlite_affinity(declared: &str) -> &'static str {
+        let d = declared.to_uppercase();
+        if d.contains("INT") {
+            "INTEGER"
+        } else if d.contains("CHAR") || d.contains("CLOB") || d.contains("TEXT") {
+            "TEXT"
+        } else if d.contains("REAL") || d.contains("FLOA") || d.contains("DOUB") {
+            "REAL"
+        } else {
+            "OTHER"
+        }
+    }
+
+    /// The affinity a `table!` Diesel type expects — only the types `schema.rs` uses today.
+    fn diesel_affinity(ty: &str) -> Option<&'static str> {
+        match ty {
+            "Integer" | "BigInt" => Some("INTEGER"),
+            "Text" => Some("TEXT"),
+            "Double" => Some("REAL"),
+            _ => None,
+        }
+    }
+
+    /// `sqlite_master` normalized for a golden diff: tables/indexes/triggers, sorted, `sql`
+    /// collapsed to single-spaced so reindenting a migration is not itself drift.
+    fn live_schema_snapshot(conn: &mut SqliteConnection) -> String {
         #[derive(QueryableByName)]
-        struct Col {
+        struct Row {
+            #[diesel(sql_type = Text)]
+            kind: String,
             #[diesel(sql_type = Text)]
             name: String,
+            #[diesel(sql_type = Text)]
+            tbl_name: String,
+            #[diesel(sql_type = Nullable<Text>)]
+            sql: Option<String>,
         }
+        let mut rows: Vec<Row> = sql_query(
+            "SELECT type AS kind, name, tbl_name, sql FROM sqlite_master \
+             WHERE type IN ('table', 'index', 'trigger')",
+        )
+        .load(conn)
+        .unwrap();
+        rows.sort_by(|a, b| (&a.kind, &a.name).cmp(&(&b.kind, &b.name)));
+        rows.into_iter()
+            .map(|r| {
+                let sql = r.sql.unwrap_or_default();
+                let sql = sql.split_whitespace().collect::<Vec<_>>().join(" ");
+                format!("{}|{}|{}|{}\n", r.kind, r.name, r.tbl_name, sql)
+            })
+            .collect()
+    }
+
+    /// Every mismatch between `schema.rs`/`schema_snapshot.txt` and a live, migrated
+    /// connection, one string each. Takes the connection so a test can run it on a broken DB.
+    fn schema_drift(conn: &mut SqliteConnection) -> Vec<String> {
+        let mut out = Vec::new();
+        let live_snapshot = live_schema_snapshot(conn);
+        let live_tables: std::collections::BTreeSet<&str> = live_snapshot
+            .lines()
+            .filter_map(|l| l.strip_prefix("table|"))
+            .map(|l| l.split('|').next().unwrap())
+            .collect();
         let tables = schema_tables();
         assert!(tables.len() >= 16, "parsed {} table! macros", tables.len());
+        let mut expected: std::collections::BTreeSet<&str> =
+            tables.iter().map(|t| t.name.as_str()).collect();
+        expected.extend(RAW_SQL_TABLES);
+        if expected != live_tables {
+            out.push(format!(
+                "migrated tables {live_tables:?} vs table! \u{222a} RAW_SQL_TABLES {expected:?}"
+            ));
+        }
+
+        #[derive(QueryableByName)]
+        struct XCol {
+            #[diesel(sql_type = Text)]
+            name: String,
+            #[diesel(sql_type = Text)]
+            ty: String,
+            #[diesel(sql_type = Integer)]
+            notnull: i32,
+            #[diesel(sql_type = Integer)]
+            pk: i32,
+        }
+        for t in &tables {
+            // `notnull` is a SQLite keyword; the pragma's own column of that name needs quoting.
+            let live: Vec<XCol> = sql_query(format!(
+                "SELECT name, type AS ty, \"notnull\", pk FROM pragma_table_xinfo('{}')",
+                t.name
+            ))
+            .load(conn)
+            .unwrap();
+            let live_names: std::collections::BTreeSet<&str> =
+                live.iter().map(|c| c.name.as_str()).collect();
+            let want_names: std::collections::BTreeSet<&str> =
+                t.cols.iter().map(|c| c.0.as_str()).collect();
+            if live_names != want_names {
+                out.push(format!(
+                    "{}: schema.rs columns {want_names:?} vs live {live_names:?}",
+                    t.name
+                ));
+                continue;
+            }
+            for (name, ty) in &t.cols {
+                let live = live.iter().find(|c| &c.name == name).unwrap();
+                let (base, nullable) = ty
+                    .strip_prefix("Nullable<")
+                    .map_or((ty.as_str(), false), |i| (i.trim_end_matches('>'), true));
+                let want_pk = t.pk.iter().any(|p| p == name);
+                let ty_ok = diesel_affinity(base).is_none_or(|w| sqlite_affinity(&live.ty) == w);
+                let pk_ok = want_pk == (live.pk > 0);
+                // A bare SQLite `PRIMARY KEY` does not itself imply `NOT NULL` (unlike standard
+                // SQL, and several migrations rely on it), so a PK column's live `notnull` is
+                // never compared against `table!`'s always-non-`Nullable` Rust type.
+                let notnull_ok = want_pk || nullable != (live.notnull != 0);
+                if !(ty_ok && pk_ok && notnull_ok) {
+                    out.push(format!(
+                        "{}.{name}: schema.rs `{ty}` pk={want_pk} vs live `{}` notnull={} pk={}",
+                        t.name, live.ty, live.notnull, live.pk
+                    ));
+                }
+            }
+        }
+
+        let want_snapshot = include_str!("schema_snapshot.txt");
+        if live_snapshot != want_snapshot {
+            out.push(format!("sqlite_master drifted from schema_snapshot.txt (defaults, indexes or triggers) — regenerate with `RTOK_BLESS=1 mise exec -- cargo test --lib schema_matches_the_migrated_tables_and_snapshot`\n--- want\n{want_snapshot}--- live\n{live_snapshot}"));
+        }
+        out
+    }
+
+    /// After every migration, `schema.rs` and `schema_snapshot.txt` match a fresh DB exactly.
+    #[test]
+    fn schema_matches_the_migrated_tables_and_snapshot() {
         let store = Store::open_in_memory().unwrap();
         let mut conn = store.lock().unwrap();
-        for (table, cols) in tables {
-            let live: std::collections::BTreeSet<String> =
-                sql_query(format!("SELECT name FROM pragma_table_info('{table}')"))
-                    .load::<Col>(&mut *conn)
-                    .unwrap()
-                    .into_iter()
-                    .map(|c| c.name)
-                    .collect();
-            assert_eq!(cols, live, "schema.rs `{table}` vs the migrated table");
+        if std::env::var_os("RTOK_BLESS").is_some() {
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/store/schema_snapshot.txt");
+            std::fs::write(path, live_schema_snapshot(&mut conn)).unwrap();
         }
+        let mismatches = schema_drift(&mut conn);
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    /// Runs `sql` on a fresh migrated in-memory DB, then the guard — for the mutation tests.
+    fn drift_after(sql: &str) -> Vec<String> {
+        let store = Store::open_in_memory().unwrap();
+        let mut conn = store.lock().unwrap();
+        conn.batch_execute(sql).unwrap();
+        schema_drift(&mut conn)
+    }
+
+    // A changed default and a dropped index are invisible to `table!`; only the snapshot
+    // catches them. A column dropped from a live table still fails, as it always has.
+    #[test]
+    fn schema_drift_catches_a_changed_default() {
+        let m = drift_after(
+            "DROP TABLE otel_export; CREATE TABLE otel_export (stream TEXT PRIMARY KEY, mark BIGINT NOT NULL DEFAULT 1)",
+        );
+        assert!(m.iter().any(|s| s.contains("schema_snapshot.txt")), "{m:?}");
+    }
+
+    #[test]
+    fn schema_drift_catches_a_dropped_index() {
+        let m = drift_after("DROP INDEX usage_call"); // 0013
+        assert!(m.iter().any(|s| s.contains("schema_snapshot.txt")), "{m:?}");
+    }
+
+    #[test]
+    fn schema_drift_catches_a_column_removed_from_the_live_table() {
+        let m = drift_after(
+            "DROP TABLE otel_export; CREATE TABLE otel_export (stream TEXT PRIMARY KEY)",
+        );
+        assert!(m.iter().any(|s| s.starts_with("otel_export:")), "{m:?}");
     }
 }
