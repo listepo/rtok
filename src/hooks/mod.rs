@@ -176,8 +176,20 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     let session = resolve_session(&input.session_id, &cfg.core.session_env, |k| {
         std::env::var(k).ok()
     });
-    let mut cx = Runtime::open_with(cfg.clone(), session, LOCK_WAIT)
-        .map_err(|e| format!("hook {event}: store open: {e}"))?;
+    let wait = if std::env::var_os(DEFERRED_ENV).is_some() {
+        crate::store::LockWait::STEADY
+    } else {
+        LOCK_WAIT
+    };
+    let mut cx = match Runtime::open_with(cfg.clone(), session, wait) {
+        Ok(cx) => cx,
+        Err(e) => {
+            if crate::store::is_locked(&e) {
+                defer_session_end(cfg, &input.hook_event_name, stdin);
+            }
+            return Err(format!("hook {event}: store open: {e}"));
+        }
+    };
     // SessionStart carries `cwd` like every other event, so the session row is attributed
     // from the first hook of the run rather than whichever call happens to arrive first.
     cx.cwd = input.cwd.clone();
@@ -345,6 +357,7 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         // wait again, so pass the input through unchanged and record nothing.
         Err(e) if crate::store::is_locked(&e) => {
             eprintln!("rtok: hook {} skipped: store locked", input.hook_event_name);
+            defer_session_end(&cx.config, &input.hook_event_name, stdin);
             return b"{}".to_vec();
         }
         Err(_) => None,
@@ -380,7 +393,13 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
-            let _ = cx.store.end_session(&cx.session, now);
+            if cx
+                .store
+                .end_session(&cx.session, now)
+                .is_err_and(|e| crate::store::is_locked(&e))
+            {
+                defer_session_end(&cx.config, "SessionEnd", stdin);
+            }
             HookOutput::default()
         }
         _ => HookOutput::default(),
@@ -399,6 +418,41 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         crate::otel::export::spawn_child(cx);
     }
     bytes
+}
+
+/// Set on the child [`defer_session_end`] spawns: wait like any command, never defer again.
+const DEFERRED_ENV: &str = "RTOK_HOOK_DEFERRED";
+
+/// T83.15: `SessionEnd`'s write is the one nothing repeats — lost to another writer's lock
+/// (the flush child `Stop` spawned, still writing its watermarks) the session never gets
+/// `ended_at` and its OTel root span never ships. Rather than wait past the hook's 10 ms, hand
+/// the event to a detached `rtok hook SessionEnd` that waits `LockWait::STEADY` — the same
+/// hand-off `Stop` uses for the flush. `stdin` is Claude-shaped (adapted hosts included), so
+/// the child needs no `--host`. Any other event, or the deferred child itself: nothing.
+fn defer_session_end(cfg: &Config, event: &str, stdin: &[u8]) {
+    if event != "SessionEnd" || std::env::var_os(DEFERRED_ENV).is_some() {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["hook", "SessionEnd"])
+        .env(DEFERRED_ENV, "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if !cfg.home.as_os_str().is_empty() {
+        cmd.env("RTOK_HOME", &cfg.home);
+    }
+    // As in `otel::export::spawn_child`: the child must not hold the agent's pipes open.
+    rtok_sys::stop_inheriting_own_stdio();
+    if let Ok(mut child) = cmd.spawn()
+        && let Some(mut pipe) = child.stdin.take()
+    {
+        // A SessionEnd payload is a few hundred bytes, well under a pipe buffer: no block.
+        let _ = pipe.write_all(stdin);
+    }
 }
 
 /// Cursor's `afterMCPExecution` docs (https://cursor.com/docs/agent/hooks, fetched 2026-09-24)

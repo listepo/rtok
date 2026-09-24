@@ -112,6 +112,5 @@ not (
   | test(=plugins::read::cache::tests::vfs_small_change_is_hunks_large_is_full_missing_archive_is_full)
   | (binary(agent_remove) & test(=uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy))
   | (binary(plugins_e2e) & test(=graph_session_start_map_off_by_default_and_on_when_capped))
- | (binary(otel) & test(=stop_hook_spawns_the_flush_and_stays_under_10ms))
 )
 '''

@@ -14,7 +14,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T83.12 | todo | P1 | 3 | 0% | |
 | T83.13 | todo | P1 | 3 | 0% | |
 | T83.14 | todo | P1 | 3 | 0% | |
-| T83.15 | todo | P1 | 3 | 0% | |
+| T83.15 | in progress | P1 | 3 | 10% | Claude Code / claude-opus-5-5 |
 | T87 | in progress | P1 | 2 | 70% | Claude Code / claude-fable-5-1 |
 | T88 | todo | P1 | 2 | 0% | |
 | T89 | todo | P1 | 3 | 0% | |
@@ -91,6 +91,8 @@ Check: the test passes in the `windows` CI job; `just check` stays green.
 ### T83.15. `otel::stop_hook_spawns_the_flush_and_stays_under_10ms` fails on Windows (`SessionEnd set ended_at`)
 
 From run 36046793837 (PR #335, 2026-09-24); the test passed in PR #336's `windows` job, which dropped its filter (T83.9), so it is intermittent. The `Stop` hook's flush child is still running when the `SessionEnd` hook fires; on Windows the child likely holds the store file, the `SessionEnd` write fails open, and `ended_at` stays empty. Find which write loses (store busy timeout, file lock), make `SessionEnd` survive a concurrent flush child, and drop the test from the `cfg(windows)` filter.
+Found 2026-09-24: not Windows-only — PR #357's `ubuntu-latest` job failed the same way. The hook waits 5 ms on another writer (T178 `LOCK_WAIT`) at store open, `record_call` and `end_session`; the flush child `Stop` spawned is still writing its watermarks, so `SessionEnd` is skipped, and nothing ever repeats it — `ended_at` stays empty and the session's OTel root span never ships.
+Plan: keep the 10 ms rule; a `SessionEnd` that meets a lock hands itself to a detached `rtok hook SessionEnd` (Claude-shaped stdin, `RTOK_HOOK_DEFERRED=1`), which waits `LockWait::STEADY` and never defers again — the same hand-off `Stop` uses for the flush. `src/hooks/mod.rs` only. Tests: `tests/hook_fail_open.rs` holds the writer lock, the hook still returns fast, and `ended_at` lands after release; `tests/otel.rs` polls for `ended_at` instead of reading it once; drop the `.config/nextest.toml` line.
 
 Check: the test passes in the `windows` CI job; `just check` stays green.
 
