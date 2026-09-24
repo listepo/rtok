@@ -11,9 +11,6 @@
 - T88. Devin plugin tree (`plugins/devin/`)
 - T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton
 - T91.2. Antigravity skill roots and research sentence
-- T94. `rtok hook <event> --host cline` speaks Cline's file-hook JSON both ways
-- T95. Cline plugin tree (`plugins/cline/`)
-- T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
 
 - T124. Realized `tools_rewrite` saving as a dated `research.md` row
