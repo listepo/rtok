@@ -8,13 +8,13 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | --- | --- | --- | --- | --- | --- |
 | T83.2 | todo | P1 | 3 | 0% | |
 | T83.4 | todo | P1 | 3 | 0% | |
-| T83.6 | todo | P1 | 2 | 0% | |
 | T83.7 | todo | P1 | 2 | 0% | |
 | T83.8 | todo | P1 | 2 | 0% | |
 | T83.11 | todo | P1 | 3 | 0% | |
 | T83.12 | todo | P1 | 3 | 0% | |
 | T83.13 | todo | P1 | 3 | 0% | |
 | T83.14 | todo | P1 | 3 | 0% | |
+| T83.15 | todo | P1 | 3 | 0% | |
 | T87 | in progress | P1 | 2 | 70% | Claude Code / claude-fable-5-1 |
 | T88 | todo | P1 | 2 | 0% | |
 | T89 | todo | P1 | 3 | 0% | |
@@ -34,13 +34,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
-| T235.2 | todo | P1 | 2 | 0% | |
 | T260 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
 | T241 | todo | P2 | 3 | 0% | |
 | T246.5 | todo | P1 | 2 | 0% | |
-| T262.1 | in progress | P2 | 2 | 10% | Claude Code / claude-opus-5-5 |
 | T262.3 | todo | P2 | 2 | 0% | |
 | T262.4 | todo | P2 | 2 | 0% | |
 
@@ -56,12 +54,6 @@ Check: the four tests pass in the `windows` CI job; `just check` stays green.
 Ten tests across four binaries: `agents_install::{list_reports_installed_modules_per_host, setup_twice_takes_one_backup_and_says_already_installed}`, `opencode_plugin::dry_run_offers_the_plugin_and_writes_nothing`, `cursor_plugin::{setup_cursor_dry_run_offers_plugin, setup_cursor_yes_links_plugin_without_mcp_json, setup_cursor_clears_leftover_mcp_when_plugin_already_linked}`, `pi_plugin::{setup_pi_dry_run_offers_plugin, setup_pi_yes_links_remove_unlinks, pi_extension_unit_test_with_fake_rtok}`, `filter::opencode_plugin_unit_test_with_api_mock`. Likely a symlink family: `std::fs::symlink` needs Developer Mode or admin on Windows, and/or the assertions compare `/`-joined paths against a host that prints `\`. Decide per test whether the installer needs a Windows fallback (junction/hardlink/copy) or the fixtures need `Path`-based comparison instead of string paths. One family split out of the original T83; see T83.2 for the closing criterion.
 
 Check: the ten tests pass in the `windows` CI job; `just check` stays green.
-
-### T83.6. `agents_doc::agents_doc_table_matches_the_host_code` fails on Windows
-
-`tests/agents_doc.rs` compares the generated `docs/agents.md` host table against the bless output; on Windows this likely differs by path separator or line endings (CRLF vs LF) rather than actual host-table content. Decide whether the generator needs `cfg(windows)` normalization or the comparison needs to normalize line endings. One family split out of the original T83; see T83.2 for the closing criterion.
-
-Check: the test passes in the `windows` CI job; `just check` stays green.
 
 ### T83.7. `cli_trycmd::cli` fails on Windows
 
@@ -96,6 +88,12 @@ Check: the test passes in the `windows` CI job; `just check` stays green.
 ### T83.14. `plugins_e2e::graph_session_start_map_off_by_default_and_on_when_capped` fails on Windows (empty `{}`)
 
 From run 35576438155. The `SessionStart` graph-map payload came back empty on Windows where the test expects populated content — likely a path-walk or capped-map computation that silently no-ops on a Windows path shape. Read the `graph` plugin's `SessionStart` map builder and decide whether it has a real Windows path-handling bug or the test's fixture repo isn't discoverable under Windows path conventions. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+### T83.15. `otel::stop_hook_spawns_the_flush_and_stays_under_10ms` fails on Windows (`SessionEnd set ended_at`)
+
+From run 36046793837 (PR #335, 2026-09-24); the test passed in PR #336's `windows` job, which dropped its filter (T83.9), so it is intermittent. The `Stop` hook's flush child is still running when the `SessionEnd` hook fires; on Windows the child likely holds the store file, the `SessionEnd` write fails open, and `ended_at` stays empty. Find which write loses (store busy timeout, file lock), make `SessionEnd` survive a concurrent flush child, and drop the test from the `cfg(windows)` filter.
 
 Check: the test passes in the `windows` CI job; `just check` stays green.
 
@@ -310,14 +308,6 @@ zed (JSONC editor) and grok (TOML) take the T246.1 ownership check on their own 
 Check: `tests/agent_remove.rs` leaves an edited zed and grok entry without `--yes`; `just check` green.
 
 
-### T262.1. Claude hook entries come from `plugins/claude/hooks/hooks.json`
-
-Creator request 2026-09-24: the hook list lives in the plugin folder, and every install path takes it from there. Today `CLAUDE_ENTRIES` in `src/agents/claude/mod.rs` is the source and a test compares `hooks.json` against it, so a new event has to be written twice. Read the `(event, matcher)` pairs from `hooks.json` via `include_str!` at build time (no plugin build step; the GitHub plugin install and `rtok agents install claude` share one file). The shared `ENTRIES` list that Kimi and ZCode take stays a Rust constant.
-
-Plan: replace the `CLAUDE_ENTRIES` const with a `LazyLock` that parses `hooks.json` in file order (a small serde map visitor; `serde_json` here has no `preserve_order`, so a `Value` would sort events and reorder install reports); `plugin_tree_matches_the_installer` keeps checking each entry's command and timeout, plus that the file starts with `ENTRIES`.
-
-Check: `rtok agents install claude --dry-run` output is unchanged; `just check` green.
-
 ### T262.3. Codex: spawn brief on `SubagentStart`
 
 `research.md` §23: Codex fires `SubagentStart` and adds the hook's stdout (or its hook-specific context) to the subagent as developer context. Add `SubagentStart` to `plugins/codex/hooks/hooks.json` and the Codex installer's list, and make `rtok hook SubagentStart` answer in the shape Codex reads.
@@ -485,10 +475,3 @@ Already covered: `assert_cmd`, `divan`, `httpmock`, `insta`, `rstest`,
 
 
 
-### T235.2. `rtok run` starts no login shell per call
-
-Load-incident context in `done.md` → T235.1.
-
-- Every agent Bash call runs as `rtok run -- <cmd>`, which spawns `/bin/zsh -lc` — a login shell — although the harness has already sourced its own shell snapshot (`zsh -c source <snapshot> && rtok run -- ...`), so each call starts two shells. Idle cost measured: `rtok run -- true` 0.16 s, `zsh -lc true` 0.15 s, `zsh -c true` 0.00 s — nearly all of the wrapper's cost is the login shell. Under that load even `rtok run -- echo hi` did not return within 30 s (a fresh terminal shell did not reach its prompt either, so load was the root cause, but the login shell multiplies it per call).
-
-Check: `rtok run` starts no login shell unless something it needs comes only from the login profile (decide and record why; measure the per-call saving with hyperfine on idle and on a loaded host).

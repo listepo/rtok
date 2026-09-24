@@ -243,6 +243,21 @@ Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
 
+### T262.1. Claude hook entries come from `plugins/claude/hooks/hooks.json`
+
+Creator request 2026-09-24: the hook list lives in the plugin folder, and every install path takes it from there. Today `CLAUDE_ENTRIES` in `src/agents/claude/mod.rs` is the source and a test compares `hooks.json` against it, so a new event has to be written twice. Read the `(event, matcher)` pairs from `hooks.json` via `include_str!` at build time (no plugin build step; the GitHub plugin install and `rtok agents install claude` share one file). The shared `ENTRIES` list that Kimi and ZCode take stays a Rust constant.
+
+Plan: replace the `CLAUDE_ENTRIES` const with a `LazyLock` that parses `hooks.json` in file order (a small serde map visitor; `serde_json` here has no `preserve_order`, so a `Value` would sort events and reorder install reports); `plugin_tree_matches_the_installer` keeps checking each entry's command and timeout, plus that the file starts with `ENTRIES`.
+
+Check: `rtok agents install claude --dry-run` output is unchanged; `just check` green.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): `claude_entries()` parses `hooks.json` once through a `LazyLock` with a borrowed serde map visitor that keeps file order; the `CLAUDE_ENTRIES` const is gone. `plugin_tree_matches_the_installer` asserts the file starts with `ENTRIES` and carries `SubagentStart`. Merged as PR #351.
+
+Check result: the 190 `agents::` unit tests pass (install report order unchanged); `just check` green except `pi_plugin::setup_pi_yes_links_remove_unlinks`, a vitest 5 s timeout under load that passed on rerun.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T116. Copilot CLI plugin
 
 Do (2026-09-22): verified against the Copilot docs first (plugins-creating + cli-plugin-reference, fetched 2026-09-22): Copilot finds manifests in `.claude-plugin/` but its plugin hooks are the camelCase `preToolUse` shape, not Claude's `hook_event_name` — the T114 tree is not readable **as is**, so this is the card's else-branch: a `plugins/copilot/` tree in Copilot's legacy format (root `plugin.json` with `hooks`/`mcpServers` component paths, `hooks/hooks.json`, `.mcp.json`). The tree's hooks file IS `hooks_doc("rtok", 5)` — the same document `~/.copilot/hooks/rtok.json` writes, pinned by test (one shape, two surfaces, D21). Installer mirrors T115: `Support::Flag("--yes")` runs `copilot plugin install <resolved plugins/copilot>` (the documented local-path spec — not `marketplace add`, which registers marketplaces), `remove` uninstalls by the manifest's `name`; `installed()` reads the `installed-plugins/` manifest marker (`copilot plugin list --json` reports the same state), `COPILOT_HOME` redirects a non-default `[setup.copilot] dir`. D21 singleton: while the plugin is installed — including on the same run that installs it — `hooks/rtok.json` and `mcpServers.rtok` are taken back instead of added. `plugins/README.md` row, `## Docs` links, `docs/agents.md` blessed.
@@ -5252,6 +5267,21 @@ Check result: `just check` green on macOS; PR #336's `windows` CI job passes the
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
+### T83.6. `agents_doc::agents_doc_table_matches_the_host_code` fails on Windows
+
+`tests/agents_doc.rs` compares the generated `docs/agents.md` host table against the bless output; on Windows this likely differs by path separator or line endings (CRLF vs LF) rather than actual host-table content. Decide whether the generator needs `cfg(windows)` normalization or the comparison needs to normalize line endings. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Plan: the exclusion list was taken from run 35244082778 (2026-09-17), before T82's `.gitattributes` (`* text=auto eol=lf`) made the Windows checkout LF — the CRLF cause this card suspects is likely gone already, and nothing in `table()` or host `support()` branches on `cfg(windows)`. Drop the test's line from the `cfg(windows)` `default-filter` in `.config/nextest.toml` and let this PR's `windows` job run it; only if it still fails, fix from that job's diff.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): no code change. The failure came from CRLF checkouts, which T82's `.gitattributes` (`* text=auto eol=lf`) already removed. The test's line is dropped from the `cfg(windows)` `default-filter` in `.config/nextest.toml`.
+
+Check result: a probe branch ran every `cfg(windows)`-filtered test on `windows-latest` (ci run 36032362793, 2026-09-24): `agents_doc_table_matches_the_host_code` passed there (0.077 s). `just check` green on macOS.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T223. `windows-sys` linked in three versions
 
 Found 2026-09-22 in the docs pass: `Cargo.lock` holds `windows-sys` 0.52.0, 0.60.2 and 0.61.2 simultaneously (transitive users at 0.52/0.60 beside `rtok-sys`'s 0.61) — the only multi-version crate of note (the tree-sitter grammar family is single-version). On Windows three copies of the bindings compile and link, growing the binary and the T178 cold-start cost that is already over the 10 ms hook budget.
@@ -5439,6 +5469,21 @@ Execution plan: (1) `plugins/cmd/run.rs::run` — spawn with piped stdout/stderr
 Do (Claude Code / claude-opus-5-5, 2026-09-24): `run` used `Command::output()`, which reads both pipes to EOF, so any descendant holding the write end kept `rtok run` blocked after the shell had exited. New `capture` in `plugins/cmd/run.rs`: stdout and stderr each go to a reader thread appending into a shared buffer; the main thread `wait()`s the shell, then waits at most `DRAIN_AFTER_EXIT` (200 ms) for both readers to reach EOF and takes what is buffered. A reader still blocked by a grandchild is left behind and dies with the process. Output order (stdout, then stderr) and exit code are unchanged; stdin stays null as with `output()`. Without a descendant both readers hit EOF right away, so the common path gains no wait.
 
 Check result: new unit test `capture_returns_when_the_child_exits_though_a_grandchild_holds_the_pipe` (`sh -c 'echo hi; sleep 20 & exit 4'`) returns `hi\n` and exit 4 in 0.28 s. With `output()` it would block for the full 20 s. `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
+### T235.2. `rtok run` starts no login shell per call
+
+Load-incident context in `done.md` → T235.1.
+
+- Every agent Bash call runs as `rtok run -- <cmd>`, which spawns `/bin/zsh -lc` — a login shell — although the harness has already sourced its own shell snapshot (`zsh -c source <snapshot> && rtok run -- ...`), so each call starts two shells. Idle cost measured: `rtok run -- true` 0.16 s, `zsh -lc true` 0.15 s, `zsh -c true` 0.00 s — nearly all of the wrapper's cost is the login shell. Under that load even `rtok run -- echo hi` did not return within 30 s (a fresh terminal shell did not reach its prompt either, so load was the root cause, but the login shell multiplies it per call).
+
+Check: `rtok run` starts no login shell unless something it needs comes only from the login profile (decide and record why; measure the per-call saving with hyperfine on idle and on a loaded host).
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): `shell_args` passes `-c` instead of `-lc` to a POSIX shell. Nothing `rtok run` needs comes only from the login profile. The host already ran its profile in the shell that runs `rtok run -- <cmd>` (Claude Code sources its shell snapshot; Codex and Cursor start their own shells), and `rtok run` passes that environment on unchanged. That is the environment the unwrapped command would have had. A second login shell added nothing but cost, and on macOS `/etc/zprofile`'s `path_helper` could even reorder `PATH` under the command. `cmd` and PowerShell are unchanged: `/D /C` and `-NoProfile` already skip their profiles. `plugins/cmd/README.md` is updated.
+
+Check result: hyperfine, 30 runs, macOS, 16 cores, on a loaded host (load average 25–36 throughout): `rtok run -- true` 162.8 ± 13.2 ms with `-lc` versus 17.0 ± 0.8 ms with `-c` (9.6× faster); the bare shells measured `zsh -lc true` 151.6 ms versus `zsh -c true` 3.3 ms. The idle figures are the ones in the card (`rtok run -- true` 0.16 s, `zsh -lc true` 0.15 s, `zsh -c true` 0.00 s); the host never went idle during this session to repeat them. `just check` green.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
