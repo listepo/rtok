@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+### T252. `surface_parity` web test reads the real `~/.claude` history
+
+Creator request 2026-09-24. `tests/surface_parity.rs::web_serves_exactly_the_pages_the_model_offers` built its `Config` with `load_from(tempdir)` only, so `doctor.*`, `stats.transcripts_dir` and `stats.codex_dir` stayed at this machine's real `~/.claude*` and `~/.codex/sessions`: every snapshot parsed the creator's whole JSONL history (~80 s locally, 180 s timeout under load, non-hermetic). The same leak hid in `web_doctor_instruction_audit_matches_cli_order` (19 s: `rtok doctor` scans `stats.transcripts_dir`), `tests/web.rs::ws_set_accepts_plugin_enabled` (67 s: a web `set` reloads `config.toml`, dropping the in-memory redirects `tests/web.rs` had copied three times), `tests/graph_model.rs::graph_page_matches_dead_json_on_the_fixture_index` (75 s: a snapshot on a bare `load_from`) and in `tests/stats_model.rs` (fixture transcripts, but `doctor.*` still real).
+
+Plan: reuse `rtok::testutil::config_in` (rebases every `~` path under the dir) where no reload happens; for `tests/web.rs`, whose `DashState` rewrites and reloads `config.toml`, and for the snapshot tests on a `load_from` home, add `testutil::config_file_in(dir)` next to it, which writes the five probed paths into the file via `config::validate::set` before `load_from`.
+
+Check: `cargo nextest run --test surface_parity --test web` fast; `just check` green.
+
+Result: `surface_parity.rs` uses `config_in(&tmp_dir(..))` and `config_in(&dir)`; the four `DashState` configs in `tests/web.rs`, `graph_model.rs` and `stats_model.rs` use `config_file_in`, which replaces the copied blocks. The parity test went from 80.5 s to 0.16 s, the doctor audit from 19 s to 0.14 s, `ws_set_accepts_plugin_enabled` from 67 s to 0.18 s; both binaries' 22 tests take 0.28 s; the graph page test went from 75 s to 1.6 s.
+
 ### T251. Integration tests anchor `log.path` under their tempdir
 
 Found 2026-09-24: `tests/latency.rs` (`hook_returns_despite_exclusive_lock`), `tests/graph_bench.rs` (`home`) and `tests/lossless_roundtrip.rs` (`cmd`) built `Config::default()` and overrode only `core.db_path` and `core.archive_dir`, so `log.path` stayed `~/.rtok/logs/rtok.log`. Any log line they emitted — the hook's timing-dependent `note_slow` warn past `[hook] max_ms` — landed in a literal `./~/.rtok/logs/rtok.log` under the crate root.

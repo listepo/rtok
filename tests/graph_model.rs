@@ -66,7 +66,7 @@ fn graph_page_matches_dead_json_on_the_fixture_index() {
     let status_json = rtok(&["graph", "status", project_str, "--json"], &h);
     let status: serde_json::Value = serde_json::from_str(&status_json).expect("status --json");
 
-    let cfg = rtok::config::Config::load_from(&h).expect("config");
+    let cfg = rtok::testutil::config_file_in(&h);
     // The Graph page has no config-driven root (like `graph status`, it reads the
     // current directory), so this pins it the same way `rtok graph status`/`dead`
     // default their own `path` — via cwd. nextest runs each test in its own process,

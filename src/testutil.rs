@@ -32,6 +32,24 @@ pub fn config_in(dir: &Path) -> Config {
     c
 }
 
+/// T252: [`Config::load_from`] `dir`, for a test that needs `dir/config.toml` itself — a web
+/// `set` rewrites and reloads it. The paths a snapshot probes (`rtok doctor`, the Claude and
+/// Codex transcripts) are written into the file first: a reload would otherwise point them back
+/// at this machine's real `~/.claude*` and parse its whole session history.
+pub fn config_file_in(dir: &Path) -> Config {
+    for (key, name) in [
+        ("doctor.settings_path", "missing-settings.json"),
+        ("doctor.claude_json", "missing-claude.json"),
+        ("doctor.mcp_json", "missing-mcp.json"),
+        ("stats.transcripts_dir", "missing-transcripts"),
+        ("stats.codex_dir", "missing-codex-sessions"),
+    ] {
+        let path = dir.join(name);
+        crate::config::validate::set(dir, key, &path.to_string_lossy(), false).expect(key);
+    }
+    Config::load_from(dir).expect("config")
+}
+
 /// A [`Runtime`] over [`config`]; `tag` doubles as the session id.
 pub fn runtime(tag: &str) -> (Runtime, PathBuf) {
     let (c, dir) = config(tag);

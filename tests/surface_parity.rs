@@ -13,13 +13,12 @@ use rstest::rstest;
 use rtok::cli::Cli;
 use rtok::config::Config;
 use rtok::doctor;
+use rtok::testutil::{config_in, tmp_dir};
 use rtok::web::frame;
 use rtok::web::model;
 
 fn config() -> Config {
-    let dir = std::env::temp_dir().join(format!("rtok-parity-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    Config::load_from(&dir).expect("config")
+    config_in(&tmp_dir("parity"))
 }
 
 /// The pages the model offers, by name.
@@ -668,7 +667,7 @@ fn web_doctor_instruction_audit_matches_cli_order() {
     )
     .unwrap();
     std::fs::write(dir.join("settings.json"), "{}").unwrap();
-    let mut cfg = Config::load_from(&dir).expect("config");
+    let mut cfg = config_in(&dir);
     cfg.doctor.settings_path = dir.join("settings.json");
     cfg.doctor.claude_json = dir.join("claude.json");
     cfg.doctor.instructions = true;
