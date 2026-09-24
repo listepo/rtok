@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use rtok_agent_sdk::{NO_CHANGES, array_at, edit_json, object_at};
+use rtok_agent_sdk::{Apply, NO_CHANGES, array_at, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::plugin::HostPlugin;
@@ -169,9 +169,10 @@ fn windows_copy(rel: &Path, bytes: Vec<u8>) -> Vec<u8> {
 
 /// Apply, dry-run, or remove Cursor before/after shell hook entries.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
-    edit_json(&apply(cfg), &cfg.setup.cursor.hooks_path, |root| {
+    let (a, path) = (apply(cfg), &cfg.setup.cursor.hooks_path);
+    edit_json(&a, path, |root| {
         if remove {
-            strip_ours(root)
+            strip_ours(&a, path, root)
         } else {
             insert_ours(root)
         }
@@ -283,26 +284,39 @@ fn insert_ours(root: &mut Value) -> String {
     }
 }
 
-fn strip_ours(root: &mut Value) -> String {
-    let mut removed = Vec::new();
-    for event in ["beforeShellExecution", "afterShellExecution", "preCompact"] {
+/// Drop rtok's hook entries (T246.6): one still as [`insert_ours`] writes it — exactly
+/// `{command}` for the rtok event this Cursor event runs — goes; an edited one is asked about.
+fn strip_ours(apply: &Apply, path: &Path, root: &mut Value) -> String {
+    let (mut removed, mut kept) = (Vec::new(), Vec::new());
+    for (event, rtok_event) in [
+        ("beforeShellExecution", "PreToolUse"),
+        ("afterShellExecution", "PostToolUse"),
+        ("preCompact", "PreCompact"),
+    ] {
         let Some(arr) = root
             .pointer_mut(&format!("/hooks/{event}"))
             .and_then(Value::as_array_mut)
         else {
             continue;
         };
+        let suffix = format!(" hook {rtok_event} --host cursor");
         let before = arr.len();
-        arr.retain(|e| !is_ours(e));
+        arr.retain(|e| {
+            let unchanged = e.as_object().is_some_and(|o| o.len() == 1)
+                && e["command"].as_str().is_some_and(|c| c.ends_with(&suffix));
+            let at = || format!("hooks.{event} in {}", path.display());
+            !is_ours(e) || !super::takes_hook(apply, unchanged, at, &mut kept)
+        });
         if arr.len() != before {
             removed.push(format!("- {event}"));
         }
     }
-    if removed.is_empty() {
+    let report = if removed.is_empty() {
         NO_CHANGES.into()
     } else {
         removed.join("\n")
-    }
+    };
+    super::with_kept(kept, report)
 }
 
 fn is_cmd(entry: &Value, cmd: &str) -> bool {
