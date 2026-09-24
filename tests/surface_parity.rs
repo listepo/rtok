@@ -199,6 +199,32 @@ fn skills_page_exists_on_both_surfaces() {
     );
 }
 
+/// T260: both surfaces filter the Sessions page to live rows — the TUI Sessions
+/// tab's `l` key and KEYS entry in `src/tui/app.rs`, the web's "live only" checkbox
+/// in `crates/rtok-webui/ui/app.slint`. Both read the `ended_at`-derived `live` flag
+/// that already rides the snapshot wire, so this is a UI-only feature and the check
+/// fails by name if either surface drops it.
+#[test]
+fn sessions_live_filter_exists_on_both_surfaces() {
+    let Surfaces { app, slint, .. } = SURFACES;
+    assert!(
+        app.contains("(\"sessions\", \"l\", \"live-only filter\")"),
+        "the TUI's KEYS table documents the sessions live-only filter"
+    );
+    assert!(
+        app.contains("self.sessions.live_only = !self.sessions.live_only"),
+        "the TUI Sessions tab toggles live_only on `l`"
+    );
+    assert!(
+        slint.contains("sessions-live-only"),
+        "the web Sessions page has a live-only property bound from the shell"
+    );
+    assert!(
+        slint.contains("\"live only\"") && slint.contains("!live-only || s.live"),
+        "the web Sessions page has a live-only checkbox that filters on `live`"
+    );
+}
+
 /// T227: both surfaces render the Stats page from the same model accessor — `rtok
 /// stats --price`'s table plus `rtok stats --cache`'s table, D27's one page for two
 /// commands.
