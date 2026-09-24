@@ -2134,6 +2134,22 @@ impl Store {
     /// child call — are kept and detached: a saving is not deleted with its call, and without the
     /// detach `foreign_keys = ON` refused the delete after the first three had already committed.
     /// One transaction and one cutoff, so it is all of it or none of it.
+    /// The archive paths `run_retention` would delete for `core.retain_calls_days`, still on
+    /// disk — read-only, nothing is removed (T182 `agents junk clear` dry run).
+    pub fn archives_pending_retention(&self, retain_calls_days: u32) -> Result<Vec<PathBuf>> {
+        let days = i64::from(retain_calls_days);
+        if days <= 0 {
+            return Ok(Vec::new());
+        }
+        let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
+        let cutoff = now.saturating_sub(days.saturating_mul(86_400));
+        let mut conn = self.lock()?;
+        Ok(doomed_archives(&mut conn, cutoff)?
+            .into_iter()
+            .map(|a| PathBuf::from(a.path))
+            .collect())
+    }
+
     pub fn purge_calls_older_than(&self, days: i64) -> Result<usize> {
         if days <= 0 {
             return Ok(0);
@@ -2151,36 +2167,7 @@ impl Store {
         // whatever happened inside.
         conn.batch_execute("PRAGMA busy_timeout = 30000;")?;
         let purged = conn.exclusive_transaction::<_, anyhow::Error, _>(|c| {
-            #[derive(QueryableByName)]
-            struct ArchPath {
-                #[diesel(sql_type = Text)]
-                id: String,
-                #[diesel(sql_type = Text)]
-                path: String,
-            }
-            let doomed: Vec<ArchPath> = sql_query(format!(
-                "SELECT DISTINCT a.id, a.path FROM archive a
-                     WHERE a.id IN (
-                       SELECT request_archive FROM call_io
-                       WHERE call_id IN {old} AND request_archive IS NOT NULL
-                       UNION
-                       SELECT response_archive FROM call_io
-                       WHERE call_id IN {old} AND response_archive IS NOT NULL
-                     )
-                     AND NOT EXISTS (
-                       SELECT 1 FROM call_io c
-                       WHERE c.call_id NOT IN {old}
-                       AND (c.request_archive = a.id OR c.response_archive = a.id)
-                     )
-                     AND NOT EXISTS (
-                       SELECT 1 FROM archive_decisions d WHERE d.archive_id = a.id
-                     )
-                     AND NOT EXISTS (
-                       SELECT 1 FROM read_cache r WHERE r.archive_id = a.id
-                     )"
-            ))
-            .bind::<BigInt, _>(cutoff)
-            .load(c)?;
+            let doomed = doomed_archives(c, cutoff)?;
             for sql in [
                 format!("DELETE FROM logs WHERE ts < ?1 OR call_id IN {old}"),
                 format!("DELETE FROM tokens WHERE ts < ?1 OR call_id IN {old}"),
@@ -2232,6 +2219,44 @@ impl Store {
         self.lock()?.batch_execute("PRAGMA query_only = ON;")?;
         Ok(())
     }
+}
+
+#[derive(QueryableByName)]
+struct ArchPath {
+    #[diesel(sql_type = Text)]
+    id: String,
+    #[diesel(sql_type = Text)]
+    path: String,
+}
+
+/// Archive rows whose only `call_io` references are all older than `cutoff` and that carry no
+/// decision or read-cache row — shared by [`Store::purge_calls_older_than`] (which deletes them)
+/// and [`Store::archives_pending_retention`] (which only previews the same set, T182).
+fn doomed_archives(c: &mut SqliteConnection, cutoff: i64) -> Result<Vec<ArchPath>> {
+    let old = "(SELECT id FROM calls WHERE ts < ?1)";
+    Ok(sql_query(format!(
+        "SELECT DISTINCT a.id, a.path FROM archive a
+             WHERE a.id IN (
+               SELECT request_archive FROM call_io
+               WHERE call_id IN {old} AND request_archive IS NOT NULL
+               UNION
+               SELECT response_archive FROM call_io
+               WHERE call_id IN {old} AND response_archive IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM call_io c
+               WHERE c.call_id NOT IN {old}
+               AND (c.request_archive = a.id OR c.response_archive = a.id)
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM archive_decisions d WHERE d.archive_id = a.id
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM read_cache r WHERE r.archive_id = a.id
+             )"
+    ))
+    .bind::<BigInt, _>(cutoff)
+    .load(c)?)
 }
 
 /// `(inline json, archive sha, byte count, content sha, archive file path, file created by
@@ -3510,11 +3535,11 @@ mod tests {
         );
     }
 
-    #[rstest]
-    fn run_retention_purges_old_call_and_archive() {
-        let dir = std::env::temp_dir().join(format!("rtok-retain-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    /// One call whose 70 KiB body spills to archive, backdated past `retain_calls_days = 1` —
+    /// shared by `run_retention_purges_old_call_and_archive` and
+    /// `archives_pending_retention_previews_without_deleting` (T182), which exercise the same
+    /// `doomed_archives` set through the deleting and the previewing entry point.
+    fn seed_one_spilled_call(dir: &Path) -> (Config, Store, PathBuf) {
         let mut cfg = Config::default();
         cfg.core.db_path = dir.join("rtok.db");
         cfg.core.archive_dir = dir.join("archive");
@@ -3547,11 +3572,47 @@ mod tests {
             .unwrap();
         store.set_call_ts(call, 0).unwrap();
         let arch_path = cfg.core.archive_dir.join(hex_sha256(&body));
+        (cfg, store, arch_path)
+    }
+
+    #[rstest]
+    fn run_retention_purges_old_call_and_archive() {
+        let dir = std::env::temp_dir().join(format!("rtok-retain-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (cfg, store, arch_path) = seed_one_spilled_call(&dir);
         assert!(arch_path.is_file());
         assert_eq!(store.count_calls().unwrap(), 1);
 
         assert_eq!(store.run_retention(cfg.core.retain_calls_days).unwrap(), 1);
         assert_eq!(store.count_calls().unwrap(), 0);
+        assert!(!arch_path.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `agents junk clear`'s dry run (T182): the same set `run_retention` would delete,
+    /// named without touching the database or the file.
+    #[test]
+    fn archives_pending_retention_previews_without_deleting() {
+        let dir = std::env::temp_dir().join(format!("rtok-t182-preview-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (cfg, store, arch_path) = seed_one_spilled_call(&dir);
+
+        let preview = store
+            .archives_pending_retention(cfg.core.retain_calls_days)
+            .unwrap();
+        assert_eq!(preview, vec![arch_path.clone()]);
+        assert!(arch_path.is_file(), "preview must not delete anything");
+        assert_eq!(store.count_calls().unwrap(), 1);
+
+        assert_eq!(
+            store.archives_pending_retention(0).unwrap(),
+            Vec::<PathBuf>::new(),
+            "0 = keep forever"
+        );
+
+        assert_eq!(store.run_retention(cfg.core.retain_calls_days).unwrap(), 1);
         assert!(!arch_path.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }

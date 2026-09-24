@@ -45,7 +45,6 @@
 - T172. MCP tool failures always set `is_error`
 - T174. Plugin hooks fail open when `rtok` is not on `PATH`
 - T178. Hook wall-clock time as Claude Code sees it
-- T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
 - T184. rtok never resolves its home to a relative `.rtok`
 - T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 - T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
