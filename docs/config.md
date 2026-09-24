@@ -87,7 +87,7 @@ level     = "info"                    # error | warn | info | debug
 to_db     = true                      # also write a `logs` row for `rtok otel`
 tspin     = "auto"                    # `rtok logs` through tailspin: auto = terminal and tspin on PATH | always | off (T225.1)
 
-[estimator]                           # chars per token per class, ±15 %; `rtok stats --calibrate` rewrites
+[estimator]                           # chars per token per class, a heuristic (no accuracy figure measured yet); `rtok stats --calibrate` rewrites
 code  = 3.5
 prose = 4.2
 json  = 3.0

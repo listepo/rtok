@@ -271,8 +271,9 @@ calls, logs and metrics as OTLP/HTTP JSON — see [`docs/otel.md`](docs/otel.md)
 ## Measure before keeping a reduction
 
 `rtok stats` reads transcript estimates and proxy usage. The proxy's provider-reported
-usage is ground truth; transcript estimates are useful directionally but have a ±15% error
-margin.
+usage is ground truth; transcript estimates use a fixed chars-per-token heuristic
+(`[estimator]` in config) and are directional only — no calibration against a real
+tokenizer has been measured yet, so treat them as a trend line, not a bound.
 
 ```bash
 rtok stats --since 7d
@@ -388,8 +389,8 @@ Sources: [`bench/results/a.json`](bench/results/a.json),
 - A token saving only counts when a `Measurement` row records it.
 - Proxy compression preserves the cached prefix and never rewrites system instructions,
   tool definitions, or the newest tool-result turns.
-- Estimates are ±15% until matched with provider usage. No live A/B cost reduction has been
-  established yet.
+- Estimates are a heuristic (chars per token) until matched with provider usage; no accuracy
+  figure is measured yet. No live A/B cost reduction has been established yet.
 
 ## Development
 
@@ -401,8 +402,9 @@ just dist-plan
 ```
 
 `just check` is the gate. While iterating, `just test-changed` builds and runs only the test
-targets the current diff can reach, which is what makes the loop short: the suite has 41
-integration targets and cargo links every selected one before any test runs. The unit-test
+targets the current diff can reach, which is what makes the loop short: each file under
+`tests/*.rs` is its own integration-test binary, and cargo links every selected one before
+any test runs. The unit-test
 binary is trimmed the same way, which keeps the slow TUI tests out of an unrelated edit. It
 picks targets by name, so it can miss a test that exercises a module without naming it — run
 `just check` before committing.

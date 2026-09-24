@@ -144,7 +144,7 @@ impl Runtime {
         })
     }
 
-    /// Estimated token count for `text` (±15 %, no tokenizer, no network).
+    /// Estimated token count for `text` (uncalibrated chars-per-token heuristic, no tokenizer, no network).
     pub fn estimate(&self, text: &str, class: Class) -> u32 {
         tokens::estimate(text, class, &self.config.estimator)
     }

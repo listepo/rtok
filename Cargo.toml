@@ -162,8 +162,9 @@ diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_
 debug = "line-tables-only"
 
 # Nobody steps through the 450-odd dependencies, but their debug info is copied into every
-# one of the 41 integration test binaries, which is most of what the linker moves on a dev
-# rebuild. Workspace code is not matched by `"*"`, so it keeps its line tables.
+# one of the integration test binaries (one per file under tests/*.rs), which is most of
+# what the linker moves on a dev rebuild. Workspace code is not matched by `"*"`, so it
+# keeps its line tables.
 [profile.dev.package."*"]
 debug = false
 

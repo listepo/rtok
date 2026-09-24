@@ -127,8 +127,9 @@ own `## Key Learnings` were not: each spends model output tokens on bookkeeping,
 
 ### Prompt-level — ponytail, terse modes
 
-The cheapest lever in the field, because output tokens are 20 % of the bill on standard
-models and **39 % on Fable/Mythos 5.1** where cache reads cost 0.025×. ponytail's own bench
+The cheapest lever in the field, because output tokens are 20 % of the bill (research.md
+§9.3, 2026-09-17) on standard models and **39 % on Fable/Mythos 5.1**, same source, where
+cache reads cost 0.025×. ponytail's own bench
 claims −54 % LOC and −22 % tokens; no independent check exists. caveman claims 65 % output
 shrink; JetBrains measured **8.5 %** on agentic work, and issue #112 has corrupted inline
 code.
@@ -177,7 +178,7 @@ cache-preserving proxy rewrites exist for exactly this reason.
 | Reversibility | partial (headroom retrieve, token-optimizer expand) | every rewrite has `rtok expand <id>` |
 | Measurement | 5 incompatible meters, none of them the bill | one ledger: `measurements` + provider `usage` |
 | Failure mode | varies; some block the tool call | fail open: exit 0, unmodified input, ≤ 10 ms |
-| Runtime | Python, Node, Go, Docker, daemons | one static binary, 18.9 MiB, no daemon |
+| Runtime | Python, Node, Go, Docker, daemons | one static binary, 18.9 MiB, no daemon (research.md, Gate P8d (5), 2026-09-09) |
 | Third-party code on the hot path | adapters and wrappers | none (decision D6) |
 | Observability | per-tool dashboards | OTLP to Jaeger / Grafana / SigNoz / Maple |
 
@@ -199,7 +200,8 @@ cache-preserving proxy rewrites exist for exactly this reason.
    panic, inside 10 ms. A half-installed or crashing rtok is a no-op, not an outage.
 6. **It does not fight the cache.** Injections are budgeted and byte-stable across turns;
    the proxy never rewrites system instructions, tool definitions, or the newest tool
-   results. At a 98.1 % hit rate, busting the prefix costs more than any filter saves.
+   results. At the 97.5 % hit rate measured in [`docs/prompt-cache.md`](prompt-cache.md)
+   (2026-09-18), busting the prefix costs more than any filter saves.
 7. **Three surfaces, because one is not enough.** `PostToolUse` cannot modify a tool result
    — verified against the hook docs — so shrinking what is already in context needs the
    proxy, and replacing a tool needs MCP. Single-surface tools have a ceiling that is a
@@ -212,7 +214,7 @@ cache-preserving proxy rewrites exist for exactly this reason.
 10. **Your ledger, in your observability stack.** `rtok otel flush` projects calls, logs and
     metrics as OTLP/HTTP JSON — verified against Jaeger 2.11 and Grafana `otel-lgtm`, and
     against an independent validator that re-implements the spec. Cost when an endpoint is
-    configured: +0.81 ms p95 on the hook path.
+    configured: +0.81 ms p95 on the hook path (research.md, Gate P16, 2026-09-04).
 
 ## 5. Where rtok is behind
 
