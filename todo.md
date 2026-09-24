@@ -39,7 +39,6 @@
 - T204. A panicking plugin is dropped silently — the error never reaches the log
 - T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
 - T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
-- T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
 - T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
 - T223. `windows-sys` linked in three versions
 - T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
