@@ -398,7 +398,11 @@ if "%ALLARGS%"=="plugin add rtok@rtok" (
   )
 )
 if "%ALLARGS%"=="plugin marketplace upgrade rtok" (
-  if exist "%HOME%\fake-codex-fail-upgrade" (echo rtok: upgrade failed 1>&2 & exit /b 1)
+  rem `exit`, not `exit /b`: cmd /C loses a nested `exit /b` code and reports 0.
+  if exist "%HOME%\fake-codex-fail-upgrade" (
+    echo rtok: upgrade failed 1>&2
+    exit 1
+  )
   for %%F in ("%CFG%") do (
     if not exist "%%~dpFplugins\cache\rtok\rtok\0.0.1" mkdir "%%~dpFplugins\cache\rtok\rtok\0.0.1"
     >"%%~dpFplugins\cache\rtok\rtok\0.0.1\.mcp.json" echo upgraded
