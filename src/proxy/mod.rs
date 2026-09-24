@@ -212,42 +212,26 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
     let (request_body, recorded, context_armed) = if plain {
         (request_body, None, false)
     } else {
-        // Request bookkeeping (fail-open: a DB error logs and the request still goes through).
-        let parsed = serde_json::from_slice::<Value>(&request_body).ok();
-        let recorded = record(
-            &state,
-            wire,
-            &path,
-            parsed.as_ref(),
-            &headers,
-            &request_body,
-        );
-        // From here on `request_body` is what upstream sees (and what `call_io` records).
-        let request_body = if state.mode == "compress" {
-            wire.map_or(request_body.clone(), |wire| {
-                compress(&state, wire, parsed, recorded.as_ref(), request_body)
-            })
-        } else {
-            request_body
-        };
-        // Provider request shaping runs in both modes (T11.2: OpenAI `stream_options`;
-        // T51.2: Anthropic `context_management`).
-        let request_body = match wire {
-            Some(wire) => prepare(&state, wire, request_body),
-            None => request_body,
-        };
-        let (request_body, context_armed) = match wire {
-            Some(wire) => context_edits(&state, wire, request_body),
-            None => (request_body, false),
-        };
-        if context_armed && let Some(r) = recorded.as_ref() {
-            record_context_path(&state, r, &request_body);
+        // Request bookkeeping is CPU-bound (serde parse of up to `MAX_BODY_BYTES`,
+        // tokenizer estimates, sync store writes) — run it off the tokio worker so a
+        // large body never delays `/health` or other in-flight streams (T205). `Bytes`
+        // clone is O(1) (a refcounted view, not a copy), so keeping `original_body`
+        // around for the fail-open fallback costs nothing.
+        let state_bg = state.clone();
+        let path_bg = path.clone();
+        let headers_bg = headers.clone();
+        let original_body = request_body.clone();
+        match tokio::task::spawn_blocking(move || {
+            shape_request(&state_bg, wire, &path_bg, &headers_bg, request_body)
+        })
+        .await
+        {
+            Ok(shaped) => shaped,
+            // The task panicked or was cancelled: fail open exactly like `record` /
+            // `compress` / `prepare` already do on their own internal errors — forward
+            // the original bytes unmodified rather than failing the request.
+            Err(_join_err) => (original_body, None, false),
         }
-        let (request_body, tools_delta) = rewrite_tools(&state, request_body);
-        if let (Some(delta), Some(r)) = (tools_delta, recorded.as_ref()) {
-            record_tools_rewrite(&state, r, delta);
-        }
-        (request_body, recorded, context_armed)
     };
 
     let sc = &state.cfg.plugins.proxy.semantic_cache;
@@ -406,17 +390,23 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
                 ms: start.elapsed().as_secs_f64() * 1000.0,
             });
         } else {
-            finish(
-                &recorder,
-                &recorded,
-                start,
-                wire,
-                status_code,
-                content_type.as_deref(),
-                &request_body,
-                &buf,
-                total_bytes,
-            )
+            // `finish`'s store writes are synchronous (T205); move them off the tokio
+            // worker too. The response has already been fully streamed to the client by
+            // this point, so a panicked/cancelled task only drops bookkeeping, never the
+            // response itself — same fail-open shape as the rest of this module.
+            let _ = tokio::task::spawn_blocking(move || {
+                finish(
+                    &recorder,
+                    &recorded,
+                    start,
+                    wire,
+                    status_code,
+                    content_type.as_deref(),
+                    &request_body,
+                    &buf,
+                    total_bytes,
+                );
+            })
             .await;
         }
     });
@@ -434,6 +424,48 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
         Ok(r) => r,
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     }
+}
+
+/// One non-plain request's bookkeeping: `record`, `compress` (in `compress` mode), then
+/// provider request shaping (`prepare`/`context_edits`/`rewrite_tools`). Runs on a
+/// blocking-pool thread (T205, called via `spawn_blocking`) so its synchronous JSON
+/// parse and tokenizer work never pins a tokio worker (fail-open: a DB error logs and
+/// the request still goes through, same as each helper already does on its own).
+fn shape_request(
+    state: &ProxyState,
+    wire: Option<&'static dyn Wire>,
+    path: &str,
+    headers: &HeaderMap,
+    request_body: Bytes,
+) -> (Bytes, Option<Recorded>, bool) {
+    let parsed = serde_json::from_slice::<Value>(&request_body).ok();
+    let recorded = record(state, wire, path, parsed.as_ref(), headers, &request_body);
+    // From here on `request_body` is what upstream sees (and what `call_io` records).
+    let request_body = if state.mode == "compress" {
+        wire.map_or(request_body.clone(), |wire| {
+            compress(state, wire, parsed, recorded.as_ref(), request_body)
+        })
+    } else {
+        request_body
+    };
+    // Provider request shaping runs in both modes (T11.2: OpenAI `stream_options`;
+    // T51.2: Anthropic `context_management`).
+    let request_body = match wire {
+        Some(wire) => prepare(state, wire, request_body),
+        None => request_body,
+    };
+    let (request_body, context_armed) = match wire {
+        Some(wire) => context_edits(state, wire, request_body),
+        None => (request_body, false),
+    };
+    if context_armed && let Some(r) = recorded.as_ref() {
+        record_context_path(state, r, &request_body);
+    }
+    let (request_body, tools_delta) = rewrite_tools(state, request_body);
+    if let (Some(delta), Some(r)) = (tools_delta, recorded.as_ref()) {
+        record_tools_rewrite(state, r, delta);
+    }
+    (request_body, recorded, context_armed)
 }
 
 /// `compress` mode: run every enabled plugin's `proxy_filter` over the parsed body and
@@ -720,7 +752,7 @@ fn record_usage(
 /// capped buffer (see `handle`'s tee task and `MAX_BODY_BYTES`) — a truncated buffer means
 /// `call_io` and usage parsing only see the retained prefix, never that they panic on it.
 #[allow(clippy::too_many_arguments)]
-async fn finish(
+fn finish(
     state: &ProxyState,
     recorded: &Option<Recorded>,
     start: Instant,
