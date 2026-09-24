@@ -143,6 +143,22 @@ fn shell(cfg: &Config) -> String {
     )
 }
 
+/// `shell` running `body`. `script_for` already quoted a cmd.exe body for cmd.exe
+/// (`"…"`, `""`); `Command::arg` would quote it again with MSVC rules (`\"`), which
+/// cmd.exe does not parse, so on Windows the body goes onto the command line as is (T83.8).
+fn shell_command(shell: &str, body: &str) -> Command {
+    let mut cmd = Command::new(shell);
+    let args = shell_args(shell, body);
+    #[cfg(windows)]
+    if let (ShellKind::Cmd, Some((body, flags))) = (shell_kind(shell), args.split_last()) {
+        use std::os::windows::process::CommandExt;
+        cmd.args(flags).raw_arg(body);
+        return cmd;
+    }
+    cmd.args(args);
+    cmd
+}
+
 /// Flags + script body for `Command::new(shell)`.
 pub(crate) fn shell_args(shell: &str, body: &str) -> Vec<String> {
     match shell_kind(shell) {
@@ -281,9 +297,7 @@ pub fn run(cfg: &Config, args: &[String], agent: Option<&str>) -> Result<i32> {
     }
     let sh = shell(cfg);
     let sh_kind = shell_kind(&sh);
-    let mut cmd = Command::new(&sh);
-    cmd.args(shell_args(&sh, &script_for(sh_kind, args)));
-    let (body, code) = capture(cmd)?;
+    let (body, code) = capture(shell_command(&sh, &script_for(sh_kind, args)))?;
     emit_filtered(cfg, args, &body, code, agent);
     Ok(code)
 }
@@ -931,6 +945,18 @@ mod tests {
             "(echo hi) 2>&1"
         );
         assert_eq!(cmd_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
+    }
+
+    /// T83.8: cmd.exe gets the body as `script_for` quoted it, not re-quoted with `\"`.
+    #[cfg(windows)]
+    #[test]
+    fn cmd_exe_gets_the_body_verbatim() {
+        let body = script_for(ShellKind::Cmd, &["echo".into(), "say \"hi\"".into()]);
+        let out = shell_command("cmd.exe", &body).output().unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim_end(),
+            "\"say \"\"hi\"\"\""
+        );
     }
 
     /// Configured PowerShell must not get Posix `-c` (CreateProcess would fail the flag).
