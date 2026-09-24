@@ -418,6 +418,10 @@ must beat, and that line is the gate text below.
 
 # Batch / Flex API pass — implementation plan
 
+> **Canonical copy:** research + T250–T259 checklist now live in [`plan.md`](plan.md)
+> (`# Research — Batch / Flex API pass`). This roadmap section remains for navigation;
+> prefer editing `plan.md` for task cards.
+
 Implementation plan for the cost levers documented in [`docs/batch-flex.md`](docs/batch-flex.md)
 and [`architecture.md`](architecture.md) §12. Design-first branch:
 `docs/batch-flex-pass`. Code lives under `src/proxy/` only (hooks/MCP never see
