@@ -236,6 +236,7 @@ Arguments:
   [COMMAND]...  
 
 Options:
+      --agent <ID>     Sub-agent id from PreToolUse; scopes the dedup pointer (T127)
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
   -h, --help           Print help
 

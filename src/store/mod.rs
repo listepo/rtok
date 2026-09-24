@@ -141,6 +141,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0018.sql",
         include_str!("../../migrations/0018_kv_guard/up.sql"),
     ),
+    (
+        "0019.sql",
+        include_str!("../../migrations/0019_archive_agent_context/up.sql"),
+    ),
 ];
 
 pub struct Store {
@@ -690,7 +694,7 @@ impl Store {
         // Over cap: metadata always. Archive only when a directory is supplied (never on hook).
         let sha = hex_sha256(body);
         if let Some(dir) = archive_dir {
-            self.write_archive(session, body, &sha, dir)?;
+            self.write_archive(session, body, &sha, dir, None)?;
             return Ok((None, Some(sha.clone()), n, Some(sha)));
         }
         Ok((None, None, n, Some(sha)))
@@ -699,13 +703,38 @@ impl Store {
     /// Write `body` to `dir/<sha256>` and upsert the `archive` row. Returns the id.
     pub fn put_archive(&self, session: &str, body: &[u8], dir: &Path) -> Result<String> {
         let sha = hex_sha256(body);
-        self.write_archive(session, body, &sha, dir)?;
+        self.write_archive(session, body, &sha, dir, None)?;
         Ok(sha)
     }
 
-    /// T65.1: one PK lookup on `archive.id` (= sha256) scoped to `session`. `turns` is
-    /// later `measurements` in that session (a proxy for "N turns ago"); 0 if none.
-    pub fn archive_in_session(&self, session: &str, sha: &str) -> Result<Option<(String, u64)>> {
+    /// [`Self::put_archive`], tagged with the context window that wrote it (T127): a
+    /// sub-agent's `agent_id`, or `None` for the main window. The first (session, context)
+    /// pair to archive a given body owns the row — the same "other writers never dedup
+    /// content they did not archive themselves" tradeoff [`Self::archive_in_session`] already
+    /// makes across sessions, now also made across contexts within one session.
+    pub fn put_archive_for(
+        &self,
+        session: &str,
+        body: &[u8],
+        dir: &Path,
+        agent_id: Option<&str>,
+    ) -> Result<String> {
+        let sha = hex_sha256(body);
+        self.write_archive(session, body, &sha, dir, agent_id)?;
+        Ok(sha)
+    }
+
+    /// T65.1: one PK lookup on `archive.id` (= sha256) scoped to `session` and, since T127,
+    /// to `agent_id` — the sub-agent's context window, or `None` for the main one. A body
+    /// the row's own writer never saw in its context returns no hit, so the caller prints
+    /// the body it actually has rather than a pointer to bytes it never received.
+    /// `turns` is later `measurements` in that session (a proxy for "N turns ago"); 0 if none.
+    pub fn archive_in_session(
+        &self,
+        session: &str,
+        sha: &str,
+        agent_id: Option<&str>,
+    ) -> Result<Option<(String, u64)>> {
         let mut conn = self.lock()?;
         // Correlated subquery: turns is later measurements in archive's own session, as a
         // scalar column on the archive row — `.single_value()` keeps it one query.
@@ -714,12 +743,17 @@ impl Store {
             .filter(measurements::ts.gt(archive::ts))
             .count()
             .single_value();
-        let row: Option<(String, Option<i64>)> = archive::table
+        let query = archive::table
             .filter(archive::id.eq(sha))
             .filter(archive::session.eq(session))
             .select((archive::id, turns))
-            .first(&mut *conn)
-            .optional()?;
+            .into_boxed();
+        // SQL `= NULL` never matches, so the "main window" side needs `IS NULL` instead.
+        let query = match agent_id {
+            Some(a) => query.filter(archive::agent_id.eq(a.to_owned())),
+            None => query.filter(archive::agent_id.is_null()),
+        };
+        let row: Option<(String, Option<i64>)> = query.first(&mut *conn).optional()?;
         Ok(row.map(|(id, turns)| (id, turns.unwrap_or(0).max(0) as u64)))
     }
 
@@ -727,7 +761,14 @@ impl Store {
     /// its sha256 in `dir`, then one row per distinct body (the same body twice — T5.3 repeat
     /// requests — is one row). `tool` stays NULL: neither caller knows which plugin archived, and
     /// the column used to say `cmd` for every plugin.
-    fn write_archive(&self, session: &str, body: &[u8], sha: &str, dir: &Path) -> Result<()> {
+    fn write_archive(
+        &self,
+        session: &str,
+        body: &[u8],
+        sha: &str,
+        dir: &Path,
+        agent_id: Option<&str>,
+    ) -> Result<()> {
         std::fs::create_dir_all(dir)?;
         let path = dir.join(sha);
         std::fs::write(&path, body)?;
@@ -740,6 +781,7 @@ impl Store {
                 archive::bytes.eq(n),
                 archive::path.eq(path.to_string_lossy().as_ref()),
                 archive::sha256.eq(sha),
+                archive::agent_id.eq(agent_id),
             ))
             .on_conflict(archive::id)
             .do_nothing()
@@ -3075,11 +3117,37 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let sha = store.put_archive("a", b"same-bytes", &dir).unwrap();
         let hit = store
-            .archive_in_session("a", &sha)
+            .archive_in_session("a", &sha, None)
             .unwrap()
             .expect("writer");
         assert_eq!(hit.0, sha);
-        assert_eq!(store.archive_in_session("b", &sha).unwrap(), None);
+        assert_eq!(store.archive_in_session("b", &sha, None).unwrap(), None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// T127: a sub-agent's context never dedups on a body only its parent (or a sibling)
+    /// wrote — the pointer would name bytes that context never saw — but the writer's own
+    /// context still gets the pointer on its own repeat.
+    #[test]
+    fn archive_in_session_scopes_by_context_within_one_session() {
+        let dir = std::env::temp_dir().join(format!("rtok-t127-ctx-{}", std::process::id()));
+        let store = Store::open_in_memory().unwrap();
+        let sha = store
+            .put_archive_for("s", b"same-bytes", &dir, Some("agent-a"))
+            .unwrap();
+        assert_eq!(
+            store
+                .archive_in_session("s", &sha, Some("agent-b"))
+                .unwrap(),
+            None,
+            "context B never saw what context A archived"
+        );
+        assert_eq!(store.archive_in_session("s", &sha, None).unwrap(), None);
+        let hit = store
+            .archive_in_session("s", &sha, Some("agent-a"))
+            .unwrap()
+            .expect("agent-a still hits its own row");
+        assert_eq!(hit.0, sha);
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -606,6 +606,7 @@ _arguments "${_arguments_options[@]}" : /
 ;;
 (run)
 _arguments "${_arguments_options[@]}" : /
+'--agent=[Sub-agent id from PreToolUse; scopes the dedup pointer (T127)]:ID:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '-h[Print help]' /
 '--help[Print help]' /

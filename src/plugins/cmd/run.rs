@@ -264,8 +264,11 @@ fn skip_escape(body: &[u8], i: usize) -> usize {
     }
 }
 
-/// Run `args` via the configured/host shell, archive stdout+stderr, print, return the exit code.
-pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
+/// Run `args` via the configured/host shell, archive stdout+stderr, print, return the exit
+/// code. `agent` is the sub-agent id the `PreToolUse(Bash)` rewrite embedded as `--agent`
+/// (T127), or `None` for the main window / any other caller — it scopes the dedup pointer
+/// so a body one context wrote is never handed to a different one as a pointer.
+pub fn run(cfg: &Config, args: &[String], agent: Option<&str>) -> Result<i32> {
     if args.is_empty() {
         bail!("rtok run: missing command");
     }
@@ -277,13 +280,14 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
     let mut body = out.stdout;
     body.extend_from_slice(&out.stderr);
     let code = out.status.code().unwrap_or(1);
-    emit_filtered(cfg, args, &body, code);
+    emit_filtered(cfg, args, &body, code, agent);
     Ok(code)
 }
 
 /// Archive `body` when the shortening dropped something, print the filtered text plus
-/// expand trailer, record a Measurement. Shared by `rtok run` and `rtok filter --archive`.
-pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32) {
+/// expand trailer, record a Measurement. Shared by `rtok run` and `rtok filter --archive`
+/// (which always passes `None`: that surface has no dispatch-time context to scope by).
+pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32, agent: Option<&str>) {
     let before = String::from_utf8_lossy(body);
     let cx = match crate::plugin::Runtime::open(cfg.clone(), "run") {
         Ok(cx) => cx,
@@ -297,8 +301,10 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32) {
         }
     };
     // Hash the raw bytes before archiving (T65.1): a same-session hit is a pointer, not
-    // the body. Fail open — lookup errors and short bodies print as today.
-    if let Some(msg) = crate::plugin::identical_result(&cx, "cmd", body) {
+    // the body. Fail open — lookup errors and short bodies print as today. T127: `agent`
+    // scopes the hit to the caller's window, so a sub-agent never sees a pointer to a body
+    // written by the main window or a different sub-agent (and vice versa).
+    if let Some(msg) = crate::plugin::identical_result(&cx, "cmd", body, agent) {
         println!("{msg}");
         return;
     }
@@ -351,7 +357,7 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32) {
     if pointer || named {
         // The archive keeps the command's bytes, not the lossy `String` used to filter
         // and print them: `expand` must return what the command wrote, including invalid UTF-8.
-        if cx.put_archive(body).is_err() {
+        if cx.put_archive_for(body, agent).is_err() {
             print!("{before}");
             if !before.is_empty() && !before.ends_with('\n') {
                 println!();
@@ -391,7 +397,7 @@ mod tests {
             .map(|i| format!("line {i}"))
             .collect::<Vec<_>>()
             .join("\n");
-        emit_filtered(&c, &["cat".into()], body.as_bytes(), 0);
+        emit_filtered(&c, &["cat".into()], body.as_bytes(), 0, None);
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
             .unwrap()
             .map(|e| e.unwrap().path())
@@ -411,7 +417,13 @@ mod tests {
             .map(|i| format!("line {i}"))
             .collect::<Vec<_>>()
             .join("\n");
-        emit_filtered(&c, &["skill".into(), "demo".into()], body.as_bytes(), 0);
+        emit_filtered(
+            &c,
+            &["skill".into(), "demo".into()],
+            body.as_bytes(),
+            0,
+            None,
+        );
         let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
         let rows = v["rows"].as_array().unwrap();
         assert_eq!(rows[0]["kind"], "skill", "{v}");
@@ -422,7 +434,7 @@ mod tests {
     #[test]
     fn printf_two_lines_exit_0_no_trailer() {
         let (c, dir) = cfg("printf");
-        let code = run(&c, &["printf".into(), "a\nb\n".into()]).unwrap();
+        let code = run(&c, &["printf".into(), "a\nb\n".into()], None).unwrap();
         assert_eq!(code, 0);
         // T160: the trailing newline is noise — no pointer, so no archive row either.
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
@@ -451,9 +463,15 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         );
-        assert_eq!(run(&c, &["printf".into(), payload.clone()]).unwrap(), 0);
+        assert_eq!(
+            run(&c, &["printf".into(), payload.clone()], None).unwrap(),
+            0
+        );
         let inner = format!("printf '%s\n' '{}'", payload.trim_end_matches('\n'));
-        assert_eq!(run(&c, &["sh".into(), "-c".into(), inner]).unwrap(), 0);
+        assert_eq!(
+            run(&c, &["sh".into(), "-c".into(), inner], None).unwrap(),
+            0
+        );
         let store = crate::store::Store::open(&c.core.db_path).unwrap();
         let rows = store.list_measurements("cmd").unwrap();
         let dedup = rows.iter().filter(|r| r.kind == "dedup").count();
@@ -465,10 +483,71 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// T127: the `--agent` a `PreToolUse(Bash)` rewrite embeds scopes the dedup pointer to
+    /// that sub-agent's own window — a different sub-agent (or the main window) still sees
+    /// the full body, and the same agent repeating the command still gets the pointer.
+    #[test]
+    fn dedup_is_scoped_to_the_dispatching_agent() {
+        let (c, dir) = cfg("dedup-agent-scope");
+        let payload = format!(
+            "{}\n",
+            (0..80)
+                .map(|i| format!("line {i}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        emit_filtered(
+            &c,
+            &["printf".into()],
+            payload.as_bytes(),
+            0,
+            Some("agent-a"),
+        );
+        let store = crate::store::Store::open(&c.core.db_path).unwrap();
+        let dedup_after_first = store
+            .list_measurements("cmd")
+            .unwrap()
+            .iter()
+            .filter(|r| r.kind == "dedup")
+            .count();
+        assert_eq!(dedup_after_first, 0, "nothing to dedup against yet");
+        // A different sub-agent asking for the identical output still gets the body.
+        emit_filtered(
+            &c,
+            &["printf".into()],
+            payload.as_bytes(),
+            0,
+            Some("agent-b"),
+        );
+        let dedup_after_b = store
+            .list_measurements("cmd")
+            .unwrap()
+            .iter()
+            .filter(|r| r.kind == "dedup")
+            .count();
+        assert_eq!(dedup_after_b, 0, "agent-b never saw agent-a's body");
+        // agent-a repeating its own command dedups.
+        emit_filtered(
+            &c,
+            &["printf".into()],
+            payload.as_bytes(),
+            0,
+            Some("agent-a"),
+        );
+        let dedup_after_a_again = store
+            .list_measurements("cmd")
+            .unwrap()
+            .iter()
+            .filter(|r| r.kind == "dedup")
+            .count();
+        assert_eq!(dedup_after_a_again, 1, "agent-a's own repeat still dedups");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn exit_3_is_preserved() {
         let (c, dir) = cfg("exit3");
-        let code = run(&c, &["sh".into(), "-c".into(), "exit 3".into()]).unwrap();
+        let code = run(&c, &["sh".into(), "-c".into(), "exit 3".into()], None).unwrap();
         assert_eq!(code, 3);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -477,7 +556,10 @@ mod tests {
     fn three_runs_stats_plugin_cmd_json_has_rows() {
         let (c, dir) = cfg("stats3");
         for _ in 0..3 {
-            assert_eq!(run(&c, &["printf".into(), "a\nb\n".into()]).unwrap(), 0);
+            assert_eq!(
+                run(&c, &["printf".into(), "a\nb\n".into()], None).unwrap(),
+                0
+            );
         }
         let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
         let rows = v["rows"].as_array().unwrap();
@@ -506,7 +588,7 @@ mod tests {
     #[test]
     fn one_arg_compound_command_runs_as_one_script() {
         let (c, dir) = cfg("compound");
-        let code = run(&c, &["printf a; printf b".into()]).unwrap();
+        let code = run(&c, &["printf a; printf b".into()], None).unwrap();
         assert_eq!(code, 0);
         // "ab" lost nothing, so T160 stores no archive — but the run is still measured.
         let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
@@ -532,7 +614,7 @@ mod tests {
         let mut body = b"\xff\xfeok\n".to_vec();
         body.extend(std::iter::repeat_n(b'x', 300));
         body.push(b'\n');
-        emit_filtered(&c, &["cat".into()], &body, 0);
+        emit_filtered(&c, &["cat".into()], &body, 0, None);
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
             .unwrap()
             .map(|e| e.unwrap().path())
@@ -637,7 +719,7 @@ mod tests {
             ),
             "old path would have attached a trailer"
         );
-        emit_filtered(&c, &["ps".into(), "aux".into()], body.as_bytes(), 0);
+        emit_filtered(&c, &["ps".into(), "aux".into()], body.as_bytes(), 0, None);
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
             .map(|rd| rd.map(|e| e.unwrap().path()).collect())
             .unwrap_or_default();
