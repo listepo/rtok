@@ -33,6 +33,11 @@
 # `upsert_note` and no longer names `insert_note`. The call site did not disappear, it was
 # renamed: `insert_note` loses that one ref (`import.rs` and `checkpoint.rs` still call it)
 # and `upsert_note` enters with the same def/ref pair, so the sample keeps its size.
+#
+# T209 (2026-09-24): `notes_topic` (migration 0020) enforces "one row per (project, kind,
+# title)" at the database level, so `checkpoint.rs`'s repeat-PreCompact write moved from
+# `insert_note` to `upsert_note` the same way T66.1 moved `mem_save`. `insert_note` loses
+# the `checkpoint.rs` ref (`import.rs` still calls it) and `upsert_note` gains it.
 
 [[symbol]]
 name = "Manifest"
@@ -124,7 +129,7 @@ kind = "fn"
 # T23.3: the host's capability impl in `src/plugin.rs` defines it a second time; T23.5's
 # `MemoryHost` a third (T8.19 repair).
 defs = ["src/store/mod.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
-refs = ["src/plugins/checkpoint.rs", "src/plugins/memory/import.rs"]
+refs = ["src/plugins/memory/import.rs"]
 
 [[symbol]]
 name = "upsert_note"
@@ -132,7 +137,7 @@ kind = "fn"
 # The store's inherent method, the `Notes` trait declaration, and its two impls — T69.5
 # added the capability, so the name is defined in all four files, not just the store.
 defs = ["src/store/mod.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/host.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
-refs = ["src/plugins/memory/mod.rs"]
+refs = ["src/plugins/checkpoint.rs", "src/plugins/memory/mod.rs"]
 
 [[symbol]]
 name = "put_read_cache"

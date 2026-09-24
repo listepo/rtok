@@ -5636,3 +5636,21 @@ Result: `tests/cmd_golden/*.in` all carry `min_saving: <percent>`, measured `202
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T209. `upsert_note` select-then-insert races a duplicate past the topic key
+
+Found 2026-09-22 in the store/accounting pass: the "one row per (project, kind, title)" contract (T66.1) is enforced by SELECT-newest-then-UPDATE/INSERT (`src/store/mod.rs:835-869`) with the mutex even dropped before the insert (:867) and **no UNIQUE index** (migrations 0015/0017) making a lost race impossible across processes — and the store's own comments list concurrent writers (hooks, MCP, proxy, `otel flush`); no writer lease backs the "one writer per store" singleton either. Two writers saving the same title both insert: `mem_search` returns a stale duplicate beside the new body (the exact T66.1 defect) and recall shows stale titles.
+
+Plan: migration `CREATE UNIQUE INDEX notes_topic ON notes (COALESCE(project,''), kind, title)` and replace the select/update/insert with one `INSERT … ON CONFLICT … DO UPDATE` (closing the lock-drop gap too).
+
+Execution plan:
+- `migrations/0020_notes_topic_unique/up.sql` (0019 is another in-flight PR's): de-duplicate existing rows first (keep highest `id` per `(COALESCE(project,''), kind, title)`, matching `upsert_note`'s prior tie-break; the existing `notes_ad` trigger keeps `notes_fts` in sync), then `CREATE UNIQUE INDEX notes_topic`. Register `"0020.sql"` in `MIGRATIONS` (`src/store/mod.rs`), skipping 0019.
+- Rewrite `Store::upsert_note` as one `INSERT … ON CONFLICT (COALESCE(project,'' ), kind, title) DO UPDATE …`. Diesel's `on_conflict` only targets column tuples, not an expression index, so this one statement is raw SQL (comment explains why, per the no-raw-SQL exception for DSL-inexpressible statements) — no other query changes representation of `project`.
+- Add `concurrent_upsert_note_yields_one_row` (two `Store::open` on one temp-file db, two threads × 50 upserts of the same key → 1 row) and a migration test that seeds pre-existing duplicates on a pre-0020 db and asserts 0020 dedupes to the newest.
+
+Check: `concurrent_upsert_note_yields_one_row` — two connections upsert the same key 50× concurrently → exactly one row; `migrations_list_matches_the_directory` and `schema_rs_matches_the_migrated_tables` green after the migration; `just test` green.
+
+Result: Migration `0020_notes_topic_unique` drops pre-existing duplicates (newest id per key wins) and adds `UNIQUE INDEX notes_topic ON notes (COALESCE(project,''), kind, title)`. `upsert_note` is one atomic `INSERT … ON CONFLICT … DO UPDATE … RETURNING id`: this is raw SQL, because Diesel's `on_conflict` cannot target an expression index; it lives in the storage module with a comment. Checkpoints and the SDK `insert_note` now upsert, so a repeat key never errors. `memory import` inserts only free keys (`insert_note_if_absent`, Diesel `INSERT OR IGNORE`) and counts the rest as skipped. Tests `concurrent_upsert_note_yields_one_row` (2 connections × 50), `migration_0020_drops_pre_existing_duplicate_notes`, `a_line_whose_key_exists_locally_with_a_different_body_is_skipped`; `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)

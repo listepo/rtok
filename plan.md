@@ -65,7 +65,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T201 | todo | P2 | 2 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
 | T206 | todo | P2 | 3 | 0% | |
-| T209 | todo | P1 | 3 | 0% | |
 | T210 | todo | P2 | 2 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
 | T212 | todo | P2 | 2 | 0% | |
@@ -789,14 +788,6 @@ Found 2026-09-22 in the surfaces pass: every 2 s tick per connection runs `model
 Plan: clone/`Arc` the `Config`, build each snapshot in `spawn_blocking` without holding the lock, and coalesce concurrent ticks into one in-flight build shared by all sockets. (The transcript-parse burn itself is T135.)
 
 Check: `health_answers_during_a_snapshot_build` — busy fixture store + several WS clients, `/health` p95 < 250 ms while ticks run; `ws_set_accepts_plugin_enabled` green; `just test` green.
-
-### T209. `upsert_note` select-then-insert races a duplicate past the topic key
-
-Found 2026-09-22 in the store/accounting pass: the "one row per (project, kind, title)" contract (T66.1) is enforced by SELECT-newest-then-UPDATE/INSERT (`src/store/mod.rs:835-869`) with the mutex even dropped before the insert (:867) and **no UNIQUE index** (migrations 0015/0017) making a lost race impossible across processes — and the store's own comments list concurrent writers (hooks, MCP, proxy, `otel flush`); no writer lease backs the "one writer per store" singleton either. Two writers saving the same title both insert: `mem_search` returns a stale duplicate beside the new body (the exact T66.1 defect) and recall shows stale titles.
-
-Plan: migration `CREATE UNIQUE INDEX notes_topic ON notes (COALESCE(project,''), kind, title)` and replace the select/update/insert with one `INSERT … ON CONFLICT … DO UPDATE` (closing the lock-drop gap too).
-
-Check: `concurrent_upsert_note_yields_one_row` — two connections upsert the same key 50× concurrently → exactly one row; `migrations_list_matches_the_directory` and `schema_rs_matches_the_migrated_tables` green after the migration; `just test` green.
 
 ### T210. `measurements (session, ts)` has no index on never-pruned tables
 

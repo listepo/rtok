@@ -9,8 +9,11 @@ if split out per T2.5.
 
 **Invariants**
 - No LLM calls. Notes are written by the agent through `mem_save` or extracted mechanically.
-- `mem_save` is an upsert on `(project, kind, title)` — the title is the topic key (T66.1);
-  checkpoints go through `insert_note` and are never upserted.
+- `mem_save` is an upsert on `(project, kind, title)` — the title is the topic key (T66.1).
+  The `notes_topic` UNIQUE index enforces one row per key at the database level (T209):
+  checkpoints (`checkpoint.rs`) and the SDK's `insert_note` both upsert now too (newest
+  body wins) so a repeat key never errors; only `memory import` still plain-inserts, and
+  only when the key is free — see below.
 - Lifecycle is retire/supersede/pin, never `DELETE` (T69.1): recall and search filter
   `retired IS NULL` in SQL; `mem_get` still returns the body with a `retired` prefix; an
   explicit re-save through `mem_save` clears the tombstone. Pinned rows lead recall
@@ -21,7 +24,9 @@ if split out per T2.5.
 - `memory export` and `memory import` share one JSONL shape; `checkpoint:*` rows never leave.
 - Recall output is byte-stable across runs with unchanged notes and ≤ 200 tokens.
 - Import reads only the generic JSONL shape (no third-party DB schemas, D6) and is idempotent
-  (dedupe by sha256 of body).
+  (dedupe by sha256 of body). A line whose `(project, kind, title)` already names a local
+  note is skipped too, whatever its body — import must never let an older export replace a
+  newer local one (T209); `insert_note_if_absent` (`INSERT OR IGNORE`, no upsert).
 - Search returns the right note first for the T6.1 fixture (three notes, one obvious match).
 
 **Schema** lives in `migrations/0001_schema_v1/up.sql` (`notes`, `notes_fts` + triggers). Changing

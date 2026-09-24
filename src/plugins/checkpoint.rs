@@ -276,7 +276,12 @@ fn write(
 ) -> anyhow::Result<Checkpoint> {
     let mut cp = extract_path(Path::new(transcript_path));
     attach_ids(&mut cp, cx);
-    cx.insert_note(project, kind, "compact", &cp.render())?;
+    // T209: `notes_topic` now enforces one row per (project, kind, title) at the
+    // database level. `kind` already scopes this to the session, and `offer`/
+    // `offer_session` only ever read the newest row back (`latest_note`), so a repeat
+    // PreCompact/SessionEnd in the same session replaces the checkpoint instead of
+    // piling up dead history that nothing reads.
+    cx.upsert_note(project, kind, "compact", &cp.render())?;
     Ok(cp)
 }
 
@@ -589,7 +594,7 @@ mod tests {
         let ctx = Ctx::new(&cx);
         let cap = cx.config.plugins.memory.checkpoint_tokens.max(1);
         let big = "checkpoint\n".repeat(4000);
-        ctx.insert_note(Some("rtok"), &kind(&ctx), "compact", &big)
+        ctx.upsert_note(Some("rtok"), &kind(&ctx), "compact", &big)
             .unwrap();
         let inj = offer(&ctx).expect("injection");
         assert!(cx.estimate(&inj.text, Class::Prose) <= cap);
@@ -610,7 +615,7 @@ mod tests {
         }
         assert!(!many.ids.is_empty());
         assert!(cx.estimate(&many.render(), Class::Prose) <= cap);
-        ctx.insert_note(Some("rtok"), &kind(&ctx), "compact", &many.render())
+        ctx.upsert_note(Some("rtok"), &kind(&ctx), "compact", &many.render())
             .unwrap();
         let inj = offer(&ctx).expect("capped ids");
         assert!(cx.estimate(&inj.text, Class::Prose) <= cap);

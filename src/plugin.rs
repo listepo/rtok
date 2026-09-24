@@ -388,7 +388,10 @@ impl Notes for Runtime {
         title: &str,
         body: &str,
     ) -> Result<i32> {
-        self.store.insert_note(project, kind, title, body)
+        // T209: `notes_topic` is one row per (project, kind, title), so plugins must not
+        // see a hard error on a repeat key — delegate to the same upsert `upsert_note`
+        // uses (newest body wins), per the SDK's `Notes::insert_note` contract.
+        self.upsert_note(project, kind, title, body)
     }
 
     fn latest_note(&self, kind: &str) -> Result<Option<String>> {

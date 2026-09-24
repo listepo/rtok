@@ -276,6 +276,12 @@ pub trait Notes {
     ) -> Result<i32>;
 
     /// Save a note and return its id. `project` scopes it; `None` means "not project-bound".
+    ///
+    /// Same one-row-per-`(project, kind, title)` contract as [`Notes::upsert_note`] (T209:
+    /// the `notes_topic` index enforces it in the store either way) — a repeat key updates
+    /// the existing row (newest body wins) instead of erroring. Implementations delegate
+    /// to `upsert_note`; call that directly when the caller wants to be explicit about
+    /// updating.
     fn insert_note(
         &self,
         project: Option<&str>,
