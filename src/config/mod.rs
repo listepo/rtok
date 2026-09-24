@@ -369,6 +369,7 @@ section! {
         aider: SetupAider = SetupAider::default(),
         windsurf: SetupWindsurf = SetupWindsurf::default(),
         zed: SetupZed = SetupZed::default(),
+        gemini: SetupGemini = SetupGemini::default(),
     }
 }
 
@@ -458,6 +459,12 @@ section! {
 section! {
     /// `[setup.zed]` — Zed's `settings.json` carries `context_servers` (T48.6).
     SetupZed { config_path: PathBuf = p("~/.config/zed/settings.json") }
+}
+
+section! {
+    /// `[setup.gemini]` — Gemini CLI's `settings.json` (`hooks`, `mcpServers`) lives under
+    /// `dir` (T118.2).
+    SetupGemini { dir: PathBuf = p("~/.gemini") }
 }
 
 section! {
@@ -953,6 +960,7 @@ impl Config {
             &mut self.setup.aider.config_path,
             &mut self.setup.windsurf.config_path,
             &mut self.setup.zed.config_path,
+            &mut self.setup.gemini.dir,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.cmd.rules_dir,
             &mut self.plugins.inject.modes_dir,
