@@ -85,6 +85,12 @@ fn latency_hook_post_tool_p95_under_10ms() {
 /// T200: a second connection holding `BEGIN EXCLUSIVE` for 500 ms must not stall
 /// the hook. `hooks::run` fails open through its few-ms lock bound and still
 /// prints valid JSON, well under 100 ms.
+///
+/// T237: the proof that it gave up rather than waited is the ledger — a hook that
+/// outwaited the holder would have written its `calls` row. The wall bound stays as
+/// the second check; on Windows it is 250 ms (still half the hold): the 5 ms busy
+/// handler sleeps 1 + 2 + 2 ms and each Windows `Sleep` rounds up to the 15.6 ms
+/// timer tick, so the `windows-latest` debug run took 107 ms (ci run 35947867095).
 #[test]
 fn hook_returns_despite_exclusive_lock() {
     use diesel::Connection;
@@ -106,6 +112,12 @@ fn hook_returns_despite_exclusive_lock() {
         serde_json::from_slice::<serde_json::Value>(&warm).is_ok(),
         "warmup hook must print valid JSON"
     );
+    let calls = || {
+        let store = rtok::store::Store::open(&db).unwrap();
+        store.recent_calls(i64::MAX).unwrap().len()
+    };
+    let before = calls();
+    assert!(before > 0, "the warm hook must record its call");
 
     let (held, held_ack) = std::sync::mpsc::channel();
     let url = db.to_str().unwrap().to_string();
@@ -129,8 +141,14 @@ fn hook_returns_despite_exclusive_lock() {
     let v: serde_json::Value =
         serde_json::from_slice(&out).expect("locked hook must print valid JSON");
     assert!(v.is_object(), "{v}");
+    assert_eq!(
+        calls(),
+        before,
+        "the hook outwaited the exclusive lock instead of failing open ({took:?})"
+    );
+    let bound = if cfg!(windows) { 250 } else { 100 };
     assert!(
-        took < std::time::Duration::from_millis(100),
+        took < std::time::Duration::from_millis(bound),
         "hook waited {took:?} under an exclusive lock"
     );
 
