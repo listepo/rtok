@@ -74,6 +74,13 @@ const STALE_WINDSURF: &str = r#"{"mcpServers":{
   "other":{"command":"other-mcp","args":[]}
 }}"#;
 
+/// The command install writes now: bare `rtok`, or the absolute `rtok.exe` on Windows when
+/// `rtok` is not on PATH — never the stale store path the seeds carry.
+fn is_current_rtok(cmd: &serde_json::Value) -> bool {
+    let cmd = cmd.as_str().unwrap_or("");
+    !cmd.contains("/old/store") && (cmd == "rtok" || cmd.ends_with("rtok.exe"))
+}
+
 fn windsurf(home: &std::path::Path) -> std::path::PathBuf {
     home.join(".codeium/windsurf/mcp_config.json")
 }
@@ -91,13 +98,13 @@ fn update_rewrites_stale_claude_hooks_and_mcp() {
     fs::write(&claude_json, stale_mcp).unwrap();
 
     let out = rtok_without_claude(&["agents", "update", "claude", "--cli"], &cfg, &home);
-    assert!(
-        out.contains("~ PreToolUse Bash rtok hook PreToolUse"),
-        "{out}"
-    );
-    assert!(out.contains("mcpServers.rtok: rtok mcp"), "{out}");
+    assert!(out.contains("~ PreToolUse Bash "), "{out}");
+    assert!(out.contains("mcpServers.rtok: "), "{out}");
     let mcp = json(&claude_json);
-    assert_eq!(mcp["mcpServers"]["rtok"]["command"], "rtok", "{mcp}");
+    assert!(
+        is_current_rtok(&mcp["mcpServers"]["rtok"]["command"]),
+        "{mcp}"
+    );
     assert_eq!(mcp["mcpServers"]["other"]["command"], "x");
     assert!(
         !fs::read_to_string(&settings)
@@ -123,7 +130,10 @@ fn update_rewrites_once_then_is_already_current() {
     let after = fs::read_to_string(&path).unwrap();
     assert_ne!(after, STALE_WINDSURF, "{out}");
     let root = json(&path);
-    assert_eq!(root["mcpServers"]["rtok"]["command"], "rtok", "{after}");
+    assert!(
+        is_current_rtok(&root["mcpServers"]["rtok"]["command"]),
+        "{after}"
+    );
     assert_eq!(root["mcpServers"]["other"]["command"], "other-mcp");
     assert_eq!(backups(&path).len(), 1);
 
@@ -147,10 +157,9 @@ fn update_without_a_host_touches_only_installed_hosts() {
     assert!(!home.join(".claude/settings.json").exists());
     assert!(!home.join(".claude.json").exists());
     assert!(!home.join(".cursor/hooks.json").exists());
-    assert_eq!(
-        json(&windsurf(&home))["mcpServers"]["rtok"]["command"],
-        "rtok"
-    );
+    assert!(is_current_rtok(
+        &json(&windsurf(&home))["mcpServers"]["rtok"]["command"]
+    ));
 }
 
 /// T242.2: a named host with nothing of rtok is skipped, not installed into; with no
