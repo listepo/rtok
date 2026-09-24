@@ -69,7 +69,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T199 | todo | P2 | 1 | 0% | |
 | T201 | todo | P2 | 2 | 0% | |
 | T202 | todo | P2 | 3 | 0% | |
-| T203 | todo | P2 | 3 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
 | T206 | todo | P2 | 3 | 0% | |
 | T207 | todo | P1 | 3 | 0% | |
@@ -787,14 +786,6 @@ Found 2026-09-22 in the core pass: the Read-advice path fetches the newest 50 ho
 Plan: filter and trim in SQL — PostToolUse rows only, `tool_name IN ('Read','Edit','Write')`, `LIMIT 5` bodies for the edit window (lower limit for the handoff ledger) — selecting trimmed columns so per-event transfer is a few small rows regardless of history.
 
 Check: `hook_pre_tool_read_stays_under_budget_with_50_large_rows` — seed 50 × 60 KB hook rows, a `pre_tool_read.json` dispatch keeps p95 < 10 ms; `edited_file_reads_on` and the handoff tests unchanged; `just test` green.
-
-### T203. PreCompact/SessionEnd read the whole transcript and open extra stores
-
-Found 2026-09-22 in the core pass: `checkpoint::write` (`src/plugins/checkpoint.rs:202-212`) `read_to_string`s the entire JSONL transcript (hundreds of MB on real sessions) and `extract` walks every line inside `rtok hook`; `attach_ids` (:227-249) and `offer_session` (:258-280) then open a **second/third** `Store` on the same SQLite file even though the hook `Runtime` holds one — adding lock traffic exactly where T200 hurts (SessionStart with `startup_recall` does the extra open too). Unbounded memory + O(transcript) CPU + connection churn on PreCompact/SessionEnd/SessionStart.
-
-Plan: stream-extract with `BufRead::lines`, keeping only the bounded state `extract` retains (prompts, errors, path set, optional tail); route `attach_ids`/`offer_session` through the `Ctx`'s store via two capability methods (`session_live_archives`, `latest_session_note`) instead of `Store::open`.
-
-Check: `session_end_on_a_large_transcript_is_bounded` — a 50 MB generated transcript through `hooks::run("SessionEnd", …)` completes < 100 ms with the same note body as today; a counter asserts `Store::open` runs once per hook run; `checkpoint_fixture_has_three_paths_and_compact_injects_under_budget` and `session_end_note_and_startup_recall` unchanged; `just test` green.
 
 ### T204. A panicking plugin is dropped silently — the error never reaches the log
 

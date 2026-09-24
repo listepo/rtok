@@ -344,6 +344,10 @@ impl Archive for Runtime {
             _ => Ok(None),
         }
     }
+
+    fn session_live_archives(&self, session: &str) -> Result<Vec<(String, String, i64)>> {
+        self.store.session_live_archives(session)
+    }
 }
 
 impl Notes for Runtime {
@@ -380,6 +384,10 @@ impl Notes for Runtime {
         kind_prefix: &str,
     ) -> Result<Option<String>> {
         self.store.latest_note_for_project(project, kind_prefix)
+    }
+
+    fn latest_session_note(&self, project: Option<&str>) -> Result<Option<String>> {
+        self.store.latest_session_note(project)
     }
 
     fn list_note_titles(&self, project: Option<&str>, limit: u32) -> Result<Vec<(i32, String)>> {
