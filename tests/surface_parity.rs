@@ -260,6 +260,36 @@ fn graph_page_exists_on_both_surfaces() {
     );
 }
 
+/// T231: both surfaces render the Hosts page — `agents list`'s blocks, kind,
+/// version, installed surfaces, config path — from the same model accessor, so
+/// `agents list`/`agents info` can leave EXEMPT for COMMAND_PAGES.
+#[test]
+fn hosts_page_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        web,
+        slint,
+        ..
+    } = SURFACES;
+    assert!(
+        model.contains("(\"hosts\", \"hosts\")"),
+        "pages() offers hosts"
+    );
+    assert!(
+        model.contains("fn hosts_page_text"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("\"hosts\" =>"),
+        "the TUI renders the hosts page"
+    );
+    assert!(
+        web.contains("hosts_text") && slint.contains("page-id == \"hosts\""),
+        "the web Hosts page renders the same text"
+    );
+}
+
 #[test]
 fn wasm_ui_renders_every_model_page() {
     let lib = include_str!(concat!(
@@ -315,6 +345,9 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     // the Graph page rides the snapshot since T230, so both render it
     ("graph status", "graph"),
     ("graph dead", "graph"),
+    // the Hosts page rides the snapshot since T231, so both render it
+    ("agents list", "hosts"),
+    ("agents info", "hosts"),
 ];
 
 /// The commands D27 exempts, each with its reason. Streaming commands print a stream,
@@ -364,14 +397,6 @@ const EXEMPT: &[(&str, &str)] = &[
         "installs hooks, MCP and the proxy into a host",
     ),
     ("agents uninstall", "takes rtok back out of a host"),
-    (
-        "agents list",
-        "lists known hosts with app type, version, install state and modules",
-    ),
-    (
-        "agents info",
-        "lists one host with app type, version, install state and modules",
-    ),
     ("setup", "deprecated spelling of `rtok agents install`"),
     ("config init", "writes the annotated reference file"),
     ("config set", "edits one key in the user file"),

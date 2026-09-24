@@ -13,6 +13,7 @@ use std::rc::Rc;
 /// `tests/surface_parity.rs` asserts this equals `rtok::web::model::pages()`.
 pub const PAGE_IDS: &[&str] = &[
     "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats", "graph",
+    "hosts",
 ];
 
 /// Pure snapshot → view fields. Native-testable; the WASM `load_snapshot` applies these
@@ -40,6 +41,7 @@ pub mod snapshot {
         pub skills: Vec<Skill>,
         pub stats_text: String,
         pub graph_text: String,
+        pub hosts_text: String,
     }
 
     #[derive(Debug, Default, PartialEq, Eq)]
@@ -111,6 +113,7 @@ pub mod snapshot {
             skills: skills_of(v),
             stats_text: stats_of(&v["stats"]),
             graph_text: graph_of(&v["graph"]),
+            hosts_text: hosts_of(&v["hosts"]),
         }
     }
 
@@ -443,6 +446,13 @@ pub mod snapshot {
         })
     }
 
+    /// The Hosts page (T231): the wire already carries `rtok agents list`'s blocks as
+    /// one rendered string, never empty — a cold or stale probe reads "probing
+    /// hosts…", not a missing key.
+    fn hosts_of(v: &Value) -> String {
+        v.as_str().unwrap_or_default().to_string()
+    }
+
     fn savings_text(v: &Value) -> String {
         let Some(plugins) = v["plugins"].as_array() else {
             return "no measured savings yet".into();
@@ -551,6 +561,7 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
     ui.set_doctor_text(SharedString::from(view.doctor_text));
     ui.set_stats_text(SharedString::from(view.stats_text));
     ui.set_graph_text(SharedString::from(view.graph_text));
+    ui.set_hosts_text(SharedString::from(view.hosts_text));
 
     let plugins: Vec<PluginRow> = view
         .plugins
@@ -865,7 +876,7 @@ mod tests {
             PAGE_IDS,
             [
                 "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats",
-                "graph"
+                "graph", "hosts"
             ]
         );
     }
@@ -908,7 +919,8 @@ mod tests {
             },
             "logs": ["2026-09-10 07:00:00 info web/serve: up"],
             "stats": "sessions 1  compact 0  checkpoint 0  no_checkpoint 1  lines 1  malformed 0\n",
-            "graph": "root .  rows 3  files 2  pending 0\nwatch off\nindexed_at -\ndead symbols\n none\n"
+            "graph": "root .  rows 3  files 2  pending 0\nwatch off\nindexed_at -\ndead symbols\n none\n",
+            "hosts": "CLI: Codex\n  app     -\n"
         });
         let view = snapshot::parse(&v);
         assert!(
@@ -920,7 +932,8 @@ mod tests {
                 && PAGE_IDS.contains(&"plugins")
                 && PAGE_IDS.contains(&"skills")
                 && PAGE_IDS.contains(&"stats")
-                && PAGE_IDS.contains(&"graph"),
+                && PAGE_IDS.contains(&"graph")
+                && PAGE_IDS.contains(&"hosts"),
             "every model page id is a WASM tab"
         );
         assert_eq!(view.usage_ctt, 5);
@@ -938,6 +951,7 @@ mod tests {
         assert_eq!(view.logs, vec!["2026-09-10 07:00:00 info web/serve: up"]);
         assert!(view.stats_text.contains("sessions 1"));
         assert!(view.graph_text.contains("rows 3"));
+        assert!(view.hosts_text.contains("CLI: Codex"));
     }
 
     #[test]

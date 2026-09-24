@@ -176,6 +176,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
         "skills" => render_skills(frame, app, area),
         "stats" => frame.render_widget(stats(app), area),
         "graph" => frame.render_widget(graph_page(app), area),
+        "hosts" => frame.render_widget(hosts_page(app), area),
         page => unreachable!("page `{page}` has no TUI body — surface_parity holds the list"),
     }
 }
@@ -423,6 +424,13 @@ fn graph_page(app: &App) -> Paragraph<'static> {
         return empty("graph did not answer this tick — `rtok graph status` has the details");
     };
     Paragraph::new(text.clone())
+}
+
+/// The model's Hosts page (T231), verbatim: `rtok agents list`'s blocks — kind,
+/// detected version, installed surfaces, config path — from the cached probe the
+/// snapshot already carries (D27), never a second spawn per tick.
+fn hosts_page(app: &App) -> Paragraph<'static> {
+    Paragraph::new(app.snapshot().hosts.clone())
 }
 
 /// The model's Calls page (T15.5): the ledger's recent rows, newest first — surface,
@@ -887,13 +895,13 @@ mod tests {
     use rstest::rstest;
 
     /// What the loop would put on a real terminal, rendered into a buffer instead.
-    /// 90 wide: at 80, 9 tabs' padded titles and dividers (T230's `graph` was the
-    /// ninth) no longer fit the tab bar's `body.width - 4` (T15.2's border cols),
-    /// so `graph` fell off screen and `shell_paints_the_model_tabs_hints_and_tick`
+    /// 98 wide: at 90, 10 tabs' padded titles and dividers (T231's `hosts` was the
+    /// tenth) no longer fit the tab bar's `body.width - 4` (T15.2's border cols),
+    /// so `hosts` fell off screen and `shell_paints_the_model_tabs_hints_and_tick`
     /// failed on this file, not on a rendering bug — a little headroom for the next
     /// page too.
     fn screen(app: &App) -> String {
-        let mut terminal = ratatui::Terminal::new(TestBackend::new(90, 24)).unwrap();
+        let mut terminal = ratatui::Terminal::new(TestBackend::new(98, 24)).unwrap();
         terminal.draw(|frame| draw(frame, app)).unwrap();
         terminal
             .backend()
