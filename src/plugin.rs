@@ -521,6 +521,10 @@ impl Symbols for Runtime {
         self.store.symbol_defs(root, name)
     }
 
+    fn symbol_file_defs(&self, root: &str, path: &str) -> Result<Vec<(String, String, i32, i32)>> {
+        self.store.symbol_file_defs(root, path)
+    }
+
     fn symbol_ref_groups(&self, root: &str, name: &str) -> Result<Vec<(String, String, i64, i32)>> {
         self.store.symbol_ref_groups(root, name)
     }

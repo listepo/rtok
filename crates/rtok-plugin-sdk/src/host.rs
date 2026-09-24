@@ -492,6 +492,12 @@ pub trait Symbols {
         Ok(Vec::new())
     }
 
+    /// T130.3: definitions in `path` as `(name, kind, line, end_line)`; empty without an index.
+    fn symbol_file_defs(&self, root: &str, path: &str) -> Result<Vec<(String, String, i32, i32)>> {
+        let _ = (root, path);
+        Ok(Vec::new())
+    }
+
     /// T68.6: import rows of `path` as `(name, line)`.
     fn symbol_imports(&self, root: &str, path: &str) -> Result<Vec<(String, i32)>> {
         let _ = (root, path);
