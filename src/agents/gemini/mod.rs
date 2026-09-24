@@ -8,9 +8,12 @@
 //! `matcher` is written: Gemini's matcher filters on its *own* tool-name spelling
 //! (`run_shell_command`, `read_file`, …), so a Claude-shaped matcher list (`Bash`, `Read`)
 //! would silently never fire — every event runs on every call instead, the way `PostToolUse`
-//! already does on every other host. The extension tree (`gemini extensions install/link`,
-//! `plugins/gemini/`) is T118.3; until then this host writes the files directly.
+//! already does on every other host. The extension tree (`plugins/gemini/`, T118.3) is a D21
+//! singleton with this module: while `gemini extensions link` has it installed, setup takes
+//! back the hooks and `mcpServers.rtok` this module would otherwise write directly into
+//! `settings.json` (mirrors `src/agents/copilot/mod.rs`).
 
+use std::fs;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -21,6 +24,7 @@ use super::{Agent, Kind, Mode, Support, Variant, apply};
 use crate::config::Config;
 
 const NAME: &str = "rtok";
+const PLUGIN_SRC: &str = "plugins/gemini";
 
 /// Gemini's own event names paired with the Claude event `rtok hook` runs for them (the
 /// reverse of `hooks::types::gemini_event`). `AfterAgent`/`BeforeModel`/`BeforeToolSelection`/
@@ -174,6 +178,72 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     )
 }
 
+/// `{hooks: {<Event>: [{hooks: [{type: "command", command, timeout}]}]}}` — the extension
+/// tree's own `hooks/hooks.json` (T118.3), built from the same [`EVENTS`] table `run` merges
+/// into `settings.json`, so the two surfaces never drift apart. Pinned by
+/// `tests/gemini_plugin.rs`; no `matcher`, same reason as `insert_ours`.
+pub fn hooks_doc(bin: &str, timeout_s: u64) -> Value {
+    let mut hooks = serde_json::Map::new();
+    for &(gevent, cevent) in EVENTS {
+        let cmd = command(bin, cevent);
+        hooks.insert(
+            gevent.into(),
+            json!([{"hooks": [{"type": "command", "command": cmd, "timeout": timeout_s * 1000}]}]),
+        );
+    }
+    json!({"hooks": hooks})
+}
+
+/// `<dir>/extensions` — where `gemini extensions link`/`install` put each extension
+/// (https://geminicli.com/docs/extensions/reference/, fetched 2026-09-24).
+fn extensions_dir(cfg: &Config) -> PathBuf {
+    cfg.setup.gemini.dir.join("extensions")
+}
+
+/// True while `gemini extensions` has rtok's extension linked or installed: some
+/// `extensions/*/gemini-extension.json` names it — robust to whatever folder name the CLI
+/// actually gives the link, since that is not pinned by the docs.
+fn plugin_installed(cfg: &Config) -> bool {
+    let Ok(entries) = fs::read_dir(extensions_dir(cfg)) else {
+        return false;
+    };
+    entries
+        .flatten()
+        .any(|e| super::manifest_names(&e.path(), "gemini-extension.json", NAME))
+}
+
+/// One `gemini …` call; `GEMINI_CLI_HOME` only when `dir` is not the default.
+fn gemini_cli(cfg: &Config, args: &[&str]) -> std::result::Result<(), String> {
+    let dir = cfg.setup.gemini.dir.as_path();
+    let default = super::home_dir().join(".gemini");
+    let env = (dir != default).then_some(("GEMINI_CLI_HOME", dir));
+    super::run_cli("gemini", args, env)
+}
+
+/// Offer, install, or uninstall `plugins/gemini` through `gemini extensions` (T118.3): the
+/// documented dev-style local link (`gemini extensions link <dir>`), uninstall by the
+/// manifest's `name`. Behind `--yes` (`Support::Flag`) — rtok never writes
+/// `~/.gemini/extensions/`, that store is Gemini's, so the flag never turns the printed line
+/// into state (`installed()` reads the marker alone). A failing or missing `gemini` keeps the
+/// offer open instead of failing the install: the settings-file hooks/MCP still go in.
+/// Shares its skeleton with `copilot::plugin` through `super::offer_plugin` (D21).
+fn plugin(cfg: &Config, remove: bool) -> Result<String> {
+    let installed = plugin_installed(cfg);
+    super::offer_plugin(
+        cfg,
+        remove,
+        installed,
+        super::PluginOffer {
+            bin: "gemini",
+            name: NAME,
+            src_rel: PLUGIN_SRC,
+            install_verb: &["extensions", "link"],
+            uninstall_verb: &["extensions", "uninstall"],
+        },
+        |args| gemini_cli(cfg, args),
+    )
+}
+
 impl Agent for Gemini {
     fn id(&self) -> &'static str {
         "gemini"
@@ -193,9 +263,8 @@ impl Agent for Gemini {
                 "Gemini CLI has no documented base-URL setting; its own HTTP_PROXY/HTTPS_PROXY covers MCP server transport only, not the model API",
             ),
             "hooks" | "mcp" => Support::Yes,
-            _ => Support::No(
-                "the extension tree ships in T118.3; no local plugin directory to link yet",
-            ),
+            "plugin" => Support::Flag("--yes"),
+            _ => Support::No("unknown module"),
         }
     }
 
@@ -216,24 +285,32 @@ impl Agent for Gemini {
             ("hooks", " hook PreToolUse --host gemini"),
             ("mcp", "\"rtok\""),
         ];
-        needles
+        let mut out: Vec<&'static str> = needles
             .into_iter()
             .filter_map(|(module, needle)| text.contains(needle).then_some(module))
-            .collect()
+            .collect();
+        if plugin_installed(cfg) {
+            out.push("plugin");
+        }
+        out
     }
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
-        let remove = mode == Mode::Remove;
-        let mut lines = vec![run(cfg, remove)?];
-        let mcp_line = if remove {
-            Some(unregister_mcp(cfg)?)
-        } else if cfg.setup.mcp {
-            Some(register_mcp(cfg)?)
-        } else {
-            None
-        };
-        lines.extend(mcp_line);
-        Ok(lines)
+        // D21: the extension is the unit — its hooks and `rtok mcp` serve already, so
+        // rtok's own settings.json hook entries and mcpServers.rtok go instead of coming,
+        // on the same run that installs it too (mirrors `src/agents/copilot/mod.rs`).
+        super::d21_plugin_apply(
+            cfg,
+            mode,
+            super::D21Plugin {
+                offer: plugin,
+                plugin_installed,
+                run,
+                register_mcp,
+                unregister_mcp,
+            },
+            super::no_extra,
+        )
     }
 }
 
@@ -313,13 +390,13 @@ mod tests {
     }
 
     #[test]
-    fn support_matches_hooks_mcp_yes_proxy_and_plugin_no() {
+    fn support_matches_hooks_mcp_yes_proxy_no_plugin_flag() {
         assert!(matches!(Gemini.support(Kind::Cli, "hooks"), Support::Yes));
         assert!(matches!(Gemini.support(Kind::Cli, "mcp"), Support::Yes));
         assert!(matches!(Gemini.support(Kind::Cli, "proxy"), Support::No(_)));
         assert!(matches!(
             Gemini.support(Kind::Cli, "plugin"),
-            Support::No(_)
+            Support::Flag("--yes")
         ));
     }
 
@@ -346,5 +423,21 @@ mod tests {
         let current = hooks.clone();
         assert_eq!(insert_ours(&mut hooks, "rtok", 5), NO_CHANGES);
         assert_eq!(hooks, current);
+    }
+
+    /// T118.3: the extension tree's `hooks/hooks.json` is exactly what `settings.json` merges
+    /// in per event, minus the foreign-event preservation a shared file needs — one map
+    /// ([`EVENTS`]), two surfaces (D21).
+    #[test]
+    fn hooks_doc_uses_the_shared_event_table() {
+        let doc = hooks_doc("rtok", 5);
+        assert_eq!(doc["hooks"].as_object().unwrap().len(), EVENTS.len());
+        let before = &doc["hooks"]["BeforeTool"][0];
+        assert!(before.get("matcher").is_none(), "{before}");
+        assert_eq!(
+            before["hooks"][0]["command"],
+            "rtok hook PreToolUse --host gemini"
+        );
+        assert_eq!(before["hooks"][0]["timeout"], 5000);
     }
 }

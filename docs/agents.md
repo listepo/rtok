@@ -34,7 +34,7 @@ Check what is installed on this machine with `rtok agents list`; `rtok doctor` r
 | [`windsurf`](https://github.com/listepo/rtok/blob/main/src/agents/windsurf/README.md) | Windsurf | Desktop | — | yes | — | — | read, archive, memory, graph, toon |
 | [`zed`](https://github.com/listepo/rtok/blob/main/src/agents/zed/README.md) | Zed CLI | CLI | — | yes | — | — | read, archive, memory, graph, toon |
 | [`zed`](https://github.com/listepo/rtok/blob/main/src/agents/zed/README.md) | Zed | Desktop | — | yes | — | — | read, archive, memory, graph, toon |
-| [`gemini`](https://github.com/listepo/rtok/blob/main/src/agents/gemini/README.md) | Gemini CLI | CLI | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon |
+| [`gemini`](https://github.com/listepo/rtok/blob/main/src/agents/gemini/README.md) | Gemini CLI | CLI | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon |
 | [`codewhale`](https://github.com/listepo/rtok/blob/main/src/agents/codewhale/README.md) | CodeWhale | CLI | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon |
 | [`mimo`](https://github.com/listepo/rtok/blob/main/src/agents/mimo/README.md) | MiMo Code | CLI | — | yes | — | — | read, archive, memory, graph, toon |
 <!-- agents-table:end -->
