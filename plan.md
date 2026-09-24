@@ -41,7 +41,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T223 | todo | P3 | 2 | 0% | |
 | T235.2 | todo | P1 | 2 | 0% | |
-| T235.3 | todo | P2 | 2 | 0% | |
 | T260 | todo | P2 | 2 | 0% | |
 | T228 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
@@ -543,11 +542,3 @@ Load-incident context in `done.md` → T235.1.
 - Every agent Bash call runs as `rtok run -- <cmd>`, which spawns `/bin/zsh -lc` — a login shell — although the harness has already sourced its own shell snapshot (`zsh -c source <snapshot> && rtok run -- ...`), so each call starts two shells. Idle cost measured: `rtok run -- true` 0.16 s, `zsh -lc true` 0.15 s, `zsh -c true` 0.00 s — nearly all of the wrapper's cost is the login shell. Under that load even `rtok run -- echo hi` did not return within 30 s (a fresh terminal shell did not reach its prompt either, so load was the root cause, but the login shell multiplies it per call).
 
 Check: `rtok run` starts no login shell unless something it needs comes only from the login profile (decide and record why; measure the per-call saving with hyperfine on idle and on a loaded host).
-
-### T235.3. `rtok logs watch` exits when its parent goes away
-
-Load-incident context in `done.md` → T235.1.
-
-- An `apps/rtok/target/debug/rtok logs watch --lines 5` had been running for 5.5 days with ppid 1: `logs watch` does not exit when the terminal or agent that started it goes away.
-
-Check: `rtok logs watch` exits when its parent dies or its stdout closes (SIGHUP/SIGPIPE, or ppid becoming 1), covered by a test.
