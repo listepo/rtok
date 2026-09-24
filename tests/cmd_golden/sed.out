@@ -1,0 +1,23 @@
+INFO worker 0 finished in 12ms
+INFO worker 1 finished in 12ms
+INFO worker 2 finished in 12ms
+INFO worker 3 finished in 12ms
+INFO worker 4 finished in 12ms
+INFO worker 5 finished in 12ms
+INFO worker 6 finished in 12ms
+INFO worker 7 finished in 12ms
+INFO worker 8 finished in 12ms
+INFO worker 9 finished in 12ms
+… 5 lines omitted (expand deadbeef)
+ERROR: connection to db-primary timed out after 30s
+… 20 lines omitted (expand deadbeef)
+INFO worker 35 finished in 12ms
+INFO worker 36 finished in 12ms
+INFO worker 37 finished in 12ms
+INFO worker 38 finished in 12ms
+INFO worker 39 finished in 12ms
+INFO worker 40 finished in 12ms
+INFO worker 41 finished in 12ms
+INFO worker 42 finished in 12ms
+INFO worker 43 finished in 12ms
+INFO worker 44 finished in 12ms

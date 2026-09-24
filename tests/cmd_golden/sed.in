@@ -1,0 +1,50 @@
+argv: sed -i.bak s/legacy-host/canonical-host/g config/routes.conf
+exit: 0
+min_saving: 46
+---
+INFO worker 0 finished in 12ms
+INFO worker 1 finished in 12ms
+INFO worker 2 finished in 12ms
+INFO worker 3 finished in 12ms
+INFO worker 4 finished in 12ms
+INFO worker 5 finished in 12ms
+INFO worker 6 finished in 12ms
+INFO worker 7 finished in 12ms
+INFO worker 8 finished in 12ms
+INFO worker 9 finished in 12ms
+INFO worker 10 finished in 12ms
+INFO worker 11 finished in 12ms
+INFO worker 12 finished in 12ms
+INFO worker 13 finished in 12ms
+INFO worker 14 finished in 12ms
+ERROR: connection to db-primary timed out after 30s
+INFO worker 15 finished in 12ms
+INFO worker 16 finished in 12ms
+INFO worker 17 finished in 12ms
+INFO worker 18 finished in 12ms
+INFO worker 19 finished in 12ms
+INFO worker 20 finished in 12ms
+INFO worker 21 finished in 12ms
+INFO worker 22 finished in 12ms
+INFO worker 23 finished in 12ms
+INFO worker 24 finished in 12ms
+INFO worker 25 finished in 12ms
+INFO worker 26 finished in 12ms
+INFO worker 27 finished in 12ms
+INFO worker 28 finished in 12ms
+INFO worker 29 finished in 12ms
+INFO worker 30 finished in 12ms
+INFO worker 31 finished in 12ms
+INFO worker 32 finished in 12ms
+INFO worker 33 finished in 12ms
+INFO worker 34 finished in 12ms
+INFO worker 35 finished in 12ms
+INFO worker 36 finished in 12ms
+INFO worker 37 finished in 12ms
+INFO worker 38 finished in 12ms
+INFO worker 39 finished in 12ms
+INFO worker 40 finished in 12ms
+INFO worker 41 finished in 12ms
+INFO worker 42 finished in 12ms
+INFO worker 43 finished in 12ms
+INFO worker 44 finished in 12ms

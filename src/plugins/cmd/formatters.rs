@@ -797,4 +797,30 @@ mod tests {
         assert!(got.contains("42 worker-7"), "{got}");
         assert!(!got.contains("PID"), "{got}");
     }
+
+    /// T240: every family a builtin rule names in `rules/default.toml` must have a golden
+    /// `.in` whose argv actually picks that rule via `family_argv`/`bin` — the same path
+    /// `compress` uses in production. `[script]` is reached by mixed-chain detection, not
+    /// by an argv[0] match, so it is exempt (covered by the chain tests above instead).
+    #[test]
+    fn every_builtin_rule_family_has_a_golden() {
+        let in_files: Vec<String> = fs::read_dir(goldens())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("in"))
+            .map(|p| fs::read_to_string(&p).unwrap())
+            .collect();
+        let covered = |family: &str| {
+            in_files.iter().any(|raw| {
+                let (argv, ..) = parse_in(raw);
+                !argv.is_empty() && bin(&family_argv(&argv)) == family
+            })
+        };
+        let missing: Vec<String> = rules::defaults()
+            .into_iter()
+            .map(|r| r.match_cmd)
+            .filter(|family| family != "script" && !covered(family))
+            .collect();
+        assert!(missing.is_empty(), "families without a golden: {missing:?}");
+    }
 }
