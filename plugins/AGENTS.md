@@ -14,12 +14,21 @@ Every plugin directory under `plugins/` **MUST** contain:
 
 | File | Audience | Required contents |
 | --- | --- | --- |
-| `README.md` | Humans | What the package is, how to install/remove, file map, links to host docs, hooks/MCP behaviour for **this** host, link to [`README.md`](README.md) |
+| `README.md` | Humans | What the package is, how to install/remove, file map, links to the host's **official** docs (see below), hooks/MCP behaviour for **this** host, link to [`README.md`](README.md) |
 | `AGENTS.md` | Agents | Contracts and do/don’t rules for **this** package, links to this file, configs/manifests, hooks/MCP entrypoints |
 
 **Without both files the plugin is incomplete.** They keep humans and agents aligned, stop drive-by edits that break host layouts, and point at the shared root guides instead of re-deriving install paths from memory.
 
 If either file is missing, add it before other changes. If it exists, update it — do not fork a second copy.
+
+### Official documentation links
+
+Every `plugins/<host>/README.md` **MUST** have an `Official documentation` section linking the host vendor's own docs for each surface the package uses: plugin/extension packaging (manifest, install), hooks (event names, payloads), MCP configuration, and skills when shipped.
+
+- Link only canonical vendor pages (the host's docs site or its official repo). No blogs, forks, or third-party mirrors.
+- Every contract the package relies on (manifest fields, event names, env vars such as `${ZCODE_PLUGIN_ROOT}`) must be traceable to one of these links.
+- When the host has no public docs for a surface, say so in that section and link the source you verified against (e.g. the official repo's code).
+- Re-check the links whenever you change the package; fix dead or moved ones in the same change.
 
 ## Hard rules
 
@@ -35,7 +44,7 @@ If either file is missing, add it before other changes. If it exists, update it 
 ## Starting a new host package
 
 1. Copy the closest peer layout (see root README table).
-2. Add `README.md` + `AGENTS.md` in the same change.
+2. Add `README.md` (with its `Official documentation` section) + `AGENTS.md` in the same change.
 3. Add `src/agents/<host>/` install/remove/doctor (+ README surface table).
 4. Register the host in `src/agents/mod.rs` if needed.
 5. Add parity / e2e coverage.
