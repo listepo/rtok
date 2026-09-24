@@ -76,6 +76,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T223 | todo | P3 | 2 | 0% | |
 | T224 | todo | P3 | 1 | 0% | |
 | T235 | todo | P1 | 3 | 0% | |
+| T242.2 | todo | P1 | 3 | 0% | |
+| T242.3 | todo | P1 | 3 | 0% | |
+| T242.4 | todo | P2 | 3 | 0% | |
+| T242.5 | todo | P2 | 3 | 0% | |
 | T226 | todo | P2 | 2 | 0% | |
 | T228 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
@@ -868,3 +872,21 @@ Findings from a load incident on the creator's machine (16 cores, load average ~
 - An `apps/rtok/target/debug/rtok logs watch --lines 5` had been running for 5.5 days with ppid 1: `logs watch` does not exit when the terminal or agent that started it goes away.
 
 Done means: `rtok run` waits for the wrapped process, not for EOF — once the child exits it reaps it, drains what is already buffered (short bounded wait) and returns the child's exit code even if a descendant still holds the pipe, covered by a test that spawns a detached grandchild; `rtok run` starts no login shell unless something it needs comes only from the login profile (decide and record why; measure the per-call saving with hyperfine on idle and on a loaded host); `rtok logs watch` exits when its parent dies or its stdout closes (SIGHUP/SIGPIPE, or ppid becoming 1), covered by a test.
+
+### T242.2. `rtok agents update [host,…]`: refresh or reinstall what rtok already installed
+
+After T242.1. New `AgentCmd::Update` (`--dry-run`, `--no-restart`, `--cli/--desktop/--all`) and `Mode::Update`. No host given → every host with at least one rtok module installed; a named host with nothing installed is skipped with `not installed — rtok agents install <host>` and no file is touched. Per variant, update runs the install path with the flag modules it already has switched on (`proxy` read back → `--proxy`, an installed plugin → `--yes`), so a changed `[proxy] port`, binary path or MCP command lands and nothing new the user never chose appears. Same one-backup-per-file rule as install; a no-op run removes its backups and says `already current`. Every host that matches on `Mode` handles `Update` (today only Claude matches exhaustively).
+
+Check: `tests/agents_update.rs` e2e — stale hooks/MCP command/proxy URL are rewritten and the files differ from the seed; a current install leaves bytes and backups unchanged; an untouched host's files stay absent; `--dry-run` writes nothing. trycmd fence, `surface_parity`, `config_coverage`, `docs/agents.md`.
+
+### T242.3. Claude plugin: `update` first, reinstall when update fails
+
+After T242.2. Under `Mode::Update` with `rtok@rtok` installed from the GitHub marketplace, run `claude plugin marketplace update rtok` then `claude plugin update rtok@rtok` (both exist in Claude Code's CLI, checked 2026-09-24: `plugin update <plugin>` "Update a plugin to the latest version"). If either fails, fall back to `plugin uninstall rtok@rtok` + `plugin install rtok@rtok`; a stale marketplace keeps T139's re-point path. Fake `claude` in `tests/common/agents.rs` learns `plugin update` / `marketplace update` and a `FAKE_CLAUDE_FAIL=update` switch. Check: argv log order for both paths, `installed_plugins.json` rewritten, plain `install` unchanged (still a no-op when installed).
+
+### T242.4. Codex plugin: `marketplace upgrade`, reinstall on failure
+
+After T242.2. Under `Mode::Update` with `rtok@rtok` in Codex's config: `codex plugin marketplace upgrade rtok`, then `plugin remove` + `plugin add` only if the upgrade fails. Fake `codex` learns `marketplace upgrade`. Check: argv log for both paths, `config.toml` tables intact.
+
+### T242.5. Cursor, Kimi and Gemini hooks: refresh stale rtok entries on install/update
+
+After T242.1. Cursor's `hooks.json`, Gemini's `settings.json` and Kimi's TOML `[[hooks]]` skip a slot as soon as an rtok command sits there, the same bug T242.1 fixes for Claude-shaped JSON. Apply the same rewrite/prune rule in `src/agents/cursor/mod.rs`, `src/agents/gemini/mod.rs` and `src/agents/kimi/mod.rs` (Kimi keeps comments via `toml_edit`). Check: unit tests per host (stale bin, stale timeout, foreign kept, idempotent).
