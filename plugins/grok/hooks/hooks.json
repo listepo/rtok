@@ -3,37 +3,37 @@
     "PreToolUse": [
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "rtok hook PreToolUse --host grok", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "command -v rtok >/dev/null 2>&1 && exec rtok hook PreToolUse --host grok; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PreToolUse --host grok; exit 0", "timeout": 5 }]
       }
     ],
     "PostToolUse": [
       {
-        "hooks": [{ "type": "command", "command": "rtok hook PostToolUse --host grok", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "command -v rtok >/dev/null 2>&1 && exec rtok hook PostToolUse --host grok; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PostToolUse --host grok; exit 0", "timeout": 5 }]
       }
     ],
     "UserPromptSubmit": [
       {
-        "hooks": [{ "type": "command", "command": "rtok hook UserPromptSubmit --host grok", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "command -v rtok >/dev/null 2>&1 && exec rtok hook UserPromptSubmit --host grok; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook UserPromptSubmit --host grok; exit 0", "timeout": 5 }]
       }
     ],
     "SessionStart": [
       {
-        "hooks": [{ "type": "command", "command": "rtok hook SessionStart --host grok", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "command -v rtok >/dev/null 2>&1 && exec rtok hook SessionStart --host grok; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook SessionStart --host grok; exit 0", "timeout": 5 }]
       }
     ],
     "PreCompact": [
       {
-        "hooks": [{ "type": "command", "command": "rtok hook PreCompact --host grok", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "command -v rtok >/dev/null 2>&1 && exec rtok hook PreCompact --host grok; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PreCompact --host grok; exit 0", "timeout": 5 }]
       }
     ],
     "PostCompact": [
       {
-        "hooks": [{ "type": "command", "command": "rtok hook PostCompact --host grok", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "command -v rtok >/dev/null 2>&1 && exec rtok hook PostCompact --host grok; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PostCompact --host grok; exit 0", "timeout": 5 }]
       }
     ],
     "SessionEnd": [
       {
-        "hooks": [{ "type": "command", "command": "rtok hook SessionEnd --host grok", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "command -v rtok >/dev/null 2>&1 && exec rtok hook SessionEnd --host grok; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook SessionEnd --host grok; exit 0", "timeout": 5 }]
       }
     ]
   }

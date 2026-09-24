@@ -27,4 +27,6 @@ Agent rules for the **Grok Build** host package. Humans: [`README.md`](README.md
 
 - Pick plugin XOR `rtok agents install claude` (double-fire risk).
 - Needs `--trust` / enable in config.
-- No `src/agents/grok` module — package is the install unit.
+- `src/agents/grok/` only offers `grok plugin install`; Grok owns the plugin store.
+- Hook commands are POSIX shell (PATH, then `~/.ketch/bin/rtok`, else exit 0 silently); Grok
+  runs them through PowerShell on Windows, so the plugin is macOS/Linux only (T250.4).
