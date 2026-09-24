@@ -29,19 +29,42 @@ pub(super) const ENTRIES: &[(&str, &str)] = &[
     ("SessionEnd", ""),
 ];
 
+/// T174: `rtok_command()` deliberately keeps the bare name on non-Windows even when PATH
+/// lookup fails (an absolute path is the Windows spawn edge, not a Unix one) — so a settings
+/// file written on a machine whose install shell had `~/.ketch/bin` on PATH still names bare
+/// `rtok`, and a *later* hook-running shell without it hit `/bin/sh: rtok: command not found`
+/// (exit 127) on every tool call, 380 times/week in the field. Resolve at hook-run time
+/// instead: PATH, then `~/.ketch/bin/rtok` (ketch's own layout), then fail open — silent for
+/// every event but SessionStart, which gets one note naming the install command, in Claude's
+/// own `hookSpecificOutput` shape, so the miss is visible without repeating on every call.
+/// An absolute `bin` (Windows, or any bin already resolved) needs none of this — it already
+/// names one exact file or nothing does.
 fn command(bin: &str, event: &str) -> String {
-    format!("{bin} hook {event}")
+    if cfg!(windows) || bin != "rtok" {
+        return format!("{bin} hook {event}");
+    }
+    let note = if event == "SessionStart" {
+        r#" && printf '%s' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok is not installed; run ketch install listepo/rtok to enable it."}}'"#
+    } else {
+        ""
+    };
+    format!(
+        "command -v rtok >/dev/null 2>&1 && exec rtok hook {event}; \
+         [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook {event}; \
+         true{note}; exit 0"
+    )
 }
 
-/// Exactly `<rtok-bin> hook <event>`. Matching tokens anywhere claimed a user's
-/// chain (`notify-send hi && rtok hook Stop`). Suffix match keeps absolute paths
-/// with spaces (quoted) as ours on Windows.
+/// Exactly `<rtok-bin> hook <event>` (an older or Windows install), or the T174
+/// PATH-resolving form whose `exec rtok hook <event>;` marker only a real rtok settings
+/// entry would carry. Matching tokens anywhere claimed a user's chain (`notify-send hi &&
+/// rtok hook Stop`); the suffix/marker checks keep that command foreign.
 pub(super) fn is_ours(cmd: &str, event: &str) -> bool {
     let suffix = format!(" hook {event}");
-    let Some(bin) = cmd.strip_suffix(&suffix) else {
-        return false;
-    };
-    super::is_rtok_bin(super::unquote_bin(bin))
+    if let Some(bin) = cmd.strip_suffix(&suffix) {
+        return super::is_rtok_bin(super::unquote_bin(bin));
+    }
+    cmd.contains(&format!("exec rtok hook {event};"))
 }
 
 /// Apply, dry-run, or remove rtok hook entries.
@@ -663,10 +686,65 @@ mod tests {
         let report = run(&cfg(path.clone(), true), false).unwrap();
         assert!(report.contains("9 additions"), "{report}");
         assert!(
-            report.contains("+ SessionEnd rtok hook SessionEnd"),
+            report.contains(&format!("+ SessionEnd {}", command("rtok", "SessionEnd"))),
             "{report}"
         );
         assert!(!path.exists());
+    }
+
+    /// T174 check: the settings-file command this module writes for a bare `rtok` bin — run
+    /// as Claude Code itself would run it, `/bin/sh -c <command>` — resolves PATH, then
+    /// `~/.ketch/bin/rtok`, then fails open: exit 0, empty stdout on PreToolUse/PostToolUse,
+    /// and exactly one `hookSpecificOutput` note on SessionStart naming the ketch install.
+    #[cfg(unix)]
+    #[test]
+    fn command_resolves_rtok_at_run_time_and_fails_open_silently() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::process::{Command as Proc, Stdio};
+
+        let home = tmp("t174-settings-command").parent().unwrap().to_path_buf();
+        let empty_path = home.join("empty-path");
+        fs::create_dir_all(&empty_path).unwrap();
+        let run = |event: &str, home: &std::path::Path, path: &std::path::Path| {
+            let mut child = Proc::new("/bin/sh")
+                .args(["-c", &command("rtok", event)])
+                .env("HOME", home)
+                .env("PATH", path)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            drop(child.stdin.take());
+            let out = child.wait_with_output().unwrap();
+            assert!(out.status.success(), "{event}: {out:?}");
+            String::from_utf8(out.stdout).unwrap()
+        };
+
+        // No `rtok` anywhere: silent on a regular event, one note on SessionStart.
+        assert_eq!(run("PreToolUse", &home, &empty_path), "");
+        assert_eq!(run("PostToolUse", &home, &empty_path), "");
+        let note = run("SessionStart", &home, &empty_path);
+        let v: Value = serde_json::from_str(&note).unwrap_or_else(|e| panic!("{note}: {e}"));
+        assert_eq!(v["hookSpecificOutput"]["hookEventName"], "SessionStart");
+        assert!(
+            v["hookSpecificOutput"]["additionalContext"]
+                .as_str()
+                .unwrap()
+                .contains("ketch install listepo/rtok"),
+            "{note}"
+        );
+
+        // `~/.ketch/bin/rtok` exists: it gets exec'd instead of the fail-open note.
+        let ketch = home.join(".ketch/bin/rtok");
+        fs::create_dir_all(ketch.parent().unwrap()).unwrap();
+        fs::write(&ketch, "#!/bin/sh\nprintf 'ketch %s' \"$2\"\n").unwrap();
+        fs::set_permissions(&ketch, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            run("SessionStart", &home, &empty_path),
+            "ketch SessionStart"
+        );
+        let _ = fs::remove_dir_all(&home);
     }
 
     #[test]
@@ -845,7 +923,7 @@ mod tests {
         let report = hooks_roundtrip_vfs(&mut vfs, path, false);
         assert!(report.contains("9 additions"), "{report}");
         assert!(
-            report.contains("+ SessionEnd rtok hook SessionEnd"),
+            report.contains(&format!("+ SessionEnd {}", command("rtok", "SessionEnd"))),
             "{report}"
         );
         // Vfs now holds the written body (unlike disk dry_run); assert shape instead of absence.
@@ -879,14 +957,16 @@ mod tests {
             {"type":"command","command":"echo mine"},
             {"type":"command","command":"/old/store/rtok/v0.1.0/rtok hook PreToolUse","timeout":3}
         ]}]});
+        let want = command("rtok", "PreToolUse");
         let report = insert_ours(&mut hooks, &ENTRIES[..1], "rtok", "timeout", 7);
         assert_eq!(
-            report, "~ PreToolUse Bash rtok hook PreToolUse\n1 updates",
+            report,
+            format!("~ PreToolUse Bash {want}\n1 updates"),
             "{report}"
         );
         let inner = &hooks["PreToolUse"][0]["hooks"];
         assert_eq!(inner[0]["command"], "echo mine");
-        assert_eq!(inner[1]["command"], "rtok hook PreToolUse");
+        assert_eq!(inner[1]["command"], want);
         assert_eq!(inner[1]["timeout"], 7);
         assert_eq!(hooks["PreToolUse"].as_array().unwrap().len(), 1);
         let before = hooks.clone();

@@ -43,7 +43,6 @@
 - T163.9. Window and CTE queries through the shared extension module
 - T171. Claude Code sees the rtok MCP server twice
 - T172. MCP tool failures always set `is_error`
-- T174. Plugin hooks fail open when `rtok` is not on `PATH`
 - T178. Hook wall-clock time as Claude Code sees it
 - T184. rtok never resolves its home to a relative `.rtok`
 - T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
