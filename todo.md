@@ -82,7 +82,6 @@
 - T225.1. `rtok logs` through tailspin
 - T234. Skills have one source: host plugins link `skills/`, never copy
 - T226. Web Sessions page: live-only filter and a help overlay
-- T227. `stats` page on `tui` and `web`
 - T228. Config page: `config show` / `config get` on `tui` and `web`
 - T229. Services page: `demon status` and `otel status` on `tui` and `web`
 - T230. Graph page: index status and dead symbols on `tui` and `web`

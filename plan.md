@@ -93,7 +93,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T225.1 | todo | P2 | 2 | 0% | |
 | T234 | todo | P2 | 3 | 0% | |
 | T226 | todo | P2 | 2 | 0% | |
-| T227 | todo | P1 | 4 | 0% | |
 | T228 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
 | T230 | todo | P2 | 3 | 0% | |
@@ -537,14 +536,6 @@ Found 2026-09-23 in the D23 surface audit: the TUI Sessions tab filters live ses
 Plan: a "live only" `CheckBox` on the web sessions page bound to a `sessions_live_only` property filtered in `lib.rs` (same shape as the skills "never invoked only" box); a `?` help button/overlay listing the web actions (expand, filter, toggle, theme, live). No new snapshot fields.
 
 Check: `tests/surface_parity.rs` gains `sessions_live_filter_exists_on_both_surfaces` (source scan like `skills_page_exists_on_both_surfaces`); `just check` green.
-
-### T227. `stats` page on `tui` and `web`
-
-Found 2026-09-23 in the D27 audit: `rtok stats` — transcript report, per-plugin CTT, cache health, `--price` per-model USD, baseline compare — is CLI-only; `tests/surface_parity.rs:384` exempts it as "no snapshot page yet". The data already flows through `web::model::stats_report`, `cache_health`, `plugin_stats` and `store::usage_by_model` (`src/store/mod.rs:1536`, read only by `measure/stats.rs:655`); the Overview page carries `usage_by_api` only, so the P15 gate ("Overview numbers match `rtok stats --json`") covers a fraction of the command.
-
-Plan: `model::pages()` gains `("stats", "stats")`; the snapshot carries the stats report rows, cache health, per-model usage and cost; one TUI tab and one Slint page render them; `stats` moves from `EXEMPT` to `COMMAND_PAGES`. Reuse the accessors — no second aggregation (T207 owns the totals).
-
-Check: `stats_page_exists_on_both_surfaces`; on the fixture store every number on the page equals `rtok stats --json` / `--price`; `just check` green.
 
 ### T228. Config page: `config show` / `config get` on `tui` and `web`
 

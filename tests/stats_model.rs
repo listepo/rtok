@@ -284,3 +284,39 @@ s1                                            2            7            1      0
     );
     let _ = fs::remove_dir_all(&h);
 }
+
+/// T227: the Stats page carries the same numbers `rtok stats --price` and `rtok stats
+/// --cache` print — one transcript scan feeds the CLI and the page (D27), so the page
+/// cannot drift from the fixture goldens above without this failing too.
+#[test]
+fn stats_page_matches_price_and_cache_on_the_fixture_store() {
+    let h = home("page");
+    seed(&h);
+    let price = rtok(&["stats", "--price"], &h);
+    let cache = rtok(&["stats", "--cache"], &h);
+
+    // `load_from` pins the config *file* to `h`, but a default like `~/.claude/projects`
+    // still expands against the real `$HOME` (T74's leak) — pin it here the way
+    // `crate::tui::app::tests::hermetic` does, so this reads the fixture, not this
+    // machine's real transcripts.
+    let mut cfg = rtok::config::Config::load_from(&h).expect("config");
+    cfg.stats.transcripts_dir = h.join(".claude/projects");
+    cfg.stats.codex_dir = h.join(".codex/sessions");
+    let page = rtok::web::model::snapshot(&cfg)
+        .stats
+        .expect("the stats page scanned the fixture");
+
+    for line in price.lines() {
+        assert!(
+            page.contains(line),
+            "page is missing a --price line: {line}\n---\n{page}"
+        );
+    }
+    for line in cache.lines().filter(|l| !l.is_empty()) {
+        assert!(
+            page.contains(line),
+            "page is missing a --cache line: {line}\n---\n{page}"
+        );
+    }
+    let _ = fs::remove_dir_all(&h);
+}

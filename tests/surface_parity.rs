@@ -200,6 +200,36 @@ fn skills_page_exists_on_both_surfaces() {
     );
 }
 
+/// T227: both surfaces render the Stats page from the same model accessor — `rtok
+/// stats --price`'s table plus `rtok stats --cache`'s table, D27's one page for two
+/// commands.
+#[test]
+fn stats_page_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        web,
+        slint,
+        ..
+    } = SURFACES;
+    assert!(
+        model.contains("(\"stats\", \"stats\")"),
+        "pages() offers stats"
+    );
+    assert!(
+        model.contains("fn stats_page_text"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("\"stats\" =>"),
+        "the TUI renders the stats page"
+    );
+    assert!(
+        web.contains("stats_text") && slint.contains("page-id == \"stats\""),
+        "the web Stats page renders the same text"
+    );
+}
+
 #[test]
 fn wasm_ui_renders_every_model_page() {
     let lib = include_str!(concat!(
@@ -250,6 +280,8 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     ("doctor", "doctor"),
     // the Logs page rides the snapshot since T15.7, so `rtok logs` renders it
     ("logs", "logs"),
+    // the Stats page rides the snapshot since T227, so `rtok stats` renders it
+    ("stats", "stats"),
 ];
 
 /// The commands D27 exempts, each with its reason. Streaming commands print a stream,
@@ -381,7 +413,6 @@ const EXEMPT: &[(&str, &str)] = &[
         "report",
         "renders model::report_ledgers into a document (P22); no snapshot page",
     ),
-    ("stats", "renders model::stats_report; no snapshot page yet"),
     (
         "graph dead",
         "reads the symbol index on demand; no snapshot page yet",
