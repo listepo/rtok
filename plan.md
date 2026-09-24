@@ -66,7 +66,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T185 | todo | P1 | 3 | 0% | |
 | T186 | todo | P1 | 3 | 0% | |
 | T195 | todo | P1 | 3 | 0% | |
-| T196 | todo | P1 | 3 | 0% | |
 | T198 | todo | P2 | 2 | 0% | |
 | T199 | todo | P2 | 1 | 0% | |
 | T201 | todo | P2 | 2 | 0% | |
@@ -768,14 +767,6 @@ Found 2026-09-22 in the host-plugins pass of `plugins/pi/extensions/rtok.ts`: (1
 Plan: resolve `{missing}` on ENOENT and a `failed` flag otherwise; `tool_result`/`guard`/tool `execute` keep the original on `failed`. Restore `pi.sendMessage({customType: "rtok-missing", …})` behind the session guard (fall back to `appendEntry` when absent) and route `tool_call` through the same guard. Fix the vitest expectations.
 
 Check: vitest — a stub exiting 1 after partial stdout (and an abort-killed stub) returns `undefined` (original kept); two bash `tool_call`s with `rtok` missing produce exactly one `sendMessage` matching `/ketch install listepo\/rtok/` and zero `appendEntry` when `sendMessage` exists, plus the one-`appendEntry` fallback case; vitest green.
-
-### T196. `linked()` at the plugin dest strips a working plain install (cursor, zcode)
-
-Found 2026-09-22 in the host-plugins pass: `plugin_is_mcp` (`src/agents/cursor/mod.rs:184-199`) and `plugin_serves` (`src/agents/zcode/mod.rs:173-175, 238-252`) key on `PluginLink::linked()` — true for **anything** at the dest, including a foreign directory `PluginLink::run` rightly refuses to overwrite. With a foreign dir present, cursor's `offer_plugin` still runs `unregister_mcp` (its error discarded with `let _ =`) and `plugin_is_mcp` suppresses `register_mcp`; zcode goes further — `run(cfg, remove || plugin_serves(…))` strips working `hooks.events` entries and drops `mcp.servers.rtok`. Net: one `agents install cursor|zcode` run deletes the functioning plain-install hooks + MCP and installs nothing. `installed()` already uses `ours()` (the T75 lesson); these two predicates missed it. D21 singleton inverts into self-sabotage.
-
-Plan: key `plugin_is_mcp`, `plugin_serves` and cursor's leftover-cleanup on `PLUGIN.ours(cfg)` (foreign dir ⇒ behave like a declined offer and run the config-file install); report the unregister line instead of discarding it.
-
-Check: unit tests beside `linked_plugin_clears_leftover_mcp_json_on_later_setup` (cursor) and `linked_plugin_is_the_only_call_path` (zcode): foreign dir at the dest (no owned marker, different bytes) + seeded `mcpServers.rtok`/hooks → after `apply(Install)` the entries survive or are re-added and the foreign dir is untouched; `just test` green.
 
 ### T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 
