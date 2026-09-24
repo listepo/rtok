@@ -557,6 +557,19 @@ Check: the unit tests above; `rtok agents list` shows `antigravity`; `agents_doc
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
+### T91.2. Antigravity skill roots and research sentence
+
+After T91.1. `skill::sync` of the hub skill into Antigravity's user skill roots — resolved 2026-09-21 from https://antigravity.google/docs/skills: `~/.gemini/config/skills/<name>/` for Antigravity 2.0 and IDE, `~/.gemini/antigravity-cli/skills/<name>/` for the CLI; the CLI also loads plugin-provided skills from `plugins/<name>/skills/`, so `skill::sync` needs two dests for this host (or one, if plugin-provided skills turn out to load on desktop too — then the hub skill is copied into the installed plugin instead, never duplicated in `plugins/antigravity/`). `skill::dest` / `label` arms for `antigravity`; `research.md` host sentence ("Antigravity on request" → listed); re-bless `docs/agents.md`.
+
+Plan (docs re-read 2026-09-24: the desktop loading plugin-provided skills is not documented, so two user roots, nothing in `plugins/antigravity/`): (1) `skill.rs` `root`/`label` arms `antigravity` → `[setup.antigravity] plugins_path`'s sibling `skills` (`~/.gemini/config/skills`) and `antigravity-cli` → `cli_plugins_path`'s sibling (`~/.gemini/antigravity-cli/skills`), so tests stay on the config's temp paths; (2) `antigravity::apply` adds `skill::sync` per kind — Desktop `antigravity`, CLI `antigravity-cli` — beside the plugin line; (3) `skill` unit test covers both dests, an antigravity test installs and removes both; (4) `research.md` sentence, `docs/agents.md` / READMEs re-blessed.
+
+Result: as planned. `antigravity-cli` is a skill-root key only, not a host id. `src/agents/antigravity/README.md` gains a Skills bullet; `research.md`'s MCP-wiring row names Antigravity as T91. `RTOK_BLESS=1` on `agents_doc` left `docs/agents.md` unchanged (it does not list skill roots).
+
+Check: `skill::tests::dest_maps_documented_roots_and_skips_the_rest` covers both roots and their labels; `antigravity::tests::each_variant_syncs_the_skills_into_its_own_root` installs and removes the skills per variant; `agents_doc`, `host_docs`, `agents_install` green; `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T80. `demon status` names the proxy endpoint (bind:port)
 
 Creator 2026-09-21. `rtok demon status` said whether a service was running but never *where*: the proxy row carried no host/port, so answering "is the proxy up and on what address?" meant `rtok proxy --dry-run` or reading config by hand.
