@@ -1,6 +1,5 @@
 - T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
 - T83.4. `agents_install` / `cursor_plugin` / `pi_plugin` / `opencode_plugin` symlink and path expectations fail on Windows
-- T83.7. `cli_trycmd::cli` fails on Windows
 - T87. `rtok hook <event> --host devin` reads Devin's payload
 - T88. Devin plugin tree (`plugins/devin/`)
 - T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton

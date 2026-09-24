@@ -291,7 +291,7 @@ Usage: rtok filter [OPTIONS]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
-      --stdin          Read the payload from stdin (OpenCode `tool.execute.after`)
+      --stdin          Read the payload from stdin (OpenCode `tool[..]cute.after`)
       --cmd <CMD>      Command family hint (`git status`, `cargo test`, …)
       --archive        Archive stdin and print the expand trailer (same path as `run`)
   -h, --help           Print help

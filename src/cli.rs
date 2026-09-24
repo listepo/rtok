@@ -17,7 +17,8 @@ pub(crate) const VERSION: &str =
 
 /// Token-reduction CLI for AI coding agents. See plan.md for the task list.
 #[derive(Parser)]
-#[command(name = "rtok", version = VERSION, about)]
+// `bin_name`: clap would print argv[0]'s file name, `rtok.exe` on Windows (T83.7).
+#[command(name = "rtok", bin_name = "rtok", version = VERSION, about)]
 pub struct Cli {
     /// User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
     #[arg(long, global = true, value_name = "PATH")]
