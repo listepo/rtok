@@ -1,5 +1,25 @@
 # rtok — completed tasks
 
+### T254. Unit tests read the real `~/.claude*`, `~/.codex` and agent configs
+
+Creator request 2026-09-24, after T252. Tests still reach the developer's real home through `Config` paths nobody redirected:
+- `tui::app::tests::hermetic` (called from `app.rs` and `view.rs`) redirects four paths in memory. It misses `stats.codex_dir` and every `setup.*` path, and the toggle tests reload `config.toml`, which drops the redirect. Every `App::new` snapshot scans the real `~/.codex/sessions`.
+- Six `doctor.rs` tests start from `Config::default()`. Two read the real `~/.claude/projects`, and all read the real agent configs.
+- `testutil::config_file_in` writes five paths into `config.toml`. The `setup.*` paths stay real for `tests/web.rs`, `graph_model.rs` and `stats_model.rs`.
+- Two `web::model` tests hand-copy the doctor redirect on a `testutil::config` that is already rebased.
+
+Plan:
+- `Config::path_fields_mut` names each field with its dotted key, so one list serves both `~` expansion and the tests.
+- `config_file_in` writes every absolute path of `config_in(dir)` into `dir/config.toml`.
+- TUI: every `hermetic` caller uses `config_file_in(&dir)` plus its own overrides, and `hermetic` goes away.
+- `doctor.rs` tests start from `testutil::config_in(&dir)` and drop the redirect lines that just repeat it.
+- The copies in `web::model` go.
+- A guard test fails when any path of `config_in` or `config_file_in` lies outside `dir` (relative paths aside), so a new `~` field cannot leak again.
+
+Check: `cargo nextest run --lib` on `tui::`, `web::model`, `doctor::` and `testutil`, fast; `--test web`, `graph_model` and `stats_model` pass; `just check` green.
+
+Result: `path_fields_mut` returns `(key, &mut PathBuf)` pairs built by a local macro from the field path itself, and `validate::set_all_with` batches `config set` into one write. `config_file_in` now writes every absolute path of `config_in`; the guard test `testutil::every_config_path_stays_in_dir` fails on the old helper with `setup.claude.settings_path = /Users/<you>/.claude/settings.json`. `hermetic` is gone, and the six `doctor.rs` tests and three `web::model` tests (including `session_detail_filters_snapshot_calls_by_id`, whose snapshot ran on a bare `Config::default()`) use the shared helpers. Correction to the finding: `Config::default()` leaves `~/x` literal, so those tests read nonexistent `./~/…` paths under the crate root, not the real home; the real leaks were the `load_from` configs (TUI) and the partial `config_file_in`. The 156 `tui::`, `web::model`, `doctor::`, `testutil` and `config::` unit tests run in 0.78 s; `just check` green (1729 tests).
+
 ### T253. `revert-on-failure` opens its `[Revert]` draft PR
 
 Creator request 2026-09-24. When main CI fails, `revert-on-failure` (T84) must revert main and at once open a draft PR from a `revert-<branch>` branch that re-applies the work, titled with a `[Revert]` prefix. It reverted main and pushed the branch, but `gh pr create` failed with "GitHub Actions is not permitted to create or approve pull requests" (run 35997410439, T118.3's revert), leaving `revert-t118.3-gemini-extension` without a PR; the title was `Reapply <sha> — reverted after main CI failed`.
@@ -6197,6 +6217,69 @@ Plan: normalize machine-specific lines and snapshot the remainder per host id (o
 Check: deleting one variant from a host's `VARIANTS` fails `cargo nextest run --test cli_trycmd` (or the header-loop test); an emptied `## Docs` list with links only in a later section fails `host_docs`; `RTOK_BLESS=1` re-bless restores; `just check` green.
 
 Result: New tests/agents_list_content.rs asserts every host × variant (literal 26-row table) in agents list text headers and --json rows; host_docs slices ## Docs to the next ## heading, needs ≥2 links and ≥2 on the host's own docs domain (DOC_DOMAINS). Verified by deleting a VARIANTS entry and emptying/mis-domaining a Docs list.
+### T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
+
+Found 2026-09-22 in the store/accounting pass: `inline_body` (`src/store/mod.rs:1823-1828`) stores bodies under the inline cap through `String::from_utf8_lossy` and hashes the *lossy* text, so `request_sha256`/`response_sha256` are not hashes of the wire bytes and `call_io_request` (:736-750) returns U+FFFD-corrupted bytes as if they were the original request. Consumers like `src/measure/cache.rs:106` see different bytes than the proxy sent; the stored sha cannot verify the true payload. Lossless-by-default holds for archived content but not for inline-kept content.
+
+Plan: store inline bodies as BLOB (or base64 in the TEXT column) with the sha of the raw bytes, keeping the lossy text only as a derived display column; migrate with a nullable column filled lazily on read.
+
+Check: extend `inline_sha256_matches_stored_text` (src/store/mod.rs:3048-3095) — `call_io_request` returns the exact input bytes for the `[…0xff, 0xfe…]` fixture and the sha matches the raw bytes (fails today); `just test` green.
+
+Result: Migration 0022 adds call_io raw BLOB columns; bodies that are not valid UTF-8 are stored byte-exact and read back unchanged, so expand is lossless. Merged in #278 (f7e702d4); this entry restores the bookkeeping lost in that PR's rebase.
+### T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
+
+No product code. The 18 GB orphan came from absolute worktree links breaking when the repository moved; git ≥ 2.48 can write relative links, but doing so sets `extensions.relativeWorktrees`, and a tool that does not know the extension refuses to open the repository (`research.md` §18.2).
+
+Plan: in a scratch clone, enable `worktree.useRelativePaths`, add a worktree, then open the repository with every git reader in `toolchain.md` and the workspace (git CLI, `gh`, cargo's VCS check in `cargo package --list`, the editors' git integrations, any `git2`/`gix`-based tool found in `toolchain.md`). Move the clone and confirm the link survives and `git worktree repair` is not needed.
+
+Check: `research.md` §18.2 gains a dated compatibility table; if every reader passes, the `worktrees` skill (T155) and `AGENTS.md` gain the one-line setting; if any fails, the finding is recorded and the setting stays off.
+
+Result: research.md §18.2 gains a dated probe table: git 2.54, cargo 1.97.1 (VCS dirty check) and gh 2.101 all open a relative-link worktree (extensions.relativeWorktrees, format v1); moving the common parent keeps relative links working without repair while the absolute control breaks. Editors are untested (interactive), so the setting stays off and the worktrees skill/AGENTS.md are unchanged.
+### T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
+
+Found 2026-09-22 in the docs pass: I-86 sits in the Open table and in Rejected at once (the Rejected entry already carries T125's dated gate result while T125 is still `in progress`); I-87 appears twice in Open with contradictory states (unpromoted and "promoted T135"); the Promoted section is a headerless four-column pseudo-table whose `| ID | Became | Date |` header appears only at the bottom with three columns, and the I-28 row is truncated mid-word ("under the `inje"); the Open table also splits on a blank line. Breaks "an idea must not appear twice, or in both Open and Rejected".
+
+Plan: drop the Open I-86 row (Rejected carries the evidence) or revert the Rejected entry until T125 closes — pick one; delete the duplicate I-87 keeping "promoted T135"; give Promoted one matching header and repair the I-28 cell; remove the blank line inside the Open table. Docs only.
+
+Check: `ideas_ids_unique_and_disjoint` — every `I-NN` occurs in exactly one of Open/Later/Rejected/Promoted and every pipe-table has a header + separator before its rows; `just site` builds.
+
+Result: I-87 duplicate, Promoted header and I-28 were already fixed by #239; this drops the Open I-86 row (Rejected keeps T125's evidence) and the duplicate I-17 (pi only) Promoted row (the I-17 row already records T10.6). New tests/ideas_md.rs: every I-NN has exactly one defining row across Open/Later/Rejected/Promoted and every pipe-table has header+separator; fails on a re-added I-86 or a doubled I-87.
+### T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
+
+Found 2026-09-22 in the docs pass: `README.md:399` and `Cargo.toml:157` claim "41 integration targets" — `ls tests/*.rs` is 64; `README.md:269, 385` cite an "±15 % error margin" that appears nowhere in `research.md`; `docs/comparison.md:130` cites "39 % on Fable/Mythos 5.1", likewise untraceable; `docs/comparison.md:180` ("18.9 MiB") and :215 ("+0.81 ms p95") match `research.md` rows but cite nothing. Two are vendor-style claims, two are staleness-undetectable — breaking "every number in `README.md`, `docs/` or the site cites a measured row, `research.md`, or a dated command".
+
+Plan: cite each figure inline (`research.md §2 row …, <date>`) in the style of `docs/comparison.md:173`; for ±15 % and 39 % either add the missing measurement to `research.md` or drop/soften the number; fix the integration-target count with a dated count command or state the rule instead of a number.
+
+Check: a `just readme-check` number lint — any `N %` / `N MiB` / `N ms` figure in `README.md`/`docs/**` sits within a few words of `research.md`, a test name or a date, and the README target count equals `ls tests/*.rs | wc -l` at run time (fails on `main` today); `just check` green.
+
+Result: Dropped the untraceable ±15 % (README, docs/config.md, tokens.rs, lib.rs, plugin.rs, measure AGENTS.md) for 'uncalibrated heuristic'; cited 18.9 MiB / 98.1 % / +0.81 ms p95 inline to research.md with dates; README/Cargo.toml state the one-binary-per-tests/*.rs rule instead of '41 targets'. New tests/public_numbers.rs: every N %/MiB/ms figure in README/docs needs research.md, a date, a test name or an attribution word in its block ('10 ms' fail-open budget exempt by text); a stated README target count must equal tests/*.rs. Fails on the old docs (5 figures + 41≠73), passes now.
+### T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
+
+Found 2026-09-22 in the docs pass: `report.html` and `report/jscpd-report.json` are stale jscpd outputs (`.jscpd.json` now sets `reporters: ["console"]`, so they are unreproducible) and `dump/` holds nine captured stdout/stderr files — all in the tree; `.gitignore` covers `rtok.db`/`/~/` but not `/report.html` or `/dump/`. The `.rtok/`/`~`/`rtok.db` half of the cleanup is T184; this is the other half of "an artifact that is not reproducible from a command should not be in the repo".
+
+Plan: `git rm --cached` `report.html`, `report/jscpd-report.json`, `dump/*`; extend `.gitignore` with `/report.html`, `/report/`, `/dump/`; the jscpd console workflow stays the way to regenerate reports.
+
+Check: `git ls-files report.html report/ dump/` prints nothing; after `just test` and `just dup`, `git status --porcelain` stays clean (T184's Check covers the rest); `just check` green.
+
+Result: Untracked the stale report.html (report/jscpd-report.json and dump/ were already untracked); .gitignore now covers /report.html, /report/, /dump/. just dup leaves git status clean.
+### T204. A panicking plugin is dropped silently — the error never reaches the log
+
+Found 2026-09-22 in the core pass: every plugin call is wrapped in `catch_unwind` (`src/hooks/mod.rs:340-344, 381-385, 493-508, 202-205`) but the payload is discarded with `.ok()`/`let _` — no `logs` row, no stderr. architecture.md §4 and the Working agreement promise "that plugin's output is dropped, **the event is logged with the error**". Today a panicking plugin is indistinguishable from one returning `None`, so T233-class failures stay invisible in `rtok doctor` / `rtok logs`.
+
+Plan: one funnel helper for the four loops matching the `Err`, extracting the panic payload string and calling `cx.log("error", …)` with the plugin id before dropping the output.
+
+Check: `a_panicking_plugin_is_logged_and_the_rest_survives` — a registry with one panicking and one returning plugin: stdout keeps the good plugin's context and the store holds one `level = "error"` log row naming the plugin; `just test` green.
+
+Result: The four per-plugin `catch_unwind` loops in `src/hooks/mod.rs` (PreCompact, PreToolUse, PostToolUse, the inject events) route an `Err` through one `log_panic` helper: it takes the `&str`/`String` payload (else "non-string panic payload") and writes one `cx.log("error", "plugin", <id>, "<event> panicked: …")` before dropping that plugin's output. The non-panic path is unchanged. There is no `catch_unwind` outside hooks. Test: `a_panicking_plugin_is_logged_and_the_rest_survives`.
+### T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
+
+Found 2026-09-22 in the surfaces pass: `initialize` (`src/mcp.rs:208-231`) discards `params.protocolVersion` and returns whatever `ServerInfo` serializes — no negotiation, and no test pins `result.protocolVersion`, so a dependency bump can silently change the advertised dialect (`src/doctor.rs:862` probes `2024-11-05` while tests send `2025-06-18`). `-32601` carries the raw method name as `message` instead of "Method not found". And `tools/call` coerces instead of validating: `mem_save` without `body` stores an empty note (`unwrap_or("")`, :332-339), a missing `expand` `id` becomes "unknown archive id: ", `handoff` truncates `budget_tokens` u64→u32 (:438-444) — schema-vs-handler drift turning client bugs into corrupt data.
+
+Plan: return the client's `protocolVersion` when supported (else a pinned constant) and pin it in tests; `message: "Method not found"`; one `require_str`/`require_int` helper per handler enforcing each schema's `required` list before any store write, mapped to `-32602` in `call_tool`.
+
+Check: `initialize_names_the_server_rtok` asserts the pinned `result.protocolVersion`; `batch_answers_with_an_array` asserts "Method not found"; `mem_save` with `{"title":"t"}` returns `isError` "invalid params: missing `body`" and the notes table stays empty; `just test` green.
+
+Result: initialize negotiates protocolVersion (echo a supported client version, else pinned 2025-06-18); -32601 says "Method not found" with the method in data; tools/call (server and rtok mcp call) rejects a missing/empty required field from the tool's own input_schema with isError "invalid params: missing `x`" before invoke; mem_save's schema no longer requires kind (handler defaults it); handoff saturates budget_tokens instead of wrapping u64→u32.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)

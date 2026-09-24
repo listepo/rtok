@@ -11,6 +11,7 @@
 pub mod layers;
 pub mod validate;
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -956,53 +957,75 @@ impl Config {
     }
 
     fn expand_paths_with(&mut self, rtok_home: &Path, user_home: Option<&Path>) {
-        for path in self.path_fields_mut() {
+        for (_, path) in self.path_fields_mut() {
             *path = expand_with(path, rtok_home, user_home);
         }
     }
 
-    /// Every path key — the one list `~` expansion walks.
-    fn path_fields_mut(&mut self) -> Vec<&mut PathBuf> {
-        let mut out = vec![
-            &mut self.core.db_path,
-            &mut self.core.archive_dir,
-            &mut self.log.path,
-            &mut self.demon.state_dir,
-            &mut self.stats.transcripts_dir,
-            &mut self.stats.codex_dir,
-            &mut self.report.out,
-            &mut self.bench.tasks,
-            &mut self.doctor.settings_path,
-            &mut self.doctor.claude_json,
-            &mut self.doctor.mcp_json,
-            &mut self.setup.claude.settings_path,
-            &mut self.setup.cursor.hooks_path,
-            &mut self.setup.codex.config_path,
-            &mut self.setup.opencode.config_path,
-            &mut self.setup.kilo.config_path,
-            &mut self.setup.pi.extensions_path,
-            &mut self.setup.omp.extensions_path,
-            &mut self.setup.omp.mcp_path,
-            &mut self.setup.zcode.config_path,
-            &mut self.setup.kimi.config_path,
-            &mut self.setup.grok.config_path,
-            &mut self.setup.copilot.dir,
-            &mut self.setup.vscode.code_user_dir,
-            &mut self.setup.vscode.insiders_user_dir,
-            &mut self.setup.aider.config_path,
-            &mut self.setup.windsurf.config_path,
-            &mut self.setup.zed.config_path,
-            &mut self.setup.gemini.dir,
-            &mut self.setup.codewhale.dir,
-            &mut self.setup.mimo.config_path,
-            &mut self.plugins.cmd.rules,
-            &mut self.plugins.cmd.rules_dir,
-            &mut self.plugins.inject.modes_dir,
-            &mut self.plugins.wasm.dir,
-            &mut self.worktree.root,
-        ];
-        out.extend(self.bench.configs.values_mut());
-        out.extend(&mut self.plugins.read.allow_paths);
+    /// Every path field with its dotted `rtok config set` key — the one list `~` expansion
+    /// walks and [`crate::testutil::config_file_in`] writes out (T254).
+    pub(crate) fn path_fields_mut(&mut self) -> Vec<(Cow<'static, str>, &mut PathBuf)> {
+        // The key is spelled from the field path itself, so the two cannot drift apart.
+        macro_rules! keyed {
+            ($s:ident; $($head:ident $(. $tail:ident)*),+ $(,)?) => {
+                vec![$((
+                    Cow::Borrowed(concat!(stringify!($head) $(, ".", stringify!($tail))*)),
+                    &mut $s.$head $(. $tail)*,
+                )),+]
+            };
+        }
+        let mut out = keyed!(self;
+            core.db_path,
+            core.archive_dir,
+            log.path,
+            demon.state_dir,
+            stats.transcripts_dir,
+            stats.codex_dir,
+            report.out,
+            bench.tasks,
+            doctor.settings_path,
+            doctor.claude_json,
+            doctor.mcp_json,
+            setup.claude.settings_path,
+            setup.cursor.hooks_path,
+            setup.codex.config_path,
+            setup.opencode.config_path,
+            setup.kilo.config_path,
+            setup.pi.extensions_path,
+            setup.omp.extensions_path,
+            setup.omp.mcp_path,
+            setup.zcode.config_path,
+            setup.kimi.config_path,
+            setup.grok.config_path,
+            setup.copilot.dir,
+            setup.vscode.code_user_dir,
+            setup.vscode.insiders_user_dir,
+            setup.aider.config_path,
+            setup.windsurf.config_path,
+            setup.zed.config_path,
+            setup.gemini.dir,
+            setup.codewhale.dir,
+            setup.mimo.config_path,
+            plugins.cmd.rules,
+            plugins.cmd.rules_dir,
+            plugins.inject.modes_dir,
+            plugins.wasm.dir,
+            worktree.root,
+        );
+        out.extend(
+            self.bench
+                .configs
+                .iter_mut()
+                .map(|(k, v)| (format!("bench.configs.{k}").into(), v)),
+        );
+        out.extend(
+            self.plugins
+                .read
+                .allow_paths
+                .iter_mut()
+                .enumerate()
+                .map(|(i, p)| (format!("plugins.read.allow_paths[{i}]").into(), p)),
+        );
         out
     }
 

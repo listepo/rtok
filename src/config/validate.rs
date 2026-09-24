@@ -80,8 +80,20 @@ pub fn set_with(
     raw: &str,
     dry_run: bool,
 ) -> Result<(PathBuf, String)> {
-    if key.is_empty() || key.split('.').any(|p| p.is_empty()) {
-        bail!("empty key");
+    set_all_with(home, config_file, &[(key, raw)], dry_run)
+}
+
+/// [`set_with`] over several `(key, raw)` pairs in one read, check and write (T254).
+pub fn set_all_with(
+    home: &Path,
+    config_file: Option<&Path>,
+    pairs: &[(&str, &str)],
+    dry_run: bool,
+) -> Result<(PathBuf, String)> {
+    for (key, _) in pairs {
+        if key.is_empty() || key.split('.').any(|p| p.is_empty()) {
+            bail!("empty key");
+        }
     }
     let path = Config::user_path(home, config_file);
     if !path.exists() {
@@ -92,7 +104,9 @@ pub fn set_with(
     }
     let before = std::fs::read_to_string(&path)?;
     let mut doc: DocumentMut = before.parse().with_context(|| path.display().to_string())?;
-    assign(&mut doc, key, parse_value(raw))?;
+    for (key, raw) in pairs {
+        assign(&mut doc, key, parse_value(raw))?;
+    }
     let after = doc.to_string();
     let errs = issues_in(&path, &after);
     if !errs.is_empty() {

@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Result, bail};
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, JsonObject, ListToolsResult, ServerCapabilities,
-    ServerInfo, Tool,
+    CallToolResult, ContentBlock, Implementation, JsonObject, ListToolsResult, ProtocolVersion,
+    ServerCapabilities, ServerInfo, Tool,
 };
 use serde_json::{Value, json};
 
@@ -100,18 +100,21 @@ pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
     if !server.allows(name) {
         return Err(unknown_tool(name));
     }
-    let plugin = server
-        .listed
-        .iter()
-        .find(|t| t.def.name == name)
-        .map(|t| t.plugin)
-        .unwrap_or("archive");
+    let found = server.listed.iter().find(|t| t.def.name == name);
+    let plugin = found.map(|t| t.plugin).unwrap_or("archive");
     let args = if args.is_null() {
         json!({})
     } else {
         args.clone()
     };
-    let (text, ok) = invoke_text(&server.cx, name, &args);
+    // Same required-field gate as `call_tool` (T213): a missing argument must not reach
+    // `invoke` and become a handler-level default.
+    let (text, ok) =
+        if let Some(msg) = found.and_then(|t| missing_required(&t.def.input_schema, &args)) {
+            (format!("invalid params: {msg}"), false)
+        } else {
+            invoke_text(&server.cx, name, &args)
+        };
     let _ = record(&server.cx, plugin, name, &args, &text);
     if ok { Ok(text) } else { bail!("{text}") }
 }
@@ -134,6 +137,66 @@ const MAX_LINE: u64 = 8 << 20;
 
 fn rpc_error(id: Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
+}
+
+/// Protocol dialects `rtok mcp` has been built and tested against, oldest first. Per the
+/// MCP lifecycle spec's version negotiation
+/// (https://modelcontextprotocol.io/specification — "Initialization"): a server answers
+/// `initialize` with the client's requested `protocolVersion` when it supports that
+/// version, else the latest version it does support. `initialize` used to ignore the
+/// request entirely and answer with `ProtocolVersion::default()` — whatever `rmcp` itself
+/// considers current — so a dependency bump could silently change the advertised dialect
+/// with no test to catch it (T213); the last entry here is that pinned fallback instead.
+const SUPPORTED_PROTOCOL_VERSIONS: &[ProtocolVersion] = &[
+    ProtocolVersion::V_2024_11_05,
+    ProtocolVersion::V_2025_03_26,
+    ProtocolVersion::V_2025_06_18,
+];
+
+fn negotiate_protocol_version(requested: &Value) -> ProtocolVersion {
+    if let Ok(v) = serde_json::from_value::<ProtocolVersion>(requested.clone())
+        && SUPPORTED_PROTOCOL_VERSIONS.contains(&v)
+    {
+        return v;
+    }
+    SUPPORTED_PROTOCOL_VERSIONS
+        .last()
+        .cloned()
+        .unwrap_or(ProtocolVersion::LATEST)
+}
+
+/// A missing required argument used to become a handler-level default instead of a visible
+/// error — `mem_save` without `body` stored an empty note, a missing `expand` `id` came
+/// back as `"unknown archive id: "`, `handoff` silently ran with a default budget, turning
+/// a client's bug into corrupt or misleading data (T213). JSON-RPC 2.0 has a dedicated code
+/// for this, `-32602` "Invalid params" (https://www.jsonrpc.org/specification#error_object);
+/// `rtok mcp` reports it the way it already reports `unknown tool` / `unknown archive id` —
+/// an `isError` `CallToolResult` carrying the message, not a protocol-level error object —
+/// so every client sees it whether or not it inspects JSON-RPC error codes. The `required`
+/// list lives once, on each tool's own `input_schema` (`mcp_tools()`); this reads that
+/// instead of hand-maintaining a second, driftable copy per tool.
+fn missing_required(schema: &Value, args: &Value) -> Option<String> {
+    let required = schema.get("required")?.as_array()?;
+    let props = schema.get("properties");
+    for field in required.iter().filter_map(Value::as_str) {
+        let kind = props
+            .and_then(|p| p.get(field))
+            .and_then(|p| p.get("type"))
+            .and_then(Value::as_str);
+        let present = match args.get(field) {
+            None | Some(Value::Null) => false,
+            Some(v) => match kind {
+                Some("string") => v.as_str().is_some_and(|s| !s.is_empty()),
+                Some("integer") => v.is_i64() || v.is_u64(),
+                Some("boolean") => v.is_boolean(),
+                _ => true,
+            },
+        };
+        if !present {
+            return Some(format!("missing `{field}`"));
+        }
+    }
+    None
 }
 
 /// The one place `"unknown tool: <name>"` is worded — a name `invoke` never heard of and a
@@ -254,8 +317,10 @@ impl Server {
             "initialize" => {
                 // Default `Implementation` still comes from rmcp's build env (`name: "rmcp"`).
                 // 3.x types are non_exhaustive; construct via the public builders.
+                let version = negotiate_protocol_version(&req["params"]["protocolVersion"]);
                 let info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-                    .with_server_info(Implementation::new("rtok", env!("CARGO_PKG_VERSION")));
+                    .with_server_info(Implementation::new("rtok", env!("CARGO_PKG_VERSION")))
+                    .with_protocol_version(version);
                 serde_json::to_value(&info).unwrap_or(json!({}))
             }
             "ping" => json!({}),
@@ -267,21 +332,22 @@ impl Server {
                 serde_json::to_value(self.call_tool(name, &args)).unwrap_or(json!({}))
             }
             _ => {
-                return Some(
-                    json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":method}}),
-                );
+                // JSON-RPC 2.0's own wording for -32601, not the raw method name (T213):
+                // https://www.jsonrpc.org/specification#error_object. The method still
+                // reaches the client, in `data`, for anyone who wants it.
+                return Some(json!({
+                    "jsonrpc":"2.0",
+                    "id":id,
+                    "error":{"code":-32601,"message":"Method not found","data":{"method":method}},
+                }));
             }
         };
         Some(json!({"jsonrpc":"2.0","id":id,"result":result}))
     }
 
     fn call_tool(&self, name: &str, args: &Value) -> CallToolResult {
-        let plugin = self
-            .listed
-            .iter()
-            .find(|t| t.def.name == name)
-            .map(|t| t.plugin)
-            .unwrap_or("archive");
+        let found = self.listed.iter().find(|t| t.def.name == name);
+        let plugin = found.map(|t| t.plugin).unwrap_or("archive");
         let args = if args.is_null() {
             json!({})
         } else {
@@ -290,11 +356,15 @@ impl Server {
         // A failure is an `isError` result with the same message text, not a success block
         // the model has to recognise by wording. A name the allow-list dropped never reaches
         // `invoke` — it must not run a tool the config says is off — but it fails with the
-        // exact text `invoke`'s own unknown-name arm would give (`unknown_tool`, T192).
-        let (text, ok) = if self.allows(name) {
-            invoke_text(&self.cx, name, &args)
-        } else {
+        // exact text `invoke`'s own unknown-name arm would give (`unknown_tool`, T192). A
+        // request missing one of the tool's own `required` fields never reaches `invoke`
+        // either, so no handler can turn it into a silent default or a store write (T213).
+        let (text, ok) = if !self.allows(name) {
             (unknown_tool(name).to_string(), false)
+        } else if let Some(msg) = found.and_then(|t| missing_required(&t.def.input_schema, &args)) {
+            (format!("invalid params: {msg}"), false)
+        } else {
+            invoke_text(&self.cx, name, &args)
         };
         let _ = record(&self.cx, plugin, name, &args, &text);
         let content = vec![ContentBlock::text(text)];
@@ -484,7 +554,11 @@ fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) ->
 
 #[cfg(feature = "memory")]
 fn handoff(cx: &Runtime, args: &Value) -> Result<String> {
-    let budget = args["budget_tokens"].as_u64().unwrap_or(800) as u32;
+    // `missing_required` already rejected an absent value; saturate instead of `as u32`
+    // wrapping a huge budget into a tiny one (T213).
+    let budget = args["budget_tokens"]
+        .as_u64()
+        .map_or(800, |n| u32::try_from(n).unwrap_or(u32::MAX));
     Ok(crate::plugins::memory::handoff::handoff(
         &crate::plugin::Ctx::new(cx),
         budget,
@@ -765,6 +839,8 @@ mod tests {
         assert_eq!(arr.len(), 2, "{v}");
         assert_eq!(arr[0]["id"], 1);
         assert_eq!(arr[1]["error"]["code"], -32601);
+        assert_eq!(arr[1]["error"]["message"], "Method not found", "{v}");
+        assert_eq!(arr[1]["error"]["data"]["method"], "nope", "{v}");
         assert!(server.handle_line("[]").unwrap().contains("-32600"));
         assert!(
             server
@@ -814,6 +890,54 @@ mod tests {
             .run_retention(cfg.core.retain_calls_days)
             .unwrap();
         assert_eq!(server.cx.store.count_calls().unwrap(), 0);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T213: `initialize` echoes back a `protocolVersion` this server supports, and falls
+    /// back to the pinned latest-supported version (never `ProtocolVersion::default()`,
+    /// which drifts with the linked `rmcp`) when the client asks for one it doesn't know,
+    /// or asks for none at all. Spec: https://modelcontextprotocol.io/specification —
+    /// "Initialization".
+    #[test]
+    fn initialize_negotiates_protocol_version() {
+        let (cfg, dir) = tmp("mcp-negotiate");
+        let server = Server::new(&cfg).unwrap();
+        let req = |params: Value| {
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":params}).to_string()
+        };
+        let client = json!({"capabilities": {}, "clientInfo": {"name":"t","version":"1"}});
+        let mut supported = client.clone();
+        supported["protocolVersion"] = json!("2024-11-05");
+        let v: Value = serde_json::from_str(&server.handle_line(&req(supported)).unwrap()).unwrap();
+        assert_eq!(v["result"]["protocolVersion"], "2024-11-05", "{v}");
+        let mut unknown = client.clone();
+        unknown["protocolVersion"] = json!("1999-01-01");
+        let v: Value = serde_json::from_str(&server.handle_line(&req(unknown)).unwrap()).unwrap();
+        assert_eq!(v["result"]["protocolVersion"], "2025-06-18", "{v}");
+        let v: Value = serde_json::from_str(&server.handle_line(&req(client)).unwrap()).unwrap();
+        assert_eq!(v["result"]["protocolVersion"], "2025-06-18", "{v}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Check (T213): `mem_save` with only `{"title":"t"}` is rejected before it ever
+    /// touches the store — `body` is `required` on the schema, but the handler used to
+    /// `unwrap_or("")` a missing one, silently saving a broken note.
+    #[cfg(feature = "memory")]
+    #[test]
+    fn mem_save_missing_body_rejected_before_store_write() {
+        let (cfg, dir) = tmp("mcp-mem-save-missing");
+        let server = Server::new(&cfg).unwrap();
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"mem_save","arguments":{"title":"t"}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], true, "{v}");
+        assert_eq!(
+            v["result"]["content"][0]["text"], "invalid params: missing `body`",
+            "{v}"
+        );
+        assert!(
+            server.cx.store.note_bodies().unwrap().is_empty(),
+            "notes table must stay empty"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }

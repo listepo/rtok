@@ -42,6 +42,7 @@ const DOC_DOMAINS: &[(&str, &str)] = &[
     ("plugins/codex", "chatgpt.com"),
     ("plugins/copilot", "docs.github.com"),
     ("plugins/cursor", "cursor.com"),
+    ("plugins/gemini", "geminicli.com"),
     ("plugins/grok", "docs.x.ai"),
     ("plugins/kimi", "kimi.com"),
     ("plugins/opencode", "opencode.ai"),

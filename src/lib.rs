@@ -4,7 +4,7 @@
 //! - [`cli`]     — clap subcommand tree (`rtok config`, `rtok hook`, …)
 //! - [`config`]  — `~/.rtok/config.toml`, `RTOK_HOME`
 //! - [`store`]   — one SQLite file: events, measurements, archive, notes (FTS5), usage
-//! - [`tokens`]  — chars-per-token estimator (±15 %)
+//! - [`tokens`]  — chars-per-token estimator (uncalibrated heuristic, T221)
 //! - [`plugin`]  — the `Plugin` trait, `Manifest`, `Runtime`, `Measurement`
 //! - [`plugins`] — the registry and one module per catalogue plugin
 //! - [`hooks`]   — Claude Code hook I/O types

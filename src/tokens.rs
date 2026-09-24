@@ -1,7 +1,9 @@
 //! Token estimator (plan T0.5): `chars / chars-per-token` per text class.
 //!
-//! Accuracy: about ±15 % against the Anthropic tokenizer on this workload (research.md §2).
-//! Good enough to rank savings and to gate budgets; never present it as a billed count.
+//! Accuracy: a fixed chars-per-token heuristic, not calibrated against the Anthropic
+//! tokenizer — `rtok stats --calibrate` (T1.5) would fit it but hasn't run yet (see
+//! research.md §2 for the raw counts this rate is chosen against). Good enough to rank
+//! savings and to gate budgets; never present it as a billed count.
 //! Rates come from `[estimator]` in config and can be refit by `rtok stats --calibrate` (T1.5).
 
 use crate::config::Estimator;
