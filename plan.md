@@ -11,7 +11,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T83.6 | todo | P1 | 2 | 0% | |
 | T83.7 | todo | P1 | 2 | 0% | |
 | T83.8 | todo | P1 | 2 | 0% | |
-| T83.10 | todo | P1 | 2 | 0% | |
 | T83.11 | todo | P1 | 3 | 0% | |
 | T83.12 | todo | P1 | 3 | 0% | |
 | T83.13 | todo | P1 | 3 | 0% | |
@@ -20,9 +19,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T88 | todo | P1 | 2 | 0% | |
 | T89 | todo | P1 | 3 | 0% | |
 | T91.2 | todo | P1 | 2 | 0% | |
-| T94 | todo | P1 | 3 | 0% | |
-| T95 | todo | P1 | 2 | 0% | |
-| T96 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
 | T124 | todo | P3 | 2 | 0% | |
 | T130.3 | todo | P2 | 3 | 0% | |
@@ -38,7 +34,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
-| T223 | todo | P3 | 2 | 0% | |
 | T260 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
@@ -73,12 +68,6 @@ Check: the test passes in the `windows` CI job; `just check` stays green.
 ### T83.8. `commands_e2e::run_long_output_then_expand_round_trips` fails on Windows
 
 The `run` → `expand` round trip likely depends on a Unix shell command or a path/newline assumption in the fixture. Read `tests/commands_e2e.rs` and decide whether the command under test needs a Windows-portable replacement or `rtok`'s `run`/`expand` path has a real Windows bug. One family split out of the original T83; see T83.2 for the closing criterion.
-
-Check: the test passes in the `windows` CI job; `just check` stays green.
-
-### T83.10. `plugins::cmd::formatters::tests::ten_families_and_aws_key_unredacted` fails on Windows
-
-Read `plugins/cmd/formatters.rs`'s AWS-key redaction and decide whether the regex/format assumes a Unix-shaped command line (quoting, path separators) that differs on Windows, or the test fixture itself is Unix-only. One family split out of the original T83; see T83.2 for the closing criterion.
 
 Check: the test passes in the `windows` CI job; `just check` stays green.
 
@@ -152,43 +141,6 @@ Check: the unit tests above; `rtok agents list` shows `devin`; `agents_doc`, `ho
 After T91.1. `skill::sync` of the hub skill into Antigravity's user skill roots — resolved 2026-09-21 from https://antigravity.google/docs/skills: `~/.gemini/config/skills/<name>/` for Antigravity 2.0 and IDE, `~/.gemini/antigravity-cli/skills/<name>/` for the CLI; the CLI also loads plugin-provided skills from `plugins/<name>/skills/`, so `skill::sync` needs two dests for this host (or one, if plugin-provided skills turn out to load on desktop too — then the hub skill is copied into the installed plugin instead, never duplicated in `plugins/antigravity/`). `skill::dest` / `label` arms for `antigravity`; `research.md` host sentence ("Antigravity on request" → listed); re-bless `docs/agents.md`.
 
 Check: `skill` unit tests for both dests; `agents_doc` green; `just check`.
-
-### T94. `rtok hook <event> --host cline` speaks Cline's file-hook JSON both ways
-
-Creator request 2026-09-21: a host plugin for Cline CLI + desktop (the VS Code / JetBrains extension), like Claude's and Cursor's. Creator decisions 2026-09-21: (1) hooks go through Cline's **file hooks**, not a TS Cline plugin — Cline plugins (`~/.cline/plugins`, `cline plugin install`) load in the SDK, CLI and Kanban only ("not applicable on VSCode and JetBrains Extension for now", https://docs.cline.bot/customization/plugins), while core adapts file hooks onto the same runtime hook layer, so they are the one hook path both surfaces have (D21); (2) MCP is written directly into `cline_mcp_settings.json` (T96), not shipped as an agent-plugins.org package. A file hook is an executable named after its event. stdin is JSON: `hookName` (`tool_call` / `tool_result` / `agent_start` …), `taskId`, `workspaceRoots`, and `tool_call: {id, name, input}` or `tool_result: {id, name, input, output, error, durationMs}`. stdout is JSON: `cancel`, `review`, `context` (injected into the next turn), `errorMessage`, `overrideInput` (replaces the tool input; PreToolUse only); `{}` means do nothing. Neither direction is Claude-shaped, so unlike Devin (T87) the adapter translates both ways. The shell tool is `run_commands` with `input.commands: string[]`. Evidence (cline/cline `main`, fetched 2026-09-21): `sdk/examples/hooks/README.md`, `sdk/packages/shared/src/hooks/contracts.ts` (`HookControl`), `sdk/packages/shared/src/agent.ts` (`AgentBeforeToolResult.input` / `appendContext`), `sdk/packages/shared/src/storage/paths.ts`.
-
-Plan:
-1. `src/hooks/types.rs` — `HookInput::adapt_cline(event)` beside `adapt_cursor` / `adapt_copilot` / `adapt_devin`: `tool_call` / `tool_result` lifted to `tool_name` / `tool_input` / `tool_response`; `run_commands` → `Bash` and `read_files` → `Read` in `canonical_tool_name`; a one-entry `commands` becomes `command` (a multi-entry call passes through untouched — no rewrite, no measurement); `taskId` → `session_id`; `cwd` from `workspaceRoots[0]` when stdin has none.
-2. `src/hooks/mod.rs` — a `cline` arm in `dispatch_owned_strict` plus the way out: `updatedInput.command` → `overrideInput: {commands: [..]}`, `additionalContext` → `context`, a deny → `cancel: true` + `errorMessage`, nothing to say → `{}`. Fail open prints `{}` and exits 0.
-3. Unit tests with the README's payloads verbatim (PreToolUse `tool_call`, PostToolUse `tool_result`, a lifecycle event).
-Blocked on T87 landing: its uncommitted work sits on the same lines this task edits (the `devin` arm in `dispatch_owned_strict`, the `--host` list in `config/default.toml`, `docs/config.md`, `src/cli.rs` and the trycmd snapshots), and hunks on one line cannot be staged apart in the shared checkout.
-Verify first (2026-09-21: no `cline` binary on this machine, only `~/.cline/` data — the creator installs `npm i -g cline` or runs the capture): (a) real payloads from the CLI through a `tee` hook — the event file names Cline fires (`PreToolUse`, `PostToolUse`, `TaskStart`, `UserPromptSubmit`, `PreCompact`, …) and the `run_commands` input shape; (b) the VS Code extension — its hooks live in `.clinerules/hooks/<Event>` / `~/Documents/Cline/Hooks/` with no file extension behind an "Enable Hooks" setting; confirm it sends the same JSON and honours `overrideInput`. If it does not, the extension gets `context` only and the README says so.
-
-Check: the unit tests above; `rtok hook PreToolUse --host cline` on a captured `run_commands` payload prints `overrideInput` whose command starts with `rtok run`; garbage stdin prints `{}` and exits 0; the `--host` list grows by `cline` (`config/default.toml`, `docs/config.md`, the `src/cli.rs` help line and its `tests/trycmd` snapshots); `just check`.
-
-### T95. Cline plugin tree (`plugins/cline/`)
-
-After T94. Cline has no bundle format that reaches both surfaces, so the tree is what the installer places: one POSIX script `plugins/cline/hooks/rtok-hook` that takes its event from its own file name (`${0##*/}`, extension stripped) and runs `rtok hook <event> --host cline`; with `rtok` missing it prints `{}`, exits 0 and says on stderr to install with ketch (`ketch install listepo/rtok`). One script, no per-event copies (T96 links it once per event).
-
-Plan:
-1. `plugins/cline/hooks/rtok-hook` (executable) and, if T94's capture shows Windows needs it, a `rtok-hook.ps1` twin.
-2. `plugins/cline/README.md` — install by hand (link or copy into `~/Documents/Cline/Hooks/<Event>`, enable hooks in the extension, `cline mcp` / settings file for MCP), files, what the extension does and does not honour, `## Docs` (hooks, plugins, MCP, CLI reference, config pages).
-3. A `tests/` check: the script is executable, fails open without `rtok` on `PATH` (`{}`, exit 0), and every event name the installer links is one `adapt_cline` knows.
-Verify first: Cline runs a hook that is a symlink (its loader `realpath`s plugin paths; hook discovery is not documented) — if not, T96 copies instead of linking and `installed()` compares bytes.
-
-Check: `host_docs` and the new test green; `just check`.
-
-### T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
-
-After T95. New host `cline` in `src/agents/cline/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()`. Variants: CLI (`cline` on PATH) and the VS Code extension (`saoudrizwan.claude-dev`). D21 singleton for hooks: the CLI scans `~/Documents/Cline/Hooks` **and** `~/.cline/hooks`, the extension scans `~/Documents/Cline/Hooks` — so rtok installs into `~/Documents/Cline/Hooks` only and one directory serves both surfaces with no event firing twice. MCP is per surface, same `mcpServers.{command,args}` entry through `rtok_agent_sdk::register_mcp`: `~/.cline/data/settings/cline_mcp_settings.json` (CLI; `CLINE_DIR` / `CLINE_MCP_SETTINGS_PATH` are path overrides) and `<VS Code globalStorage>/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` (reuse the `vscode` host's per-OS user-dir resolution). `support`: `hooks` → yes, `mcp` → yes, `plugin` → `Flag("--yes")`, `proxy` → `No` (the Anthropic base URL is extension state, not a file rtok may edit). A foreign file at `<hooks_path>/<Event>` is left alone and named in the output — Cline has one slot per event per directory.
-
-Plan:
-1. `src/agents/cline/mod.rs`: one `HostPlugin` per event linking `plugins/cline/hooks/rtok-hook`; `[setup.cline] hooks_path`, `mcp_path` in `config/default.toml` / `src/config/mod.rs` / `docs/config.md`.
-2. Unit tests: dry-run names `plugins/cline` and the ketch line and writes nothing; `--yes` links every event and writes `mcpServers.rtok`, a second apply is `NO_CHANGES`, remove takes back exactly ours and keeps foreign servers and foreign hook files.
-3. `docs/agents.md` via `RTOK_BLESS=1` on `tests/agents_doc.rs`; `tests/agents_install.rs` `hosts()`; `tests/trycmd/agents-list*.toml` re-blessed; README / site host lists.
-Over the ≤200 LOC / ≤3 files limit as written — split into T96.1 (host + hooks + config) and T96.2 (MCP for both variants + docs bless) when claiming.
-
-Check: the unit tests above; `rtok agents list` shows `cline`; `agents_doc`, `host_docs`, `config_coverage` green; `just check`.
 
 ### T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
 
@@ -509,12 +461,3 @@ Already covered: `assert_cmd`, `divan`, `httpmock`, `insta`, `rstest`,
 
 
 
-### T223. `windows-sys` linked in three versions
-
-Found 2026-09-22 in the docs pass: `Cargo.lock` holds `windows-sys` 0.52.0, 0.60.2 and 0.61.2 simultaneously (transitive users at 0.52/0.60 beside `rtok-sys`'s 0.61) — the only multi-version crate of note (the tree-sitter grammar family is single-version). On Windows three copies of the bindings compile and link, growing the binary and the T178 cold-start cost that is already over the 10 ms hook budget.
-
-Plan: `cargo tree -d` to find the 0.52/0.60 holders, bump those transitive parents within existing semver ranges (no direct dep version bumps) or nudge the lockfile (`cargo update -p windows-sys@…`); record the reason per the dependency rule.
-
-Check: `grep -c 'name = "windows-sys"' Cargo.lock` = 1 (or `mise exec -- cargo tree -d` shows no windows-sys entry); `just check` green on windows-latest.
-
-Blocked (2026-09-24, checked against the lockfile): no in-range update removes a copy. `windows-sys` 0.52.0 comes from `ring` 0.17.14 (latest release; pulled by `rustls-webpki` / `quinn-proto`), 0.60.2 from `notify` 8.2.0 (latest stable; 9 is `9.0.0-rc.5`). Needs a creator decision: `notify` 9 once it leaves RC (drops 0.60), and a rustls crypto provider other than `ring` or a new `ring` release (drops 0.52).

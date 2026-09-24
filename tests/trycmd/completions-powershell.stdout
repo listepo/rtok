@@ -59,7 +59,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;hook' {
-            [CompletionResult]::new('--host', '--host', [CompletionResultType]::ParameterName, 'Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin`)')
+            [CompletionResult]::new('--host', '--host', [CompletionResultType]::ParameterName, 'Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin` | `cline`)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--serve', '--serve', [CompletionResultType]::ParameterName, 'Run the resident hook process `rtok-hook` talks to (T178, D32)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
