@@ -59,6 +59,72 @@ async fn web_health_and_index() {
     task.abort();
 }
 
+/// T206: `socket_loop` used to build every tick's snapshot synchronously while holding
+/// `DashState::cfg`'s mutex, so one slow build (doctor probes, a whole-transcript parse, a
+/// blocking fetch) froze `/health` and every other socket along with it. A builder blocked on
+/// a barrier stands in for that slow build without actually waiting on one; several WS clients
+/// tick at once (coalescing onto the one in-flight build), and `/health` must still answer
+/// while the build is stuck — bounded generously so slow CI runners do not flake.
+#[tokio::test]
+async fn health_answers_during_a_snapshot_build() {
+    use std::sync::Barrier;
+    use std::time::Duration;
+
+    let dir = std::env::temp_dir().join(format!("rtok-dash-slowbuild-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.doctor.settings_path = dir.join("missing-settings.json");
+    cfg.doctor.claude_json = dir.join("missing-claude.json");
+    cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+    cfg.stats.transcripts_dir = dir.join("missing-transcripts");
+
+    let barrier = Arc::new(Barrier::new(2));
+    let build_barrier = barrier.clone();
+    let build_fn: rtok::web::BuildFn = Arc::new(move |cfg| {
+        build_barrier.wait();
+        rtok::web::frame(cfg)
+    });
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr").to_string();
+    let state = Arc::new(DashState::with_builder(cfg, build_fn));
+    let task = tokio::spawn(axum::serve(listener, app(state)).into_future());
+
+    // Several sockets ticking at once must coalesce onto the one in-flight (barrier-stuck)
+    // build rather than each running their own.
+    let mut sockets = Vec::new();
+    for _ in 0..3 {
+        let (ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+            .await
+            .expect("ws connect");
+        sockets.push(ws);
+    }
+    // Give the sockets' first tick time to reach `spawn_blocking` and hit the barrier.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let health = tokio::time::timeout(
+        Duration::from_secs(5),
+        reqwest::Client::new()
+            .get(format!("http://{addr}/health"))
+            .send(),
+    )
+    .await
+    .expect("/health must not wait on the in-flight snapshot build")
+    .expect("health request");
+    assert_eq!(health.status(), 200);
+    let body = health.text().await.expect("body");
+    let body: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(body["ok"], true, "{body}");
+
+    // Release the stuck build so the server task can finish cleanly.
+    barrier.wait();
+    drop(sockets);
+    task.abort();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[tokio::test]
 async fn snapshot_error_when_store_path_is_a_directory() {
     let dir = std::env::temp_dir().join(format!("rtok-web-store-err-{}", std::process::id()));

@@ -21,6 +21,7 @@ use axum::response::{Html, IntoResponse};
 use axum::routing::get;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
+use tokio::sync::watch;
 use tower_http::services::ServeDir;
 
 use crate::config::{Config, validate};
@@ -28,14 +29,36 @@ use crate::plugins::Registry;
 
 const INDEX: &str = include_str!("index.html");
 
+/// Builds one snapshot frame from a config. Production always uses [`frame`]; tests can
+/// substitute a slower or instrumented builder to exercise T206's build coalescing (a real
+/// busy store, or just a barrier) without waiting on a real busy store.
+pub type BuildFn = Arc<dyn Fn(&Config) -> String + Send + Sync>;
+
+/// T206: at most one snapshot build runs at a time; a tick that lands while one is already
+/// running awaits its result instead of starting a redundant build.
+enum BuildSlot {
+    Idle,
+    InFlight(watch::Receiver<Option<String>>),
+}
+
 pub struct DashState {
     cfg: Mutex<Config>,
+    build: Mutex<BuildSlot>,
+    build_fn: BuildFn,
 }
 
 impl DashState {
     pub fn new(cfg: Config) -> Self {
+        Self::with_builder(cfg, Arc::new(frame))
+    }
+
+    /// For tests: swap the snapshot builder, e.g. to block it on a barrier so `/health` can be
+    /// asserted to answer while a build is stuck (T206).
+    pub fn with_builder(cfg: Config, build_fn: BuildFn) -> Self {
         Self {
             cfg: Mutex::new(cfg),
+            build: Mutex::new(BuildSlot::Idle),
+            build_fn,
         }
     }
 
@@ -49,6 +72,60 @@ impl DashState {
     /// The snapshot frame `/ws` sends next, after any accepted `set`.
     pub fn snapshot_json(&self) -> String {
         frame(&self.cfg.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    /// The snapshot frame for one `/ws` tick (T206). The `Config` mutex is held only long
+    /// enough to clone it — never across the build — and the build itself runs in
+    /// `spawn_blocking` so it cannot stall the executor or `health()`/`inbound()`'s lock.
+    /// Ticks that land while a build is already in flight share its result.
+    async fn snapshot_shared(&self) -> String {
+        // The check-and-set that either joins an in-flight build or claims the builder role
+        // happens under one lock acquisition, so two ticks landing at once cannot both start a
+        // build. A `MutexGuard` never lives across an `.await` (each is scoped to its own
+        // block), so this future stays `Send` (required by `on_upgrade`).
+        enum Claim {
+            Join(watch::Receiver<Option<String>>),
+            Build(watch::Sender<Option<String>>),
+        }
+        let claim = {
+            let mut guard = self.build.lock().unwrap_or_else(|e| e.into_inner());
+            match &*guard {
+                BuildSlot::InFlight(rx) => Claim::Join(rx.clone()),
+                BuildSlot::Idle => {
+                    let (tx, rx) = watch::channel(None);
+                    *guard = BuildSlot::InFlight(rx);
+                    Claim::Build(tx)
+                }
+            }
+        };
+        let tx = match claim {
+            Claim::Build(tx) => tx,
+            Claim::Join(mut rx) => {
+                if rx.changed().await.is_ok()
+                    && let Some(snap) = rx.borrow().clone()
+                {
+                    return snap;
+                }
+                // The build ahead of us never sent (it panicked): claim it ourselves instead
+                // of hanging this socket forever.
+                let mut guard = self.build.lock().unwrap_or_else(|e| e.into_inner());
+                let (tx, rx) = watch::channel(None);
+                *guard = BuildSlot::InFlight(rx);
+                tx
+            }
+        };
+
+        let cfg = self.cfg.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let build_fn = self.build_fn.clone();
+        let snap = tokio::task::spawn_blocking(move || build_fn(&cfg))
+            .await
+            .unwrap_or_else(|_| {
+                json!({"type": "snapshot", "error": "snapshot build panicked"}).to_string()
+            });
+
+        *self.build.lock().unwrap_or_else(|e| e.into_inner()) = BuildSlot::Idle;
+        let _ = tx.send(Some(snap.clone()));
+        snap
     }
 }
 
@@ -314,7 +391,7 @@ pub fn frame(cfg: &Config) -> String {
 
 async fn socket_loop(mut socket: WebSocket, state: Arc<DashState>) {
     loop {
-        let snap = frame(&state.cfg.lock().unwrap_or_else(|e| e.into_inner()));
+        let snap = state.snapshot_shared().await;
         if socket.send(Message::text(snap)).await.is_err() {
             break;
         }
