@@ -54,7 +54,6 @@
 - T229. Services page: `demon status` and `otel status` on `tui` and `web`
 - T232. Worktrees page: `worktree list` on `tui` and `web`
 - T241. Replay bench: saving over a fixed session corpus
-- T246.4. Shipped skills
 - T246.5. zed and grok MCP entries
 - T250.3. Cursor hooks find `rtok` off `PATH`
 - T246.6. Hook entries of cursor, gemini, kimi and codewhale
