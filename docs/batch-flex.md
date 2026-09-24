@@ -201,4 +201,5 @@ default_model = ""      # empty = leave client model
 - [config.md](config.md) — `[proxy.*]` reference
 - [comparison.md](comparison.md) — vs bifrost / Portkey / LiteLLM gateways
 - `architecture.md` §12 — where Batch/Flex sit in the proxy pipeline
+- [model-routing.md](model-routing.md) — D9 / §16.3 #3 (separate planned line from Batch/Flex)
 - `next.md` — Batch/Flex and model routing on the token-saving backlog
