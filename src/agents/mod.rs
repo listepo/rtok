@@ -1238,6 +1238,21 @@ pub(crate) fn rtok_hook_bin() -> String {
     shell_quote_bin(&rtok_command())
 }
 
+/// T174/T250.2 POSIX hook line for a bare `rtok`: a shell without `~/.ketch/bin` on PATH hit
+/// exit 127 every event; tries PATH, ketch's layout, then fails open, printing `note` (the
+/// host's session-start JSON, no `'`) if given. Claude and Copilot share these bytes.
+pub(crate) fn hook_resolver(args: &str, note: Option<&str>) -> String {
+    let note = note.map_or(String::new(), |json| {
+        debug_assert!(!json.contains('\''), "{json}");
+        format!(" && printf '%s' '{json}'")
+    });
+    format!(
+        "command -v rtok >/dev/null 2>&1 && exec rtok {args}; \
+         [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" {args}; \
+         true{note}; exit 0"
+    )
+}
+
 /// Strip one layer of surrounding quotes from a hook binary token.
 pub(crate) fn unquote_bin(bin: &str) -> &str {
     let b = bin.trim();

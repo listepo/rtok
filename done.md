@@ -6024,3 +6024,16 @@ Result: `plugins/gemini/` ships `gemini-extension.json` (`mcpServers.rtok`) and 
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T250.2. Copilot hooks find `rtok` off `PATH`
+
+T250.1–T250.4, creator request 2026-09-24, the follow-up T174 left open: the Codex, Copilot, Cursor and Grok plugin `hooks.json` files call a bare `rtok hook …` with no fallback, so a host whose hook shell lacks `~/.ketch/bin` (a GUI app started from the Dock) hits `rtok: command not found` (exit 127) on every event. Each gets T174's resolver — PATH, then `~/.ketch/bin/rtok`, then exit 0 silently — with any missing-rtok note only on the host's session-start event, in that host's own output shape. How each host runs a hook (read from its shipped code, 2026-09-24): Codex `$SHELL -lc` on Unix and `%COMSPEC% /C` with an optional `commandWindows` on Windows; Copilot separate `bash` and `powershell` fields; Cursor one `command`, `sh -c "<command> <<'CURSOR_HOOK_EOF' …"` on Unix and PowerShell `@'…'@ | & <command>` on Windows; Grok `sh -c` on Unix and PowerShell on Windows, no per-OS field.
+
+`copilot::hooks_doc` (both `~/.copilot/hooks/rtok.json` and `plugins/copilot/hooks/hooks.json`, pinned equal by `tests/copilot_plugin.rs`): for a bare `rtok` bin, `bash` gets the resolver and `powershell` a `Get-Command` / `Test-Path "$env:USERPROFILE\.ketch\bin\rtok.exe"` twin; an absolute bin (Windows install) keeps today's line. `sessionStart` without rtok prints one flat `{"additionalContext": "…ketch install listepo/rtok…"}` (Copilot's shape, `copilot_output`).
+
+Check: `tests/copilot_plugin.rs` runs each `bash` field with `/bin/sh -c`, empty PATH, temp HOME: silent exit 0 on every event but sessionStart's one note; a fake `~/.ketch/bin/rtok` is exec'd; a `cfg(windows)` test does the same through `powershell -NoProfile -Command`; `just check` green.
+
+Result: `src/agents/mod.rs` gains `hook_resolver(args, note)`, the POSIX line T174 wrote inline in `claude::command()` (PATH, then `~/.ketch/bin/rtok`, else `true[ && printf note]; exit 0`); Claude now calls it with byte-identical output. `copilot::hooks_doc` uses it for `bash` when `bin == "rtok"` and a PowerShell twin (`Get-Command rtok -CommandType Application`, then `%USERPROFILE%\.ketch\bin\rtok.exe`, else exit 0) for `powershell`; only `sessionStart` prints Copilot's flat `{"additionalContext": …}` note. `plugins/copilot/hooks/hooks.json` is that document, still pinned equal by `tests/copilot_plugin.rs`, which also runs every `bash` line under `/bin/sh -c` with an empty PATH (silent exit 0, one flat note, fake ketch rtok exec'd) and every `powershell` line on Windows CI.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
