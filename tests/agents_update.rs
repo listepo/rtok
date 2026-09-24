@@ -33,13 +33,17 @@ fn install_rewrites_stale_claude_hooks_and_a_rerun_changes_nothing() {
 
     let root = json(&settings);
     let hooks = &root["hooks"];
-    // The binary a fresh hook got — bare `rtok`, or the absolute `rtok.exe` on Windows.
+    // Every fresh hook shares one command shape (bare `rtok`, the T174 PATH-resolving form,
+    // or the absolute `rtok.exe` on Windows) — only the event name inside it differs.
     let fresh = hooks["SessionEnd"][0]["hooks"][0]["command"]
         .as_str()
         .unwrap();
-    let bin = fresh.strip_suffix(" hook SessionEnd").unwrap();
     let pre = &hooks["PreToolUse"][0]["hooks"][0];
-    assert_eq!(pre["command"], format!("{bin} hook PreToolUse"), "{after}");
+    assert_eq!(
+        pre["command"],
+        fresh.replace("SessionEnd", "PreToolUse"),
+        "{after}"
+    );
     // The timeout every freshly added hook got is the one the stale hook now carries.
     assert_eq!(
         pre["timeout"],

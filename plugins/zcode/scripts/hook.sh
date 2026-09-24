@@ -7,14 +7,10 @@ for bin in "$(command -v rtok 2>/dev/null)" "$HOME/.ketch/bin/rtok" \
     exec "$bin" hook "$1"
   fi
 done
-cat >&2 <<'EOF'
-rtok is not installed; this hook passes the input through unchanged.
-
-Install with ketch:
-  ketch install listepo/rtok
-
-If ketch is not installed:
-  curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
-  ketch install listepo/rtok
-EOF
+# T174: rtok is missing everywhere we look. Stay silent on every other event — a stderr
+# blob on every tool call was 380 "command not found"-shaped hook errors/week in the field
+# — and name the install command exactly once, on SessionStart, in Claude's own hook shape.
+if [ "$1" = "SessionStart" ]; then
+  printf '%s' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok is not installed; run ketch install listepo/rtok to enable it."}}'
+fi
 exit 0

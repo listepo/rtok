@@ -165,3 +165,59 @@ fn hook_commands_exec_rtok_from_path_and_fall_back_to_hook_sh() {
     }
     let _ = fs::remove_dir_all(&home);
 }
+
+/// T174 check: the real `scripts/hook.sh`, with an empty PATH and a `HOME` carrying no
+/// `.ketch/bin/rtok`, fails open silently (exit 0, empty stdout) on every event but
+/// `SessionStart`, which gets exactly one `hookSpecificOutput` note naming the ketch
+/// install — and still prefers a `~/.ketch/bin/rtok` that does exist over that note.
+#[test]
+fn hook_sh_fails_open_silently_except_one_session_start_note() {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::{Command, Stdio};
+
+    let home = tmp("claude-hook-sh-fail-open");
+    let empty_path = home.join("empty-path");
+    fs::create_dir_all(&empty_path).unwrap();
+    let script = plugins_dir().join("claude/scripts/hook.sh");
+    let run = |event: &str| {
+        let mut child = Command::new("/bin/sh")
+            .args([script.to_str().unwrap(), event])
+            .env("HOME", &home)
+            .env("PATH", &empty_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(b"{}").unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success(), "{event}: {out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+
+    assert_eq!(run("PreToolUse"), "");
+    assert_eq!(run("PostToolUse"), "");
+    let note = run("SessionStart");
+    let v: serde_json::Value =
+        serde_json::from_str(&note).unwrap_or_else(|e| panic!("{note}: {e}"));
+    assert_eq!(v["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    assert!(
+        v["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .contains("ketch install listepo/rtok"),
+        "{note}"
+    );
+
+    let ketch = home.join(".ketch/bin/rtok");
+    fs::create_dir_all(ketch.parent().unwrap()).unwrap();
+    fs::write(&ketch, "#!/bin/sh\nprintf 'ketch %s' \"$2\"\n").unwrap();
+    fs::set_permissions(&ketch, fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(run("SessionStart"), "ketch SessionStart");
+    let _ = fs::remove_dir_all(&home);
+}
+
+fn plugins_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins")
+}
