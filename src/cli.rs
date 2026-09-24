@@ -559,6 +559,8 @@ enum AgentCmd {
     /// Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link
     #[command(visible_alias = "remove")]
     Uninstall(RemoveArgs),
+    /// Bring what rtok installed up to date: in place where it can, reinstalled where not
+    Update(UpdateArgs),
     /// Every known app: kind and name, path and version, config files, rtok modules
     List {
         /// JSON instead of the table
@@ -603,6 +605,27 @@ struct RemoveArgs {
     /// Print what would be removed and exit
     #[arg(long)]
     dry_run: bool,
+    /// Skip closing/reopening a running desktop app around the write (T141)
+    #[arg(long)]
+    no_restart: bool,
+}
+
+#[derive(clap::Args)]
+struct UpdateArgs {
+    /// Host(s), comma-separated; omitted = every host rtok is installed in
+    host: Option<String>,
+    /// Print the planned edits and exit
+    #[arg(long)]
+    dry_run: bool,
+    /// Only the CLI app (default is all)
+    #[arg(long)]
+    cli: bool,
+    /// Only the desktop app (default is all)
+    #[arg(long, alias = "gui")]
+    desktop: bool,
+    /// All variants (the default when neither `--cli` nor `--desktop` is given)
+    #[arg(long)]
+    all: bool,
     /// Skip closing/reopening a running desktop app around the write (T141)
     #[arg(long)]
     no_restart: bool,
@@ -1019,6 +1042,7 @@ pub fn run() -> Result<()> {
             AgentCmd::Uninstall(args) => {
                 setup_host(config_file.as_deref(), SetupArgs::removing(args))?
             }
+            AgentCmd::Update(args) => update_hosts(config_file.as_deref(), args)?,
             AgentCmd::List { json } => {
                 let cfg = Config::load_with(config_file.as_deref(), None)?;
                 if json {
@@ -1600,6 +1624,38 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         desktop,
         all,
     };
+    apply_hosts(&mut cfg, &req, no_restart)
+}
+
+/// `rtok agents update [host,…]` (T242.2): the named hosts, or every host rtok is installed
+/// in, through the same backup/restart path as install.
+fn update_hosts(config_file: Option<&std::path::Path>, args: UpdateArgs) -> Result<()> {
+    let mut cfg = Config::load_with(
+        config_file,
+        setup_flags(args.dry_run, false, false, false, &[]),
+    )?;
+    let hosts = match &args.host {
+        Some(h) => parse_hosts(h)?,
+        None => crate::agents::installed_hosts(&cfg),
+    };
+    if hosts.is_empty() {
+        println!(
+            "nothing to update: rtok is not installed in any host (rtok agents install <host>)"
+        );
+        return Ok(());
+    }
+    let req = crate::agents::Request {
+        hosts,
+        mode: crate::agents::Mode::Update,
+        cli: args.cli,
+        desktop: args.desktop,
+        all: args.all,
+    };
+    apply_hosts(&mut cfg, &req, args.no_restart)
+}
+
+/// Run `req` with the loader and desktop-restart handling every `agents` writer shares.
+fn apply_hosts(cfg: &mut Config, req: &crate::agents::Request, no_restart: bool) -> Result<()> {
     // T81: `agents::run` may ask the plugin question mid-run, and a loader ticking on
     // stderr redraws right over a prompt — the question turns invisible and the wait for
     // its answer reads as a hang. A spinner must never share a terminal with a question,
@@ -1608,10 +1664,10 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
     // T141: closes a running desktop app before the write if it would change that host's
     // config, and reopens it after; CLI-only hosts just get a "restart your session" note.
     let out = if interactive {
-        crate::agents::restart::run(&mut cfg, &req, no_restart)?
+        crate::agents::restart::run(cfg, req, no_restart)?
     } else {
         with_loader("updating host", || {
-            crate::agents::restart::run(&mut cfg, &req, no_restart)
+            crate::agents::restart::run(cfg, req, no_restart)
         })?
     };
     print!("{out}");

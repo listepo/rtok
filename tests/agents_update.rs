@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::agents::{backups, json, rtok_without_claude, tmp, write_cfg};
+use common::agents::{backups, json, rtok, rtok_without_claude, tmp, write_cfg};
 use std::fs;
 
 /// What an older install left in `~/.claude/settings.json`: a hook on a versioned store path
@@ -65,4 +65,127 @@ fn install_rewrites_stale_claude_hooks_and_a_rerun_changes_nothing() {
     let again = rtok_without_claude(&["agents", "install", "claude", "--cli"], &cfg, &home);
     assert!(!again.contains(" hook "), "{again}");
     assert_eq!(fs::read_to_string(&settings).unwrap(), after);
+}
+
+/// `mcp_config.json` as an older rtok left it: the server on a versioned store path, beside a
+/// foreign server that must survive.
+const STALE_WINDSURF: &str = r#"{"mcpServers":{
+  "rtok":{"command":"/old/store/rtok/v0.1.0/rtok","args":["mcp"]},
+  "other":{"command":"other-mcp","args":[]}
+}}"#;
+
+/// The command install writes now: bare `rtok`, or the absolute `rtok.exe` on Windows when
+/// `rtok` is not on PATH — never the stale store path the seeds carry.
+fn is_current_rtok(cmd: &serde_json::Value) -> bool {
+    let cmd = cmd.as_str().unwrap_or("");
+    !cmd.contains("/old/store") && (cmd == "rtok" || cmd.ends_with("rtok.exe"))
+}
+
+fn windsurf(home: &std::path::Path) -> std::path::PathBuf {
+    home.join(".codeium/windsurf/mcp_config.json")
+}
+
+/// T242.2: `agents update claude` rewrites stale hooks and a stale `mcpServers.rtok` command
+/// in both of Claude Code's files; foreign entries stay.
+#[test]
+fn update_rewrites_stale_claude_hooks_and_mcp() {
+    let home = tmp("update-claude");
+    let cfg = write_cfg(&home);
+    let settings = home.join(".claude/settings.json");
+    let claude_json = home.join(".claude.json");
+    fs::write(&settings, STALE_SETTINGS).unwrap();
+    let stale_mcp = r#"{"mcpServers":{"rtok":{"type":"stdio","command":"/old/store/rtok/v0.1.0/rtok","args":["mcp"]},"other":{"command":"x"}}}"#;
+    fs::write(&claude_json, stale_mcp).unwrap();
+
+    let out = rtok_without_claude(&["agents", "update", "claude", "--cli"], &cfg, &home);
+    assert!(out.contains("~ PreToolUse Bash "), "{out}");
+    assert!(out.contains("mcpServers.rtok: "), "{out}");
+    let mcp = json(&claude_json);
+    assert!(
+        is_current_rtok(&mcp["mcpServers"]["rtok"]["command"]),
+        "{mcp}"
+    );
+    assert_eq!(mcp["mcpServers"]["other"]["command"], "x");
+    assert!(
+        !fs::read_to_string(&settings)
+            .unwrap()
+            .contains("/old/store")
+    );
+    assert_eq!(
+        fs::read_to_string(&backups(&claude_json)[0]).unwrap(),
+        stale_mcp
+    );
+}
+
+/// T242.2: a stale host changes once; the second update says `already current`, keeps the
+/// bytes and takes no second backup.
+#[test]
+fn update_rewrites_once_then_is_already_current() {
+    let home = tmp("update-windsurf");
+    let cfg = write_cfg(&home);
+    let path = windsurf(&home);
+    fs::write(&path, STALE_WINDSURF).unwrap();
+
+    let out = rtok(&["agents", "update", "windsurf"], &cfg, &home);
+    let after = fs::read_to_string(&path).unwrap();
+    assert_ne!(after, STALE_WINDSURF, "{out}");
+    let root = json(&path);
+    assert!(
+        is_current_rtok(&root["mcpServers"]["rtok"]["command"]),
+        "{after}"
+    );
+    assert_eq!(root["mcpServers"]["other"]["command"], "other-mcp");
+    assert_eq!(backups(&path).len(), 1);
+
+    let again = rtok(&["agents", "update", "windsurf"], &cfg, &home);
+    assert!(again.contains("Windsurf — already current"), "{again}");
+    assert_eq!(fs::read_to_string(&path).unwrap(), after);
+    assert_eq!(backups(&path).len(), 1);
+}
+
+/// T242.2: with no host named, only hosts that already carry rtok are touched — the Claude
+/// and Cursor dirs exist but get no file, the Windsurf entry is refreshed.
+#[test]
+fn update_without_a_host_touches_only_installed_hosts() {
+    let home = tmp("update-all");
+    let cfg = write_cfg(&home);
+    fs::write(windsurf(&home), STALE_WINDSURF).unwrap();
+
+    let out = rtok(&["agents", "update"], &cfg, &home);
+    assert!(out.contains("Windsurf"), "{out}");
+    assert!(!out.contains("Claude Code"), "{out}");
+    assert!(!home.join(".claude/settings.json").exists());
+    assert!(!home.join(".claude.json").exists());
+    assert!(!home.join(".cursor/hooks.json").exists());
+    assert!(is_current_rtok(
+        &json(&windsurf(&home))["mcpServers"]["rtok"]["command"]
+    ));
+}
+
+/// T242.2: a named host with nothing of rtok is skipped, not installed into; with no
+/// installed host at all, update says so and writes nothing.
+#[test]
+fn update_skips_a_host_rtok_is_not_in() {
+    let home = tmp("update-none");
+    let cfg = write_cfg(&home);
+    let out = rtok(&["agents", "update", "windsurf"], &cfg, &home);
+    assert!(out.contains("Windsurf — not installed"), "{out}");
+    assert!(out.contains("rtok agents install windsurf"), "{out}");
+    assert!(!windsurf(&home).exists());
+
+    let none = rtok(&["agents", "update"], &cfg, &home);
+    assert!(none.contains("nothing to update"), "{none}");
+}
+
+/// T242.2: `--dry-run` reports the rewrite and leaves the stale file and no backup.
+#[test]
+fn update_dry_run_writes_nothing() {
+    let home = tmp("update-dry");
+    let cfg = write_cfg(&home);
+    let path = windsurf(&home);
+    fs::write(&path, STALE_WINDSURF).unwrap();
+    let out = rtok(&["agents", "update", "windsurf", "--dry-run"], &cfg, &home);
+    assert!(out.contains("mcpServers.rtok"), "{out}");
+    assert_eq!(fs::read_to_string(&path).unwrap(), STALE_WINDSURF);
+    assert!(backups(&path).is_empty());
 }

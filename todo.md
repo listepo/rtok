@@ -65,7 +65,6 @@
 - T223. `windows-sys` linked in three versions
 - T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
 - T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
-- T242.2. `rtok agents update [host,…]`: refresh or reinstall what rtok already installed
 - T242.3. Claude plugin: `update` first, reinstall when update fails
 - T242.4. Codex plugin: `marketplace upgrade`, reinstall on failure
 - T242.5. Cursor, Kimi and Gemini hooks: refresh stale rtok entries on install/update

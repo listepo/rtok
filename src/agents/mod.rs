@@ -144,6 +144,10 @@ pub enum Mode {
     Remove,
     /// `setup claude --replace`: drop legacy token hooks and retarget the proxy.
     Replace,
+    /// `rtok agents update` (T242.2): the install path over a variant that already carries
+    /// rtok, with the flag modules it has switched back on. A host whose module cannot be
+    /// brought current in place (a CLI-managed plugin) reinstalls it under this mode.
+    Update,
 }
 
 /// The contract every host folder implements. The generic [`run`] loop, [`list`] and
@@ -583,6 +587,8 @@ pub enum Outcome<'a> {
     Applied { mode: Mode, reports: &'a [String] },
     /// A shared-config host already applied under this sibling variant.
     Shared(&'static str),
+    /// `agents update` found no rtok module in this variant and wrote nothing (T242.2).
+    NotInstalled,
 }
 
 /// The block one host variant prints:
@@ -600,17 +606,24 @@ pub fn block(agent: &dyn Agent, v: &Variant, cfg: &Config, outcome: Outcome) -> 
         Outcome::NotFound => " — not found",
         Outcome::Listed => "",
         Outcome::Applied { .. } if cfg.setup.dry_run => " — dry run, nothing written",
-        Outcome::Applied { mode, reports } if reports.iter().all(|r| r == NO_CHANGES) => {
-            if *mode == Mode::Remove {
-                " — no changes"
-            } else {
-                " — already installed"
-            }
-        }
+        Outcome::Applied { mode, reports } if reports.iter().all(|r| r == NO_CHANGES) => match mode
+        {
+            Mode::Remove => " — no changes",
+            Mode::Update => " — already current",
+            _ => " — already installed",
+        },
         Outcome::Applied { .. } => "",
         Outcome::Shared(_) => " — same files as above",
+        Outcome::NotInstalled => " — not installed",
     };
     let mut out = format!("{}: {}{note}\n", v.kind.label(), v.name);
+    if matches!(outcome, Outcome::NotInstalled) {
+        out.push_str(&format!(
+            "  skip    nothing of rtok here; run `rtok agents install {}`\n",
+            agent.id()
+        ));
+        return out;
+    }
     match app_path(v) {
         Some(p) => out.push_str(&format!("  app     {} ({})\n", p.display(), app_version(v))),
         None => out.push_str("  app     -\n"),
@@ -742,6 +755,18 @@ pub(crate) fn apply_all(
                 out.push_str(&block(a, v, cfg, Outcome::Shared(first)));
                 continue;
             }
+            let carried;
+            let cfg = if req.mode == Mode::Update {
+                let have = a.installed(cfg, v.kind);
+                if have.is_empty() {
+                    out.push_str(&block(a, v, cfg, Outcome::NotInstalled));
+                    continue;
+                }
+                carried = carry_flags(cfg, &have);
+                &carried
+            } else {
+                cfg
+            };
             let reports = a.apply(cfg, v.kind, req.mode)?;
             done = Some(v.name);
             changed |= reports.iter().any(|r| r != NO_CHANGES);
@@ -754,7 +779,7 @@ pub(crate) fn apply_all(
                     reports: &reports,
                 },
             ));
-            if req.mode == Mode::Install && !cfg.setup.dry_run {
+            if matches!(req.mode, Mode::Install | Mode::Update) && !cfg.setup.dry_run {
                 for m in missing(a, v.kind, cfg) {
                     out.push_str(&format!("  warning: {m} did not read back as installed\n"));
                 }
@@ -765,6 +790,32 @@ pub(crate) fn apply_all(
         }
     }
     Ok((out, changed))
+}
+
+/// The config `agents update` installs a variant with (T242.2): the flag modules it already
+/// carries switched on — a proxy read back keeps `--proxy`, an installed plugin keeps `--yes`
+/// — so a changed port or binary lands and nothing the user never chose appears.
+fn carry_flags(cfg: &Config, have: &[&str]) -> Config {
+    let mut c = cfg.clone();
+    c.setup.proxy |= have.contains(&"proxy");
+    c.setup.yes |= have.contains(&"plugin");
+    c
+}
+
+/// `rtok agents update` with no host named: every host with an rtok module in at least one
+/// variant on this machine, in [`HOSTS`] order.
+pub fn installed_hosts(cfg: &Config) -> Vec<String> {
+    HOSTS
+        .iter()
+        .filter(|&&id| {
+            host(id).is_some_and(|a| {
+                a.variants()
+                    .iter()
+                    .any(|v| present(a, v, cfg) && !a.installed(cfg, v.kind).is_empty())
+            })
+        })
+        .map(|id| id.to_string())
+        .collect()
 }
 
 /// Walk each requested host's variants. Hosts run in parallel; output stays in `ids` order.

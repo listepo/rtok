@@ -397,6 +397,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "installs hooks, MCP and the proxy into a host",
     ),
     ("agents uninstall", "takes rtok back out of a host"),
+    (
+        "agents update",
+        "refreshes or reinstalls what rtok installed in a host",
+    ),
     ("setup", "deprecated spelling of `rtok agents install`"),
     ("config init", "writes the annotated reference file"),
     ("config set", "edits one key in the user file"),
