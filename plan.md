@@ -26,26 +26,16 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T95 | todo | P1 | 2 | 0% | |
 | T96 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
-| T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
-
-| T122 | in progress | P1 | 3 | 5% | Claude Code / claude-haiku-4-5 |
 | T124 | todo | P3 | 2 | 0% | |
-| T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-
-| T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
-| T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 | T130.2 | todo | P2 | 3 | 0% | |
 | T131 | todo | P2 | 3 | 0% | |
 | T132 | todo | P2 | 2 | 0% | |
 | T134 | todo | P1 | 2 | 0% | |
-
-| T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 | T156 | todo | P3 | 3 | 0% | |
 | T157 | todo | P2 | 1 | 0% | |
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T163.1 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T163 | todo | P2 | 5 | 0% | |
 | T163.2 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T163.3 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
@@ -54,7 +44,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T171 | todo | P1 | 2 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T184 | todo | P1 | 2 | 0% | |
-| T198 | todo | P2 | 2 | 0% | |
 | T199 | todo | P2 | 1 | 0% | |
 | T201 | todo | P2 | 2 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
@@ -274,53 +263,9 @@ Check: `rtok agents install claude` offers the agent file and removal takes it a
 Gate for I-91 (`research.md` §17.2). The Agent SDK hooks page says `updatedToolOutput` "works for any tool"; rtok's standing rule says PostToolUse can only add context. If the CLI honours it, native Read/Bash output could be shrunk in place (pointer + `expand <id>`) instead of wrapped or denied — that changes the design of `cmd`, `read` and `guard`, so it is a creator decision, not a silent change. No product code in this task.
 Plan: throwaway hook script (scratch, not committed) returning `hookSpecificOutput.updatedToolOutput` for `Read` and `Bash` on the current Claude Code; run one Read and one Bash; check what the model received in the transcript. Repeat for an MCP tool.
 Check: a dated row in `research.md` §3 with the Claude Code version, the payload sent and what the transcript shows, per tool kind. Honoured → the `AGENTS.md` rule line and I-91 are put to the creator with the row; not honoured → I-91 closes with the date.
-### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
-
-`research.md` §2 (T59.5 row): 8,951 MCP description tokens × 40,402 turns = 6.2 % of session input on a host without Tool Search — the largest measured share with a shipped lever that is off by default. `doctor` already prints `mcp_tool_search likely disabled` and per-server `desc tokens` (`src/doctor.rs` `render`), and stops there. Add one advice line when all hold: Tool Search likely disabled, rtok's proxy is a hop in the Anthropic chain, `proxy.tools_rewrite.enabled = false`, and the summed description tokens are above a threshold (config key under `[doctor]`, default from the 3 % gate). The line names the total and the config key; per T59.7 it never says "saves N". Same field in the JSON report.
-
-Plan: field + advice line in `src/doctor.rs` (`Report`, `render`), threshold key under `[doctor]` in `src/config/mod.rs` + `config/default.toml`; bless trycmd config fixtures; unit tests on `render` for each condition.
-
-Check: unit tests on `Report::render` for the four conditions (line present only when all hold); `just test` green; ≤ 100 LOC.
-
-### T122. A dedup pointer reaches a context that never saw the body
-Seen 2026-09-21 in a Claude Code session: a Haiku sub-agent read `research.md` and `ideas.md`; the parent's first MCP `read` of the same files (`mode=lines`, ranges `14-30` and `1230-1260`) answered `[rtok <id> · identical to a result 1 turns ago …]` for both ranges with one id, and `expand <id>` returned the whole file. Two defects: (1) `plugin::identical_result` (T65.1) keys on the host session, which sub-agents share with the parent, so the pointer names a body that is not in the caller's context and every such read costs a second `expand` round trip — a loss, recorded as a `dedup` saving; (2) the ranged read was hashed or archived as the whole file, so two different ranges are "identical". The same question holds after a `compact_boundary`: the earlier body is gone from context. Reproduce first with a test, then fix at the responsible layer: hash the bytes actually returned, and return a pointer only when the earlier result was delivered to the same context (the hook payload's agent/transcript id where the surface has one; when the surface cannot tell — MCP — a body under a size threshold is returned as is). Lossless rule unchanged.
-Plan: failing test first in `src/plugins/read/mod.rs` tests (two ranges of one file → distinct results; body archived under one context, read from another → body). Fix in `plugin::identical_result` / `read::mod` hash of the returned bytes; context key from the hook payload where present, size threshold on MCP. `mise exec -- cargo nextest run read:: plugin::`.
-Check: a test where session S archives body B under sub-agent context A, then context P reads B → P gets the body, not a pointer; two different ranges of one file never share an id; `just test` green; no `dedup` Measurement row on the returned-body path.
-### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
-`research.md` §2 (T59.5 row): 8,951 MCP description tokens × 40,402 turns = 6.2 % of session input on a host without Tool Search — the largest measured share with a shipped lever that is off by default. `doctor` already prints `mcp_tool_search likely disabled` and per-server `desc tokens` (`src/doctor.rs` `render`), and stops there. Add one advice line when all hold: Tool Search likely disabled, rtok's proxy is a hop in the Anthropic chain, `proxy.tools_rewrite.enabled = false`, and the summed description tokens are above a threshold (config key under `[doctor]`, default from the 3 % gate). The line names the total and the config key; per T59.7 it never says "saves N". Same field in the JSON report.
-Plan: field + advice line in `src/doctor.rs` (`Report`, `render`), threshold key under `[doctor]` in `src/config/mod.rs` + `config/default.toml`; bless trycmd config fixtures; unit tests on `render` for each condition.
-Check: unit tests on `Report::render` for the four conditions (line present only when all hold); `just test` green; ≤ 100 LOC.
-
-
 ### T124. Realized `tools_rewrite` saving as a dated `research.md` row
 6.2 % (T59.5) is the ceiling, not a saving: no dated row shows what `[proxy.tools_rewrite]` removes with the default `max_description_tokens = 60`. Precondition, by the creator: turn it on for this machine's proxy for at least 20 sessions. Then sum the `kind = tools_rewrite` Measurement rows against session input for the same window (`rtok stats` / `rtok gain`, dated command in the row), and write one row into `research.md` §2 next to the T59.5 row; update `docs/comparison.md` only if it cites the number. If the realized share is under the 3 % gate, say so in the row and leave the default off.
 Check: the row cites the command, date, sessions, before/after tokens and the share; no number in prose without it.
-
-### T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
-
-`roadmap.md` still carries T59.5, T58.1 and T61.2, all in `done.md` (`## T59.5 —`, `## T58.1 —`, `## T61.2 —`); `research.md` §16.2 says T58.1 "needs changed-file share count first" while §2 has that count (7.3 %) and the feature shipped. An agent reading either file re-researches finished work — spent tokens with no row to show for it. Reconcile every id in `roadmap.md` against `done.md` headings and open PR branches; drop or mark the shipped ones; give §16.2 a status column (shipped / off by default / open) dated the day of the change. Docs only, no code.
-
-Plan: list every id in `roadmap.md`, match against `done.md` task headings and open PR branches; drop shipped ids; add a status column to `research.md` §16.2 (shipped / off by default / open, dated). Docs only; `just site`.
-
-Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row has a status; `just site` builds.
-
-### T125. `rtok stats`: thinking-block share — the gate for I-86
-I-86 (strip or pointer prior reasoning blocks on replay) has no number. First read the provider docs for what is already dropped server-side from earlier turns and cite it in the row. Then measure in `measure::stats` (same walk and unique-`message.id` rule as the other rows): bytes of `thinking` content blocks in assistant messages, per session and as a share of session input across the turns that re-send them. Gate 3 % of session input: above → promote I-86 to a task with an A/B Check; below → move I-86 to Rejected with the row as evidence.
-Plan: count `thinking` blocks in `src/measure/stats.rs` (same unique-`message.id` walk), text + JSON line, fixture unit test; run `rtok stats --since 30d`, add the dated row to `research.md` §2, update I-86 in `ideas.md` by the 3 % gate.
-Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit test on a fixture transcript, a dated row in `research.md` §2, and I-86 updated either way; ≤ 150 LOC.
-### T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
-`roadmap.md` still carries T59.5, T58.1 and T61.2, all in `done.md` (`## T59.5 —`, `## T58.1 —`, `## T61.2 —`); `research.md` §16.2 says T58.1 "needs changed-file share count first" while §2 has that count (7.3 %) and the feature shipped. An agent reading either file re-researches finished work — spent tokens with no row to show for it. Reconcile every id in `roadmap.md` against `done.md` headings and open PR branches; drop or mark the shipped ones; give §16.2 a status column (shipped / off by default / open) dated the day of the change. Docs only, no code.
-Plan: list every id in `roadmap.md`, match against `done.md` task headings and open PR branches; drop shipped ids; add a status column to `research.md` §16.2 (shipped / off by default / open, dated). Docs only; `just site`.
-Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row has a status; `just site` builds.
-
-
-### T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
-
-`roadmap.md` still carries T59.5, T58.1 and T61.2, all in `done.md` (`## T59.5 —`, `## T58.1 —`, `## T61.2 —`); `research.md` §16.2 says T58.1 "needs changed-file share count first" while §2 has that count (7.3 %) and the feature shipped. An agent reading either file re-researches finished work — spent tokens with no row to show for it. Reconcile every id in `roadmap.md` against `done.md` headings and open PR branches; drop or mark the shipped ones; give §16.2 a status column (shipped / off by default / open) dated the day of the change. Docs only, no code.
-
-Plan: list every id in `roadmap.md`, match against `done.md` task headings and open PR branches; drop shipped ids; add a status column to `research.md` §16.2 (shipped / off by default / open, dated). Docs only; `just site`.
-
-Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row has a status; `just site` builds.
 
 ### T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
 
@@ -657,14 +602,6 @@ Already covered: `assert_cmd`, `divan`, `httpmock`, `insta`, `rstest`,
 `trycmd`, `similar`. Skip `test-case` / `expect-test` / `mockito` duplicates;
 `testcontainers` / `bolero`/`honggfuzz` only if a measured e2e/fuzz gap appears.
 
-
-### T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
-
-Found 2026-09-22 in the docs pass (all confirmed against the files): T126 appears as three table rows and three identical cards (plan.md `### T126` ×3); T123 has two full cards; `todo.md` carries T126 twice; T183's Check sits under T184's card (the `Check: dry-run with \`all\`…` paragraph after T184's own Check) so T183 has none and T184 appears to have two; three blank lines split the task table into four markdown tables that render as raw pipes on GitHub and the site; T122 still carries the fix scope handed to T127; and T122/T123/T125 — all `src/` code cards — are claimed by `claude-haiku-4-5`, the exact models AGENTS.md forbids for code ("on T122–T125 every Haiku code diff had a defect its report called green"). "One task = one card with a Check" is broken throughout.
-
-Plan: delete duplicate rows/cards (one T126, one T123), move the stray Check into the T183 card, remove the blank lines inside the table, trim T122's card to what T127 does not own, dedupe `todo.md`, and reassign T122/T123/T125 to a mid-tier model (T126 is docs-only and may stay). Docs only.
-
-Check: `tests/plan_unique_ids.rs` — every `| T… |` row id and `### T…` heading unique, exactly one `^Check:` per card, no blank line inside the task table, no low-cost model on a card whose Plan touches `src/`; `grep -c '^### T126\.' plan.md` = 1 and `grep -c 'T126\.' todo.md` = 1; `just site` builds.
 
 ### T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
 
