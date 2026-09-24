@@ -8,7 +8,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | --- | --- | --- | --- | --- | --- |
 | T83.2 | todo | P1 | 3 | 0% | |
 | T83.4 | todo | P1 | 3 | 0% | |
-| T83.7 | todo | P1 | 2 | 0% | |
+| T83.7 | in progress | P1 | 2 | 10% | Claude Code / claude-opus-5-5 |
 | T87 | in progress | P1 | 2 | 70% | Claude Code / claude-fable-5-1 |
 | T88 | todo | P1 | 2 | 0% | |
 | T89 | todo | P1 | 3 | 0% | |
@@ -47,6 +47,8 @@ Check: the ten tests pass in the `windows` CI job; `just check` stays green.
 ### T83.7. `cli_trycmd::cli` fails on Windows
 
 The `trycmd`-driven CLI snapshot test likely diffs on path separators, line endings, or a Unix-only fixture. Decide whether `rtok`'s own output needs a Windows-safe rendering or the `.toml`/`.stdout` fixtures need a Windows variant. One family split out of the original T83; see T83.2 for the closing criterion.
+Found 2026-09-25 (windows job of ci run 35244082778): `help.toml` printed `Usage: rtok[EXE] …` — clap takes the usage name from argv[0]'s file name, `rtok.exe` on Windows. The other five cases then passed; the case count has grown since.
+Plan: `src/cli.rs` — `bin_name = "rtok"` on the `Cli` command, so every usage line says `rtok` on every OS (users too, not only snapshots); drop the `cli_trycmd` line from `.config/nextest.toml`; let the PR's `windows` job show any remaining per-OS diff and fix it the same way.
 
 Check: the test passes in the `windows` CI job; `just check` stays green.
 
