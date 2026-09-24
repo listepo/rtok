@@ -16,14 +16,19 @@ pub fn fetch(cx: &Runtime, id: &str) -> Result<Option<Vec<u8>>> {
     else {
         return Ok(None);
     };
-    if cx.store.mark_expanded(id)? > 0 {
-        let n = bytes.len() as u64;
-        let plugin = match cx.store.live_zone_pointer(id)? {
-            Some(p) if p.starts_with("[toon ") => "toon",
-            Some(_) => "archive",
-            None => "archive",
-        };
-        cx.record(&Measurement {
+    // T208: freeze + measurement commit in one transaction (`Store::mark_expanded_recorded`)
+    // — a crash or a failed insert used to leave the decision frozen with no ledger row,
+    // permanently under-counting `report_expand.cost`.
+    let n = bytes.len() as u64;
+    let plugin = match cx.store.live_zone_pointer(id)? {
+        Some(p) if p.starts_with("[toon ") => "toon",
+        Some(_) => "archive",
+        None => "archive",
+    };
+    cx.store.mark_expanded_recorded(
+        &cx.session,
+        id,
+        &Measurement {
             plugin,
             kind: "expand",
             before_bytes: 0,
@@ -32,8 +37,8 @@ pub fn fetch(cx: &Runtime, id: &str) -> Result<Option<Vec<u8>>> {
             est_after: cx.estimate(&String::from_utf8_lossy(&bytes), Class::Code),
             ref_id: Some(id.to_string()),
             call_id: cx.call_id,
-        })?;
-    }
+        },
+    )?;
     Ok(Some(bytes))
 }
 

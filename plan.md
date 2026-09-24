@@ -67,7 +67,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T204 | todo | P3 | 2 | 0% | |
 | T206 | todo | P2 | 3 | 0% | |
 | T207 | todo | P1 | 3 | 0% | |
-| T208 | todo | P1 | 3 | 0% | |
 | T209 | todo | P1 | 3 | 0% | |
 | T210 | todo | P2 | 2 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
@@ -751,14 +750,6 @@ Found 2026-09-22 in the store/accounting pass: `report_window.measurements` / `r
 Plan: one `Store::measurement_totals()` SQL aggregate (GROUP BY plugin, kind; plus grouped `usage` counts to kill the N+1) consumed by `report_window`, `report_savings`, `otel_saved_totals` and both `plugin_stats`, with one consistent expand-row policy.
 
 Check: fixture seeding a non-catalogue plugin's rows + an expand row — `report_window.measurements == store.count_measurements()`, `report_savings.total_saved == otel_saved_totals().sum(saved)`, `rows` equal in both `plugin_stats`; `plugin_stats_matches_sql_aggregates_on_10k_rows`; `just test` green.
-
-### T208. Multi-step store writes commit separately — freezes without a Measurement, orphan archives
-
-Found 2026-09-22 in the store/accounting pass: `expand::fetch` (`src/expand.rs:15-42`) commits `mark_expanded` (the decision freezes — every later request stops shortening the id) and only afterwards records the expand `Measurement` in a second transaction; a crash or `record()` error in between leaves the state permanently frozen with no ledger row and `report_expand.cost` under-counted. Similarly `insert_call_io` (`src/store/mod.rs:511-539`) chains `call_session`, up to two `write_archive` calls (file + `archive` row each) and the `call_io` insert as separate implicit transactions, and `upsert_model` (:249-272) chains four statements — a crash or `SQLITE_BUSY` after the spill strands `archive` rows and payload files the retention purge never collects (its `doomed` walk follows only `call_io`/decisions/read-cache references, :1741-1761).
-
-Plan: one `immediate_transaction` around each sequence — a single `Store::mark_expanded_recorded` (freeze + measurement) called from `fetch`, one around `insert_call_io`'s spills + insert (sha-named file writes are idempotent) and one around `upsert_model`.
-
-Check: `mark_and_record_are_atomic` — a forced measurement failure rolls back and the decision stays unexpanded; `insert_call_io_failure_leaves_no_orphan_archive` — a failed final insert leaves `SELECT COUNT(*) FROM archive` at 0; `write_api_round_trip_and_spill` and `retention_keeps_plugin_archives_without_call_io` green; `just test` green.
 
 ### T209. `upsert_note` select-then-insert races a duplicate past the topic key
 
