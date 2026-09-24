@@ -224,6 +224,21 @@ Check result: §23 lists every host with a source; follow-up tasks only for the 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
+### T262.5. Hook call rows keep the host-adapted input
+
+Found 2026-09-24 while claiming T262.3/T262.4 (creator chose to fix Copilot first): `dispatch` stored the raw stdin in the call row, so a Copilot `preToolUse` (`toolName: view`, `toolArgs.path`) never matched the spawn-brief ledger's `tool_name` scan, and the `read` plugin's `PostToolUse` window read the same raw rows. Every adapted host (Copilot, Cursor, Gemini, Grok, CodeWhale, Cline, Devin) was affected.
+
+Plan: when a host adapter ran, `dispatch_owned_strict` hands `dispatch` the adapted `HookInput` as JSON, so the stored row carries Claude's field names; Claude's own stdin stays byte-identical. Test: a Copilot `view` through `rtok hook PreToolUse --host copilot` reaches a later `SubagentStart` brief.
+
+Check: `tests/hook_spawn_brief.rs::copilot_reads_reach_the_brief` fails on `origin/main` and passes here; `just check` green.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): as planned, in `src/hooks/mod.rs`. Unknown fields still round-trip through `HookInput::extra`. Unblocks T262.4.
+
+Check result: fail-first shown by swapping in `origin/main`'s `src/hooks/mod.rs` (1 failed), then 5/5 pass with the fix.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T130.2. Spawn brief: wire the `SubagentStart` hook into the Claude installer, bless docs
 
 T130.1 (`done.md`) landed the mechanism — `SubagentStart` on the `Plugin` trait, the hook dispatch, config, and `memory::handoff::build_brief` shared with the `handoff` MCP tool — but nothing yet installs a `SubagentStart` matcher for real users, so the feature is inert until this lands. Needs: (1) `rtok agents install claude` registers `SubagentStart`, and `plugins/claude/hooks/hooks.json` carries the same entry (the plugin is the installer's hooks, T114); (2) `docs/agents.md` reblessed (`tests/agents_doc.rs` with `RTOK_BLESS=1`) and `tests/host_docs.rs` green. Split on claiming (2026-09-24): the outline line ranges (the original part 3) moved to T130.3.

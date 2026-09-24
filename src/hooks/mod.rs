@@ -166,6 +166,13 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     } else if input.hook_event_name.is_empty() {
         input.hook_event_name = event.to_string();
     }
+    // The call row keeps what plugins read back later (the spawn-brief ledger, the read
+    // window): an adapted host's input in Claude's field names, not its raw camelCase (T262.5).
+    // Claude's own stdin is already that shape and stays byte-identical.
+    let adapted =
+        grok || copilot || cursor || gemini || codewhale || cline || cfg.hook.host == "devin";
+    let stored = adapted.then(|| serde_json::to_vec(&input).ok()).flatten();
+    let stdin = stored.as_deref().unwrap_or(stdin);
     let session = resolve_session(&input.session_id, &cfg.core.session_env, |k| {
         std::env::var(k).ok()
     });
