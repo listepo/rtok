@@ -37,6 +37,13 @@ threads-required = "num-test-threads"
 filter = 'test(/hook_spawned_flushes_coalesce_to_at_most_two_processes/)'
 threads-required = "num-test-threads"
 
+# T237: times one 230 KB skill digest including its archive write, which the Windows runner's
+# NTFS stretched from 270 ms (run 35591648404) to 1685 ms (run 35960806447) under suite load.
+# Alone, the number is the code's, not its neighbours' I/O.
+[[profile.default.overrides]]
+filter = 'test(/oversized_body_is_denied_with_map_and_pointer_under_budget/)'
+threads-required = "num-test-threads"
+
 # trycmd spawns the real rtok binary for every case; under a full-suite parallel run its
 # output drifted 3x on 2026-09-20/21 (fast, load-only failures; green standalone and in
 # CI). Isolate the runner on the machine like the heavy benches above -- each case still

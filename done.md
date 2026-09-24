@@ -5491,3 +5491,18 @@ Result: `rtok stats` gains a `repeat reads` row group (feature `read`), which cl
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T237. Windows CI flakes on wall-clock asserts unrelated to the PR under test
+
+`main` auto-reverts a merge when CI fails, and the `windows` job (debug `cargo nextest run --workspace`) keeps failing on wall-clock bounds a loaded runner overshoots: `tests/latency.rs` `hook_returns_despite_exclusive_lock` ("hook waited 107.08 ms", 100 ms bound, run 35947867095), `src/plugins/guard/skill.rs` `oversized_body_is_denied_with_map_and_pointer_under_budget` ("1685 ms", 1000 ms bound, run 35960806447), and `tests/demon.rs` `status_asks_the_kernel_rather_than_believing_the_state_file` (`status` said `running` 0.2 s after the kill, run 35938059153). Done means each test still catches the regression it was written for, without depending on runner speed; no check deleted or silently loosened; the 10 ms hook hot-path rule untouched.
+
+Plan:
+1. `latency.rs`: the bound exists to catch a hook that outwaits the lock (T178/T200: 1 s busy, 10 retries). Add a work-based check — the locked run records no `calls` row (`Store::count_calls` equal before/after), which a hook that waited out the 500 ms holder would. Keep 100 ms off Windows; on Windows allow 250 ms (still under the 500 ms hold): SQLite's 5 ms busy handler sleeps 1+2+2 ms and each Windows `Sleep` rounds up to the 15.6 ms tick.
+2. `skill.rs`: the debug bound guards a gross regression; the Windows cost is the NTFS archive write under suite load (270 ms in run 35591648404, 1685 ms in run 35960806447). Run the test alone in `.config/nextest.toml` (`threads-required`) and raise only the Windows debug bound to 3000 ms with those numbers; release 10 ms and Unix debug 100 ms unchanged.
+3. `demon.rs`: `status` reads liveness from the supervisor's `flock`; Windows releases a killed process's `LockFileEx` locks asynchronously after its exit code flips. Poll `demon status` until `stopped` within 10 s instead of one shot — a status that believed the state file would say `running` forever.
+4. Verify: `just check`; the three tests pass on macOS; Windows CI green on the PR.
+
+Result: `hook_returns_despite_exclusive_lock` now proves the fail-open by work: the locked run leaves the `calls` row count unchanged (`Store::recent_calls`), and with `LOCK_WAIT.busy` set to 1 s the test fails on that assert ("outwaited … 578 ms") before any timer is consulted. Its wall bound stays 100 ms off Windows and is 250 ms on Windows, still half the 500 ms hold. The skill digest test runs alone under nextest (`threads-required`), with the Windows debug bound at 3000 ms; release 10 ms and Unix debug 100 ms are unchanged. `status_asks_the_kernel_rather_than_believing_the_state_file` polls `demon status` until `stopped` (10 s deadline) and then keeps its original asserts; the stale state file is still required. The hook's `LOCK_WAIT` and the hot path are unchanged. `just check` green: 1603 passed.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5

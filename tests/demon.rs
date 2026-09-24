@@ -112,6 +112,12 @@ fn status_asks_the_kernel_rather_than_believing_the_state_file() {
         state(&h).is_some(),
         "the stale file is the point of the test"
     );
+    // T237: liveness is the supervisor's lock, and Windows releases a killed process's locks
+    // asynchronously, after its exit code already reads dead: `status` said `running` 0.2 s
+    // after the kill (ci run 35938059153). A status that believed the file never turns.
+    until("status reads the killed supervisor as stopped", || {
+        rtok(&["demon", "status", "mcp"], &h).contains("stopped")
+    });
     let out = rtok(&["demon", "status", "mcp"], &h);
     assert!(out.contains("stopped"), "{out}");
     assert!(!out.contains("running"), "{out}");

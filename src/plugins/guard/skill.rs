@@ -177,11 +177,13 @@ mod tests {
         assert_eq!(rt.get_archive(id).unwrap().unwrap(), big.as_bytes());
         // The 10 ms gate is the release number. Debug only guards against a gross
         // regression; the `windows-latest` runner took 270 ms here (ci run 35591648404),
-        // most of it the archive write on NTFS.
+        // most of it the archive write on NTFS, and 1685 ms under full-suite load (ci run
+        // 35960806447). T237: `.config/nextest.toml` runs this test alone, and the Windows
+        // debug bound leaves room over that outlier.
         let budget = match (cfg!(debug_assertions), cfg!(windows)) {
             (false, _) => 10,
             (true, false) => 100,
-            (true, true) => 1000,
+            (true, true) => 3000,
         };
         assert!(ms < budget, "{ms} ms");
     }
