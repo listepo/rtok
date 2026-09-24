@@ -5,6 +5,7 @@ use std::future::IntoFuture;
 use std::sync::Arc;
 
 use rtok::config::Config;
+use rtok::testutil::config_file_in;
 use rtok::web::{DashState, app};
 
 async fn serve(
@@ -17,14 +18,7 @@ async fn serve(
 ) {
     let dir = std::env::temp_dir().join(format!("rtok-dash-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let mut cfg = Config::load_from(&dir).expect("config");
-    // Hermetic probes: a snapshot ticks `rtok doctor` (T15.6) — and `read_share` parses
-    // `stats.transcripts_dir`, which `load_from` leaves at this machine's real
-    // `~/.claude/projects` (T74: ~30 s CPU per snapshot on a heavy history).
-    cfg.doctor.settings_path = dir.join("missing-settings.json");
-    cfg.doctor.claude_json = dir.join("missing-claude.json");
-    cfg.doctor.mcp_json = dir.join("missing-mcp.json");
-    cfg.stats.transcripts_dir = dir.join("missing-transcripts");
+    let cfg = config_file_in(&dir);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -72,11 +66,7 @@ async fn health_answers_during_a_snapshot_build() {
 
     let dir = std::env::temp_dir().join(format!("rtok-dash-slowbuild-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let mut cfg = Config::load_from(&dir).expect("config");
-    cfg.doctor.settings_path = dir.join("missing-settings.json");
-    cfg.doctor.claude_json = dir.join("missing-claude.json");
-    cfg.doctor.mcp_json = dir.join("missing-mcp.json");
-    cfg.stats.transcripts_dir = dir.join("missing-transcripts");
+    let cfg = config_file_in(&dir);
 
     let barrier = Arc::new(Barrier::new(2));
     let build_barrier = barrier.clone();
@@ -130,15 +120,9 @@ async fn snapshot_error_when_store_path_is_a_directory() {
     let dir = std::env::temp_dir().join(format!("rtok-web-store-err-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let mut cfg = Config::load_from(&dir).expect("config");
+    let mut cfg = config_file_in(&dir);
     cfg.core.db_path = dir.join("not-a-db");
     std::fs::create_dir_all(&cfg.core.db_path).unwrap();
-    cfg.doctor.settings_path = dir.join("missing-settings.json");
-    cfg.doctor.claude_json = dir.join("missing-claude.json");
-    cfg.doctor.mcp_json = dir.join("missing-mcp.json");
-    // T74: same transcripts leak as `serve` — the snapshot must not parse this
-    // machine's real session JSONL.
-    cfg.stats.transcripts_dir = dir.join("missing-transcripts");
     let snap = rtok::web::model::snapshot(&cfg);
     assert!(snap.error.is_some(), "{:?}", snap.error);
     let v = serde_json::to_value(&snap).unwrap();
@@ -306,7 +290,7 @@ async fn serve_pkg(
 ) -> (String, tokio::task::JoinHandle<std::io::Result<()>>) {
     let dir = std::env::temp_dir().join(format!("rtok-pkg-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let cfg = Config::load_from(&dir).expect("config");
+    let cfg = config_file_in(&dir);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
