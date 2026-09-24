@@ -393,14 +393,18 @@ if "%ALLARGS%"=="plugin remove rtok@rtok" (
 )
 "#;
 
-/// The fake `claude`'s calls so far, one argv per line.
+/// The fake `claude`'s calls so far, one argv per line (`\n`, even from the Windows `.cmd`).
 pub fn claude_log(home: &Path) -> String {
-    fs::read_to_string(home.join("claude.log")).unwrap_or_default()
+    fs::read_to_string(home.join("claude.log"))
+        .unwrap_or_default()
+        .replace("\r\n", "\n")
 }
 
 /// The fake `codex`'s calls so far, one argv per line.
 pub fn codex_log(home: &Path) -> String {
-    fs::read_to_string(home.join("codex.log")).unwrap_or_default()
+    fs::read_to_string(home.join("codex.log"))
+        .unwrap_or_default()
+        .replace("\r\n", "\n")
 }
 
 /// [`raw`] that must succeed; returns stdout.
