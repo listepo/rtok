@@ -1315,6 +1315,30 @@ impl Store {
         Ok(rows.into_iter().map(Option::unwrap_or_default).collect())
     }
 
+    /// Like [`Store::recent_hook_inputs`], but filtered to rows whose `hook_event_name` is
+    /// `event` (T202). `record_call` (`src/hooks/mod.rs`) already stores that name in
+    /// `calls.name`, so the filter is a `WHERE` on an existing column, not a JSON re-scan:
+    /// callers that only care about `PostToolUse` or `PreToolUse` rows no longer fetch and
+    /// parse every other event type to find them.
+    pub fn recent_hook_inputs_for_event(
+        &self,
+        session: &str,
+        event: &str,
+        limit: i64,
+    ) -> Result<Vec<String>> {
+        let mut conn = self.lock()?;
+        let rows: Vec<Option<String>> = calls::table
+            .inner_join(call_io::table)
+            .filter(calls::session_id.eq(session))
+            .filter(calls::kind.eq("hook"))
+            .filter(calls::name.eq(event))
+            .order(calls::id.desc())
+            .limit(limit)
+            .select(call_io::request_json)
+            .load(&mut *conn)?;
+        Ok(rows.into_iter().map(Option::unwrap_or_default).collect())
+    }
+
     /// Hook/call rows in this session at or after `ts` (window for `guard`).
     pub fn calls_since(&self, session: &str, ts: i64) -> Result<i64> {
         let mut conn = self.lock()?;

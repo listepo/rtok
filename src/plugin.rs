@@ -427,6 +427,11 @@ impl Ledger for Runtime {
         self.store.recent_hook_inputs(&self.session, limit)
     }
 
+    fn recent_hook_inputs_for_event(&self, event: &str, limit: i64) -> Result<Vec<String>> {
+        self.store
+            .recent_hook_inputs_for_event(&self.session, event, limit)
+    }
+
     fn calls_since(&self, ts: i64) -> Result<i64> {
         self.store.calls_since(&self.session, ts)
     }

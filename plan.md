@@ -67,7 +67,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T198 | todo | P2 | 2 | 0% | |
 | T199 | todo | P2 | 1 | 0% | |
 | T201 | todo | P2 | 2 | 0% | |
-| T202 | todo | P2 | 3 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
 | T206 | todo | P2 | 3 | 0% | |
 | T207 | todo | P1 | 3 | 0% | |
@@ -760,14 +759,6 @@ Found 2026-09-22 in the core pass: hook stdin is `read_to_end` with no cap and p
 Plan: skip `hex_sha256` in `spill` when `archive_dir` is `None` and the body is over cap (store NULL sha); bound the stdin read (`Take` at a `core.hook_max_input_bytes`, above which the hook fails open to `{}`); defer or cap `guard`'s archive write over a size threshold.
 
 Check: `oversized_hook_call_io_does_not_archive` extended — over-cap bodies record NULL `request_sha256`/`response_sha256`; `spill_over_cap_without_archive_dir_skips_hashing`; latency gate with a 5 MB PostToolUse fixture dispatches < 50 ms; `just test` green.
-
-### T202. `recent_hook_inputs` and the handoff ledger re-parse up to 200 × 64 KB per event
-
-Found 2026-09-22 in the core pass: the Read-advice path fetches the newest 50 hook bodies (`request_json`, each up to `call_io_inline_bytes` = 64 KB ≈ 3 MB) and `serde_json::from_str`s all of them on **every native Read PreToolUse** (`src/plugins/read/hook.rs:51-86`), plus `fs::metadata`/`canonicalize` syscalls; `memory::handoff::ledger` (`src/plugins/memory/handoff.rs:50-100`) re-parses up to 200 rows on every `SubagentStart`. O(session history) work on the hot path: a session with several large Write/Bash payloads puts every later Read PreToolUse well past 10 ms. (T55.16 removed the guard body *read*; this JSON re-scan is the same class, untracked.)
-
-Plan: filter and trim in SQL — PostToolUse rows only, `tool_name IN ('Read','Edit','Write')`, `LIMIT 5` bodies for the edit window (lower limit for the handoff ledger) — selecting trimmed columns so per-event transfer is a few small rows regardless of history.
-
-Check: `hook_pre_tool_read_stays_under_budget_with_50_large_rows` — seed 50 × 60 KB hook rows, a `pre_tool_read.json` dispatch keeps p95 < 10 ms; `edited_file_reads_on` and the handoff tests unchanged; `just test` green.
 
 ### T204. A panicking plugin is dropped silently — the error never reaches the log
 

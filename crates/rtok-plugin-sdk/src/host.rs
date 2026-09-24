@@ -318,6 +318,28 @@ pub trait Ledger {
     /// The raw JSON of the last `limit` hook inputs in this session, newest first.
     fn recent_hook_inputs(&self, limit: i64) -> Result<Vec<String>>;
 
+    /// The raw JSON of the last `limit` hook inputs whose `hook_event_name` is `event`,
+    /// newest first (T202). A plugin that only cares about e.g. `PostToolUse` rows should
+    /// call this instead of `recent_hook_inputs` plus its own filter loop, so a host backed
+    /// by a real store can push the filter into the query instead of fetching and parsing
+    /// every other event type first.
+    ///
+    /// Default: filters an unfiltered `limit`-sized window in memory. Correct but not the
+    /// optimization — a host with a queryable store should override it.
+    fn recent_hook_inputs_for_event(&self, event: &str, limit: i64) -> Result<Vec<String>> {
+        Ok(self
+            .recent_hook_inputs(limit)?
+            .into_iter()
+            .filter(|body| {
+                serde_json::from_str::<Value>(body)
+                    .ok()
+                    .and_then(|v| v.get("hook_event_name")?.as_str().map(str::to_owned))
+                    .as_deref()
+                    == Some(event)
+            })
+            .collect())
+    }
+
     /// How many calls this session has made since the unix timestamp `ts`.
     fn calls_since(&self, ts: i64) -> Result<i64>;
 

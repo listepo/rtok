@@ -259,7 +259,9 @@ fn memory(kind: &str, body: &[u8]) -> usize {
         "tool_name": "Read",
         "tool_input": {"file_path": format!("/fixture-{kind}.rs")},
     });
-    let call_id = cx.record_call("hook", "hook", None).unwrap();
+    // T202: `calls.name` carries the hook event (matches real `hooks::dispatch`), since
+    // `handoff::ledger`'s query now filters on it.
+    let call_id = cx.record_call("hook", "hook", Some("PreToolUse")).unwrap();
     cx.store
         .insert_call_io(
             call_id,
