@@ -13,7 +13,7 @@ use std::rc::Rc;
 /// `tests/surface_parity.rs` asserts this equals `rtok::web::model::pages()`.
 pub const PAGE_IDS: &[&str] = &[
     "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats", "graph",
-    "hosts", "config", "services",
+    "hosts", "config", "services", "worktrees",
 ];
 
 /// Pure snapshot → view fields. Native-testable; the WASM `load_snapshot` applies these
@@ -44,6 +44,7 @@ pub mod snapshot {
         pub hosts_text: String,
         pub config_text: String,
         pub services_text: String,
+        pub worktrees_text: String,
     }
 
     #[derive(Debug, Default, PartialEq, Eq)]
@@ -118,6 +119,7 @@ pub mod snapshot {
             hosts_text: hosts_of(&v["hosts"]),
             config_text: config_of(&v["config"]),
             services_text: services_of(&v["services"]),
+            worktrees_text: worktrees_of(&v["worktrees"]),
         }
     }
 
@@ -473,6 +475,13 @@ pub mod snapshot {
         })
     }
 
+    /// The Worktrees page (T232): one rendered string, like [`config_of`].
+    fn worktrees_of(v: &Value) -> String {
+        v.as_str().map(str::to_string).unwrap_or_else(|| {
+            "worktrees did not answer this tick — `rtok worktree list` has the details".into()
+        })
+    }
+
     fn savings_text(v: &Value) -> String {
         let Some(plugins) = v["plugins"].as_array() else {
             return "no measured savings yet".into();
@@ -595,6 +604,7 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
     ui.set_config_text(SharedString::from(view.config_text.clone()));
     sync_config_view(ui, &view.config_text);
     ui.set_services_text(SharedString::from(view.services_text));
+    ui.set_worktrees_text(SharedString::from(view.worktrees_text));
 
     let plugins: Vec<PluginRow> = view
         .plugins
@@ -920,7 +930,7 @@ mod tests {
             PAGE_IDS,
             [
                 "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats",
-                "graph", "hosts", "config", "services"
+                "graph", "hosts", "config", "services", "worktrees"
             ]
         );
     }
@@ -966,7 +976,8 @@ mod tests {
             "graph": "root .  rows 3  files 2  pending 0\nwatch off\nindexed_at -\ndead symbols\n none\n",
             "hosts": "CLI: Codex\n  app     -\n",
             "config": "proxy.port = 8899 (default)\n",
-            "services": "proxy  running  pid=123  uptime=10s  log=/x\n"
+            "services": "proxy  running  pid=123  uptime=10s  log=/x\n",
+            "worktrees": "path branch owner state seen modified source cache\n"
         });
         let view = snapshot::parse(&v);
         assert!(
@@ -981,7 +992,8 @@ mod tests {
                 && PAGE_IDS.contains(&"graph")
                 && PAGE_IDS.contains(&"hosts")
                 && PAGE_IDS.contains(&"config")
-                && PAGE_IDS.contains(&"services"),
+                && PAGE_IDS.contains(&"services")
+                && PAGE_IDS.contains(&"worktrees"),
             "every model page id is a WASM tab"
         );
         assert_eq!(view.usage_ctt, 5);
@@ -1002,6 +1014,7 @@ mod tests {
         assert!(view.hosts_text.contains("CLI: Codex"));
         assert!(view.config_text.contains("proxy.port = 8899"));
         assert!(view.services_text.contains("proxy  running"));
+        assert!(view.worktrees_text.contains("path branch owner"));
     }
 
     #[test]
@@ -1092,5 +1105,12 @@ mod tests {
         let v = json!({"type": "snapshot", "services": null, "plugins": [], "calls": [], "sessions": [], "logs": [], "usage": {}});
         let view = snapshot::parse(&v);
         assert!(view.services_text.contains("did not answer"));
+    }
+
+    #[test]
+    fn missing_worktrees_is_a_failed_tick_not_empty() {
+        let v = json!({"type": "snapshot", "worktrees": null, "plugins": [], "calls": [], "sessions": [], "logs": [], "usage": {}});
+        let view = snapshot::parse(&v);
+        assert!(view.worktrees_text.contains("did not answer"));
     }
 }

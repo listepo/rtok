@@ -10,6 +10,9 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use crate::config::{Config, layers};
 use crate::demon::{self, Service};
@@ -76,6 +79,12 @@ pub struct Snapshot {
     /// [`Model::demon`] and [`otel_status`] already build both). `None` on a failed
     /// tick.
     pub services: Option<String>,
+    /// Worktrees page (T232): `worktree list`'s rows — path, branch, owner, age,
+    /// `target/` size and state — through [`worktrees_page_text`], the same
+    /// [`crate::worktree::list::rows`]/[`crate::worktree::list::to_table`] `worktree
+    /// list` already calls (D27, no second reader or directory walk); `gc`/`clean`
+    /// stay CLI-only verdicts. `None` only when the current directory is unreadable.
+    pub worktrees: Option<String>,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -327,6 +336,7 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
         ("hosts", "hosts"),
         ("config", "config"),
         ("services", "services"),
+        ("worktrees", "worktrees"),
     ]
 }
 
@@ -940,6 +950,11 @@ pub fn otel_status(cfg: &Config) -> Result<OtelStatus> {
 /// Doctor tab feels stale; far longer than the 2 s tick, so MCP spawns are not the tick.
 const DOCTOR_SNAPSHOT_TTL: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// How long a snapshot may reuse the last worktrees read (T232): the walk takes tens
+/// of seconds per pass in a checkout with a built `target/`, so reusing
+/// `DOCTOR_SNAPSHOT_TTL` would re-walk almost continuously in an open tui/web.
+const WORKTREES_TTL: Duration = Duration::from_secs(300);
+
 /// Snapshot-only doctor: same [`doctor`] probes, cached briefly so `rtok tui` / `rtok web`
 /// ticks do not spawn MCP servers every two seconds. `rtok doctor` still goes through
 /// [`doctor`] uncached. Tests bypass the cache so Check pins stay byte-identical to a
@@ -948,8 +963,7 @@ fn doctor_for_snapshot(cfg: &Config) -> Option<doctor::Report> {
     if cfg!(test) {
         return doctor(cfg).ok();
     }
-    use std::sync::{Mutex, OnceLock};
-    use std::time::Instant;
+    use std::sync::OnceLock;
 
     struct Entry {
         at: Instant,
@@ -1051,8 +1065,7 @@ fn stats_skills(
     if cfg!(test) {
         return (None, 0, false, None);
     }
-    use std::sync::{Mutex, OnceLock};
-    use std::time::Instant;
+    use std::sync::OnceLock;
     struct Entry {
         at: Instant,
         key: String,
@@ -1153,48 +1166,56 @@ fn graph_page_text(_cfg: &Config) -> Option<String> {
     None
 }
 
+/// A page read too slow for a 2 s tick (T231, T232): the tick renders the last known
+/// value while at most one background thread refreshes it once `ttl` has passed — a
+/// cold or stale entry never blocks the tick. `None` before the first read ever lands.
+struct Background<T> {
+    cache: Mutex<Option<(Instant, T)>>,
+    refreshing: AtomicBool,
+}
+
+impl<T: Clone + Send + 'static> Background<T> {
+    const fn new() -> Self {
+        Self {
+            cache: Mutex::new(None),
+            refreshing: AtomicBool::new(false),
+        }
+    }
+
+    /// The last known value if it is younger than `ttl`; otherwise starts at most one
+    /// background `read` (skipped while one is already in flight) and, either way,
+    /// returns immediately with the last known value, or `None` before any read has
+    /// landed.
+    fn get(&'static self, ttl: Duration, read: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+        let last_known = self.cache.lock().ok().and_then(|g| {
+            g.as_ref()
+                .map(|(at, value)| (value.clone(), at.elapsed() < ttl))
+        });
+        if !matches!(last_known, Some((_, true))) && !self.refreshing.swap(true, Ordering::SeqCst) {
+            std::thread::spawn(move || {
+                let value = read();
+                if let Ok(mut guard) = self.cache.lock() {
+                    *guard = Some((Instant::now(), value));
+                }
+                self.refreshing.store(false, Ordering::SeqCst);
+            });
+        }
+        last_known.map(|(value, _)| value)
+    }
+}
+
 /// The Hosts page (T231): [`crate::agents::list`]'s blocks, verbatim — the same
 /// per-variant kind/version/config/module text `rtok agents list` prints, built from
 /// the same probe `agents_list`'s JSON form calls (D27, no duplicated logic).
 /// `agents list` spawns one `--version` per host variant (T168) — too slow for a 2 s
-/// snapshot tick — so this reuses [`doctor_for_snapshot`]'s cache shape, except a
-/// cold or stale entry never blocks the tick: a background thread refreshes it while
-/// the tick renders the last known text, or "probing hosts…" before the first probe
-/// lands.
+/// snapshot tick — so this reuses [`Background`]: a cold or stale entry never blocks
+/// the tick, and the tick renders the last known text, or "probing hosts…" before the
+/// first probe lands.
 fn hosts_page_text(cfg: &Config) -> String {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Mutex, OnceLock};
-    use std::time::Instant;
-
-    struct Entry {
-        at: Instant,
-        text: String,
-    }
-    static CACHE: OnceLock<Mutex<Option<Entry>>> = OnceLock::new();
-    static REFRESHING: AtomicBool = AtomicBool::new(false);
-
-    let lock = CACHE.get_or_init(|| Mutex::new(None));
-    let last_known = lock.lock().ok().and_then(|g| {
-        g.as_ref()
-            .map(|e| (e.text.clone(), e.at.elapsed() < DOCTOR_SNAPSHOT_TTL))
-    });
-    if !matches!(last_known, Some((_, true))) && !REFRESHING.swap(true, Ordering::SeqCst) {
-        let cfg = cfg.clone();
-        std::thread::spawn(move || {
-            let text = crate::agents::list(&cfg);
-            if let Some(lock) = CACHE.get()
-                && let Ok(mut guard) = lock.lock()
-            {
-                *guard = Some(Entry {
-                    at: Instant::now(),
-                    text,
-                });
-            }
-            REFRESHING.store(false, Ordering::SeqCst);
-        });
-    }
-    last_known
-        .map(|(text, _)| text)
+    static HOSTS: Background<String> = Background::new();
+    let cfg = cfg.clone();
+    HOSTS
+        .get(DOCTOR_SNAPSHOT_TTL, move || crate::agents::list(&cfg))
         .unwrap_or_else(|| "probing hosts…\n".to_string())
 }
 
@@ -1252,6 +1273,35 @@ fn services_page_text(cfg: &Config) -> Option<String> {
         }
     }
     Some(out)
+}
+
+/// The Worktrees page (T232): [`crate::worktree::list::rows`]'s rows rendered
+/// through its own [`crate::worktree::list::to_table`] — the exact `worktree list`
+/// table (path, branch, owner, state, age, `target/` size), so `worktree list` can
+/// join `COMMAND_PAGES`; `gc`/`clean` stay CLI-only verdicts, not model data.
+/// `usage` walks every worktree's file tree — real cost in a checkout with a built
+/// `target/`, tens of seconds in this one — far too slow for a 2 s tick, so this
+/// reuses [`Background`] with its own [`WORKTREES_TTL`] (longer than
+/// [`DOCTOR_SNAPSHOT_TTL`] — see that constant's doc comment): a cold or stale entry
+/// never blocks the tick, a background thread refreshes it, and the tick renders the
+/// last known text, or "reading worktrees…" before the first read lands. Outside a
+/// git repository `rows` fails; the page says so rather than rendering "did not
+/// answer" for what is an ordinary case. `None` only when the current directory
+/// could not be read.
+fn worktrees_page_text() -> Option<String> {
+    static WORKTREES: Background<Option<String>> = Background::new();
+    WORKTREES
+        .get(WORKTREES_TTL, move || {
+            std::env::current_dir()
+                .ok()
+                .map(|cwd| match crate::worktree::list::rows(&cwd) {
+                    Ok(rows) => {
+                        crate::worktree::list::to_table(&rows, std::time::SystemTime::now())
+                    }
+                    Err(_) => "not a git repository\n".to_string(),
+                })
+        })
+        .unwrap_or_else(|| Some("reading worktrees…\n".to_string()))
 }
 
 /// One row of the `rtok config show` page: an effective key, its value, and which layer
@@ -1329,6 +1379,8 @@ impl<'a> Model<'a> {
             config: config_page_text(self.cfg),
             // T229: reuses `demon::rows` and `otel_status` — see `services_page_text`.
             services: services_page_text(self.cfg),
+            // T232: cached briefly — see `worktrees_page_text`.
+            worktrees: worktrees_page_text(),
         }
     }
 

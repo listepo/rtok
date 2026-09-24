@@ -20,7 +20,6 @@
 - T163.8. Retention without raw SQL; close T163
 - T163.9. Window and CTE queries through the shared extension module
 - T178. Hook wall-clock time as Claude Code sees it
-- T232. Worktrees page: `worktree list` on `tui` and `web`
 - T241. Replay bench: saving over a fixed session corpus
 - T246.5. zed and grok MCP entries
 - T262.3. Codex: spawn brief on `SubagentStart`

@@ -179,6 +179,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
         "hosts" => frame.render_widget(hosts_page(app), area),
         "config" => frame.render_widget(config_page(app), area),
         "services" => frame.render_widget(services_page(app), area),
+        "worktrees" => frame.render_widget(worktrees_page(app), area),
         page => unreachable!("page `{page}` has no TUI body — surface_parity holds the list"),
     }
 }
@@ -461,6 +462,16 @@ fn services_page(app: &App) -> Paragraph<'static> {
             "services did not answer this tick — `rtok demon status`/`rtok otel status` \
              have the details",
         );
+    };
+    Paragraph::new(text.clone())
+}
+
+/// The model's Worktrees page (T232): `worktree list`'s table, verbatim, like
+/// [`graph_page`] — path, branch, owner, state, age and `target/` size; `gc`/`clean`
+/// stay CLI-only. `None` only when the current directory could not be read.
+fn worktrees_page(app: &App) -> Paragraph<'static> {
+    let Some(text) = app.snapshot().worktrees.as_ref() else {
+        return empty("worktrees did not answer this tick — `rtok worktree list` has the details");
     };
     Paragraph::new(text.clone())
 }
@@ -933,9 +944,9 @@ mod tests {
     /// failed on this file, not on a rendering bug — a little headroom for the next
     /// page too.
     fn screen(app: &App) -> String {
-        // T228 widened the tab bar to 11 tabs — 98 cols clipped the last one off the
-        // pane's border before its text ever hit the buffer.
-        let mut terminal = ratatui::Terminal::new(TestBackend::new(112, 24)).unwrap();
+        // T228 widened the tab bar to 11 tabs, T229/T232 to 13 — narrower widths clip the
+        // last one off the pane's border before its text ever hits the buffer.
+        let mut terminal = ratatui::Terminal::new(TestBackend::new(128, 24)).unwrap();
         terminal.draw(|frame| draw(frame, app)).unwrap();
         terminal
             .backend()

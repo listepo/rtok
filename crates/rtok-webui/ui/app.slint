@@ -360,6 +360,7 @@ export component MainWindow inherits Window {
     in property <string> config-text;
     in-out property <string> config-view;
     in-out property <string> config-filter;
+    in property <string> worktrees-text;
     callback filter-config(string);
     in property <string> services-text;
     in-out property <[string]> logs;
@@ -809,6 +810,17 @@ export component MainWindow inherits Window {
                     }
                     BodyText {
                         text: services-text;
+                    }
+                }
+
+                if page-id == "worktrees": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-2;
+                    TitleText {
+                        text: "worktrees";
+                    }
+                    BodyText {
+                        text: worktrees-text;
                     }
                 }
             }
