@@ -37,7 +37,6 @@
 - T163.9. Window and CTE queries through the shared extension module
 - T171. Claude Code sees the rtok MCP server twice
 - T178. Hook wall-clock time as Claude Code sees it
-- T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
 - T204. A panicking plugin is dropped silently — the error never reaches the log
 - T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 - T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
