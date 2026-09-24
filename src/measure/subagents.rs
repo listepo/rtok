@@ -42,6 +42,9 @@ pub struct Subagents {
     /// … of a path an earlier sibling read and the parent did not.
     pub read_sibling: u64,
     pub reread_bytes: u64,
+    /// T179: how many of those re-reads there were — `repeat_reads`'s `subagent`
+    /// class denominator ([`super::stats::RepeatReadsRow`]).
+    pub reread_calls: u64,
     /// The three shares of the §17.1 table: re-read over sub-agent read bytes, over
     /// sub-agent tool-result bytes, and over the tree's (sub-agents + parents).
     pub share_read: f64,
@@ -169,10 +172,12 @@ pub(crate) fn collect(parents: &[Parent], cutoff: SystemTime) -> Option<Subagent
                 if parent.read_paths.iter().any(|p| same_path(p, path)) {
                     out.read_parent += bytes;
                     out.reread_bytes += bytes;
+                    out.reread_calls += 1;
                     row.reread_bytes += bytes;
                 } else if sibling_paths.iter().any(|p| same_path(p, path)) {
                     out.read_sibling += bytes;
                     out.reread_bytes += bytes;
+                    out.reread_calls += 1;
                     row.reread_bytes += bytes;
                 }
             }

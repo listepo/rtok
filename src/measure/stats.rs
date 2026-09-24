@@ -108,6 +108,9 @@ pub struct Report {
     /// parent sessions (`super::subagents`). Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagents: Option<super::subagents::Subagents>,
+    /// T179: same-session repeat native `Read`s, by class. Absent when none.
+    #[serde(default, skip_serializing_if = "RepeatReadsRow::is_empty")]
+    pub repeat_reads: RepeatReadsRow,
 }
 
 /// What the model re-types to edit (plan T58.3). `old_string` is the span `Edit` and every
@@ -181,6 +184,39 @@ pub struct RepeatRow {
 impl RepeatRow {
     fn is_empty(&self) -> bool {
         self.calls == 0
+    }
+}
+
+/// One class's calls and bytes in a [`RepeatReadsRow`].
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClassCounts {
+    pub calls: u64,
+    pub bytes: u64,
+}
+
+/// T179: repeat native `Read`s of a path already read this session, by why
+/// `read/dedup`+`read/delta` missed them: `fired` (marker present), `changed`
+/// (Edit/Write/MultiEdit/Bash touched the path since), `ranged` (`offset`/`limit`
+/// differ), `subagent` (another agent's earlier read, T127), `hook_absent` (no
+/// marker anywhere this session — `rtok` likely off `PATH`), else `declined`.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepeatReadsRow {
+    pub fired: ClassCounts,
+    pub changed: ClassCounts,
+    pub ranged: ClassCounts,
+    pub subagent: ClassCounts,
+    pub hook_absent: ClassCounts,
+    pub declined: ClassCounts,
+}
+
+impl RepeatReadsRow {
+    fn is_empty(&self) -> bool {
+        self.fired.calls == 0
+            && self.changed.calls == 0
+            && self.ranged.calls == 0
+            && self.subagent.calls == 0
+            && self.hook_absent.calls == 0
+            && self.declined.calls == 0
     }
 }
 
@@ -471,6 +507,22 @@ impl Report {
                 pct(plain, d.result_bytes),
                 d.edited
             ));
+        }
+        if !self.repeat_reads.is_empty() {
+            let r = &self.repeat_reads;
+            let classes = [
+                ("fired", r.fired),
+                ("changed", r.changed),
+                ("ranged", r.ranged),
+                ("subagent", r.subagent),
+                ("hook_absent", r.hook_absent),
+                ("declined", r.declined),
+            ];
+            let total: u64 = classes.iter().map(|(_, c)| c.calls).sum();
+            s.push_str(&format!("repeat reads  total {total}\n"));
+            for (name, c) in classes {
+                s.push_str(&format!("  {name} calls {} bytes {}\n", c.calls, c.bytes));
+            }
         }
         if self.thinking.blocks > 0 {
             let est_toks = est_tokens(self.thinking.bytes);
@@ -963,6 +1015,11 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
         finals[finals.len() / 2]
     };
     report.subagents = super::subagents::collect(&parents, cutoff);
+    // T179 `subagent` class: invisible to `fold_repeat_reads`'s per-session `Parsed`.
+    if let Some(sa) = &report.subagents {
+        report.repeat_reads.subagent.calls += sa.reread_calls;
+        report.repeat_reads.subagent.bytes += sa.reread_bytes;
+    }
     Ok(report)
 }
 
@@ -1014,6 +1071,7 @@ fn fold_session(
     fold_read_delta(&mut report.read_delta, parsed);
     fold_read_whole(&mut report.read_whole, parsed, replay);
     fold_repeat(&mut report.repeat, parsed);
+    fold_repeat_reads(&mut report.repeat_reads, parsed);
     fold_expand_after(&mut report.expand_after, parsed);
     for r in &parsed.tool_results {
         let name = id_name
@@ -1344,6 +1402,127 @@ fn has_outline(path: &str) -> bool {
 fn has_outline(_path: &str) -> bool {
     false
 }
+
+/// A native `Read` result carrying rtok's own trace: a read-advice deny reason
+/// (`plugins::read::hook`), an MCP `read` cache-hit message (unreachable from a
+/// native Read, kept for the session-wide "any sign rtok saw it" check), or an
+/// archive/cmd trailer.
+fn has_rtok_marker(content: &str) -> bool {
+    content.contains("use rtok read")
+        || content.contains("file changed since last read")
+        || content.contains("unchanged since ")
+        || content.starts_with("[archived ")
+        || content.contains("[rtok ")
+}
+
+/// Path-named write signals (need the path in `cmd` too); words are whole shell
+/// tokens so `rm` cannot match inside `warm`. `mv`/`cp` don't distinguish
+/// source from destination — approximation, not a shell parser.
+const WRITE_SYMBOLS: [&str; 5] = [">", "sed -i", "perl -i", "perl -pi", "tee "];
+const WRITE_WORDS: [&str; 5] = ["mv", "cp", "rm", "touch", "patch"];
+/// Blanket writers: can rewrite any tracked file without naming it.
+const BLANKET_WRITERS: [&str; 13] = [
+    "git checkout",
+    "git restore",
+    "git stash",
+    "git reset",
+    "git rebase",
+    "git merge",
+    "git pull",
+    "git apply",
+    "git cherry-pick",
+    "cargo fmt",
+    "rustfmt",
+    "oxfmt",
+    "prettier --write",
+];
+
+fn has_word(cmd: &str, w: &str) -> bool {
+    cmd.split(|c: char| c.is_whitespace() || matches!(c, '&' | '|' | ';'))
+        .any(|t| t == w)
+}
+
+/// T179 "changed" class, narrowed to a write signal so a `cat`/`grep`/`sed -n` of
+/// the path doesn't count — only something that could have changed it.
+fn bash_touches(cmd: &str, path: &str) -> bool {
+    if BLANKET_WRITERS.iter().any(|w| cmd.contains(w)) {
+        return true;
+    }
+    let named = cmd.contains(path)
+        || Path::new(path)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .is_some_and(|f| cmd.contains(f));
+    named
+        && (WRITE_SYMBOLS.iter().any(|w| cmd.contains(w))
+            || WRITE_WORDS.iter().any(|w| has_word(cmd, w)))
+}
+
+/// Per-path state since its last Read: `.1`/`.2` are its `offset`/`limit`, `.3`
+/// whether an Edit/Write/MultiEdit/Bash touched it since.
+type Last = (String, Option<u64>, Option<u64>, bool);
+
+/// Classifies each repeat native `Read` this session; `subagent` is filled by the
+/// caller ([`collect`]) from [`super::subagents`], the only place that can see it.
+#[cfg(feature = "read")]
+fn fold_repeat_reads(row: &mut RepeatReadsRow, parsed: &Parsed) {
+    let results: BTreeMap<&str, &str> = parsed
+        .tool_results
+        .iter()
+        .map(|r| (r.tool_use_id.as_str(), r.content.as_str()))
+        .collect();
+    let saw_rtok = results.values().any(|c| has_rtok_marker(c));
+    let mut paths: Vec<Last> = Vec::new();
+    for u in &parsed.tool_uses {
+        match u.name.as_str() {
+            "Edit" | "Write" | "MultiEdit" => {
+                if let Some(path) = tool_path(&u.input)
+                    && let Some(p) = paths.iter_mut().find(|p| same_path(&p.0, path))
+                {
+                    p.3 = true;
+                }
+            }
+            "Bash" => {
+                let cmd = u.input.get("command").and_then(Value::as_str).unwrap_or("");
+                paths
+                    .iter_mut()
+                    .filter(|p| bash_touches(cmd, &p.0))
+                    .for_each(|p| p.3 = true);
+            }
+            "Read" => {
+                let Some(path) = tool_path(&u.input) else {
+                    continue;
+                };
+                let content = results.get(u.id.as_str()).copied().unwrap_or("");
+                let bytes = content.len() as u64;
+                let offset = u.input.get("offset").and_then(Value::as_u64);
+                let limit = u.input.get("limit").and_then(Value::as_u64);
+                if let Some(p) = paths.iter_mut().find(|p| same_path(&p.0, path)) {
+                    let class = if has_rtok_marker(content) {
+                        &mut row.fired
+                    } else if p.3 {
+                        &mut row.changed
+                    } else if p.1 != offset || p.2 != limit {
+                        &mut row.ranged
+                    } else if saw_rtok {
+                        &mut row.declined
+                    } else {
+                        &mut row.hook_absent
+                    };
+                    class.calls += 1;
+                    class.bytes += bytes;
+                    (p.1, p.2, p.3) = (offset, limit, false);
+                } else {
+                    paths.push((path.to_string(), offset, limit, false));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+#[cfg(not(feature = "read"))]
+fn fold_repeat_reads(_row: &mut RepeatReadsRow, _parsed: &Parsed) {}
 
 pub(crate) fn tool_path(input: &Value) -> Option<&str> {
     input
@@ -2003,6 +2182,95 @@ mod tests {
             "{table}"
         );
         fs::remove_dir_all(&dir).ok();
+    }
+
+    /// T179: one repeat native `Read` per class. Session A carries `fired`, `changed`,
+    /// `ranged`, `declined`; session B (no marker anywhere) gives `hook_absent`;
+    /// session C + its sub-agent give `subagent` (T127).
+    #[test]
+    fn repeat_reads_classify_each_kind_once() {
+        let dir = tempfile_dir();
+        let use_ = |id: &str, name: &str, input: Value| {
+            json!({"type":"assistant","message":{"id":id,"content":[
+                {"type":"tool_use","id":id,"name":name,"input":input}]}})
+        };
+        let res = |id: &str, body: &str| {
+            json!({"type":"user","message":{"content":[
+                {"type":"tool_result","tool_use_id":id,"content":body}]}})
+        };
+        let pair = |id: &str, name: &str, input: Value, body: &str| {
+            vec![use_(id, name, input), res(id, body)]
+        };
+        let write = |path: std::path::PathBuf, lines: Vec<Value>| {
+            let mut f = fs::File::create(path).unwrap();
+            for l in lines {
+                writeln!(f, "{l}").unwrap();
+            }
+        };
+
+        // Bodies stay short so rustfmt keeps each `pair(...)` call on one line.
+        let fired_body = "[archived aa11: 1 lines · 1 tokens · expand(aa11)]";
+        let mut a = pair("t1", "Read", json!({"file_path":"fA.rs"}), "base");
+        a.extend(pair("t2", "Read", json!({"file_path":"fA.rs"}), fired_body));
+        a.extend(pair("t3", "Read", json!({"file_path":"gA.rs"}), "base-g"));
+        a.push(use_("t4", "Edit", json!({"file_path":"gA.rs"})));
+        a.extend(pair("t5", "Read", json!({"file_path":"gA.rs"}), "chg"));
+        let in6 = json!({"file_path":"hA.rs","limit":100});
+        let in7 = json!({"file_path":"hA.rs","limit":5});
+        a.extend(pair("t6", "Read", in6, "bh"));
+        a.extend(pair("t7", "Read", in7, "rng"));
+        a.extend(pair("t8", "Read", json!({"file_path":"iA.rs"}), "base-i"));
+        a.extend(pair("t9", "Read", json!({"file_path":"iA.rs"}), "dec"));
+        write(dir.join("sessA.jsonl"), a);
+
+        let mut b = pair("u1", "Read", json!({"file_path":"kB.rs"}), "base-k");
+        b.extend(pair("u2", "Read", json!({"file_path":"kB.rs"}), "abs"));
+        write(dir.join("sessB.jsonl"), b);
+
+        let mut c = pair("v1", "Read", json!({"file_path":"pC.rs"}), "par");
+        c.push(use_("v2", "Agent", json!({})));
+        write(dir.join("sessC.jsonl"), c);
+        let subs = dir.join("sessC").join("subagents");
+        fs::create_dir_all(&subs).unwrap();
+        let sub_body = "sub";
+        let w1 = pair("w1", "Read", json!({"file_path":"pC.rs"}), sub_body);
+        write(subs.join("agent-1.jsonl"), w1);
+        fs::write(
+            subs.join("agent-1.meta.json"),
+            r#"{"agentType":"explore","model":"haiku","toolUseId":"v2"}"#,
+        )
+        .unwrap();
+
+        let replay = Replay::from_cfg(&Config::default());
+        let r = collect(&dir, Duration::from_secs(86400 * 60), "", replay).unwrap();
+        let d = &r.repeat_reads;
+        for (got, want_bytes) in [
+            (d.fired, fired_body.len() as u64),
+            (d.changed, "chg".len() as u64),
+            (d.ranged, "rng".len() as u64),
+            (d.declined, "dec".len() as u64),
+            (d.hook_absent, "abs".len() as u64),
+            (d.subagent, sub_body.len() as u64),
+        ] {
+            assert_eq!((got.calls, got.bytes), (1, want_bytes), "{d:?}");
+        }
+        assert!(r.to_table().contains("repeat reads  total 6"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn bash_touches_needs_a_write_signal_not_just_a_named_read() {
+        let cases = [
+            ("cat a.rs", false),
+            ("grep foo a.rs", false),
+            ("warm-cache a.rs", false), // "rm" must not match inside "warm"
+            ("sed -i '' 's/x/y/' a.rs", true),
+            ("echo hi > a.rs", true),
+            ("git checkout -- .", true), // blanket writer, path not even named
+        ];
+        for (cmd, want) in cases {
+            assert_eq!(bash_touches(cmd, "a.rs"), want, "{cmd}");
+        }
     }
 
     #[test]
