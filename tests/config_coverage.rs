@@ -79,6 +79,10 @@ const ALLOW_KEYS: &[&str] = &[
     // without anyone typing it; `--idle` is T153's flag with T153's default.
     "worktree.clean.yes",
     "worktree.clean.idle",
+    // `agents junk clear --yes` (T182): same per-call rule as `worktree gc`/`clean` — a
+    // stored value would delete without anyone typing it, and it must not share `setup.yes`,
+    // which confirms a different destructive action (`agents install --replace`).
+    "junk.yes",
 ];
 
 #[test]
@@ -144,6 +148,9 @@ fn config_key(path: &[&str], long: &str) -> String {
         _ => name.as_str(),
     };
     match path {
+        // `rtok agents junk clear` (T182): its own namespace — never `[setup]`, whose
+        // `yes` confirms an unrelated destructive action (`agents install --replace`).
+        ["agents", "junk", ..] => format!("junk.{name}"),
         // `rtok agents install|remove` keeps the `[setup]` table it had as `rtok setup`.
         ["agents", ..] => format!("setup.{name}"),
         // `rtok dashboard` is the hidden deprecated spelling of `rtok web`; one table, `[web]`.

@@ -586,6 +586,24 @@ enum AgentCmd {
         #[command(subcommand)]
         action: Option<SessionsCmd>,
     },
+    /// Junk rtok owns under its own home: log siblings and archive payloads past retention
+    Junk {
+        #[command(subcommand)]
+        action: JunkCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum JunkCmd {
+    /// List what `agents junk clear` would remove; `--yes` applies it
+    Clear {
+        /// Apply; without it this is a dry run that changes nothing
+        #[arg(long)]
+        yes: bool,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// `rtok agents sessions watch` (T25.3): the same table, live. One screen, no keys:
@@ -1119,6 +1137,21 @@ pub fn run() -> Result<()> {
                         "{}",
                         crate::render::sessions_table(&rows, all, crate::log::now() as i64)
                     );
+                }
+            }
+            AgentCmd::Junk {
+                action: JunkCmd::Clear { yes, json },
+            } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let outcomes = crate::agents::junk::run(&cfg, yes);
+                let failed = outcomes.iter().any(|o| o.failed);
+                if json {
+                    print_json(&outcomes)?;
+                } else {
+                    print!("{}", crate::agents::junk::to_table(&outcomes, yes));
+                }
+                if failed {
+                    bail!("some junk could not be removed");
                 }
             }
         },

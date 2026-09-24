@@ -218,6 +218,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
+            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -232,6 +233,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
+            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -411,6 +413,60 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;agent;sessions;help;help' {
             break
         }
+        'rtok;agents;junk' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agents;junk;clear' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Apply; without it this is a dry run that changes nothing')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agents;junk;help' {
+            [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agents;junk;help;clear' {
+            break
+        }
+        'rtok;agents;junk;help;help' {
+            break
+        }
+        'rtok;agent;junk' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agent;junk;clear' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Apply; without it this is a dry run that changes nothing')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;junk;help' {
+            [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agent;junk;help;clear' {
+            break
+        }
+        'rtok;agent;junk;help;help' {
+            break
+        }
         'rtok;agents;help' {
             [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
             [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
@@ -418,6 +474,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
+            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -443,6 +500,13 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;agents;help;sessions;watch' {
             break
         }
+        'rtok;agents;help;junk' {
+            [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
+            break
+        }
+        'rtok;agents;help;junk;clear' {
+            break
+        }
         'rtok;agents;help;help' {
             break
         }
@@ -453,6 +517,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
+            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -476,6 +541,13 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agent;help;sessions;watch' {
+            break
+        }
+        'rtok;agent;help;junk' {
+            [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
+            break
+        }
+        'rtok;agent;help;junk;clear' {
             break
         }
         'rtok;agent;help;help' {
@@ -1147,6 +1219,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
+            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
             break
         }
         'rtok;help;agents;install' {
@@ -1169,6 +1242,13 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;help;agents;sessions;watch' {
+            break
+        }
+        'rtok;help;agents;junk' {
+            [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
+            break
+        }
+        'rtok;help;agents;junk;clear' {
             break
         }
         'rtok;help;setup' {

@@ -356,6 +356,58 @@ esac
     ;;
 esac
 ;;
+(junk)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__agents__subcmd__junk_commands" /
+"*::: :->junk" /
+&& ret=0
+
+    case $state in
+    (junk)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-junk-command-$line[1]:"
+        case $line[1] in
+            (clear)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--yes[Apply; without it this is a dry run that changes nothing]' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__agents__subcmd__junk__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-junk-help-command-$line[1]:"
+        case $line[1] in
+            (clear)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
 (help)
 _arguments "${_arguments_options[@]}" : /
 ":: :_rtok__subcmd__agents__subcmd__help_commands" /
@@ -401,6 +453,26 @@ _arguments "${_arguments_options[@]}" : /
         curcontext="${curcontext%:*:*}:rtok-agents-help-sessions-command-$line[1]:"
         case $line[1] in
             (watch)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(junk)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__agents__subcmd__help__subcmd__junk_commands" /
+"*::: :->junk" /
+&& ret=0
+
+    case $state in
+    (junk)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-help-junk-command-$line[1]:"
+        case $line[1] in
+            (clear)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -559,6 +631,58 @@ esac
     ;;
 esac
 ;;
+(junk)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__agents__subcmd__junk_commands" /
+"*::: :->junk" /
+&& ret=0
+
+    case $state in
+    (junk)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-junk-command-$line[1]:"
+        case $line[1] in
+            (clear)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--yes[Apply; without it this is a dry run that changes nothing]' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__agents__subcmd__junk__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-junk-help-command-$line[1]:"
+        case $line[1] in
+            (clear)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
 (help)
 _arguments "${_arguments_options[@]}" : /
 ":: :_rtok__subcmd__agents__subcmd__help_commands" /
@@ -604,6 +728,26 @@ _arguments "${_arguments_options[@]}" : /
         curcontext="${curcontext%:*:*}:rtok-agents-help-sessions-command-$line[1]:"
         case $line[1] in
             (watch)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(junk)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__agents__subcmd__help__subcmd__junk_commands" /
+"*::: :->junk" /
+&& ret=0
+
+    case $state in
+    (junk)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-help-junk-command-$line[1]:"
+        case $line[1] in
+            (clear)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -1569,6 +1713,26 @@ _arguments "${_arguments_options[@]}" : /
     ;;
 esac
 ;;
+(junk)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__agents__subcmd__junk_commands" /
+"*::: :->junk" /
+&& ret=0
+
+    case $state in
+    (junk)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-agents-junk-command-$line[1]:"
+        case $line[1] in
+            (clear)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
         esac
     ;;
 esac
@@ -1924,6 +2088,7 @@ _rtok__subcmd__agents_commands() {
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
+'junk:Junk rtok owns under its own home/: log siblings and archive payloads past retention' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
     _describe -t commands 'rtok agents commands' commands "$@"
@@ -1937,6 +2102,7 @@ _rtok__subcmd__agents__subcmd__help_commands() {
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
+'junk:Junk rtok owns under its own home/: log siblings and archive payloads past retention' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
     _describe -t commands 'rtok agents help commands' commands "$@"
@@ -1955,6 +2121,18 @@ _rtok__subcmd__agents__subcmd__help__subcmd__info_commands() {
 _rtok__subcmd__agents__subcmd__help__subcmd__install_commands() {
     local commands; commands=()
     _describe -t commands 'rtok agents help install commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__junk_commands] )) ||
+_rtok__subcmd__agents__subcmd__help__subcmd__junk_commands() {
+    local commands; commands=(
+'clear:List what /`agents junk clear/` would remove; /`--yes/` applies it' /
+    )
+    _describe -t commands 'rtok agents help junk commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__junk__subcmd__clear_commands] )) ||
+_rtok__subcmd__agents__subcmd__help__subcmd__junk__subcmd__clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents help junk clear commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__list_commands] )) ||
 _rtok__subcmd__agents__subcmd__help__subcmd__list_commands() {
@@ -1992,6 +2170,37 @@ _rtok__subcmd__agents__subcmd__info_commands() {
 _rtok__subcmd__agents__subcmd__install_commands() {
     local commands; commands=()
     _describe -t commands 'rtok agents install commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__junk_commands] )) ||
+_rtok__subcmd__agents__subcmd__junk_commands() {
+    local commands; commands=(
+'clear:List what /`agents junk clear/` would remove; /`--yes/` applies it' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok agents junk commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__junk__subcmd__clear_commands] )) ||
+_rtok__subcmd__agents__subcmd__junk__subcmd__clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents junk clear commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__junk__subcmd__help_commands] )) ||
+_rtok__subcmd__agents__subcmd__junk__subcmd__help_commands() {
+    local commands; commands=(
+'clear:List what /`agents junk clear/` would remove; /`--yes/` applies it' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok agents junk help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__junk__subcmd__help__subcmd__clear_commands] )) ||
+_rtok__subcmd__agents__subcmd__junk__subcmd__help__subcmd__clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents junk help clear commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__junk__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__agents__subcmd__junk__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents junk help help commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__agents__subcmd__list_commands] )) ||
 _rtok__subcmd__agents__subcmd__list_commands() {
@@ -2448,6 +2657,7 @@ _rtok__subcmd__help__subcmd__agents_commands() {
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
+'junk:Junk rtok owns under its own home/: log siblings and archive payloads past retention' /
     )
     _describe -t commands 'rtok help agents commands' commands "$@"
 }
@@ -2460,6 +2670,18 @@ _rtok__subcmd__help__subcmd__agents__subcmd__info_commands() {
 _rtok__subcmd__help__subcmd__agents__subcmd__install_commands() {
     local commands; commands=()
     _describe -t commands 'rtok help agents install commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__junk_commands] )) ||
+_rtok__subcmd__help__subcmd__agents__subcmd__junk_commands() {
+    local commands; commands=(
+'clear:List what /`agents junk clear/` would remove; /`--yes/` applies it' /
+    )
+    _describe -t commands 'rtok help agents junk commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__junk__subcmd__clear_commands] )) ||
+_rtok__subcmd__help__subcmd__agents__subcmd__junk__subcmd__clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help agents junk clear commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__list_commands] )) ||
 _rtok__subcmd__help__subcmd__agents__subcmd__list_commands() {

@@ -56,7 +56,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T172 | todo | P2 | 2 | 0% | |
 | T174 | todo | P1 | 2 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
-| T182 | todo | P2 | 3 | 0% | |
 | T184 | todo | P1 | 2 | 0% | |
 | T198 | todo | P2 | 2 | 0% | |
 | T199 | todo | P2 | 1 | 0% | |
@@ -456,19 +455,6 @@ Step 2 plan (D32): (a) `crates/rtok-hook`, the std-only wire format; (b) `rtok h
 Check: a dated `research.md` row with measured start time before/after; hook p50 as seen by Claude Code under 10 ms on this machine; `just test` green.
 
 Progress (research.md §19): the plugin launcher (a second `/bin/sh` per call) was the largest cost; `hooks.json` now execs `rtok` from PATH directly, p50 as Claude Code sees it 20.9 → 14.6 ms (PreToolUse) and 19.0 → 13.3 ms (PostToolUse). Remaining: the node + `/bin/sh` floor (5 ms) plus `rtok --version` (5.6 ms) already exceed 10 ms, so the Check needs a resident process with a small hook client — proposed as its own task. Locked store (§19.6): the hook now waits 5 ms on another writer, not 1 s per statement, and fails open with the input unchanged — 1.06–2.13 s → ~20 ms. Remaining: the resident process and hook client.
-
-### T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
-
-Creator request 2026-09-22 (voice): AirTalk/rtok agents must clean up junk after themselves. Add `rtok agents junk clear` that deletes temporary files, logs, and cache that rtok (and the work it leaves behind) owns. Separately, inventory where each connected host stores its own junk — which folders — by reading that host's documentation, and record the map so clear/cleanup can cover host-side scratch safely.
-
-Scope:
-1. **Self-cleanup after agent work** — install/remove/list/apply paths and any long-running surfaces must not leave unbounded temp files, rotating logs past D26 caps, or stale cache entries; defaults fail open and never delete live ledgers (`~/.rtok/rtok.db`, archives still referenced by expand ids).
-2. **`rtok agents junk clear`** — one command that removes safe junk: temp dirs, log files past retention, and cache trees rtok owns (and any host junk folders from the map once known). Dry-run prints the paths; apply deletes. Config keys under `[setup]` / `[log]` as needed (D12).
-3. **Per-host junk map** — for every id in `HOSTS` (today: claude, cursor, codex, opencode, kilo, pi, omp, zcode, kimi, grok, vscode, copilot, aider, windsurf, zed), read that host's current docs and list the folders that hold temp/logs/cache; write the table into `research.md` (and a host README note where useful). No host files are deleted until the map is reviewed.
-
-Plan: inventory existing cleanup (`rtok worktree clean|gc`, D26 log rotation, archive retention if any); add the CLI subcommand + tests; run the doc survey as a dated research row; wire clear to the surveyed paths only after creator sign-off on the map.
-
-Check: `rtok agents junk clear --dry-run` lists only owned/safe paths; apply on a fixture home deletes those paths and leaves the store and referenced archives; unit/trycmd coverage; `just check`. Research row names each `HOSTS` id and its junk folders with doc URLs/dates.
 
 ### T184. rtok never resolves its home to a relative `.rtok`
 

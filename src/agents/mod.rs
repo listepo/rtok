@@ -17,6 +17,7 @@ pub mod cursor;
 pub mod gemini;
 pub mod grok;
 pub mod jsonc;
+pub mod junk;
 pub mod kilo;
 pub mod kimi;
 pub mod mimo;

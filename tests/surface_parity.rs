@@ -440,6 +440,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "worktree clean",
         "deletes tagged build caches on the checkout's file system, not the store (T152)",
     ),
+    (
+        "agents junk clear",
+        "deletes log siblings and archive payloads on rtok's own file system, not the store (T182)",
+    ),
     // helpers: a location or a verdict, not model data
     ("config path", "prints where the config file is"),
     (

@@ -5865,3 +5865,21 @@ Check: `windsurf_remove_asks_before_taking_an_edited_mcp_entry` (edited entry le
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+
+### T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
+
+Creator request 2026-09-22 (voice): AirTalk/rtok agents must clean up junk after themselves. Add `rtok agents junk clear` that deletes temporary files, logs, and cache that rtok (and the work it leaves behind) owns. Separately, inventory where each connected host stores its own junk — which folders — by reading that host's documentation, and record the map so clear/cleanup can cover host-side scratch safely.
+
+Scope:
+1. **Self-cleanup after agent work** — install/remove/list/apply paths and any long-running surfaces must not leave unbounded temp files, rotating logs past D26 caps, or stale cache entries; defaults fail open and never delete live ledgers (`~/.rtok/rtok.db`, archives still referenced by expand ids).
+2. **`rtok agents junk clear`** — one command that removes safe junk: temp dirs, log files past retention, and cache trees rtok owns (and any host junk folders from the map once known). Dry-run prints the paths; apply deletes. Config keys under `[setup]` / `[log]` as needed (D12).
+3. **Per-host junk map** — for every id in `HOSTS` (today: claude, cursor, codex, opencode, kilo, pi, omp, zcode, kimi, grok, vscode, copilot, aider, windsurf, zed), read that host's current docs and list the folders that hold temp/logs/cache; write the table into `research.md` (and a host README note where useful). No host files are deleted until the map is reviewed.
+
+Plan: inventory existing cleanup (`rtok worktree clean|gc`, D26 log rotation, archive retention if any); add the CLI subcommand + tests; run the doc survey as a dated research row; wire clear to the surveyed paths only after creator sign-off on the map.
+
+Check: `rtok agents junk clear --dry-run` lists only owned/safe paths; apply on a fixture home deletes those paths and leaves the store and referenced archives; unit/trycmd coverage; `just check`. Research row names each `HOSTS` id and its junk folders with doc URLs/dates.
+
+Result: Added `rtok agents junk clear`: a dry run by default, `--yes` applies, `--json` is available. It clears two kinds of junk that rtok owns. One is `rtok.log.<N>` siblings past `[log] files`; `rotate()` only drops the single generation past the current cap, so lowering the cap left the older ones behind forever. The other is archive payloads past `core.retain_calls_days`, found through a new read-only `Store::archives_pending_retention` that shares `doomed_archives()` with `run_retention`. It never touches `rtok.db`, a referenced archive or any host directory; unreadable paths are skipped (fail open). The inventory found nothing else unbounded in `~/.rtok`: the semantic cache and the graph index live in the DB. `research.md` §22 holds the per-host junk map for all 17 `HOSTS` ids, from official docs or source only, with 25 of 51 cells "not documented" rather than guessed. Wiring host paths waits for creator review of that map (T182.1). Tests: `tests/agents_junk.rs` plus unit tests; `just check` green (1632 tests); `just dup` 1.97 %.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
