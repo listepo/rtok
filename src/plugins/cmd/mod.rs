@@ -5,6 +5,7 @@
 
 use rtok_plugin_sdk::{Ctx, DashboardPage, Manifest, Plugin, PreToolDecision, PreToolUse, Surface};
 
+pub mod bounded;
 pub mod hook;
 
 pub mod filter;

@@ -10,6 +10,11 @@ pub fn compress(
     exit: i32,
     archive_id: &str,
 ) -> (String, &'static str) {
+    // T176: `sed -n 1,620p`, `| tail -300`, `grep -A3` already printed what was asked
+    // for; a second cut here only sent the agent to `expand` for the same bytes.
+    if output.len() <= super::bounded::MAX_BYTES && super::bounded::is_bounded(&argv.join(" ")) {
+        return (output.to_string(), "raw");
+    }
     let argv = family_argv(argv);
     let rule = settings.pick(bin(&argv));
     // T65.2: JSON bodies skip table formatters so kubectl -o json / gh --json
@@ -388,6 +393,35 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
+
+    /// T176 audit repro: `cargo nextest run … | tail -300` came back as 4.7 KB of 20 KB and
+    /// lost the failing test's panic. Bounded, the failure block survives whole; the same
+    /// log unbounded is still cut.
+    #[test]
+    fn a_bounded_failing_nextest_log_keeps_its_failure_block() {
+        let settings = rules::Settings::builtin();
+        let mut log: Vec<String> = (0..150)
+            .map(|i| format!("        PASS [   0.01s] t{i}"))
+            .collect();
+        log.splice(
+            70..70,
+            [
+                "        FAIL [   0.02s] rtok store::tests::lock",
+                "--- STDERR:              rtok store::tests::lock ---",
+                "thread 'store::tests::lock' panicked at src/store/mod.rs:88:5:",
+                "assertion `left == right` failed",
+            ]
+            .map(String::from),
+        );
+        let log = log.join("\n");
+        let bounded = ["cargo nextest run --workspace 2>&1 | tail -300".to_string()];
+        assert_eq!(
+            compress(&settings, &bounded, &log, 0, "id"),
+            (log.clone(), "raw")
+        );
+        let (cut, _) = compress(&settings, &["cargo nextest run".into()], &log, 0, "id");
+        assert!(cut.len() < log.len(), "unbounded output is still filtered");
+    }
 
     fn goldens() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cmd_golden")

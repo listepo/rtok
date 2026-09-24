@@ -84,6 +84,9 @@ pub struct Report {
     /// same session. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "RepeatRow::is_empty")]
     pub repeat: RepeatRow,
+    /// T176: expands of an id this session was shown. Absent when none, so the goldens hold.
+    #[serde(default, skip_serializing_if = "ExpandAfterRow::is_empty")]
+    pub expand_after: ExpandAfterRow,
     /// T125: assistant thinking blocks in the session.
     #[serde(default, skip_serializing_if = "ThinkingRow::is_empty")]
     pub thinking: ThinkingRow,
@@ -145,6 +148,22 @@ pub struct RepeatRow {
 }
 
 impl RepeatRow {
+    fn is_empty(&self) -> bool {
+        self.calls == 0
+    }
+}
+
+/// T176: `expand` calls on an id rtok printed earlier in the same session — the agent
+/// needed what a cut dropped. `bytes` is those expand results; `shown_bytes` is the
+/// results that first named each id, counted once per id.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExpandAfterRow {
+    pub calls: u64,
+    pub bytes: u64,
+    pub shown_bytes: u64,
+}
+
+impl ExpandAfterRow {
     fn is_empty(&self) -> bool {
         self.calls == 0
     }
@@ -375,6 +394,13 @@ impl Report {
                 d.bytes,
                 d.result_bytes,
                 pct(d.bytes, d.result_bytes)
+            ));
+        }
+        if self.expand_after.calls > 0 {
+            let d = &self.expand_after;
+            s.push_str(&format!(
+                "expand right after  calls {}  bytes {}  shown bytes {}\n",
+                d.calls, d.bytes, d.shown_bytes
             ));
         }
         s.push_str(&format_section("tool", &self.tools));
@@ -847,6 +873,7 @@ fn fold_session(
     }
     fold_read_delta(&mut report.read_delta, parsed);
     fold_repeat(&mut report.repeat, parsed);
+    fold_expand_after(&mut report.expand_after, parsed);
     for r in &parsed.tool_results {
         let name = id_name
             .get(r.tool_use_id.as_str())
@@ -1018,6 +1045,50 @@ fn fold_repeat(row: &mut RepeatRow, parsed: &Parsed) {
         if !seen.insert(sha) {
             row.calls += 1;
             row.bytes += bytes;
+        }
+    }
+}
+
+/// T176: walk tool uses in order. A result naming an archive id (`(expand <id>)`,
+/// `expand: rtok expand <id>`) makes it shown; a later `rtok expand <id>` Bash call or MCP
+/// `expand` of a shown id is a re-expand — the bytes the cut made the agent fetch again.
+fn fold_expand_after(row: &mut ExpandAfterRow, parsed: &Parsed) {
+    static NAMED: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"expand:? (?:rtok expand )?([0-9a-f]{64})").expect("static regex")
+    });
+    static CALLED: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"rtok expand ([0-9a-f]{64})").expect("static regex")
+    });
+    let results: BTreeMap<&str, &str> = parsed
+        .tool_results
+        .iter()
+        .map(|r| (r.tool_use_id.as_str(), r.content.as_str()))
+        .collect();
+    // id → bytes of the result that showed it, `None` once counted.
+    let mut shown: BTreeMap<String, Option<u64>> = BTreeMap::new();
+    for u in &parsed.tool_uses {
+        let content = results.get(u.id.as_str()).copied().unwrap_or("");
+        let asked = if u.name.ends_with("expand") {
+            u.input.get("id").and_then(Value::as_str)
+        } else if u.name == "Bash" {
+            let cmd = u.input.get("command").and_then(Value::as_str).unwrap_or("");
+            CALLED
+                .captures(cmd)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str())
+        } else {
+            None
+        };
+        if let Some(seen) = asked.and_then(|id| shown.get_mut(id)) {
+            row.calls += 1;
+            row.bytes += content.len() as u64;
+            row.shown_bytes += seen.take().unwrap_or(0);
+            continue;
+        }
+        for c in NAMED.captures_iter(content) {
+            shown
+                .entry(c[1].to_string())
+                .or_insert(Some(content.len() as u64));
         }
     }
 }
@@ -1649,6 +1720,35 @@ mod tests {
         let table = r.to_table();
         assert!(
             table.contains("repeat calls 1  bytes 20  of result bytes 56  35.7%"),
+            "{table}"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn expand_right_after_counts_expands_of_shown_ids_only() {
+        let dir = tempfile_dir();
+        let (a, b) = ("a".repeat(64), "b".repeat(64));
+        let shown = format!("x\n… 23 lines omitted (expand {a})");
+        let lines = [
+            json!({"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"grep -A3 x f"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":shown}]}}),
+            json!({"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":format!("rtok expand {a} --lines 1-9")}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"0123456789"}]}}),
+            json!({"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"mcp__rtok__expand","input":{"id":a}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"01234"}]}}),
+            json!({"type":"assistant","message":{"id":"m4","content":[{"type":"tool_use","id":"t4","name":"mcp__rtok__expand","input":{"id":b}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t4","content":"never shown"}]}}),
+        ];
+        let r = write_and_collect(&dir, "e.jsonl", &lines);
+        let d = &r.expand_after;
+        let want = shown.len() as u64;
+        assert_eq!((d.calls, d.bytes, d.shown_bytes), (2, 15, want));
+        let table = r.to_table();
+        assert!(
+            table.contains(&format!(
+                "expand right after  calls 2  bytes 15  shown bytes {want}"
+            )),
             "{table}"
         );
         fs::remove_dir_all(&dir).ok();

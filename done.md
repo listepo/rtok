@@ -5274,3 +5274,15 @@ Shipped: `page()` adds `plugin_hooks(cfg)` to `count_hooks`'s result, and `anthr
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5
+
+### T176. Explicitly bounded output is not cut again
+
+Found in the 2026-09-22 audit: 335 times the agent called `expand` on an id it had just been shown; the filtered results totalled 533 KB and the expands 1.47 MB (≈ 234 K tokens paid twice). Worst: `sed -n '1,620p' src/hooks/types.rs` cut to 1.8 KB of 28 KB; `cargo nextest run … | tail -300` lost the failing-test detail (4.7 KB of 20 KB). Reproduced in the audit session itself: a 43-line `grep -A`/`sed -n` result lost 23 lines.
+
+Plan: treat a command the agent already bounded (`sed -n a,bp`, `head`/`tail -n`, `grep -A/-B/-C`, `cat -n` of named files) as asked-for — pass it through; for test/build runners keep failure blocks whole. Measure the re-expand rate in `rtok stats` so the change shows up as a number.
+
+Check: rule tests for each bounded form (output unchanged) and for a failing nextest log (failure block kept); `rtok stats` reports an "expand right after" count; `just test` green.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): `src/plugins/cmd/bounded.rs` lexes quotes and the `|`, `|&`, `&&`, `||`, `;` separators (the one exception to `cmd/AGENTS.md`'s first-word rule, recorded there) and says whether every command ends in a bounding stage: `head` (non-negative counts), `tail` (no `+N`, no `-f`), `sed -n` with numeric `a[,b]p` scripts only, `grep`/`rg` with `-A/-B/-C/-m` or their long forms, `cat -n` of named files; a lone `cd`/`export` does not unbound the rest. `formatters::compress` returns such output unchanged (kind `raw`) up to `bounded::MAX_BYTES` = 30 000 — past that the host truncates a Bash result itself, so a cut naming the archive is still the better answer. Test/build runners: the audit case (`cargo nextest run … | tail -300`) is bounded and keeps its failure block whole (`a_bounded_failing_nextest_log_keeps_its_failure_block`); unbounded runs were already `fail_tail_lines` verbatim on a non-zero exit. `rtok stats` gains `expand right after  calls N  bytes B  shown bytes S` (`Report.expand_after`, absent from `--json` when zero): a Bash `rtok expand <id>` or MCP `expand` of an id an earlier result in the same session named.
+
+Status: done 2026-09-24
