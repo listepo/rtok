@@ -28,6 +28,7 @@ diesel::table! {
         est_after -> Integer,
         ref_id -> Nullable<Text>,
         call_id -> Nullable<Integer>,
+        once_key -> Nullable<Text>,
     }
 }
 

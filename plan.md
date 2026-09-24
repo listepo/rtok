@@ -83,7 +83,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T229 | todo | P2 | 2 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
 | T241 | todo | P2 | 3 | 0% | |
-| T245 | todo | P2 | 3 | 0% | |
 | T246.2 | todo | P1 | 2 | 0% | |
 | T246.3 | todo | P1 | 3 | 0% | |
 | T246.4 | todo | P2 | 2 | 0% | |
@@ -529,14 +528,6 @@ The golden and surface tests measure one call at a time; no test shows the savin
 Plan: `tests/fixtures/replay/session.jsonl` — about 30 anonymised hook payloads shaped like a real Claude Code session (tool mix taken from `rtok stats` on this machine, bodies written or scrubbed by hand; no real paths, names or secrets). `tests/replay_bench.rs` feeds them through `rtok hook` in a temp home, sums the `Measurement` rows, prints a per-plugin table (`--nocapture`) and asserts the total saving stays over a floor set a few points below the first run. Record the first run as a dated `research.md` §2 row with the command.
 
 Check: the test fails when a plugin is disabled in the temp config; the `research.md` row cites the command; `just check` green. Needs T239.
-
-### T245. One tool call is processed once
-
-Runtime half of the same request: a host may fire two events for one call (Cursor: `afterMCPExecution` and `postToolUse`; Claude Code with both the plugin and settings-file hooks), and each processing adds a `Measurement` row and an archive entry, so savings double-count (D3).
-
-Plan: `tests/one_call_once.rs` — per host payload fixture set, feed every event the host fires for one MCP call and one Bash call through `rtok hook` in a temp home, then assert exactly one `Measurement` row and at most one archive entry per call (query through the existing store API, no raw SQL). Also a Claude home with the plugin and leftover settings-file hooks: one PostToolUse call still yields one row.
-
-Check: the test goes red when the `afterMCPExecution` path records its own row; `just check` green.
 
 ### T246.2. MCP entries of the remaining hosts
 
