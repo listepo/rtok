@@ -86,6 +86,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T229 | todo | P2 | 2 | 0% | |
 | T231 | todo | P2 | 3 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
+| T238 | todo | P1 | 2 | 0% | |
+| T239 | todo | P1 | 3 | 0% | |
+| T240 | todo | P2 | 2 | 0% | |
+| T241 | todo | P2 | 3 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -528,6 +532,38 @@ Found 2026-09-23 in the D27 audit: `worktree list` and `worktree gc --dry-run` a
 Plan: page `("worktrees", "worktrees")` — path, branch, owner (lock reason), age, `target/` size, prunable flag: the same rows as `worktree list --json`, read through one accessor; `gc`/`clean` stay CLI. Bound the filesystem walk (cached size, TTL) so the snapshot tick stays cheap (T206).
 
 Check: `worktrees_page_exists_on_both_surfaces`; a fixture repo with one locked worktree renders its owner; `just check` green.
+
+### T238. Saving floor for the `cmd` golden corpus
+
+`tests/cmd_golden` locks each family's output byte for byte (`ten_families_and_aws_key_unredacted` in `src/plugins/cmd/formatters.rs`), but nothing guards the size of the saving: `RTOK_BLESS` can re-bless a `.out` that keeps twice as much and every test stays green.
+
+Plan: a `min_saving: <percent>` header line in each `.in` next to `argv:` / `exit:`; the golden test estimates tokens of the `.in` body and the produced output with `tokens::estimate` (fixed `Estimator` rates, as in `tests/mode_bench.rs`) and fails when the saving is under the floor or the output is larger than the input. Floors are set a few points below today's value per file; files whose rule leaves short output unchanged declare `min_saving: 0`. A missing header fails the test, so new goldens must declare one.
+
+Check: lowering a rule's `head`/`tail` in `rules/default.toml` and re-blessing makes the test fail with the file name, the floor and the measured value; `just check` green.
+
+### T239. `Measurement` rows match the bytes each surface actually returned
+
+`tests/plugins_e2e.rs` checks that a `cmd` run records a row of the right kind, not that the row is right. A saving that is not a correct `Measurement` row does not exist.
+
+Plan: one integration test per surface — `rtok hook` PostToolUse on a long Bash result, `rtok mcp` `read` on a large file, `rtok proxy` against the mock upstream with a long `tool_result` — each in a temp home. Read the rows with `Store::list_measurements` and assert `before`/`after` equal `tokens::estimate` of the original body and of the body the surface returned (the hook's `additionalContext`, the MCP result text, the forwarded request body); plus a short body (under the rule's threshold) records no row or a zero saving, never a negative one.
+
+Check: breaking the estimate call on one surface (e.g. recording `after` from the archived original) fails exactly that test; `just check` green.
+
+### T240. Golden files for rule families without one
+
+`rules/default.toml` has families with no pair in `tests/cmd_golden`: `curl`, `node`, `pnpm`, `sed` (re-list at claim time — any rule `match_cmd` or Rust formatter with no `.in`/`.out`). Their output shape is untested.
+
+Plan: one realistic `.in` per missing family (long enough to trigger the rule, no machine paths or secrets), generate the `.out` with the golden harness, read each `.out` by hand, and give each a `min_saving` floor from T238. If a family's rule makes the output larger or drops the error lines, file it as a bug instead of blessing it.
+
+Check: every rule family has a golden pair (a test lists the `match_cmd` values and fails on a family without a `.in`); `just check` green. Needs T238.
+
+### T241. Replay bench: saving over a fixed session corpus
+
+The golden and surface tests measure one call at a time; no test shows the saving over a whole session mix of Bash, Read, Grep and MCP results, so a change that helps one family and hurts the mix goes unnoticed.
+
+Plan: `tests/fixtures/replay/session.jsonl` — about 30 anonymised hook payloads shaped like a real Claude Code session (tool mix taken from `rtok stats` on this machine, bodies written or scrubbed by hand; no real paths, names or secrets). `tests/replay_bench.rs` feeds them through `rtok hook` in a temp home, sums the `Measurement` rows, prints a per-plugin table (`--nocapture`) and asserts the total saving stays over a floor set a few points below the first run. Record the first run as a dated `research.md` §2 row with the command.
+
+Check: the test fails when a plugin is disabled in the temp config; the `research.md` row cites the command; `just check` green. Needs T239.
 
 ## Reference
 
