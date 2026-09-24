@@ -1,5 +1,18 @@
 # rtok — completed tasks
 
+### T251. Integration tests anchor `log.path` under their tempdir
+
+Found 2026-09-24: `tests/latency.rs` (`hook_returns_despite_exclusive_lock`), `tests/graph_bench.rs` (`home`) and `tests/lossless_roundtrip.rs` (`cmd`) built `Config::default()` and overrode only `core.db_path` and `core.archive_dir`, so `log.path` stayed `~/.rtok/logs/rtok.log`. Any log line they emitted — the hook's timing-dependent `note_slow` warn past `[hook] max_ms` — landed in a literal `./~/.rtok/logs/rtok.log` under the crate root.
+
+Plan: build each config with `rtok::testutil::config_in(dir)` (as `tests/otel.rs` already does) and drop the redundant path overrides. Test-only; the unit tests got the same migration separately.
+
+Check: `rm -rf ./~ && mise exec -- cargo nextest run --workspace -E 'kind(test)'` leaves no `./~`; `just check` green.
+
+Result: the three sites use `config_in`; `graph_bench.rs` loses its now-unused `Config` import. `cargo nextest run --workspace -E 'kind(test)'`: 559/559 passed, no `./~` afterwards.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T233. `cmd` normalized dedupe panics on multibyte lines
 
 Found 2026-09-22 in a bug-hunt review (core pass), confirmed by read: `uuid_at` (`src/plugins/cmd/rules.rs:569-588`) slices `rest[pos..pos + len]` at :576 after only a length check — no char-boundary check — so any line where 8+ hex digits run into a multibyte char (e.g. `1234567é-…`) panics with "byte index is not a char boundary". `placeholder_token` runs it on every suffix of every line of untrusted tool/MCP output whenever a rule sets `dedupe = "normalized"` (`docs/cmd-rules.md`). The outer `catch_unwind` turns the panic into an empty event output (the other plugins' context for that turn is lost); `mcp::wrap::shorten` has no catch and dies mid-stream. Related: `normalize_line_key` builds keys with `b[i] as char` (:508), mojibaking multibyte lines into wrong fold groups.
