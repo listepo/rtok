@@ -80,6 +80,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T246.3 | todo | P1 | 3 | 0% | |
 | T246.4 | todo | P2 | 2 | 0% | |
 | T246.5 | todo | P1 | 2 | 0% | |
+| T250.1 | todo | P1 | 1 | 0% | |
+| T250.2 | todo | P1 | 2 | 0% | |
+| T250.3 | todo | P1 | 3 | 0% | |
+| T250.4 | todo | P1 | 1 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -521,6 +525,32 @@ Per host `strip_ours` compares each rtok hook with the shape the installer write
 zed (JSONC editor) and grok (TOML) take the T246.1 ownership check on their own writers; then the name-only `rtok_agent_sdk::unregister_server` goes private or goes, so no remove path drops an entry by name alone.
 
 Check: `tests/agent_remove.rs` leaves an edited zed and grok entry without `--yes`; `just check` green.
+
+### T250.1. Codex plugin hooks find `rtok` off `PATH`
+
+T250.1–T250.4, creator request 2026-09-24, the follow-up T174 left open: the Codex, Copilot, Cursor and Grok plugin `hooks.json` files call a bare `rtok hook …` with no fallback, so a host whose hook shell lacks `~/.ketch/bin` (a GUI app started from the Dock) hits `rtok: command not found` (exit 127) on every event. Each gets T174's resolver — PATH, then `~/.ketch/bin/rtok`, then exit 0 silently — with any missing-rtok note only on the host's session-start event, in that host's own output shape. How each host runs a hook (read from its shipped code, 2026-09-24): Codex `$SHELL -lc` on Unix and `%COMSPEC% /C` with an optional `commandWindows` on Windows; Copilot separate `bash` and `powershell` fields; Cursor one `command`, `sh -c "<command> <<'CURSOR_HOOK_EOF' …"` on Unix and PowerShell `@'…'@ | & <command>` on Windows; Grok `sh -c` on Unix and PowerShell on Windows, no per-OS field.
+
+Codex: `plugins/codex/hooks/hooks.json` PreCompact/PostCompact get the resolver in `command` and the unchanged bare line in `commandWindows` (cmd.exe cannot run it). Codex's own `~/.codex/hooks.json` is written by `claude::insert_ours`, so T174 fixes that surface. No session-start event here, so no note.
+
+Check: `tests/codex_plugin.rs` runs each `command` with `/bin/sh -c`, an empty PATH and a temp HOME: exit 0 and empty stdout without rtok, a fake `~/.ketch/bin/rtok` exec'd when present; `commandWindows` stays `rtok hook <event>`; `just check` green.
+
+### T250.2. Copilot hooks find `rtok` off `PATH`
+
+`copilot::hooks_doc` (both `~/.copilot/hooks/rtok.json` and `plugins/copilot/hooks/hooks.json`, pinned equal by `tests/copilot_plugin.rs`): for a bare `rtok` bin, `bash` gets the resolver and `powershell` a `Get-Command` / `Test-Path "$env:USERPROFILE\.ketch\bin\rtok.exe"` twin; an absolute bin (Windows install) keeps today's line. `sessionStart` without rtok prints one flat `{"additionalContext": "…ketch install listepo/rtok…"}` (Copilot's shape, `copilot_output`).
+
+Check: `tests/copilot_plugin.rs` runs each `bash` field with `/bin/sh -c`, empty PATH, temp HOME: silent exit 0 on every event but sessionStart's one note; a fake `~/.ketch/bin/rtok` is exec'd; a `cfg(windows)` test does the same through `powershell -NoProfile -Command`; `just check` green.
+
+### T250.3. Cursor hooks find `rtok` off `PATH`
+
+Cursor appends a heredoc to the command on Unix, so the resolver is one brace group `{ …; }` or the payload would reach only its last command. `plugins/cursor/hooks/hooks.json` gets the resolver on all six events (sessionStart's note is Cursor's flat `{"additional_context": "…"}`). Windows runs the same field through PowerShell, and there the plugin is already a copy (`PluginLink`), so the copy step writes each hook back to the bare `rtok hook … --host cursor`. `src/agents/cursor/mod.rs` `pre_cmd`/`post_cmd`/`compact_cmd` write the resolver for a bare bin off Windows, and `is_ours` recognises both shapes so reinstall and remove stay idempotent.
+
+Check: `tests/cursor_plugin.rs` runs each plugin command as Cursor does (`/bin/sh -c "<command> <<'CURSOR_HOOK_EOF' …"`), empty PATH, temp HOME: silent exit 0, one sessionStart note, a fake `~/.ketch/bin/rtok` receives the payload on stdin; a unit test shows the Windows copy holds the bare lines; installer round trip idempotent; `just check` green.
+
+### T250.4. Grok plugin hooks find `rtok` off `PATH`
+
+`plugins/grok/hooks/hooks.json`: every event gets the resolver, silent on every event (Grok ignores SessionStart stdout, `plugins/grok/README.md`). Grok runs the same field through PowerShell on Windows and installs the plugin itself, so the plugin becomes macOS/Linux only; its README sends Windows users to `rtok agents install claude` (Grok imports Claude's hooks). rtok's Grok installer writes no hooks, so nothing else changes.
+
+Check: `tests/grok_plugin.rs` runs each command with `/bin/sh -c`, empty PATH, temp HOME: exit 0, empty stdout; a fake `~/.ketch/bin/rtok` is exec'd; `just check` green.
 
 ## Reference
 
