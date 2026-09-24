@@ -10,7 +10,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T83.4 | todo | P1 | 3 | 0% | |
 | T83.7 | todo | P1 | 2 | 0% | |
 | T83.8 | todo | P1 | 2 | 0% | |
-| T83.10 | todo | P1 | 2 | 0% | |
 | T83.11 | todo | P1 | 3 | 0% | |
 | T83.12 | todo | P1 | 3 | 0% | |
 | T83.13 | todo | P1 | 3 | 0% | |
@@ -67,12 +66,6 @@ Check: the test passes in the `windows` CI job; `just check` stays green.
 ### T83.8. `commands_e2e::run_long_output_then_expand_round_trips` fails on Windows
 
 The `run` → `expand` round trip likely depends on a Unix shell command or a path/newline assumption in the fixture. Read `tests/commands_e2e.rs` and decide whether the command under test needs a Windows-portable replacement or `rtok`'s `run`/`expand` path has a real Windows bug. One family split out of the original T83; see T83.2 for the closing criterion.
-
-Check: the test passes in the `windows` CI job; `just check` stays green.
-
-### T83.10. `plugins::cmd::formatters::tests::ten_families_and_aws_key_unredacted` fails on Windows
-
-Read `plugins/cmd/formatters.rs`'s AWS-key redaction and decide whether the regex/format assumes a Unix-shaped command line (quoting, path separators) that differs on Windows, or the test fixture itself is Unix-only. One family split out of the original T83; see T83.2 for the closing criterion.
 
 Check: the test passes in the `windows` CI job; `just check` stays green.
 
