@@ -111,7 +111,6 @@ that v0.1 does not schedule.
 | I-79 | graphify non-code corpora (PDF, images, audio / video via whisper, Google Workspace) with LLM extraction; review 2026-09-18 | `graph` / `compress` | Index docs beyond Markdown. | LLM extraction is the P28 lane (Later, default off); Markdown headings are T68.8. Anything else is out of the token-reduction scope. |
 | I-80 | graphify exports (GraphML, Neo4j / FalkorDB Cypher, Obsidian vault, HTML force graph, Mermaid); review 2026-09-18 | `graph` | `rtok graph export --format graphml \| dot \| json` from the `symbols` rows. | Operator-facing, not a token saving; D27 says the web/TUI page is the surface. One `--json` on `graph status` / `affected` (T60.1, T68.3, T68.5) covers scripting. |
 | I-81 | graphify `global add / list` cross-project registry and `merge-graphs`; codegraph `list_repos`; review 2026-09-18 | `graph` | One store already holds many roots (T8.3); a `root = "*"` on `symbol` / `callers` would search them all. | No workload here spans repos in one session; add when a monorepo-of-repos user asks. |
-| I-82 | graphify strict mode (PreToolUse blocks the first raw source read and redirects to the graph); review 2026-09-18 | `guard` | **gate: T136** — Deny a native `Read` of a source file whose definitions are indexed, with a reason pointing at `symbol` / `outline`. | T50.4 does it for Grep / Glob; a Read deny risks a false deny on files the model needs whole (fail-open rule). Needs a measured share of Reads that `outline` would have answered, then an A/B like T53.1. |
 | I-83 | graphify `hook install` (post-commit / post-checkout re-extract) and git merge driver for the graph file; review 2026-09-18 | `graph` | A post-checkout hook that runs `rtok graph index` when no `rtok mcp` watcher is alive. | `auto_index = true` already walks on every call (stat gate), and the watcher covers the `mcp` case; the merge driver is moot because rtok's index is never committed. |
 
 ### Hosts and product
@@ -152,6 +151,7 @@ Scheduled for a higher version, **not rejected**. v0.1 §5 is done; I-21..I-26 d
 Scope by version (Open / Later) first; this list is only for ideas that will never ship.
 
 - **I-86** strip prior reasoning/thinking blocks on replay — T125 (2026-09-21): 0.0297 % of session input over 827 sessions, and the Anthropic API already strips earlier turns' thinking blocks (https://docs.claude.com/en/docs/build-with-claude/extended-thinking). Nothing left to save.
+- **I-82** deny a native `Read` of an indexed source file, point at `outline` (graphify strict mode) — T136 (2026-09-24): `rtok stats --since 30d` over 367 sessions counts 6 whole-file native Reads of an outline-able file at or above `native_max_bytes` (32 768 B): 216 364 B, 1.5 % of Read bytes and 0.3 % of tool-result bytes, none followed by an Edit — under the 5 % gate. rtok's own `read` advice deny already stops the rest.
 
 ---
 
