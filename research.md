@@ -1422,6 +1422,21 @@ Creator question: worktrees pile up, nobody knows whose they are, names are rand
 
 Admin data is `$GIT_DIR/worktrees/<id>/` (`gitdir`, `HEAD`, `index`, `locked`); the worktree holds a `.git` *file*. No owner, description, TTL or size exists. Ignored files are never shared or cleaned. Free-text metadata fits in `git worktree lock --reason` (shown by `list --porcelain`; non-ASCII is C-quoted there, so keep it ASCII) or `git config --worktree` (needs `extensions.worktreeConfig`). `rm -rf` leaves the admin entry until `gc.worktreePruneExpire` (3 months) — and forever when the worktree was locked: checked 2026-09-22 with git 2.54, a locked worktree whose directory was deleted is not even reported `prunable`. Meanwhile its branch counts as checked out. `git worktree remove <path>` on the missing directory (after `unlock`) drops that single record → T153. `worktree.useRelativePaths` (git ≥ 2.48) would have kept `graph-perf` linked, but sets `extensions.relativeWorktrees`, which older git and possibly libgit2/gix-based tools refuse → T157.
 
+#### Relative worktree links probe (2026-09-24, T157)
+
+Scratch repositories only. `git config worktree.useRelativePaths true` followed by `git worktree add ../wt` writes `gitdir: ../repo/.git/worktrees/wt` in `wt/.git` and a relative back-link. It also sets `extensions.relativeWorktrees = true` and raises `core.repositoryformatversion` to 1.
+
+| Reader | Version | Opens the worktree | How checked |
+| --- | --- | --- | --- |
+| git CLI | 2.54.0 | yes | `git status`, `git worktree list` |
+| cargo (VCS dirty check) | 1.97.1 | yes | `cargo package --list` inside the worktree reports the one uncommitted file |
+| gh | 2.101.0 | yes | `gh repo view --json name` inside the worktree resolves `listepo/rtok` |
+| lazygit, delta, editors (VS Code, Zed, Cursor) | — | not tested | interactive; lazygit shells out to the git CLI, delta never opens a repository |
+
+Move test: the parent directory holding `repo/` and `wt/` was moved with `mv a b`. With relative links, `git -C b/wt status` and `git -C b/repo worktree list` work unchanged, and `git worktree repair` is not needed. The absolute-link control breaks on the same move: `fatal: not a git repository: (null)`, and the worktree is listed as `prunable`. Renaming only one side (the repository or the worktree) breaks the relative link too, as expected.
+
+Conclusion: every non-interactive reader on this machine opens a relative-link worktree. The editors are untested. The setting stays opt-in until they are checked: the T157 Check asks for "every reader passes" before the setting is added to the `worktrees` skill and AGENTS.md.
+
 ### 18.3 Hosts (vendor docs, fetched 2026-09-21, not re-verified by running each host)
 
 | Host | Location | Naming | Automatic cleanup |
