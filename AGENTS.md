@@ -2,7 +2,7 @@
 
 **What.** One Rust binary cutting tokens for coding agents; every method is a plugin. Surfaces: `rtok hook <event>`, `rtok mcp`, `rtok proxy` (`ANTHROPIC_BASE_URL`).
 
-**Platforms.** Windows, macOS, and Linux are first-class; see `docs/agency.md`.
+**Platforms.** Only Windows, macOS, and Linux (first-class); see `docs/agency.md`.
 
 **Read first.** `plan.md` (tasks, Checks, D1–D30), `architecture.md`, `research.md`. Also `roadmap.md`, `ideas.md` (propositions; never implement), `done.md`. Per plugin: `src/plugins/<id>/AGENTS.md`. Do not add unplanned work.
 
