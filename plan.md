@@ -65,7 +65,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T201 | todo | P2 | 2 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
 | T206 | todo | P2 | 3 | 0% | |
-| T207 | todo | P1 | 3 | 0% | |
 | T209 | todo | P1 | 3 | 0% | |
 | T210 | todo | P2 | 2 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
@@ -763,14 +762,6 @@ Found 2026-09-22 in the surfaces pass: every 2 s tick per connection runs `model
 Plan: clone/`Arc` the `Config`, build each snapshot in `spawn_blocking` without holding the lock, and coalesce concurrent ticks into one in-flight build shared by all sockets. (The transcript-parse burn itself is T135.)
 
 Check: `health_answers_during_a_snapshot_build` — busy fixture store + several WS clients, `/health` p95 < 250 ms while ticks run; `ws_set_accepts_plugin_enabled` green; `just test` green.
-
-### T207. Measurement totals computed three ways; non-catalogue plugins and expand rows disagree
-
-Found 2026-09-22 in the store/accounting pass: `report_window.measurements` / `report_savings` (`src/web/model.rs:578-631`) sum only the 11 catalogue plugin ids via `list_measurements(id)` while labelling the numbers "Whole-ledger counts" — out-of-tree/WASM plugin measurements never appear; `stats --plugin` excludes `kind == "expand"` rows (:356-392) while `Model::plugin_stats` (:1204-1217) includes them; `otel_saved_totals` (`src/store/otel.rs:173-180`) sums per (plugin, kind) over all rows. The same store yields different "saved" totals on the report vs the OTLP export and different `rows` for one plugin on `stats` vs the Plugins page. Compounding: every `saves_tokens` page loads **all** `Measurement` rows into memory per 2 s tick and `report_window` adds an N+1 per session (`list_measurements` has no LIMIT — `src/store/mod.rs:1212-1220`). Breaks D3/D24 ("`rtok report` renders; it never computes a number of its own").
-
-Plan: one `Store::measurement_totals()` SQL aggregate (GROUP BY plugin, kind; plus grouped `usage` counts to kill the N+1) consumed by `report_window`, `report_savings`, `otel_saved_totals` and both `plugin_stats`, with one consistent expand-row policy.
-
-Check: fixture seeding a non-catalogue plugin's rows + an expand row — `report_window.measurements == store.count_measurements()`, `report_savings.total_saved == otel_saved_totals().sum(saved)`, `rows` equal in both `plugin_stats`; `plugin_stats_matches_sql_aggregates_on_10k_rows`; `just test` green.
 
 ### T209. `upsert_note` select-then-insert races a duplicate past the topic key
 
