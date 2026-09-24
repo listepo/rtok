@@ -330,19 +330,11 @@ async fn compress_summary_row_visible_in_stats() {
 /// `rtok run --` (`src/plugins/cmd/hook.rs`); the host then executes that, and its stdout
 /// *is* what `PostToolUse` would see. So this test confirms the rewrite, then runs it.
 ///
-/// `trailer_min_lines` is raised so the row's `filtered` text is the whole printed body:
-/// at the default, `emit_filtered` (src/plugins/cmd/run.rs:368-384) prints `filtered` plus
-/// a separate `[rtok <id> · N lines · expand …]` trailer line, but measures only `filtered`
-/// — the row then understates `after` by the trailer's bytes/tokens. That is a real bug
-/// (reported separately); this test does not launder it into a false-passing assertion.
+/// Default config: 200 lines pass `trailer_min_lines`, so stdout ends with the
+/// `[rtok <id> · N lines · expand …]` trailer, which `after` must count too (T247).
 #[test]
 fn cmd_hook_measurement_matches_returned_bytes() {
     let home = tmp("cmd-bytes");
-    std::fs::write(
-        home.0.join("config.toml"),
-        "[plugins.cmd]\ntrailer_min_lines = 100000\n",
-    )
-    .unwrap();
     let body: String = (1..=200).map(|i| format!("line {i}\n")).collect();
     let file = home.0.join("big.txt");
     std::fs::write(&file, &body).unwrap();
@@ -365,6 +357,7 @@ fn cmd_hook_measurement_matches_returned_bytes() {
         .to_string();
     assert!(modified.starts_with("rtok run -- "), "{modified}");
     let out = run(&home, &["run", "cat", file.to_str().unwrap()], "", &home.0);
+    assert!(out.contains("expand: rtok expand "), "{out}");
     let rows = rows(&home, "cmd");
     let row = rows
         .iter()
@@ -376,14 +369,7 @@ fn cmd_hook_measurement_matches_returned_bytes() {
         row.est_before,
         tokens::estimate(&body, Class::Code, &cfg.estimator) as i32
     );
-    // `emit_filtered` pads a trailing `\n` after the measured text when it is missing one
-    // (run.rs ~L369); allow that one cosmetic byte while token estimates must match exactly.
-    assert!(
-        row.after_bytes as usize == out.len() || row.after_bytes as usize + 1 == out.len(),
-        "after_bytes {} vs returned {} bytes",
-        row.after_bytes,
-        out.len()
-    );
+    assert_eq!(row.after_bytes as usize, out.len(), "{row:?}");
     assert_eq!(
         row.est_after,
         tokens::estimate(&out, Class::Code, &cfg.estimator) as i32

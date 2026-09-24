@@ -365,20 +365,24 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32, agen
             return;
         }
     }
-    print!("{filtered}");
-    if !filtered.is_empty() && !filtered.ends_with('\n') {
-        println!();
+    // T247: measure exactly what the host receives — the padding newline and the trailer
+    // line are part of the returned bytes, so `after` must count them too.
+    let mut shown = filtered;
+    if !shown.is_empty() && !shown.ends_with('\n') {
+        shown.push('\n');
     }
     if pointer {
-        println!("{}", trailer(&id, lines));
+        shown.push_str(&pointer_line);
+        shown.push('\n');
     }
+    print!("{shown}");
     let _ = cx.record(&Measurement {
         plugin: "cmd",
         kind,
         before_bytes: body.len() as u64,
-        after_bytes: filtered.len() as u64,
+        after_bytes: shown.len() as u64,
         est_before: cx.estimate(&before, Class::Code),
-        est_after: cx.estimate(&filtered, Class::Code),
+        est_after: cx.estimate(&shown, Class::Code),
         ref_id: (pointer || named).then(|| format!("{family}:{id}")),
         call_id: None,
     });
