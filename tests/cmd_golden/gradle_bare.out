@@ -1,0 +1,33 @@
+> Task :module0:compileJava
+> Task :module1:compileJava
+> Task :module2:compileJava
+> Task :module3:compileJava
+> Task :module4:compileJava
+> Task :module5:compileJava
+> Task :module6:compileJava
+> Task :module7:compileJava
+… 7 lines omitted (expand deadbeef)
+What went wrong:
+Execution failed for task ':app:compileJava'.
+> error: cannot find symbol WidgetFactory
+… 10 lines omitted (expand deadbeef)
+> Task :module25:compileJava
+> Task :module26:compileJava
+> Task :module27:compileJava
+> Task :module28:compileJava
+> Task :module29:compileJava
+> Task :module30:compileJava
+> Task :module31:compileJava
+> Task :module32:compileJava
+> Task :module33:compileJava
+> Task :module34:compileJava
+> Task :module35:compileJava
+> Task :module36:compileJava
+> Task :module37:compileJava
+> Task :module38:compileJava
+> Task :module39:compileJava
+> Task :module40:compileJava
+> Task :module41:compileJava
+> Task :module42:compileJava
+> Task :module43:compileJava
+> Task :module44:compileJava

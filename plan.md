@@ -83,7 +83,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T228 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
-| T240 | todo | P2 | 2 | 0% | |
 | T241 | todo | P2 | 3 | 0% | |
 | T244 | todo | P1 | 3 | 0% | |
 | T245 | todo | P2 | 3 | 0% | |
@@ -522,14 +521,6 @@ Found 2026-09-23 in the D27 audit: `worktree list` and `worktree gc --dry-run` a
 Plan: page `("worktrees", "worktrees")` — path, branch, owner (lock reason), age, `target/` size, prunable flag: the same rows as `worktree list --json`, read through one accessor; `gc`/`clean` stay CLI. Bound the filesystem walk (cached size, TTL) so the snapshot tick stays cheap (T206).
 
 Check: `worktrees_page_exists_on_both_surfaces`; a fixture repo with one locked worktree renders its owner; `just check` green.
-
-### T240. Golden files for rule families without one
-
-`rules/default.toml` has families with no pair in `tests/cmd_golden`: `curl`, `node`, `pnpm`, `sed` (re-list at claim time — any rule `match_cmd` or Rust formatter with no `.in`/`.out`). Their output shape is untested.
-
-Plan: one realistic `.in` per missing family (long enough to trigger the rule, no machine paths or secrets), generate the `.out` with the golden harness, read each `.out` by hand, and give each a `min_saving` floor from T238. If a family's rule makes the output larger or drops the error lines, file it as a bug instead of blessing it.
-
-Check: every rule family has a golden pair (a test lists the `match_cmd` values and fails on a family without a `.in`); `just check` green. Needs T238.
 
 ### T241. Replay bench: saving over a fixed session corpus
 
