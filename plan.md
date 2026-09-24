@@ -9,7 +9,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T83.2 | todo | P1 | 3 | 0% | |
 | T83.4 | todo | P1 | 3 | 0% | |
 | T83.7 | todo | P1 | 2 | 0% | |
-| T83.8 | todo | P1 | 2 | 0% | |
+| T83.8 | in progress | P1 | 2 | 10% | Claude Code / claude-opus-5-5 |
 | T83.11 | todo | P1 | 3 | 0% | |
 | T83.12 | todo | P1 | 3 | 0% | |
 | T83.13 | todo | P1 | 3 | 0% | |
@@ -59,6 +59,8 @@ Check: the test passes in the `windows` CI job; `just check` stays green.
 ### T83.8. `commands_e2e::run_long_output_then_expand_round_trips` fails on Windows
 
 The `run` → `expand` round trip likely depends on a Unix shell command or a path/newline assumption in the fixture. Read `tests/commands_e2e.rs` and decide whether the command under test needs a Windows-portable replacement or `rtok`'s `run`/`expand` path has a real Windows bug. One family split out of the original T83; see T83.2 for the closing criterion.
+Found 2026-09-25 (windows job of ci run 35244082778): awk ran but got `\BEGIN{…print ""line ""i}"` — a real `rtok run` bug. `script_for(Cmd)` already quotes for cmd.exe (`"…"` with `""`), then `Command::args` re-quotes the body with MSVC rules (`\"`), which cmd.exe does not understand. Any cmd.exe body with a `"` breaks the same way.
+Plan: in `src/plugins/cmd/run.rs`, pass the cmd.exe body with `CommandExt::raw_arg` on Windows (`/D /C` stay `args`); a `cfg(windows)` unit test runs a quoted body through cmd.exe; drop the test's line from `.config/nextest.toml`.
 
 Check: the test passes in the `windows` CI job; `just check` stays green.
 
