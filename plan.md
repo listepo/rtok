@@ -74,7 +74,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T223 | todo | P3 | 2 | 0% | |
 | T224 | todo | P3 | 1 | 0% | |
 | T235 | todo | P1 | 3 | 0% | |
-| T242.3 | todo | P1 | 3 | 0% | |
 | T242.4 | todo | P2 | 3 | 0% | |
 | T226 | todo | P2 | 2 | 0% | |
 | T228 | todo | P2 | 2 | 0% | |
@@ -822,10 +821,6 @@ Findings from a load incident on the creator's machine (16 cores, load average ~
 - An `apps/rtok/target/debug/rtok logs watch --lines 5` had been running for 5.5 days with ppid 1: `logs watch` does not exit when the terminal or agent that started it goes away.
 
 Done means: `rtok run` waits for the wrapped process, not for EOF — once the child exits it reaps it, drains what is already buffered (short bounded wait) and returns the child's exit code even if a descendant still holds the pipe, covered by a test that spawns a detached grandchild; `rtok run` starts no login shell unless something it needs comes only from the login profile (decide and record why; measure the per-call saving with hyperfine on idle and on a loaded host); `rtok logs watch` exits when its parent dies or its stdout closes (SIGHUP/SIGPIPE, or ppid becoming 1), covered by a test.
-
-### T242.3. Claude plugin: `update` first, reinstall when update fails
-
-After T242.2. Under `Mode::Update` with `rtok@rtok` installed from the GitHub marketplace, run `claude plugin marketplace update rtok` then `claude plugin update rtok@rtok` (both exist in Claude Code's CLI, checked 2026-09-24: `plugin update <plugin>` "Update a plugin to the latest version"). If either fails, fall back to `plugin uninstall rtok@rtok` + `plugin install rtok@rtok`; a stale marketplace keeps T139's re-point path. Fake `claude` in `tests/common/agents.rs` learns `plugin update` / `marketplace update` and a `FAKE_CLAUDE_FAIL=update` switch. Check: argv log order for both paths, `installed_plugins.json` rewritten, plain `install` unchanged (still a no-op when installed).
 
 ### T242.4. Codex plugin: `marketplace upgrade`, reinstall on failure
 
