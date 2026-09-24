@@ -1,5 +1,19 @@
 # rtok — completed tasks
 
+### T255. Tests run under a fake `HOME`
+
+Creator request 2026-09-24. T254 closes the leaks through `Config`, but code that resolves home itself (`agents::home_dir`, `Config::home_dir`, `env_user_home`) still sees the real `HOME` in any test that does not set it. Give every test process a throwaway `HOME` (and `USERPROFILE`) under `target/` so a missed path lands in a sandbox, never in `~/.claude` or `~/.codex`. The obvious place is cargo's `[env]` in `.cargo/config.toml` with `force = true`, provided nextest honours it and build scripts are not affected; if either fails, use a nextest setup script instead. Tests that need git settings from the home (commits in fixtures) get an explicit `user.name`/`user.email` instead.
+
+Check: a canary test asserts `HOME` is not the real user home; `just check` green on macOS, Ubuntu and Windows CI.
+
+Plan (creator chose the nextest route 2026-09-24): cargo `[env]` also reaches `cargo run`, so a local `cargo run -- doctor` would read the fake home. Instead, `.config/nextest.toml` gets `experimental = ["setup-scripts"]` and one `test-home` setup script for all tests, `sh -c` on Unix and PowerShell on Windows (array form, no implicit shell).
+- The script creates `target/test-home` and exports `HOME` (and `USERPROFILE` on Windows) through `$NEXTEST_ENV`.
+- It pins `CARGO_HOME`, `RUSTUP_HOME` and mise's data and config dirs to their real values, so tests that spawn `rustup`, `rust-analyzer` or `mise where` still find the toolchain.
+- Git needs nothing: tests that commit pass their own `user.*`.
+- Canary `testutil::tests::nextest_runs_under_the_test_home`: under nextest, `HOME` ends in `test-home`.
+
+Result: `.config/nextest.toml` has `test-home-unix` (`sh -c`) and `test-home-windows` (PowerShell) setup scripts, one per host platform. Each empties and recreates `target/test-home` on every run. The canary `testutil::tests::nextest_runs_under_the_test_home` passes under nextest and skips under `cargo test`. The first full run left 294 files in the fake home, written by real host CLIs that host tests spawn (codex `~/.codex/tmp`, cursor `~/.cursor/cli-config.json`, kilo and opencode XDG dirs, omp logs, the Dart analysis server) and one `~/.rtok/config.toml`; before, all of them went to the developer's real home. `just check` green (1730 tests).
+
 ### T254. Unit tests read the real `~/.claude*`, `~/.codex` and agent configs
 
 Creator request 2026-09-24, after T252. Tests still reach the developer's real home through `Config` paths nobody redirected:

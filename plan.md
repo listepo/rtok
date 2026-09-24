@@ -55,7 +55,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T241 | todo | P2 | 3 | 0% | |
 | T246.5 | todo | P1 | 2 | 0% | |
 | T250.3 | todo | P1 | 3 | 0% | |
-| T255 | todo | P2 | 3 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -414,11 +413,6 @@ Cursor appends a heredoc to the command on Unix, so the resolver is one brace gr
 
 Check: `tests/cursor_plugin.rs` runs each plugin command as Cursor does (`/bin/sh -c "<command> <<'CURSOR_HOOK_EOF' …"`), empty PATH, temp HOME: silent exit 0, one sessionStart note, a fake `~/.ketch/bin/rtok` receives the payload on stdin; a unit test shows the Windows copy holds the bare lines; installer round trip idempotent; `just check` green. The test's stdin write tolerates a broken pipe: the fail-open hook may exit before reading it (T251).
 
-### T255. Tests run under a fake `HOME`
-
-Creator request 2026-09-24. T254 closes the leaks through `Config`, but code that resolves home itself (`agents::home_dir`, `Config::home_dir`, `env_user_home`) still sees the real `HOME` in any test that does not set it. Give every test process a throwaway `HOME` (and `USERPROFILE`) under `target/` so a missed path lands in a sandbox, never in `~/.claude` or `~/.codex`. The obvious place is cargo's `[env]` in `.cargo/config.toml` with `force = true`, provided nextest honours it and build scripts are not affected; if either fails, use a nextest setup script instead. Tests that need git settings from the home (commits in fixtures) get an explicit `user.name`/`user.email` instead.
-
-Check: a canary test asserts `HOME` is not the real user home; `just check` green on macOS, Ubuntu and Windows CI.
 
 ## Reference
 
