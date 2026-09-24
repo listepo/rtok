@@ -42,7 +42,6 @@
 - T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 - T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
 - T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
-- T218. `docs/*.md` pages missing from the site nav; a hand-copied getting-started twin
 - T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
 - T223. `windows-sys` linked in three versions
 - T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
