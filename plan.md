@@ -44,7 +44,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T171 | todo | P1 | 2 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T199 | todo | P2 | 1 | 0% | |
-| T204 | todo | P3 | 2 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
 | T213 | todo | P3 | 2 | 0% | |
 | T216 | todo | P3 | 2 | 0% | |
@@ -593,14 +592,6 @@ Found 2026-09-22 in the docs pass: I-86 sits in the Open table and in Rejected a
 Plan: drop the Open I-86 row (Rejected carries the evidence) or revert the Rejected entry until T125 closes — pick one; delete the duplicate I-87 keeping "promoted T135"; give Promoted one matching header and repair the I-28 cell; remove the blank line inside the Open table. Docs only.
 
 Check: `ideas_ids_unique_and_disjoint` — every `I-NN` occurs in exactly one of Open/Later/Rejected/Promoted and every pipe-table has a header + separator before its rows; `just site` builds.
-
-### T204. A panicking plugin is dropped silently — the error never reaches the log
-
-Found 2026-09-22 in the core pass: every plugin call is wrapped in `catch_unwind` (`src/hooks/mod.rs:340-344, 381-385, 493-508, 202-205`) but the payload is discarded with `.ok()`/`let _` — no `logs` row, no stderr. architecture.md §4 and the Working agreement promise "that plugin's output is dropped, **the event is logged with the error**". Today a panicking plugin is indistinguishable from one returning `None`, so T233-class failures stay invisible in `rtok doctor` / `rtok logs`.
-
-Plan: one funnel helper for the four loops matching the `Err`, extracting the panic payload string and calling `cx.log("error", …)` with the plugin id before dropping the output.
-
-Check: `a_panicking_plugin_is_logged_and_the_rest_survives` — a registry with one panicking and one returning plugin: stdout keeps the good plugin's context and the store holds one `level = "error"` log row naming the plugin; `just test` green.
 
 ### T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 

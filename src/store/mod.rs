@@ -2150,6 +2150,20 @@ impl Store {
         Ok(())
     }
 
+    /// T204 test helper: how many `logs` rows match this `level`/`name` (the funnel's plugin-id
+    /// column, see `insert_log`'s callers). Not for production code — a caller that needs this
+    /// for real belongs on the `rtok logs`/`doctor` read path instead.
+    #[cfg(test)]
+    pub fn count_logs(&self, level: &str, name: &str) -> Result<i64> {
+        let mut conn = self.lock()?;
+        logs::table
+            .filter(logs::level.eq(level))
+            .filter(logs::name.eq(name))
+            .count()
+            .get_result(&mut *conn)
+            .map_err(Into::into)
+    }
+
     /// Drop `calls` older than `days` with the rows that only describe them (`logs`, `tokens`,
     /// `call_io`). Ledger rows that point at a dropped call — `usage`, `measurements`, a newer
     /// child call — are kept and detached: a saving is not deleted with its call, and without the
