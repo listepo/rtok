@@ -74,7 +74,10 @@ fn has_ours(entry: &Value, event: &str, matcher: &str) -> bool {
             .any(|c| is_ours(c, event))
 }
 
-/// Add `<bin> hook <event>` under `hooks.<event>[]` for each entry not already ours.
+/// Add `<bin> hook <event>` under `hooks.<event>[]` for each entry not already ours, and
+/// bring the ones that are up to date (T242.1): an rtok hook written by another binary path
+/// or with another timeout is rewritten in its slot, and an rtok hook on a pair `entries` no
+/// longer lists (a changed matcher) is dropped. Foreign hooks are never touched.
 /// `timeout_key` is the host's spelling (`timeout` seconds in Claude, `timeoutMs` in ZCode).
 pub(super) fn insert_ours(
     hooks: &mut Value,
@@ -83,12 +86,27 @@ pub(super) fn insert_ours(
     timeout_key: &str,
     timeout: u64,
 ) -> String {
-    let mut added = Vec::new();
+    let mut changed = prune_ours(hooks, entries);
     for &(event, matcher) in entries {
-        if array_at(hooks, event)
-            .iter()
-            .any(|e| has_ours(e, event, matcher))
-        {
+        let want = command(bin, event);
+        let mut found = false;
+        for entry in array_at(hooks, event).iter_mut() {
+            if !has_ours(entry, event, matcher) {
+                continue;
+            }
+            for h in entry["hooks"].as_array_mut().into_iter().flatten() {
+                if !h["command"].as_str().is_some_and(|c| is_ours(c, event)) {
+                    continue;
+                }
+                found = true;
+                if h["command"] != json!(want) || h[timeout_key] != json!(timeout) {
+                    h["command"] = json!(want);
+                    h[timeout_key] = json!(timeout);
+                    changed.push(format!("~ {event}{} {want}", show(matcher)));
+                }
+            }
+        }
+        if found {
             continue;
         }
         let mut obj = serde_json::Map::new();
@@ -100,18 +118,71 @@ pub(super) fn insert_ours(
             json!([{"type":"command","command":command(bin, event),timeout_key:timeout}]),
         );
         array_at(hooks, event).push(Value::Object(obj));
-        let m = if matcher.is_empty() {
-            String::new()
-        } else {
-            format!(" {matcher}")
-        };
-        added.push(format!("+ {event}{m} {}", command(bin, event)));
+        changed.push(format!("+ {event}{} {want}", show(matcher)));
     }
-    if added.is_empty() {
-        NO_CHANGES.into()
+    if changed.is_empty() {
+        return NO_CHANGES.into();
+    }
+    let count = |p: char| changed.iter().filter(|l| l.starts_with(p)).count();
+    let summary: Vec<String> = [('+', "additions"), ('~', "updates"), ('-', "removals")]
+        .into_iter()
+        .filter(|&(p, _)| count(p) > 0)
+        .map(|(p, word)| format!("{} {word}", count(p)))
+        .collect();
+    format!("{}\n{}", changed.join("\n"), summary.join(", "))
+}
+
+/// ` <matcher>` for a report line; nothing for an empty matcher.
+fn show(matcher: &str) -> String {
+    if matcher.is_empty() {
+        String::new()
     } else {
-        format!("{}\n{} additions", added.join("\n"), added.len())
+        format!(" {matcher}")
     }
+}
+
+/// Drop rtok hooks sitting on an `(event, matcher)` pair `entries` does not list — what an
+/// older install wrote before a matcher changed or an event went (T242.1). Emptied entries
+/// and event arrays go, as in [`strip_ours`]; one `- …` report line per dropped hook.
+fn prune_ours(hooks: &mut Value, entries: &[(&str, &str)]) -> Vec<String> {
+    let (mut removed, mut emptied) = (Vec::new(), Vec::new());
+    let Some(map) = hooks.as_object_mut() else {
+        return removed;
+    };
+    for (event, arr) in map.iter_mut() {
+        let Some(arr) = arr.as_array_mut() else {
+            continue;
+        };
+        let before = removed.len();
+        for entry in arr.iter_mut() {
+            let matcher = entry["matcher"].as_str().unwrap_or("").to_string();
+            if entries.contains(&(event.as_str(), matcher.as_str())) {
+                continue;
+            }
+            let Some(inner) = entry.get_mut("hooks").and_then(Value::as_array_mut) else {
+                continue;
+            };
+            inner.retain(|h| match h["command"].as_str() {
+                Some(c) if is_ours(c, event) => {
+                    removed.push(format!("- {event}{} {c}", show(&matcher)));
+                    false
+                }
+                _ => true,
+            });
+        }
+        if removed.len() > before {
+            arr.retain(|e| {
+                e.get("hooks")
+                    .and_then(Value::as_array)
+                    .is_none_or(|a| !a.is_empty())
+            });
+            if arr.is_empty() {
+                emptied.push(event.clone());
+            }
+        }
+    }
+    map.retain(|k, _| !emptied.contains(k));
+    removed
 }
 
 /// Remove every `<rtok> hook <event>` entry under the given `hooks` object; empty arrays go.
@@ -733,6 +804,73 @@ mod tests {
             let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
             assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
         }
+    }
+
+    /// T242.1: an rtok hook from an older binary path or timeout is rewritten in its own slot,
+    /// the foreign hook beside it stays, and a second pass changes nothing.
+    #[test]
+    fn stale_bin_and_timeout_are_rewritten_in_place() {
+        let mut hooks = json!({"PreToolUse":[{"matcher":"Bash","hooks":[
+            {"type":"command","command":"echo mine"},
+            {"type":"command","command":"/old/store/rtok/v0.1.0/rtok hook PreToolUse","timeout":3}
+        ]}]});
+        let report = insert_ours(&mut hooks, &ENTRIES[..1], "rtok", "timeout", 7);
+        assert_eq!(
+            report, "~ PreToolUse Bash rtok hook PreToolUse\n1 updates",
+            "{report}"
+        );
+        let inner = &hooks["PreToolUse"][0]["hooks"];
+        assert_eq!(inner[0]["command"], "echo mine");
+        assert_eq!(inner[1]["command"], "rtok hook PreToolUse");
+        assert_eq!(inner[1]["timeout"], 7);
+        assert_eq!(hooks["PreToolUse"].as_array().unwrap().len(), 1);
+        let before = hooks.clone();
+        assert_eq!(
+            insert_ours(&mut hooks, &ENTRIES[..1], "rtok", "timeout", 7),
+            NO_CHANGES
+        );
+        assert_eq!(hooks, before);
+    }
+
+    /// T242.1: a pair rtok no longer installs (an old matcher, a dropped event) loses its rtok
+    /// hook — foreign hooks on it stay — and the current pair is added, so one event never
+    /// ends up with two rtok hooks.
+    #[test]
+    fn a_pair_rtok_no_longer_installs_is_pruned() {
+        let mut hooks = json!({
+            "PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"rtok hook PostToolUse"}]}],
+            "Stop":[{"hooks":[
+                {"type":"command","command":"rtok hook Stop"},
+                {"type":"command","command":"notify-send done"}
+            ]}],
+            "Notification":[{"hooks":[{"type":"command","command":"rtok hook Notification"}]}]
+        });
+        let entries = [("PostToolUse", "*")];
+        let report = insert_ours(&mut hooks, &entries, "rtok", "timeout", 5);
+        assert!(report.ends_with("1 additions, 3 removals"), "{report}");
+        assert!(
+            report.contains("- PostToolUse Bash rtok hook PostToolUse"),
+            "{report}"
+        );
+        let post = hooks["PostToolUse"].as_array().unwrap();
+        assert_eq!(post.len(), 1, "{hooks}");
+        assert_eq!(post[0]["matcher"], "*");
+        assert_eq!(
+            hooks["Stop"][0]["hooks"],
+            json!([{"type":"command","command":"notify-send done"}])
+        );
+        assert!(hooks.get("Notification").is_none(), "{hooks}");
+    }
+
+    /// T242.1: re-running install on a current file writes nothing — the bytes stay.
+    #[test]
+    fn current_file_stays_byte_identical() {
+        let path = tmp("setup-current");
+        let c = cfg(path.clone(), false);
+        run(&c, false).unwrap();
+        let first = fs::read(&path).unwrap();
+        assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
+        assert_eq!(fs::read(&path).unwrap(), first);
     }
 
     /// T114: `plugins/claude` carries the installer's hooks, one `rtok mcp`, and the marketplace

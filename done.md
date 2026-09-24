@@ -5599,3 +5599,14 @@ Result: `rtok agents install codewhale` writes one `[[hooks.hooks]]` entry (`mes
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T242.1. Re-running install refreshes stale Claude-shaped hook entries
+
+Creator request 2026-09-24 (parent T242: `rtok agents update` updates in place where it can and reinstalls where it cannot, module by module). Today `claude::insert_ours` skips an `(event, matcher)` pair as soon as any rtok hook sits there, so an entry written by an older binary path (`/…/store/rtok/v0.1.0/rtok hook PreToolUse`), an old `timeout`, or a pair rtok no longer installs (a changed matcher) survives every re-install; the changed matcher even leaves two rtok hooks on one event. Done: an rtok entry whose command or timeout differs from what install writes now is rewritten in place (same array slot, foreign hooks in the same entry kept); rtok entries for pairs outside the host's entry list are dropped; a current file still reports `NO_CHANGES` byte for byte. Covers every host on `insert_ours` (Claude Code, ZCode, Codex hooks).
+
+Plan: `src/agents/claude/mod.rs` — `insert_ours` gains a refresh pass (`~ <event> <cmd>` report lines, `- <event>` for pruned pairs); unit tests there (stale bin, stale timeout, stale matcher, foreign kept, idempotent). `tests/agents_update.rs` e2e: seed a stale `settings.json`, run `agents install claude` without `claude` on PATH, assert the file changed to the current command and a second run leaves the bytes and backups untouched. Check: `just check`.
+
+Result: `claude::insert_ours` now refreshes as well as adds — a stale rtok hook (other binary path or timeout) is rewritten in its slot (`~` report line), an rtok hook on a pair the host no longer lists is dropped (`-` line) with foreign hooks beside it kept, and a current file stays `NO_CHANGES` byte for byte. Claude Code, ZCode and Codex hooks share it. Unit tests in `src/agents/claude/mod.rs`; e2e `tests/agents_update.rs` seeds a stale `settings.json`, runs `agents install claude`, and checks the rewritten file, the one backup of the seed, and an unchanged rerun.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
