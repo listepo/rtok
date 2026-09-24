@@ -24,11 +24,9 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
         // plugin in, the desktop variant has nothing to write from the first run (T243,
         // covered in `claude_plugin.rs`).
         ("claude", vec!["--yes", "--cli"], None),
-        (
-            "cursor",
-            vec!["--yes"],
-            Some(home.join(".cursor/hooks.json")),
-        ),
+        // The linked plugin carries hooks and MCP, so `hooks.json` and `mcp.json` stay
+        // unwritten (D21, T244).
+        ("cursor", vec!["--yes"], None),
         ("codex", vec![], Some(home.join(".codex/config.toml"))),
         (
             "opencode",

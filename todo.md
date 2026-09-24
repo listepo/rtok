@@ -73,6 +73,5 @@
 - T229. Services page: `demon status` and `otel status` on `tui` and `web`
 - T232. Worktrees page: `worktree list` on `tui` and `web`
 - T241. Replay bench: saving over a fixed session corpus
-- T244. No surface sees rtok twice after `agents install`
 - T245. One tool call is processed once
 - T246. Removal takes back only what rtok wrote, and asks about what the user changed

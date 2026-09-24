@@ -11,7 +11,7 @@ Plugin link: `~/.cursor/plugins/local/rtok` → `plugins/cursor/` from the rtok 
 
 | Module | Support | Why |
 | --- | --- | --- |
-| hooks | yes | `beforeShellExecution` → PreToolUse, `afterShellExecution` → PostToolUse, `preCompact` → PreCompact; all `--host cursor` |
+| hooks | yes | `beforeShellExecution` → PreToolUse, `afterShellExecution` → PostToolUse, `preCompact` → PreCompact; all `--host cursor`; in `hooks.json` only without the plugin — the linked plugin carries the same events, so setup strips ours there (T244) |
 | mcp | yes | `mcpServers.rtok` in `mcp.json`, or served by the linked plugin (then `mcp.json` is left alone: one MCP per store) |
 | plugin | yes | links `plugins/cursor` (hooks + MCP as one unit) by default, once Cursor itself is detected; a stale or foreign destination is never overwritten |
 | proxy | no | Cursor has no base-URL setting to point at the proxy |
