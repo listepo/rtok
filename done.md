@@ -5369,3 +5369,16 @@ Do (2026-09-24): cursor `plugin_is_mcp` and the leftover-`mcpServers.rtok` clean
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T195. pi extension: fail-open breaks on non-zero `rtok`, and the ketch hint regressed
+
+Found 2026-09-22 in the host-plugins pass of `plugins/pi/extensions/rtok.ts`: (1) `rtok()` (:34-43) treats only `ENOENT` as failure — a non-zero exit or a killed child falls through to `resolve({stdout})`, and `tool_result` (:137-147) then replaces the tool result with the partial stdout, so a crashed `rtok filter` truncates output carrying an `expand <id>` trailer and an abort kills results instead of passing them through (D1: unmodified input on error). `plugins/opencode/rtok.ts` tracks `failed` correctly; pi lost the distinction. (2) The T48.2 / I-36 fix regressed: the missing-`rtok` hint goes through `pi.appendEntry` (:53-57, :91-93) — TUI-only, invisible to the model — and the `tool_call` path bypasses `hintMissing`'s `pi._rtokHinted` once-guard, so it appends one entry per bash call. The vitest suite asserts the regressed behavior (`plugins/pi/tests/rtok.test.ts:22-32, 74-85`).
+
+Plan: resolve `{missing}` on ENOENT and a `failed` flag otherwise; `tool_result`/`guard`/tool `execute` keep the original on `failed`. Restore `pi.sendMessage({customType: "rtok-missing", …})` behind the session guard (fall back to `appendEntry` when absent) and route `tool_call` through the same guard. Fix the vitest expectations.
+
+Check: vitest — a stub exiting 1 after partial stdout (and an abort-killed stub) returns `undefined` (original kept); two bash `tool_call`s with `rtok` missing produce exactly one `sendMessage` matching `/ketch install listepo\/rtok/` and zero `appendEntry` when `sendMessage` exists, plus the one-`appendEntry` fallback case; vitest green.
+
+Do (2026-09-24): (1) was already fixed on `main` by T214: `rtok()` resolves `{failed}` on any non-ENOENT error, and every handler keeps the original. Two vitest cases now cover it: a stub exiting 1 after partial stdout, and an abort-killed stub. (2) `hintMissing` sends the ketch hint with `pi.sendMessage({customType: "rtok-missing"})` and falls back to `appendEntry` only when `sendMessage` is absent. `tool_call` goes through the same once-per-session guard. Tests: one `sendMessage` for two bash calls, plus the one-`appendEntry` fallback. Pi vitest 28/28, `just js` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
