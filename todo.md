@@ -80,3 +80,4 @@
 - T243. The Claude Code plugin supersedes the Claude Desktop `mcpServers.rtok`
 - T244. No surface sees rtok twice after `agents install`
 - T245. One tool call is processed once
+- T246. Removal takes back only what rtok wrote, and asks about what the user changed

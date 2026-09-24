@@ -91,6 +91,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T243 | in progress | P1 | 2 | 10% | Claude Code / opus-5-5 |
 | T244 | todo | P1 | 3 | 0% | |
 | T245 | todo | P2 | 3 | 0% | |
+| T246 | todo | P1 | 4 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -581,6 +582,14 @@ Runtime half of the same request: a host may fire two events for one call (Curso
 Plan: `tests/one_call_once.rs` — per host payload fixture set, feed every event the host fires for one MCP call and one Bash call through `rtok hook` in a temp home, then assert exactly one `Measurement` row and at most one archive entry per call (query through the existing store API, no raw SQL). Also a Claude home with the plugin and leftover settings-file hooks: one PostToolUse call still yields one row.
 
 Check: the test goes red when the `afterMCPExecution` path records its own row; `just check` green.
+
+### T246. Removal takes back only what rtok wrote, and asks about what the user changed
+
+Creator request 2026-09-24: removing rtok (`agents remove <host>`, and the plugin-supersedes strips of T243) must take back only what rtok itself wrote; anything the user changed in it is asked about — remove or keep. Today `rtok_agent_sdk::unregister_server` drops any entry named `rtok` whatever its command, and `skill::sync` removes a marked rtok skill even after the user edited it. Hooks already go through `strip_ours` + `is_rtok_bin`, but a user-edited rtok hook (other matcher, timeout, extra args) goes silently too.
+
+Plan: one ownership check per kind, three outcomes — **ours, unchanged** (equal to what the installer writes now): remove; **ours, changed by the user**: ask `? remove <what> in <file>? you changed it [y/N]` through a new SDK prompt whose default (Enter, EOF) is keep, `--yes` removes, no terminal keeps and names it in the report (`leave … (changed by you; remove by hand)`); **not ours**: leave and name it. Split: T246.1 MCP entries (`unregister_server` compares the entry with the one `register_server` would write; `is_rtok_bin` on the command) and hook entries (per host `strip_ours` compares with the written shape); T246.2 shipped skills (compare the copy with `skills/<name>`). Tests per outcome in `crates/rtok-agent-sdk` and `tests/agent_remove.rs`: unchanged entry removed, edited entry kept without `--yes` on a pipe and removed with it, foreign `rtok` entry untouched; the same three for a skill.
+
+Check: those tests green; `just check` green.
 
 ## Reference
 
