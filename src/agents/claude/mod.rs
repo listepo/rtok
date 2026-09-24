@@ -229,7 +229,7 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
 
 /// Drop `mcpServers.rtok` from `~/.claude.json` (`rtok agents remove claude`).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::unregister_mcp(&apply(cfg), &cfg.doctor.claude_json, "rtok")
+    super::unregister_mcp_ours(cfg, &cfg.doctor.claude_json, "rtok")
 }
 
 /// The plugin tree (T114) and its id in the one-plugin marketplace that tree also is.
@@ -538,7 +538,7 @@ impl Agent for Claude {
             // a second rtok server there (D21, T243, T244).
             return Ok(vec![
                 if remove || code_serves_mcp(cfg) {
-                    rtok_agent_sdk::unregister_mcp(&a, &path, "rtok")?
+                    super::unregister_mcp_ours(cfg, &path, "rtok")?
                 } else {
                     rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"])?
                 },

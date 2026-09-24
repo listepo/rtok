@@ -256,6 +256,7 @@ _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--dry-run[Print what would be removed and exit]' /
 '--no-restart[Skip closing/reopening a running desktop app around the write (T141)]' /
+'--yes[Also remove rtok entries you changed, without asking (T246)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 ':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`):_default' /
@@ -266,6 +267,7 @@ _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--dry-run[Print what would be removed and exit]' /
 '--no-restart[Skip closing/reopening a running desktop app around the write (T141)]' /
+'--yes[Also remove rtok entries you changed, without asking (T246)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 ':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`):_default' /
@@ -457,6 +459,7 @@ _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--dry-run[Print what would be removed and exit]' /
 '--no-restart[Skip closing/reopening a running desktop app around the write (T141)]' /
+'--yes[Also remove rtok entries you changed, without asking (T246)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 ':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`):_default' /
@@ -467,6 +470,7 @@ _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--dry-run[Print what would be removed and exit]' /
 '--no-restart[Skip closing/reopening a running desktop app around the write (T141)]' /
+'--yes[Also remove rtok entries you changed, without asking (T246)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 ':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`):_default' /

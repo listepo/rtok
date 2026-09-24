@@ -406,6 +406,32 @@ fn zed_remove_keeps_comments_and_foreign_servers() {
     assert!(again.contains("no changes"), "second remove: {again}");
 }
 
+/// T246.1: remove takes back the MCP entry as rtok wrote it, keeps one the user edited unless
+/// `--yes` says remove (no terminal here, so nobody answers the question), and never takes a
+/// server named `rtok` that runs something else.
+#[test]
+fn claude_remove_asks_before_taking_an_edited_mcp_entry() {
+    let home = tmp("claude-edited-mcp");
+    let cfg = write_cfg(&home);
+    let claude_json = home.join(".claude.json");
+    rtok_without_claude(&["agents", "install", "claude", "--mcp"], &cfg, &home);
+    let mut doc = json(&claude_json);
+    doc["mcpServers"]["rtok"]["env"] = serde_json::json!({"RTOK_LOG": "debug"});
+    fs::write(&claude_json, doc.to_string()).unwrap();
+
+    let out = rtok_without_claude(&["agents", "remove", "claude"], &cfg, &home);
+    assert!(out.contains("changed by you; remove by hand"), "{out}");
+    assert!(json(&claude_json)["mcpServers"]["rtok"]["env"].is_object());
+    rtok_without_claude(&["agents", "remove", "claude", "--yes"], &cfg, &home);
+    assert!(json(&claude_json)["mcpServers"]["rtok"].is_null());
+
+    let mine = r#"{"mcpServers":{"rtok":{"command":"node","args":["mine.js"]}}}"#;
+    fs::write(&claude_json, mine).unwrap();
+    let out = rtok_without_claude(&["agents", "remove", "claude", "--yes"], &cfg, &home);
+    assert!(out.contains("not rtok's"), "{out}");
+    assert!(json(&claude_json)["mcpServers"]["rtok"].is_object());
+}
+
 /// No `claude` on PATH (T139), so the install writes `settings.json` itself instead of
 /// handing it to the plugin — the file this test watches actually changes each run.
 #[test]

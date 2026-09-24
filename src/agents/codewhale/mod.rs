@@ -157,7 +157,7 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
 
 /// Drop `mcpServers.rtok` from `mcp.json`.
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::unregister_mcp(&apply(cfg), &mcp_path(cfg), NAME)
+    super::unregister_mcp_ours(cfg, &mcp_path(cfg), NAME)
 }
 
 impl Agent for Codewhale {

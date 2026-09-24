@@ -957,7 +957,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__uninstall)
-            opts="-h --dry-run --no-restart --config --help"
+            opts="-h --dry-run --no-restart --yes --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

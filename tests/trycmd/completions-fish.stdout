@@ -158,10 +158,12 @@ complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcom
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -l dry-run -d 'Print what would be removed and exit'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -l yes -d 'Also remove rtok entries you changed, without asking (T246)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -l dry-run -d 'Print what would be removed and exit'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -l yes -d 'Also remove rtok entries you changed, without asking (T246)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from update" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from update" -l dry-run -d 'Print the planned edits and exit'
@@ -215,10 +217,12 @@ complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcomm
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -l dry-run -d 'Print what would be removed and exit'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -l yes -d 'Also remove rtok entries you changed, without asking (T246)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -l dry-run -d 'Print what would be removed and exit'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -l yes -d 'Also remove rtok entries you changed, without asking (T246)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from update" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from update" -l dry-run -d 'Print the planned edits and exit'
