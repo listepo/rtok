@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use rtok_agent_sdk::{KETCH_INSTALL, NO_CHANGES};
-use serde_json::json;
+use serde_json::{Value, json};
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, value};
 
 use super::claude::{ENTRIES, is_ours};
@@ -219,23 +219,27 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     Ok(report)
 }
 
+/// The `mcpServers.rtok` entry [`register_mcp`] writes.
+fn mcp_entry(cmd: &str) -> Value {
+    json!({"command": cmd, "args": ["mcp"]})
+}
+
 /// `mcpServers.rtok = {command, args}` in `mcp.json` — Kimi's documented shape carries no `type`.
 pub fn register_mcp(cfg: &Config) -> Result<String> {
     let cmd = super::rtok_command();
-    let entry = json!({"command": cmd, "args": ["mcp"]});
     rtok_agent_sdk::register_server(
         &apply(cfg),
         &mcp_path(cfg),
         "mcpServers",
         NAME,
-        entry,
+        mcp_entry(&cmd),
         &format!("{cmd} mcp"),
     )
 }
 
-/// Drop `mcpServers.rtok` from `mcp.json`.
+/// Drop `mcpServers.rtok` from `mcp.json`, unless the user edited it (T246.2).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::unregister_server(&apply(cfg), &mcp_path(cfg), "mcpServers", NAME)
+    super::unregister_ours(cfg, &mcp_path(cfg), "mcpServers", NAME, &mcp_entry("rtok"))
 }
 
 /// An absent file is an empty document; an unreadable one is an error (never overwrite a

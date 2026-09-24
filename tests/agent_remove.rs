@@ -376,6 +376,32 @@ fn windsurf_remove_keeps_foreign_servers() {
     assert!(again.contains("no changes"), "second remove: {again}");
 }
 
+/// T246.2: windsurf's `unregister_mcp` now goes through `unregister_ours`, so it gets the
+/// same edited/foreign contract as claude's MCP entry (T246.1).
+#[test]
+fn windsurf_remove_asks_before_taking_an_edited_mcp_entry() {
+    let home = tmp("windsurf-edited-mcp");
+    let cfg = write_cfg(&home);
+    let path = home.join(".codeium/windsurf/mcp_config.json");
+
+    rtok(&["agents", "install", "windsurf"], &cfg, &home);
+    let mut doc = json(&path);
+    doc["mcpServers"]["rtok"]["env"] = serde_json::json!({"RTOK_LOG": "debug"});
+    fs::write(&path, doc.to_string()).unwrap();
+
+    let out = rtok(&["agents", "remove", "windsurf"], &cfg, &home);
+    assert!(out.contains("changed by you; remove by hand"), "{out}");
+    assert!(json(&path)["mcpServers"]["rtok"]["env"].is_object());
+    rtok(&["agents", "remove", "windsurf", "--yes"], &cfg, &home);
+    assert!(json(&path)["mcpServers"]["rtok"].is_null());
+
+    let mine = r#"{"mcpServers":{"rtok":{"command":"node","args":["mine.js"]}}}"#;
+    fs::write(&path, mine).unwrap();
+    let out = rtok(&["agents", "remove", "windsurf", "--yes"], &cfg, &home);
+    assert!(out.contains("not rtok's"), "{out}");
+    assert!(json(&path)["mcpServers"]["rtok"].is_object());
+}
+
 #[test]
 fn zed_remove_keeps_comments_and_foreign_servers() {
     let home = tmp("zed");

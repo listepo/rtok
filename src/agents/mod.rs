@@ -928,17 +928,21 @@ pub(crate) fn register_local_mcp(
     key: &str,
 ) -> Result<String> {
     let cmd = rtok_command();
-    let entry = json!({"type": "local", "command": [cmd.as_str(), "mcp"], "enabled": true});
+    let entry = local_mcp_entry(&cmd);
     rtok_agent_sdk::register_server(&apply(cfg), path, key, "rtok", entry, &format!("{cmd} mcp"))
 }
 
-/// [`register_local_mcp`]'s remove.
+fn local_mcp_entry(cmd: &str) -> serde_json::Value {
+    json!({"type": "local", "command": [cmd, "mcp"], "enabled": true})
+}
+
+/// [`register_local_mcp`]'s remove: only the entry as rtok wrote it (T246.2).
 pub(crate) fn unregister_local_mcp(
     cfg: &Config,
     path: &std::path::Path,
     key: &str,
 ) -> Result<String> {
-    rtok_agent_sdk::unregister_server(&apply(cfg), path, key, "rtok")
+    unregister_ours(cfg, path, key, "rtok", &local_mcp_entry("rtok"))
 }
 
 /// `Agent::installed` for a host whose only module is `mcp`: present iff `path` mentions

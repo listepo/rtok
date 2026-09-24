@@ -190,23 +190,27 @@ fn remove_file(apply: &Apply, path: &Path) -> Result<String> {
     Ok(report)
 }
 
+/// The `mcpServers.rtok` entry [`register_mcp`] writes.
+fn mcp_entry(cmd: &str) -> Value {
+    json!({"type": "local", "command": cmd, "args": ["mcp"], "tools": ["*"]})
+}
+
 /// `mcpServers.rtok = {type: "local", command, args, tools: ["*"]}` in `mcp-config.json`.
 pub fn register_mcp(cfg: &Config) -> Result<String> {
     let cmd = super::rtok_command();
-    let entry = json!({"type": "local", "command": cmd, "args": ["mcp"], "tools": ["*"]});
     rtok_agent_sdk::register_server(
         &apply(cfg),
         &mcp_path(cfg),
         "mcpServers",
         NAME,
-        entry,
+        mcp_entry(&cmd),
         &format!("{cmd} mcp"),
     )
 }
 
-/// Drop `mcpServers.rtok` from `mcp-config.json`.
+/// Drop `mcpServers.rtok` from `mcp-config.json`, unless the user edited it (T246.2).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::unregister_server(&apply(cfg), &mcp_path(cfg), "mcpServers", NAME)
+    super::unregister_ours(cfg, &mcp_path(cfg), "mcpServers", NAME, &mcp_entry("rtok"))
 }
 
 const PLUGIN_SRC: &str = "plugins/copilot";
