@@ -43,6 +43,23 @@ exit 3
     path
 }
 
+/// A stdio server (T194) that emits one broken header block — `Content-Length: 99` but
+/// only ~2/3 of that many bytes actually follow before it exits, EOF-ing mid-body — then
+/// exits. The declared length swallows a well-formed frame that follows right behind the
+/// short body, since nothing marks a frame boundary inside a body of the wrong length.
+fn malformed_server(dir: &Path, valid: &str) -> std::path::PathBuf {
+    let script = format!(
+        r#"#!/bin/sh
+printf 'content-length: 99\r\n\r\n{{}}'
+printf 'Content-Length: %d\r\n\r\n%s' {vlen} '{valid}'
+"#,
+        vlen = valid.len(),
+    );
+    let path = dir.join("malformed-server.sh");
+    std::fs::write(&path, script).unwrap();
+    path
+}
+
 fn wrap(home: &Path, server: &Path, framing: &str, input: &[u8]) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
         .args(["mcp", "--", "sh"])
@@ -136,5 +153,31 @@ fn header_framing_is_kept_and_cut_the_same_way() {
     let (head, body) = stdout[first.len()..].split_once("\r\n\r\n").unwrap();
     assert_eq!(head.parse::<usize>().unwrap(), body.len(), "{stdout:.200}");
     check(body, &home);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// T194 Check: `content-length: 99\r\n\r\n{}` (short body) followed by a valid frame — the
+/// wrapper must not stop forwarding at the broken header. The malformed header plus every
+/// byte the server actually sent (the short body and the frame behind it, both swallowed
+/// by the wrong declared length) reach stdout unchanged, byte-for-byte.
+#[test]
+fn short_body_is_forwarded_unchanged_instead_of_ending_the_pipe() {
+    let home = std::env::temp_dir().join(format!("rtok-wrap-short-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    let valid = r#"{"jsonrpc":"2.0","id":9,"method":"ping"}"#;
+    let server = malformed_server(&home, valid);
+    let out = wrap(&home, &server, "n/a", b"");
+    assert!(out.status.success(), "{out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let want = format!(
+        "content-length: 99\r\n\r\n{{}}Content-Length: {}\r\n\r\n{valid}",
+        valid.len()
+    );
+    assert_eq!(stdout, want, "malformed bytes must forward byte-for-byte");
+    assert!(
+        stdout.contains(valid),
+        "the valid frame's bytes must still reach stdout: {stdout}"
+    );
     let _ = std::fs::remove_dir_all(&home);
 }

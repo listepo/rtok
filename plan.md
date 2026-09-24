@@ -66,7 +66,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T185 | todo | P1 | 3 | 0% | |
 | T186 | todo | P1 | 3 | 0% | |
 | T190 | todo | P1 | 3 | 0% | |
-| T194 | todo | P1 | 3 | 0% | |
 | T195 | todo | P1 | 3 | 0% | |
 | T196 | todo | P1 | 3 | 0% | |
 | T198 | todo | P2 | 2 | 0% | |
@@ -779,14 +778,6 @@ Found 2026-09-22 in the core pass: the `AfterMCPExecution` handler (`src/hooks/m
 Plan: verify the host's documented output key first; then either delete the `after_mcp` shorten (return `HookOutput::default()`) so `postToolUse`'s `wrap::shorten_result` is the single call path, or delegate verbatim to `mcp::wrap::shorten_result` (per-block, `isError` skip, `Measurement`) and emit the documented key shape.
 
 Check: fixture test on `AfterMCPExecution` with two text blocks and with `isError: true` asserts byte-passthrough `{}` or exactly one `Measurement { plugin: "archive" }`, no block duplication, and an `expand` round trip of the original per-block bytes (mirror of `cursor_mcp_post_tool_use_shortens_only_foreign_long_results`); `just test` green.
-
-### T194. `rtok mcp --wrap` stops forwarding at the first malformed frame
-
-Found 2026-09-22 in the surfaces pass: `read_frame` (`src/mcp/wrap.rs:87-124`) returns `None` on a header block without a parseable `Content-Length` and on a short body read, and both forwarding loops (:51-83) treat `None` as EOF — the pass-through pipe ends at the first broken header. The module doc (:5-7) and T59.4 promise "a malformed frame is forwarded byte-for-byte (fail open)"; the code contradicts the shipped claim. Secondary: when `Runtime::open` fails, `take_call` never runs and the `pending` map grows unbounded for the connection's lifetime.
-
-Plan: on a broken header forward the bytes consumed so far and resynchronize at the next newline (or fall back to line framing); reserve `None` for real EOF; run `take_call` regardless of `runtime`.
-
-Check: `tests/mcp_wrap.rs` fake-server case `content-length: 99\r\n\r\n{}` (short body) followed by a valid frame — the valid frame still reaches stdout and the malformed bytes are forwarded unchanged; `just test` green.
 
 ### T195. pi extension: fail-open breaks on non-zero `rtok`, and the ketch hint regressed
 
