@@ -452,6 +452,25 @@ Check: `host_docs` and the new manifest test green; `just check`.
 
 Check result (2026-09-21): `--test antigravity_plugin` 3 passed, `--test host_docs` 2 passed. The `just check` steps, run one by one: `fmt-check` exit 0, `lint` green, `cargo nextest run --workspace --no-fail-fast` 1083 passed / 4 skipped, `build-min` and `dup` green. An earlier `just check` in the same shared checkout stopped at `fmt-check` on another session's in-progress `src/hooks/types.rs` and once failed `cli_trycmd` while that session was re-blessing `tests/trycmd/`; neither repeated once those edits settled, and nothing under `src/` or `tests/trycmd/` names `antigravity`. Not verified live: `agy` and the Antigravity desktop apps are not installed on this machine, so the plugin has not been loaded by a real host — T91 carries that check.
 
+### T91.1. `rtok agents install antigravity` — host, plugin offer, config
+
+After T90 (done): `plugins/antigravity/` carries `plugin.json` + `mcp_config.json` and **no hooks** — creator decisions 2026-09-21: the plugin is the only install path (no direct edit of `~/.gemini/config/mcp_config.json`), and per https://antigravity.google/docs/hooks/ `PreToolUse` cannot rewrite tool input and `PostToolUse` cannot add context. New host `antigravity` in `src/agents/antigravity/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()`. Variants: CLI (`agy` on PATH) and Desktop (`Antigravity.app`), same files. `hooks` → `No` with the reason from T90; `mcp` → through the plugin only; `proxy` → `No` (no documented base-URL override). Missing `rtok`: the offer names `ketch install listepo/rtok`.
+
+Creator decision 2026-09-24 (symlink behaviour is still undocumented, neither surface is installed here): **CLI** prints the `agy plugin install <resolved plugins/antigravity path>` line behind `--yes` and never writes `~/.gemini/antigravity-cli/plugins/` (the Kimi rule, `Support::Offer("--yes")`); `installed()` reads `<cli_plugins_path>/rtok/plugin.json` naming `rtok`; remove keeps that copy with the `agy plugin uninstall rtok` line. **Desktop** links `plugins/antigravity` to `<plugins_path>/rtok` (default `~/.gemini/config/plugins/rtok`) through `HostPlugin` behind `--yes` (`Support::Flag("--yes")`, `default_install: false`); `installed()` reads `PLUGIN.ours`.
+
+Plan:
+1. `src/agents/antigravity/{mod.rs,README.md}`; register in `HOSTS` / `host()`; `HostPlugin` table in `src/agents/plugin.rs` gets `Antigravity` → `false`.
+2. `[setup.antigravity] plugins_path` / `cli_plugins_path` in `config/default.toml`, `src/config/mod.rs` (section + path expansion), `docs/config.md`.
+3. Unit tests: CLI dry-run without `--yes` is `NO_CHANGES`, with `--yes` names `plugins/antigravity`, `agy plugin install` and the ketch line and writes nothing; a staged CLI copy is reported installed and kept on remove. Desktop: dry-run writes nothing; `--yes` links, a second apply is `NO_CHANGES`, remove takes back exactly ours; a foreign directory is left alone and not reported installed.
+4. Bless `docs/agents.md` (`RTOK_BLESS=1 tests/agents_doc.rs`), `tests/agents_install.rs` / `tests/common/agents.rs` host rows, trycmd config/report goldens (restore `v[..]` in `man.stdout`).
+
+Result: new host `antigravity` (CLI + Desktop) in `src/agents/antigravity/`; shared `agents::print_offer` now backs both Kimi's `/plugins install` line and the `agy plugin install` line (no behaviour change for Kimi); `[setup.antigravity] plugins_path` / `cli_plugins_path`; `docs/agents.md`, config and report goldens re-blessed. Skill roots and the research sentence stay in T91.2.
+
+Check: the unit tests above; `rtok agents list` shows `antigravity`; `agents_doc`, `host_docs`, `config_coverage` green; `just check`.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T80. `demon status` names the proxy endpoint (bind:port)
 
 Creator 2026-09-21. `rtok demon status` said whether a service was running but never *where*: the proxy row carried no host/port, so answering "is the proxy up and on what address?" meant `rtok proxy --dry-run` or reading config by hand.
@@ -5162,18 +5181,6 @@ Check result: `cargo nextest run --test demon` — 6/6 passed locally on macOS (
 
 Status: done 2026-09-23
 Model: Claude Code / claude-sonnet-5
-
-### T83.5. `agents::claude::tests::desktop_writes_absolute_rtok_into_claude_desktop_config` fails on Windows
-
-The desktop Claude config path assertion assumes a Unix absolute path or a Unix `rtok` binary name (no `.exe`). Read `src/agents/claude/mod.rs`'s desktop-config writer and decide whether it needs a `cfg(windows)` path/extension branch or the test's expected string needs a platform-aware fixture. One family split out of the original T83; see T83.2 for the closing criterion.
-
-Result: not a product bug — the test matched `desktop_command()` as a substring of the raw JSON, and a Windows path's `\` is written as `\\` there. The test now compares the parsed `mcpServers.rtok.command`; `desktop_path()` / `desktop_command()` were already Windows-correct (`%APPDATA%\Claude`, absolute `current_exe`). Its line left the `cfg(windows)` `default-filter` in `.config/nextest.toml`.
-
-Check: the test passes in the `windows` CI job; `just check` stays green.
-
-Status: done 2026-09-24
-Model: Claude Code / claude-opus-5-5
-
 
 ### T180. Research: filtering WebFetch, WebSearch and browser page text
 

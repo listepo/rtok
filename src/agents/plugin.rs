@@ -101,7 +101,7 @@ mod tests {
 
     /// Every declared `HostPlugin`, for tests that must cover the whole set rather than
     /// pick a few by hand (T164).
-    fn all_host_plugins() -> [&'static HostPlugin; 6] {
+    fn all_host_plugins() -> [&'static HostPlugin; 7] {
         [
             &super::super::cursor::PLUGIN,
             &super::super::opencode::PLUGIN,
@@ -109,6 +109,7 @@ mod tests {
             &super::super::kilo::PLUGIN,
             &super::super::zcode::PLUGIN,
             &super::super::omp::PLUGIN,
+            &super::super::antigravity::PLUGIN,
         ]
     }
 
@@ -144,6 +145,7 @@ mod tests {
             ("Kilo Code", true),
             ("ZCode", true),
             ("oh my pi", false),
+            ("Antigravity", false),
         ];
         for p in all_host_plugins() {
             let want = expected
