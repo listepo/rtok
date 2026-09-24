@@ -49,7 +49,7 @@ pub(crate) enum ShellKind {
 }
 
 /// Classify by the executable basename so an explicit `[plugins.cmd] shell`
-/// still picks the right flags (`-lc` vs `/C` vs `-Command`).
+/// still picks the right flags (`-c` vs `/C` vs `-Command`).
 pub(crate) fn shell_kind(shell: &str) -> ShellKind {
     match formatters::cmd_stem(shell).to_ascii_lowercase().as_str() {
         "cmd" => ShellKind::Cmd,
@@ -153,7 +153,11 @@ pub(crate) fn shell_args(shell: &str, body: &str) -> Vec<String> {
             "-Command".into(),
             body.into(),
         ],
-        ShellKind::Posix => vec!["-lc".into(), body.into()],
+        // `-c`, not `-lc` (T235.2): the host already ran its login profile in the shell that
+        // runs `rtok run`, and the environment it passes down is the one the unwrapped command
+        // would have had. A second login shell cost ~0.15 s per call (hyperfine: `zsh -lc true`
+        // 152 ms vs `zsh -c true` 3 ms) and could reorder PATH (macOS `path_helper`).
+        ShellKind::Posix => vec!["-c".into(), body.into()],
     }
 }
 
@@ -899,7 +903,7 @@ mod tests {
         assert_eq!(shell_kind("pwsh"), ShellKind::PowerShell);
         assert_eq!(
             shell_args("/bin/sh", "true"),
-            vec!["-lc".to_string(), "true".to_string()]
+            vec!["-c".to_string(), "true".to_string()]
         );
         assert_eq!(
             shell_args(r"C:\Windows\System32\cmd.exe", "echo hi"),
@@ -929,7 +933,7 @@ mod tests {
         assert_eq!(cmd_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
     }
 
-    /// Configured PowerShell must not get Posix `-lc` (CreateProcess would fail the flag).
+    /// Configured PowerShell must not get Posix `-c` (CreateProcess would fail the flag).
     #[test]
     fn configured_powershell_uses_command_flag() {
         let (mut c, dir) = cfg("ps-shell");
