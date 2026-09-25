@@ -2142,8 +2142,6 @@ fn insert_measurement_conn(
     Ok(())
 }
 
-#[cfg(test)]
-
 /// One `notes` row's lifecycle-relevant fields (T69.1): revise needs `kind`/`project`,
 /// `mem_get` prefixes retired rows, recall orders by `pinned`. Field order matches
 /// [`Store::note_row`]'s select.
