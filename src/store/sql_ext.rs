@@ -337,6 +337,76 @@ impl QueryFragment<Sqlite> for FixtureSql {
 #[cfg(test)]
 impl RunQueryDsl<SqliteConnection> for FixtureSql {}
 
+/// `sqlite_master` catalog count — no `table!` for SQLite's schema tables.
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct CountCoreV2Tables;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for CountCoreV2Tables {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN \
+             ('hosts','providers','models','sessions','calls','call_io','tokens','logs')",
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl Query for CountCoreV2Tables {
+    type SqlType = BigInt;
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for CountCoreV2Tables {}
+
+/// Multi-row fixture seed with fixed ids and duplicate topic keys on a pre-0020
+/// database. One statement (a prepared execute does not run a semicolon batch); not a
+/// typed insert of the live `notes` shape.
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct SeedPre0020DuplicateNotes;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for SeedPre0020DuplicateNotes {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(
+            "INSERT INTO notes (id, ts, project, kind, title, body) VALUES \
+             (1, 1, NULL, 'note', 'dup', 'stale'), \
+             (2, 2, NULL, 'note', 'dup', 'fresh'), \
+             (3, 1, 'rtok', 'note', 'dup', 'stale'), \
+             (4, 2, 'rtok', 'note', 'dup', 'fresh')",
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for SeedPre0020DuplicateNotes {}
+
+/// Multi-row fixture seed on a pre-0021 `measurements` table (`once_key` does not exist
+/// yet; Diesel's `table!` already lists it). One statement (a prepared execute does not
+/// run a semicolon batch).
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct SeedPre0021Measurements;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for SeedPre0021Measurements {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(
+            "INSERT INTO measurements (ts, session, plugin, kind, before_bytes, after_bytes, \
+             est_before, est_after) VALUES (1, 's', 'read', 'delta', 9, 1, 3, 1), \
+             (1, 's', 'read', 'delta', 9, 1, 3, 1)",
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for SeedPre0021Measurements {}
+
 
 /// Expression conflict target `COALESCE(project, '')` — Diesel's `on_conflict` names columns only.
 #[derive(QueryId)]
