@@ -1,5 +1,23 @@
 # rtok — completed tasks
 
+### T267. Normalized dedupe treats `1src` as a duration and never matches `d:d:d`
+
+`duration_at` scanned only digits and `.`, then treated any following `s` as a duration. `copied 1src/a.rs` and `copied 2src/a.rs` collapsed to the same key. The `d:d:d` branch (`1:2:3`) required five digits after a scan that stops at `:`, so it never matched. `s` and `ms` now match only at a token boundary, and `d:d:d` is recognized before that scan.
+
+Check: `duration_clock_and_s_suffix_do_not_merge_distinct_lines`; existing normalized-dedupe tests stay green.
+
+### T268. A pipe of two programs is formatted as the first program
+
+`mixed_chain` recorded only the first stage of each pipeline, so `git log | grep foo` was not a mix and `git log`'s 20-line formatter ran on grep's output. Every stage's program is counted now. `cargo build && cargo test` stays one family. A pipe whose last stage is already bounded (`| head`, `| tail -n`) still returns early from `is_bounded`.
+
+Check: `mixed_program_forms` includes `git log | grep foo`; `same_program_forms` and `bounded_forms` stay green.
+
+### T269. `rtok mcp` wrapper drops the stream on a non-UTF-8 header byte
+
+Header lines were read with `read_line`. One invalid UTF-8 byte returned `Err`, and `read_frame` treated that as EOF, so the header and every following frame were dropped. Header lines are read as bytes (`read_until`). A line that is not UTF-8 is kept and skipped for `Content-Length` parsing; the next frame is still read.
+
+Check: `invalid_utf8_in_a_header_is_forwarded_not_eof`; the existing framing tests stay green.
+
 ### T255. Tests run under a fake `HOME`
 
 Creator request 2026-09-24. T254 closes the leaks through `Config`, but code that resolves home itself (`agents::home_dir`, `Config::home_dir`, `env_user_home`) still sees the real `HOME` in any test that does not set it. Give every test process a throwaway `HOME` (and `USERPROFILE`) under `target/` so a missed path lands in a sandbox, never in `~/.claude` or `~/.codex`. The obvious place is cargo's `[env]` in `.cargo/config.toml` with `force = true`, provided nextest honours it and build scripts are not affected; if either fails, use a nextest setup script instead. Tests that need git settings from the home (commits in fixtures) get an explicit `user.name`/`user.email` instead.

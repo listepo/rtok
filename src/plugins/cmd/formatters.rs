@@ -17,7 +17,7 @@ pub fn compress(
     if output.len() <= super::bounded::MAX_BYTES && super::bounded::is_bounded(&argv.join(" ")) {
         return (output.to_string(), "raw");
     }
-    // T177: a single Bash string chaining 2+ DISTINCT programs (`&&`, `;`, or a newline)
+    // T177: a single Bash string chaining 2+ DISTINCT programs (`&&`, `|`, `;`, or a newline)
     // is not one family's output; matching only argv[0] picks the wrong rule, or none at
     // all. A same-program chain (`cargo build && cargo test`, `cd x && cargo test`) keeps
     // its own family's formatter/rule — only a genuine mix routes to `[script]`.
