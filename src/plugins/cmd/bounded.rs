@@ -28,9 +28,9 @@ pub fn is_bounded(snippet: &str) -> bool {
     any
 }
 
-/// T177: true only when `snippet` chains 2+ DISTINCT programs — `a && b`, `a; b` and
-/// `a\nb` all chain, but `cargo build && cargo test` and `cd x && cargo test` stay one
-/// program end to end. Reused by `formatters::compress` to route a genuinely mixed
+/// T177: true only when `snippet` chains 2+ DISTINCT programs — `a && b`, `a; b`,
+/// `a\nb` and `a | b` all chain, but `cargo build && cargo test` and `cd x && cargo test`
+/// stay one program end to end. Reused by `formatters::compress` to route a genuinely mixed
 /// Bash string to the `[script]` rule instead of misreading it as (or losing) one
 /// family's specialised formatter/rule. A leading `cd`/`export` stage is skipped, same
 /// as `is_bounded`.
@@ -45,8 +45,12 @@ pub(crate) fn mixed_chain(snippet: &str) -> bool {
         if silent {
             continue;
         }
-        if let Some(program) = pipeline.first().and_then(|stage| stage.first()) {
-            programs.insert(super::formatters::cmd_stem(program).to_string());
+        // Every stage: `git log | grep foo` is two programs. Counting only the
+        // first stage left the pipe on `git`'s formatter.
+        for stage in pipeline {
+            if let Some(program) = stage.first() {
+                programs.insert(super::formatters::cmd_stem(program).to_string());
+            }
         }
     }
     programs.len() >= 2
@@ -303,6 +307,7 @@ mod tests {
 
     #[rstest]
     #[case("cargo test && cargo clippy && git status")]
+    #[case("git log | grep foo")]
     #[case("echo one; cat two")]
     #[case("git status\ncat file.txt\nls")]
     fn mixed_program_forms(#[case] cmd: &str) {

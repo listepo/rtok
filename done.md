@@ -1,5 +1,23 @@
 # rtok — completed tasks
 
+### T267. Normalized dedupe treats `1src` as a duration and never matches `d:d:d`
+
+`duration_at` scanned only digits and `.`, then treated any following `s` as a duration. `copied 1src/a.rs` and `copied 2src/a.rs` collapsed to the same key. The `d:d:d` branch (`1:2:3`) required five digits after a scan that stops at `:`, so it never matched. `s` and `ms` now match only at a token boundary, and `d:d:d` is recognized before that scan.
+
+Check: `duration_clock_and_s_suffix_do_not_merge_distinct_lines`; existing normalized-dedupe tests stay green.
+
+### T268. A pipe of two programs is formatted as the first program
+
+`mixed_chain` recorded only the first stage of each pipeline, so `git log | grep foo` was not a mix and `git log`'s 20-line formatter ran on grep's output. Every stage's program is counted now. `cargo build && cargo test` stays one family. A pipe whose last stage is already bounded (`| head`, `| tail -n`) still returns early from `is_bounded`.
+
+Check: `mixed_program_forms` includes `git log | grep foo`; `same_program_forms` and `bounded_forms` stay green.
+
+### T269. `rtok mcp` wrapper drops the stream on a non-UTF-8 header byte
+
+Header lines were read with `read_line`. One invalid UTF-8 byte returned `Err`, and `read_frame` treated that as EOF, so the header and every following frame were dropped. Header lines are read as bytes (`read_until`). A line that is not UTF-8 is kept and skipped for `Content-Length` parsing; the next frame is still read.
+
+Check: `invalid_utf8_in_a_header_is_forwarded_not_eof`; the existing framing tests stay green.
+
 ### T270. The rotating text log lives in `rtok-log`
 
 The file writer (line format, level floor, rotation, the rename lock) was inside `src/log.rs` and took rtok's `Config`. Another project could not use it without the binary. It is now `crates/rtok-log`: a `FileLog` of path, `max_bytes`, `files` and level, with no database and no stderr viewer. rtok still mirrors each line to the `log` facade and, when `[log] to_db` is on, inserts the same text into the `logs` table. `rtok logs`, tailspin and `logs watch` stay in the binary.
