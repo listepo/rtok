@@ -1,5 +1,7 @@
 //! T121 + D21: the Codex plugin tree is one unit — a manifest, rtok's hooks and one MCP server.
 
+mod common;
+
 use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
@@ -86,66 +88,22 @@ fn hooks_are_the_installer_compaction_pair() {
 #[test]
 #[cfg(unix)]
 fn hook_commands_resolve_path_then_ketch_then_exit_open() {
-    use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
-    use std::process::{Command, Stdio};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let unique = format!(
-        "{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let home = std::env::temp_dir().join(format!("rtok-t250.1-codex-hooks-{unique}"));
-    let empty_path = std::env::temp_dir().join(format!("rtok-t250.1-codex-path-{unique}"));
-    fs::create_dir_all(&home).unwrap();
-    fs::create_dir_all(&empty_path).unwrap();
-
+    let sh = common::HookShell::new("t250.1-codex-hooks");
     let hooks = read("hooks/hooks.json")["hooks"].clone();
     for event in ["PreCompact", "PostCompact"] {
-        let command = hooks[event][0]["hooks"][0]["command"]
-            .as_str()
-            .unwrap()
-            .to_string();
-
+        let command = hooks[event][0]["hooks"][0]["command"].as_str().unwrap();
         let run = || {
-            let mut child = Command::new("/bin/sh")
-                .args(["-c", &command])
-                .env("HOME", &home)
-                .env("PATH", &empty_path)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()
-                .unwrap();
-            let mut stdin = child.stdin.take().unwrap();
-            // A fail-open hook may exit before reading stdin: a broken pipe is fine (T251).
-            drop(stdin.write_all(b"{}"));
-            drop(stdin);
-            let out = child.wait_with_output().unwrap();
-            assert!(out.status.success(), "{event}: {command}");
-            String::from_utf8(out.stdout).unwrap()
+            let (ok, stdout) = sh.run(command);
+            assert!(ok, "{event}: {command}");
+            stdout
         };
 
         // Neither PATH nor ~/.ketch/bin has rtok: fail open, no output.
         assert_eq!(run(), "", "{event}");
 
         // Only ~/.ketch/bin/rtok exists: it is the one that gets exec'd.
-        let ketch_bin = home.join(".ketch/bin");
-        fs::create_dir_all(&ketch_bin).unwrap();
-        fs::write(
-            ketch_bin.join("rtok"),
-            "#!/bin/sh\nprintf 'ketch %s' \"$2\"\n",
-        )
-        .unwrap();
-        fs::set_permissions(ketch_bin.join("rtok"), fs::Permissions::from_mode(0o755)).unwrap();
+        sh.install_fake_ketch_rtok(common::KETCH_ECHO);
         assert_eq!(run(), format!("ketch {event}"), "{event}");
-        fs::remove_dir_all(home.join(".ketch")).unwrap();
+        fs::remove_dir_all(sh.home().join(".ketch")).unwrap();
     }
-
-    let _ = fs::remove_dir_all(&home);
-    let _ = fs::remove_dir_all(&empty_path);
 }

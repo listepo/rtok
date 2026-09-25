@@ -15,6 +15,8 @@ use std::process::Command;
 
 use rtok::hooks::types::HookInput;
 
+mod common;
+
 /// The one script T96 links once per event (`PreToolUse`, `PostToolUse`, …).
 fn hook() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins/cline/hooks/rtok-hook")
@@ -52,10 +54,11 @@ fn hook_script_is_executable_posix_sh() {
 /// way, so this dir must stay free of any fake `rtok`.
 #[test]
 fn hook_fails_open_silently_without_rtok_on_path() {
-    let dir = tmp_home("plain");
+    let sh = common::HookShell::new("cline-hook-plain");
+    let dir = sh.home();
     // `$HOME/.ketch/bin/rtok` exists on dev machines, so point HOME at the empty
     // dir and keep PATH to bare system dirs without `rtok`.
-    let out = run_hook(&hook(), &dir, br#"{"hookName":"tool_call","taskId":"t"}"#);
+    let out = run_hook(&hook(), dir, br#"{"hookName":"tool_call","taskId":"t"}"#);
     assert_eq!(out.status.code(), Some(0), "fail open exits 0");
     assert_eq!(
         String::from_utf8_lossy(&out.stdout).trim(),
@@ -67,7 +70,6 @@ fn hook_fails_open_silently_without_rtok_on_path() {
         "fail open must be silent: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let _ = fs::remove_dir_all(&dir);
 }
 
 /// T174/T250: the ketch install hint runs exactly once, on the file linked as
@@ -76,12 +78,13 @@ fn hook_fails_open_silently_without_rtok_on_path() {
 /// binary the same way `plugins/claude/scripts/hook.sh` does).
 #[test]
 fn task_start_names_ketch_once_in_clines_own_shape() {
-    let dir = tmp_home("taskstart");
+    let sh = common::HookShell::new("cline-hook-taskstart");
+    let dir = sh.home();
     let linked = dir.join("TaskStart");
     fs::copy(hook(), &linked).unwrap();
     fs::set_permissions(&linked, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let out = run_hook(&linked, &dir, br#"{"hookName":"agent_start","taskId":"t"}"#);
+    let out = run_hook(&linked, dir, br#"{"hookName":"agent_start","taskId":"t"}"#);
     assert_eq!(out.status.code(), Some(0));
     assert!(
         out.stderr.is_empty(),
@@ -100,29 +103,9 @@ fn task_start_names_ketch_once_in_clines_own_shape() {
     );
 
     // A `~/.ketch/bin/rtok` that does exist is still preferred over the note.
-    let ketch = dir.join(".ketch/bin/rtok");
-    fs::create_dir_all(ketch.parent().unwrap()).unwrap();
-    fs::write(&ketch, "#!/bin/sh\nprintf 'ketch %s' \"$2\"\n").unwrap();
-    fs::set_permissions(&ketch, fs::Permissions::from_mode(0o755)).unwrap();
-    let out = run_hook(&linked, &dir, b"{}");
+    sh.install_fake_ketch_rtok(common::KETCH_ECHO);
+    let out = run_hook(&linked, dir, b"{}");
     assert_eq!(String::from_utf8_lossy(&out.stdout), "ketch TaskStart");
-    let _ = fs::remove_dir_all(&dir);
-}
-
-/// A fresh, unique throwaway `$HOME` with bare system dirs on `PATH` — no real
-/// `rtok`, ketch or otherwise, is reachable from it.
-fn tmp_home(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "rtok-cline-hook-{name}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
 }
 
 fn run_hook(

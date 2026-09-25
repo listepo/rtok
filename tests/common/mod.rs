@@ -56,6 +56,75 @@ pub fn p95(sorted: &[Duration]) -> Duration {
     sorted[(sorted.len() * 95).div_ceil(100) - 1]
 }
 
+/// T266: a fake `~/.ketch/bin/rtok` that prints `ketch <event>` for `rtok hook <event> …`.
+pub const KETCH_ECHO: &str = "#!/bin/sh\nprintf 'ketch %s' \"$2\"\n";
+
+/// T266: runs a plugin's hook command the way its host does, with a throwaway `HOME` and an
+/// empty `PATH` — so no real `rtok`, on PATH or in `~/.ketch/bin`, is reachable. The empty PATH
+/// dir lives under `HOME`; both go on drop.
+#[cfg(unix)]
+pub struct HookShell {
+    home: std::path::PathBuf,
+    empty_path: std::path::PathBuf,
+}
+
+#[cfg(unix)]
+impl HookShell {
+    pub fn new(name: &str) -> Self {
+        let home = agents::tmp(name);
+        let empty_path = home.join("empty-path");
+        std::fs::create_dir_all(&empty_path).unwrap();
+        Self { home, empty_path }
+    }
+
+    pub fn home(&self) -> &Path {
+        &self.home
+    }
+
+    /// `/bin/sh -c <command>`; see [`HookShell::sh`].
+    pub fn run(&self, command: &str) -> (bool, String) {
+        self.sh(&["-c", command])
+    }
+
+    /// `/bin/sh <args>` with `{}` on stdin and stderr dropped: (exited 0, stdout).
+    pub fn sh(&self, args: &[&str]) -> (bool, String) {
+        use std::io::Write;
+        use std::process::Stdio;
+        let mut child = Command::new("/bin/sh")
+            .args(args)
+            .env("HOME", &self.home)
+            .env("PATH", &self.empty_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        // A fail-open hook may exit before reading stdin: a broken pipe is fine (T251).
+        drop(child.stdin.take().unwrap().write_all(b"{}"));
+        let out = child.wait_with_output().unwrap();
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    }
+
+    /// Writes `script` as an executable `~/.ketch/bin/rtok`.
+    pub fn install_fake_ketch_rtok(&self, script: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let fake = self.home.join(".ketch/bin/rtok");
+        std::fs::create_dir_all(fake.parent().unwrap()).unwrap();
+        std::fs::write(&fake, script).unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+#[cfg(unix)]
+impl Drop for HookShell {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.home);
+    }
+}
+
 /// T75/T178: another process's writer on the store at `db` — `BEGIN IMMEDIATE` held for `hold`.
 /// Returns once the lock is taken; join the handle to wait for its release.
 pub fn hold_store_writer(db: &Path, hold: Duration) -> std::thread::JoinHandle<()> {
