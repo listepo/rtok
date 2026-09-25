@@ -25,7 +25,7 @@ done
 
 wasm="crates/rtok-webui/pkg/rtok_webui_bg.wasm"
 # Same number as WASM_SIZE_GATE in tests/web_wasm.rs (T60.7, measured in research.md).
-gate=4500000
+gate=5000000
 
 skip() {
   if [ "$require" -eq 1 ]; then

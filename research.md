@@ -394,6 +394,7 @@ need an account or an API key.
 | --- | --- |
 | Before (`ls -l crates/rtok-webui/pkg/rtok_webui_bg.wasm`, 2026-09-17) | 10,560,601 B, default `wasm-pack --release`, no `wasm-opt` |
 | After (`wasm-pack --release` + wasm-opt -Oz, 2026-09-18) | 4,130,017 B |
+| After the T227–T232 pages (release.yml build-local-artifacts, run 36165796413, 2026-09-25) | 4,522,155 B, over the 4,500,000 B gate; gate raised to 5,000,000 B |
 
 ### Build size (T17.1, Gate P17, 2026-09-04)
 

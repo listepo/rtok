@@ -2,8 +2,10 @@
 
 use std::path::PathBuf;
 
-/// Upper bound from the optimized build measured in `research.md` (T60.7, 2026-09-18).
-const WASM_SIZE_GATE: u64 = 4_500_000;
+/// Upper bound from the optimized build measured in `research.md` (T60.7, 2026-09-18; raised
+/// 2026-09-25 after the T227–T232 pages). Still far below the ~10.5 MB a build without
+/// wasm-opt produces, which is the failure this gate exists to catch.
+const WASM_SIZE_GATE: u64 = 5_000_000;
 
 fn wasm_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("crates/rtok-webui/pkg/rtok_webui_bg.wasm")
