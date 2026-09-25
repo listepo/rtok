@@ -1876,29 +1876,10 @@ impl Store {
     /// Overview used to load every usage row, one query per session, on each 2 s tick.
     pub fn usage_ctt(&self, turns: i64) -> Result<(i64, Vec<i64>)> {
         let mut conn = self.lock()?;
-        let ctt: Vec<Count> = sql_query(
-            "SELECT COALESCE(SUM(ctx * (total - rn)), 0) AS n FROM (
-                SELECT input + cache_create + cache_read AS ctx,
-                       COUNT(*) OVER (PARTITION BY session) AS total,
-                       ROW_NUMBER() OVER (PARTITION BY session ORDER BY ts, id) AS rn
-                FROM usage)",
-        )
-        .load(&mut *conn)?;
-        let mut tail: Vec<i64> = sql_query(
-            "SELECT u.input + u.cache_create + u.cache_read AS n
-             FROM usage u
-             JOIN (SELECT session, MIN(ts) AS first_ts, MIN(id) AS first_id
-                   FROM usage GROUP BY session) f ON f.session = u.session
-             ORDER BY f.first_ts DESC, f.first_id DESC, u.ts DESC, u.id DESC
-             LIMIT ?",
-        )
-        .bind::<BigInt, _>(turns)
-        .load::<Count>(&mut *conn)?
-        .into_iter()
-        .map(|c| c.n)
-        .collect();
+        let ctt: i64 = sql_ext::UsageCtt.get_result(&mut *conn)?;
+        let mut tail: Vec<i64> = sql_ext::UsageCttTail { turns }.load(&mut *conn)?;
         tail.reverse();
-        Ok((ctt.first().map_or(0, |c| c.n), tail))
+        Ok((ctt, tail))
     }
 
     pub fn usage_by_api(&self) -> Result<Vec<ApiUsage>> {
@@ -1990,56 +1971,10 @@ impl Store {
     /// page does not load every session to show a screenful. A negative `limit` is no cap.
     pub fn recent_session_totals(&self, since: i64, limit: i64) -> Result<Vec<SessionTotals>> {
         let mut conn = self.lock()?;
-        // tot: the four sums per session. last_u: the newest `usage` row's api and
-        // model — what the session is spending on now. act: last activity as MAX(ts)
-        // over both tables (no `[agents] idle_secs`; T25.0's clause was not built).
-        // prov: the newest provider-bearing `calls` row's `providers.slug`.
-        sql_query(
-            "WITH tot AS (
-                 SELECT session AS sid, SUM(input) AS input, SUM(cache_create) AS cache_create,
-                        SUM(cache_read) AS cache_read, SUM(output) AS output
-                 FROM usage GROUP BY session
-             ),
-             last_u AS (
-                 SELECT session AS sid, api, model FROM usage
-                 WHERE id IN (SELECT MAX(id) FROM usage GROUP BY session)
-             ),
-             act AS (
-                 SELECT sid, MAX(ts) AS ts FROM (
-                     SELECT session AS sid, ts FROM usage
-                     UNION ALL
-                     SELECT session_id AS sid, ts FROM calls
-                 ) GROUP BY sid
-             ),
-             prov AS (
-                 SELECT c.session_id AS sid, p.slug AS provider
-                 FROM calls c JOIN providers p ON p.id = c.provider_id
-                 WHERE c.id IN (SELECT MAX(id) FROM calls
-                                WHERE provider_id IS NOT NULL GROUP BY session_id)
-             )
-             SELECT s.id AS id, h.slug AS host, s.project AS project,
-                    prov.provider AS provider, last_u.api AS api, last_u.model AS model,
-                    COALESCE(tot.input, 0) AS input,
-                    COALESCE(tot.cache_create, 0) AS cache_create,
-                    COALESCE(tot.cache_read, 0) AS cache_read,
-                    COALESCE(tot.output, 0) AS output,
-                    s.started_at AS started_at,
-                    COALESCE(act.ts, s.started_at) AS last_activity,
-                    s.ended_at AS ended_at
-             FROM sessions s
-             LEFT JOIN hosts h ON h.id = s.host_id
-             LEFT JOIN tot ON tot.sid = s.id
-             LEFT JOIN last_u ON last_u.sid = s.id
-             LEFT JOIN act ON act.sid = s.id
-             LEFT JOIN prov ON prov.sid = s.id
-             WHERE s.started_at >= ?
-             ORDER BY s.started_at DESC, s.id
-             LIMIT ?",
-        )
-        .bind::<BigInt, _>(since)
-        .bind::<BigInt, _>(limit)
-        .load::<SessionTotals>(&mut *conn)
-        .map_err(Into::into)
+        // tot / last_u / act / prov: four CTEs in `sql_ext::RecentSessionTotals`.
+        sql_ext::RecentSessionTotals { since, limit }
+            .load(&mut *conn)
+            .map_err(Into::into)
     }
 
     /// The Calls page's one read (T15.5, D27): the newest `limit` `calls` rows, newest
@@ -2048,25 +1983,9 @@ impl Store {
     /// otel span). One statement, so no renderer can re-derive a field differently.
     pub fn recent_calls(&self, limit: i64) -> Result<Vec<CallRow>> {
         let mut conn = self.lock()?;
-        sql_query(
-            "SELECT c.id AS id, c.ts AS ts, c.session_id AS session, c.surface AS surface,
-                    c.kind AS kind, c.plugin AS plugin, c.name AS name,
-                    c.parent_id AS parent_id, c.ms AS ms, c.ok AS ok, c.error AS error,
-                    h.slug AS host, p.slug AS provider, m.slug AS model,
-                    u.api AS api, u.input AS input, u.cache_create AS cache_create,
-                    u.cache_read AS cache_read, u.output AS output
-             FROM calls c
-             LEFT JOIN hosts h ON h.id = c.host_id
-             LEFT JOIN providers p ON p.id = c.provider_id
-             LEFT JOIN models m ON m.id = c.model_id
-             LEFT JOIN usage u ON u.call_id = c.id
-                  AND u.id = (SELECT MAX(id) FROM usage WHERE call_id = c.id)
-             ORDER BY c.id DESC
-             LIMIT ?",
-        )
-        .bind::<BigInt, _>(limit)
-        .load::<CallRow>(&mut *conn)
-        .map_err(Into::into)
+        sql_ext::RecentCalls { limit }
+            .load(&mut *conn)
+            .map_err(Into::into)
     }
 
     /// `models.slug` recorded on a call — the proxy Check asserts it equals the request `model`.
@@ -2462,7 +2381,7 @@ pub struct UsageRow {
 /// session sums of `usage`, `last_activity` is the MAX ts over the session's `usage`
 /// and `calls` rows (falling back to `started_at` when there are none), and `ended_at`
 /// `None` means live.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, QueryableByName)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Queryable, QueryableByName)]
 pub struct SessionTotals {
     #[diesel(sql_type = Text)]
     pub id: String,
@@ -2497,7 +2416,7 @@ pub struct SessionTotals {
 /// that recorded usage — the newest `usage` row linked to it. One query's output, so
 /// no renderer can re-derive a field differently (D27); `api` `None` means no usage
 /// row is linked (a hook, MCP call or plugin run carries none).
-#[derive(Debug, Clone, PartialEq, Serialize, QueryableByName)]
+#[derive(Debug, Clone, PartialEq, Serialize, Queryable, QueryableByName)]
 pub struct CallRow {
     #[diesel(sql_type = Integer)]
     pub id: i32,
