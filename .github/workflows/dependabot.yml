@@ -6,6 +6,8 @@
 #   Dependabot pull request runs exactly the jobs any other CI run does.
 # - `automerge` needs `ci`. A failed, cancelled or timed-out CI job fails `ci`,
 #   and a job whose needs did not all succeed is skipped, so nothing merges.
+# - It also waits for pipeline.yml (ci, CodeQL, Semgrep, Snyk, gate) on the same commit and
+#   refuses unless that run is green too.
 # - Only `version-update:semver-patch` (version or security update) is merged:
 #   a squash merge (the repository allows only squash), pinned to the head
 #   commit CI tested. Minor and major updates get the `needs-review` label
@@ -54,7 +56,8 @@ jobs:
       && github.event.pull_request.user.login == 'dependabot[bot]'
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Up to 90 minutes of it is waiting for pipeline.yml.
+    timeout-minutes: 100
     permissions:
       actions: read
       contents: write
@@ -69,17 +72,24 @@ jobs:
         id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
 
-      - name: Refuse if another CI run on this commit did not pass
+      - name: Wait for pipeline.yml on this commit and require it green
         if: steps.meta.outputs.update-type == 'version-update:semver-patch'
         run: |
-          # ci.yml may also run on the pull request by itself; a red, cancelled
-          # or timed-out run there blocks the merge too. Runs still in progress
-          # are not counted.
-          bad=$(gh run list --workflow ci.yml --commit "$HEAD_SHA" \
-            --json status,conclusion \
-            --jq '[.[] | select(.status == "completed" and .conclusion != "success" and .conclusion != "skipped")] | length')
-          if [ "$bad" != "0" ]; then
-            echo "::error::$bad ci.yml run(s) on $HEAD_SHA did not pass; not merging."
+          # pipeline.yml runs ci, CodeQL, Semgrep and Snyk on every pull request behind its `gate`;
+          # a patch merges only once that run has finished and succeeded as well.
+          for _ in $(seq 1 90); do
+            runs=$(gh run list --workflow pipeline.yml --commit "$HEAD_SHA" --event pull_request \
+              --json status,conclusion --jq '[.[] | select(.status != "completed")] | length')
+            done_runs=$(gh run list --workflow pipeline.yml --commit "$HEAD_SHA" --event pull_request \
+              --json status --jq 'length')
+            if [ "$done_runs" != "0" ] && [ "$runs" = "0" ]; then break; fi
+            sleep 60
+          done
+          latest=$(gh run list --workflow pipeline.yml --commit "$HEAD_SHA" --event pull_request \
+            --limit 1 --json status,conclusion --jq '.[0] | .status + "/" + .conclusion')
+          echo "pipeline.yml on $HEAD_SHA: $latest"
+          if [ "$latest" != "completed/success" ]; then
+            echo "::error::pipeline.yml on $HEAD_SHA is '$latest', not green; not merging."
             exit 1
           fi
 

@@ -10,13 +10,12 @@ on:
   # pipeline.yml (`workflow_call`), in parallel with the other checks and behind its `gate` job.
   workflow_call:
   workflow_dispatch:
-  # Dependabot pull requests: dependabot.yml calls this workflow so they get the
-  # same jobs before its patch-only auto-merge.
-  workflow_call:
 
-# A newer commit on the same ref cancels the previous run.
+# A newer commit on the same ref cancels the previous run. github.workflow names the caller
+# (pipeline or Dependabot), so their runs of this workflow on one pull request do not cancel
+# each other; the `ci-` prefix keeps the group apart from pipeline.yml's own.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 # Read-only by default; `revert-on-failure` widens its own.
