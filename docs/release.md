@@ -190,9 +190,11 @@ uv venv /tmp/rtok-venv && VIRTUAL_ENV=/tmp/rtok-venv uv pip install target/pypi/
 `tools/cargo-publish.sh` publishes every workspace crate whose `Cargo.toml` allows it, in
 dependency order (one `cargo publish -p … -p …`). Today only `rtok-agent-sdk` does: `rtok`,
 `rtok-plugin-sdk`, `rtok-hook`, `rtok-sys` and `rtok-wasm-demo-guest` have `publish = false`
-(T23.6), and the script skips them. Every path dependency of `rtok` carries `version =`, so
-publishing `rtok` itself only needs those flags flipped (in `Cargo.toml` and
-`release-plz.toml`) and a `license` on the root package.
+(T23.6), and the script skips them. Every path dependency of `rtok` carries `version =`.
+Publishing `rtok` itself also needs: those flags flipped (in the crates' `Cargo.toml` and in
+`release-plz.toml`), a `license` on the root package, and an `exclude` for the docs site's
+images — packaged as it is, `rtok` is 13.7 MiB compressed (measured 2026-09-25 with the flags
+flipped locally, `cargo package --no-verify`), over crates.io's 10 MB limit.
 
 ```bash
 just cargo-publish --dry-run        # cargo publish --dry-run for the publishable crates
