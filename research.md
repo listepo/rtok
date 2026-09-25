@@ -1635,6 +1635,24 @@ Where the waits came from: the hook opens the store fine with another writer hol
 
 This does not reproduce a full 5 s cancellation. With the lock held, one event wrote at most two statements that waited, but UserPromptSubmit injection and a migration's 30 s wait can add more. After the fix, none of these waits exceeds 5 ms on the hook path.
 
+### 19.7 Resident + `rtok-hook` as Claude Code sees it (2026-09-26)
+
+T178 Check re-run. Machine: the creator's Mac (Apple silicon, macOS), shared with other agents' cargo builds. Release build of `6e608af2` (`target/release/rtok` 28,109,008 bytes; `target/release/rtok-hook` 464,320 bytes). Isolated `RTOK_HOME`, resident `rtok hook --serve` already up. `plugins/claude/hooks/hooks.json` now prefers `rtok-hook` → `rtok hook` → `hook.sh`. Not a token saving: no `Measurement` row follows. No live Claude Code session; the §19.1 transcript table is unchanged history.
+
+Harness (same shape as §19.2): a small node script (`node` 26.8.2) `spawn`s each command with `{shell: true}`, writes a recorded Bash PreToolUse / PostToolUse payload on stdin, and stops the clock on the child `close` event. 300 rounds, round-robin so load drift hits every command equally. Load average 46.23 → 39.18. Timed command (PreToolUse; PostToolUse swaps the event name):
+
+```
+command -v rtok-hook >/dev/null 2>&1 && exec rtok-hook PreToolUse; command -v rtok >/dev/null 2>&1 && exec rtok hook PreToolUse; exec "${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh" PreToolUse
+```
+
+| command | p50 | p95 |
+| --- | ---: | ---: |
+| `true` | 5.63 ms | 13.76 ms |
+| `hooks.json` PreToolUse (`rtok-hook`, resident up) | 12.28 ms | 25.18 ms |
+| `hooks.json` PostToolUse (`rtok-hook`, resident up) | 12.54 ms | 29.22 ms |
+
+About −2.4 ms vs §19.5's `rtok hook` PreToolUse p50 (14.63 → 12.28 ms) on a quieter load then; the node + `/bin/sh` floor is still 5.6 ms, and the tiny client plus IPC leave ~6.7 ms above it. The T178 Check (p50 under 10 ms as Claude Code sees it) is **still not met**. Blocker: even with the resident answering and `rtok-hook` first on PATH, harness p50 stays ~12 ms on this machine under the stated load.
+
 ## 20. WebSearch, WebFetch and browser page text: size, reach, what would cut it (2026-09-23)
 
 T180. Corpus: `~/.claude/projects/**/*.jsonl` modified in the last 7 days — 347 files, 33,599 tool results, deduplicated by `tool_use_id` (resumed sessions copy history, which inflated the 2026-09-22 audit's figures). Bytes are the result text the model received, after any rtok shrinking. Claude Code 2.1.267. Scan scripts stayed in scratch.
