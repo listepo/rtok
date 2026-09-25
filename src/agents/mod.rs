@@ -16,6 +16,7 @@ pub mod codewhale;
 pub mod codex;
 pub mod copilot;
 pub mod cursor;
+pub mod devin;
 pub mod gemini;
 pub mod grok;
 pub mod jsonc;
@@ -66,6 +67,7 @@ pub const HOSTS: &[&str] = &[
     "codewhale",
     "mimo",
     "antigravity",
+    "devin",
 ];
 
 /// Every module an rtok install can carry, in print order.
@@ -94,6 +96,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "codewhale" => Some(&codewhale::Codewhale),
         "mimo" => Some(&mimo::Mimo),
         "antigravity" => Some(&antigravity::Antigravity),
+        "devin" => Some(&devin::Devin),
         _ => None,
     }
 }

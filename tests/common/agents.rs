@@ -105,6 +105,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".config/mimocode",
         ".gemini/config/plugins",
         ".gemini/antigravity-cli/plugins",
+        ".config/devin",
     ] {
         fs::create_dir_all(home.join(sub)).unwrap();
     }
@@ -137,7 +138,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
               [setup.codewhale]\ndir = \"{h}/.codewhale\"\n\
               [setup.mimo]\nconfig_path = \"{h}/.config/mimocode/mimocode.json\"\n\
               [setup.antigravity]\nplugins_path = \"{h}/.gemini/config/plugins\"\n\
-              cli_plugins_path = \"{h}/.gemini/antigravity-cli/plugins\"\n"
+              cli_plugins_path = \"{h}/.gemini/antigravity-cli/plugins\"\n\
+              [setup.devin]\nconfig_path = \"{h}/.config/devin/config.json\"\n"
         ),
     )
     .unwrap();

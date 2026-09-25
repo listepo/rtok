@@ -187,6 +187,8 @@ config_path   = "~/.config/mimocode/mimocode.json" # mcp (OpenCode-fork shape)
 [setup.antigravity]
 plugins_path     = "~/.gemini/config/plugins"          # Antigravity 2.0 / IDE: plugins/antigravity linked here
 cli_plugins_path = "~/.gemini/antigravity-cli/plugins" # agy plugin install stages here; read only
+[setup.devin]
+config_path   = "~/.config/devin/config.json"  # mcp_config.json is read beside it; Windows: %APPDATA%\devin\
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)
