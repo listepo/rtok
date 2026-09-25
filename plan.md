@@ -16,7 +16,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
-| T163.8 | in progress | P2 | 3 | 70% | Cursor / grok 4.7 |
+| T163.8 | in progress | P2 | 3 | 75% | Cursor / grok 4.7 |
 | T178 | in progress | P1 | 4 | 95% | Cursor / grok 4.7 |
 | T262.3 | todo | P2 | 2 | 0% | |
 | T261 | in progress | P2 | 3 | 80% | Claude Code / claude-opus-5-5 |
@@ -119,6 +119,8 @@ Execution plan: (1) rewrite with `diesel::delete(...).filter(...)` and typed upd
 Check: T163's Check.
 
 Progress: `purge_related`, `delete_old_calls` and `purge_archive` are `diesel::delete` / `diesel::update`. `doomed_archives` is `sql_ext::DoomedArchives` (UNION of two archive columns plus three `NOT EXISTS` — no typed form). `sql_ext` no longer calls `sql_query`. Store tests (59) and clippy `-D warnings` on `--lib --tests` passed. Still open: T163's grep. Hits left are `migrate()` (T163.4), schema-drift and migration tests, the concurrency tests' `BEGIN IMMEDIATE`, `EXPLAIN QUERY PLAN`, `into_sql::<Bool>()`, and `PRAGMA` via `batch_execute` (a prepared execute leaves `journal_mode` at `delete`).
+
+Progress (2026-09-26, Cursor / grok 4.7): three store tests no longer use raw SQL — `migration_0020_drops_pre_existing_duplicate_notes` and `migration_0021_keeps_old_rows_and_records_a_keyed_call_once` seed through `sql_ext` `QueryFragment`s (one statement each); `schema_0002_seeds_hosts_and_rejects_bad_fk` uses `CountCoreV2Tables` for `sqlite_master`, typed `hosts::table.count()`, and typed `sessions` insert. Card stays open: parent grep still hits `migrate()` and WAL `batch_execute`.
 
 ### T178. Hook wall-clock time as Claude Code sees it
 

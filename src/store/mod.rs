@@ -2616,14 +2616,9 @@ mod tests {
     fn migration_0020_drops_pre_existing_duplicate_notes() {
         let (dir, mut conn) = db_before_migration("0020");
         let db = dir.join("rtok.db");
-        conn.batch_execute(
-            "INSERT INTO notes (id, ts, project, kind, title, body) VALUES
-             (1, 1, NULL,   'note', 'dup', 'stale'),
-             (2, 2, NULL,   'note', 'dup', 'fresh'),
-             (3, 1, 'rtok', 'note', 'dup', 'stale'),
-             (4, 2, 'rtok', 'note', 'dup', 'fresh')",
-        )
-        .unwrap();
+        sql_ext::SeedPre0020DuplicateNotes
+            .execute(&mut conn)
+            .unwrap();
         drop(conn);
         let store = Store::open(&db).unwrap();
         let mut conn = store.lock().unwrap();
@@ -2660,12 +2655,7 @@ mod tests {
     fn migration_0021_keeps_old_rows_and_records_a_keyed_call_once() {
         let (dir, mut conn) = db_before_migration("0021");
         let db = dir.join("rtok.db");
-        conn.batch_execute(
-            "INSERT INTO measurements (ts, session, plugin, kind, before_bytes, after_bytes,
-             est_before, est_after) VALUES (1, 's', 'read', 'delta', 9, 1, 3, 1),
-             (1, 's', 'read', 'delta', 9, 1, 3, 1)",
-        )
-        .unwrap();
+        sql_ext::SeedPre0021Measurements.execute(&mut conn).unwrap();
         drop(conn);
         let store = Store::open(&db).unwrap();
         let m = Measurement {
@@ -2764,20 +2754,14 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         assert_eq!(store.migrate().unwrap(), 0);
         let mut conn = store.lock().unwrap();
-        let tables: Vec<Count> = sql_query(
-            "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN
-             ('hosts','providers','models','sessions','calls','call_io','tokens','logs')",
-        )
-        .load(&mut *conn)
-        .unwrap();
-        assert_eq!(tables[0].n, 8);
-        let hosts: Vec<Count> = sql_query("SELECT count(*) AS n FROM hosts")
-            .load(&mut *conn)
-            .unwrap();
+        let tables: i64 = sql_ext::CountCoreV2Tables.get_result(&mut *conn).unwrap();
+        assert_eq!(tables, 8);
+        let host_n: i64 = hosts::table.count().get_result(&mut *conn).unwrap();
         // 0002.sql seeds 6; 0010.sql (T25.0) adds `pi`, the slug `rtok agent setup` installs
         // but the original list never had.
-        assert_eq!(hosts[0].n, 7);
-        sql_query("INSERT INTO sessions (id) VALUES ('s1')")
+        assert_eq!(host_n, 7);
+        diesel::insert_into(sessions::table)
+            .values(sessions::id.eq("s1"))
             .execute(&mut *conn)
             .unwrap();
         let err = diesel::insert_into(calls::table)
