@@ -17,36 +17,36 @@ export const { PLATFORMS, exeName } = require(path.join(MAIN_DIR, "lib", "platfo
 
 /** Run a command with inherited stdio; throws on a non-zero exit. */
 export function run(cmd, args, options = {}) {
-  execFileSync(cmd, args, { stdio: "inherit", ...options });
+    execFileSync(cmd, args, { stdio: "inherit", ...options });
 }
 
 /** Version of the `rtok` package and cargo's target directory, from `cargo metadata`. */
 export function cargoMetadata() {
-  const out = execFileSync(
-    "cargo",
-    ["metadata", "--no-deps", "--format-version", "1", "--locked"],
-    { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-  );
-  const meta = JSON.parse(out);
-  const rtok = meta.packages.find((p) => p.name === MAIN_PKG);
-  if (!rtok) {
-    throw new Error("no `rtok` package in cargo metadata");
-  }
-  return { version: rtok.version, targetDir: meta.target_directory };
+    const out = execFileSync(
+        "cargo",
+        ["metadata", "--no-deps", "--format-version", "1", "--locked"],
+        { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+    );
+    const meta = JSON.parse(out);
+    const rtok = meta.packages.find((p) => p.name === MAIN_PKG);
+    if (!rtok) {
+        throw new Error("no `rtok` package in cargo metadata");
+    }
+    return { version: rtok.version, targetDir: meta.target_directory };
 }
 
 /** target/npm and its parts: `stage/` (package trees) and `dist/` (the tarballs). */
 export function outDirs(targetDir) {
-  const out = path.join(targetDir, "npm");
-  return { out, stage: path.join(out, "stage"), dist: path.join(out, "dist") };
+    const out = path.join(targetDir, "npm");
+    return { out, stage: path.join(out, "stage"), dist: path.join(out, "dist") };
 }
 
 /** The file `npm pack` writes for an unscoped package. */
 export function tarballName(pkg, version) {
-  return `${pkg}-${version}.tgz`;
+    return `${pkg}-${version}.tgz`;
 }
 
 /** Every package a release publishes, platform packages first, `rtok` last. */
 export function releasePackages() {
-  return [...PLATFORMS.map((p) => p.pkg), MAIN_PKG];
+    return [...PLATFORMS.map((p) => p.pkg), MAIN_PKG];
 }
