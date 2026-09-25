@@ -18,7 +18,11 @@ Project programs and direct packages from the manifests.
 | ketch | see its README | Installs dunnage | https://github.com/listepo/ketch |
 | dunnage | ketch | `just test` / `just test-changed` end with a lossless cleanup of `target/` (T236) | https://github.com/listepo/dunnage |
 | tailspin | mise (`ubi:bensadeh/tailspin`) | `just logs` (T225): `tspin` highlights `~/.rtok/logs/rtok.log` and the `RUST_LOG` stderr stream; a viewer, not a logger | https://github.com/bensadeh/tailspin |
-| node | mise | jscpd, oxlint, oxfmt and vitest run on it; nothing in the binary does | https://github.com/nodejs/node |
+| node | mise | jscpd, oxlint, oxfmt and vitest run on it; nothing in the binary does. Its `npm` packs and publishes the npm package (`just npm-build` / `just npm-publish`) | https://github.com/nodejs/node |
+| gh | brew | `just npm-build --release vX.Y.Z` downloads the dist Release archives | https://github.com/cli/cli |
+| uv | brew / curl | `uvx` runs maturin and twine for `just pypi-build` / `just pypi-publish`; neither is pinned in the repo | https://github.com/astral-sh/uv |
+| maturin | uvx (`maturin>=1.9,<2`) | Builds the `rtok-cli` wheels (`bindings = "bin"`, pyproject.toml) and the sdist | https://github.com/PyO3/maturin |
+| twine | uvx or `uv tool install twine` | `twine check` and the manual PyPI/TestPyPI upload in `tools/pypi-publish.sh` | https://github.com/pypa/twine |
 | python | mise | T183: `tools/publish_marketplace` and its tests | https://github.com/python/cpython |
 | pytest | mise (`pipx:pytest`) | T183: `just python` runs `tools/tests` | https://github.com/pytest-dev/pytest |
 | jscpd | mise | `just dup` (T26.0): copy-paste detector, config in .jscpd.json | https://github.com/kucherenko/jscpd |

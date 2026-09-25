@@ -106,6 +106,118 @@ and push straight to `main` of the tap, which is deliberately not how this proje
 Homebrew.
 
 
+## npm, PyPI and crates.io
+
+All three are **manual**: a person runs the scripts below from a clean checkout of the release
+commit. No workflow publishes to any of them, and none should without a separate decision
+(`release-plz.yml` does not publish to crates.io either: `release-plz.toml` sets
+`publish = false` and the workflow only runs `release-pr` and dispatches dist). Publish after
+dist has finished the GitHub Release, because npm packs its binaries from that Release.
+
+Every script refuses to run when versions disagree with the `rtok` version in `Cargo.toml`, and
+every one takes `--dry-run`.
+
+### npm (`rtok-cli`)
+
+The esbuild/biome layout. `rtok-cli` holds a small Node launcher (`npm/rtok-cli/bin/rtok`, linked
+as both `rtok` and `rtok-cli`) and lists one
+package per dist target in `optionalDependencies`; npm installs only the one whose `os`/`cpu`
+(and `libc`) match:
+
+| Package | Target |
+|---|---|
+| `rtok-cli-darwin-arm64` | `aarch64-apple-darwin` |
+| `rtok-cli-linux-x64-gnu` | `x86_64-unknown-linux-gnu` (glibc) |
+| `rtok-cli-win32-x64-msvc` | `x86_64-pc-windows-msvc` |
+
+The table lives once, in `npm/rtok-cli/lib/platform.js`. Each platform package carries `bin/rtok`,
+`bin/rtok-hook` and the `plugins/` and `skills/` trees beside them, where the binary looks.
+`rtok-cli`'s postinstall (`npm/rtok-cli/install.js`) then puts the native binary in place of the launcher
+on macOS and Linux, so a hook that runs `rtok` from `PATH` never starts Node (the 10 ms budget);
+on Windows, or with `--ignore-scripts`, the launcher stays and runs the binary. The package is
+`rtok-cli` on npm and PyPI alike; the `@rtok` scope belongs to someone else on npm, hence
+unscoped `rtok-cli-<platform>` names. The versions in `npm/rtok-cli/package.json` are rewritten
+from `Cargo.toml` at build time.
+
+```bash
+just npm-build                      # host: cargo build --release, pack host + rtok-cli
+just npm-build --release v0.7.0     # all platforms, from the (signed) dist Release archives
+just npm-publish --dry-run          # npm publish --dry-run, platform packages first
+just npm-publish                    # the real thing, after `npm login`
+```
+
+`npm-build` writes `target/npm/stage/` (package trees) and `target/npm/dist/` (tarballs).
+`npm-publish` refuses when a platform tarball is missing, when a tarball's name or version is not
+the one in `Cargo.toml`, or when `rtok-cli`'s `optionalDependencies` point at another version.
+
+To try the host package without a registry:
+
+```bash
+just npm-build
+tmp=$(mktemp -d) && cd "$tmp" && npm init -y >/dev/null
+npm i /path/to/rtok/target/npm/dist/rtok-cli-*.tgz
+npx rtok --version && npx rtok --help
+npm i -g --prefix "$tmp/prefix" /path/to/rtok/target/npm/dist/rtok-cli-*.tgz
+"$tmp/prefix/bin/rtok" --version && "$tmp/prefix/bin/rtok-cli" --version
+```
+
+### PyPI (`rtok-cli`)
+
+The distribution is `rtok-cli`, as on npm (`rtok` on PyPI is an unrelated tokenizer); the
+command is still `rtok`. `pyproject.toml` uses maturin with `bindings = "bin"`, the ruff/uv layout: each wheel
+holds the native `rtok` and `rtok-hook` as scripts. A wheel cannot ship directories beside a
+script, so `plugins/` and `skills/` install to `<prefix>/share/rtok/`, which the binary checks
+when it runs from `<prefix>/bin` (`src/agents/mod.rs`, `PREFIX_SHARE_DIR`). maturin and twine
+run through `uvx`.
+
+```bash
+just pypi-build --sdist             # host wheel + sdist in target/pypi/dist, then twine check
+just pypi-publish --dry-run         # version checks + twine check, nothing uploaded
+just pypi-publish --testpypi        # upload to TestPyPI only
+just pypi-publish                   # PyPI; refuses unless every platform wheel is there
+```
+
+One `pypi-build` makes one platform's wheel. Build the others on their OS (or cross from macOS
+with `--target x86_64-unknown-linux-gnu --zig`) and collect them in `target/pypi/dist` before a
+PyPI upload. Local check:
+
+```bash
+just pypi-build
+uv venv /tmp/rtok-venv && VIRTUAL_ENV=/tmp/rtok-venv uv pip install target/pypi/dist/*.whl
+/tmp/rtok-venv/bin/rtok --version
+```
+
+### crates.io
+
+`tools/cargo-publish.sh` publishes every workspace crate whose `Cargo.toml` allows it, in
+dependency order (one `cargo publish -p … -p …`). Today only `rtok-agent-sdk` does: `rtok`,
+`rtok-plugin-sdk`, `rtok-hook`, `rtok-sys` and `rtok-wasm-demo-guest` have `publish = false`
+(T23.6), and the script skips them. Every path dependency of `rtok` carries `version =`.
+Publishing `rtok` itself also needs: those flags flipped (in the crates' `Cargo.toml` and in
+`release-plz.toml`), a `license` on the root package, and an `exclude` for the docs site's
+images — packaged as it is, `rtok` is 13.7 MiB compressed (measured 2026-09-25 with the flags
+flipped locally, `cargo package --no-verify`), over crates.io's 10 MB limit.
+
+The crate keeps the name `rtok`; it is **not** renamed to `rtok-cli` to match npm and PyPI. dist
+names every release asset after the package, so a rename (tried locally, with `[lib] name =
+"rtok"` so the code still builds, then `dist plan`) turns `rtok-<target>.tar.xz`,
+`rtok-installer.sh`, `rtok.rb` and `rtok-<target>-update` into `rtok-cli-…`, and the app in
+`dist-manifest.json` into `rtok-cli`. That breaks the installer URL in the README, the
+`rtok.rb` that `listepo/homebrew-tap`'s `sync-rtok.yml` downloads, the `rtok-update` that
+`rtok update` runs (`src/demon.rs`) and that existing installs use to find new releases, and
+release-plz's package entry. If the crate is ever published as `rtok-cli`, that needs a
+decision on those names first.
+
+```bash
+just cargo-publish --dry-run        # cargo publish --dry-run for the publishable crates
+just cargo-publish -p rtok-agent-sdk
+```
+
+It refuses on a dirty tree, a stale `Cargo.lock`, a path dependency without `version =` or with
+one that is not the dependency's own version, a publishable crate that depends on an
+unpublishable one, a crate without description or license, and a real publish of `rtok` from a
+commit that is not tagged `v<version>`.
+
 ## Does this project need signing at all?
 
 macOS refuses to run an unsigned binary only when the file carries the `com.apple.quarantine`
@@ -342,6 +454,8 @@ Install paths:
 - shell installer / `rtok-update` from the GitHub Release (dist)
 - `ketch install listepo/rtok` — in-repo [`ketch.toml`](../ketch.toml) prefers the
   `*-apple-darwin.tar.xz` / `*-linux-gnu.tar.xz` archives over `*-update` and `source.tar.gz`
+- `npm i -g rtok-cli` and `uv tool install rtok-cli` — published by hand, see
+  [npm, PyPI and crates.io](#npm-pypi-and-cratesio)
 - `brew install listepo/tap/rtok` — after `listepo/homebrew-tap`'s `sync-rtok.yml` PR merges
   the `rtok.rb` Release asset (no `HOMEBREW_TAP_TOKEN` on this repo)
 - docs site: https://listepo.github.io/rtok/ (`.github/workflows/docs.yml`, Pages

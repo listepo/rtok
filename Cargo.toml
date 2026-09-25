@@ -97,8 +97,8 @@ clap_mangen = "0.3" # `rtok man` (T53.2)
 figment = { version = "0.10", features = ["toml", "env"] } # config layering + per-key provenance (D14)
 diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] } # D13 typed models
 libsqlite3-sys = { version = "0.38", features = ["bundled"] } # FTS5 in the SQLite bundle
-rtok-sys = { path = "crates/rtok-sys" } # demon kill/setsid + flock (Windows-safe shims; rustix stays inside rtok-sys on Unix)
-rtok-hook = { path = "crates/rtok-hook" } # T178/D31: wire format shared with the std-only hook client
+rtok-sys = { version = "0.0.1", path = "crates/rtok-sys" } # demon kill/setsid + flock (Windows-safe shims; rustix stays inside rtok-sys on Unix)
+rtok-hook = { version = "0.0.1", path = "crates/rtok-hook" } # T178/D31: wire format shared with the std-only hook client
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11" # call_io archive checksums (T13.3)
