@@ -18,7 +18,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
-| T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
+| T163.8 | in progress | P2 | 3 | 70% | Cursor / grok 4.7 |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T262.3 | todo | P2 | 2 | 0% | |
 | T261 | in progress | P2 | 3 | 80% | Claude Code / claude-opus-5-5 |
@@ -145,6 +145,8 @@ Check: `migrate()` and its tests hold no `sql_query|batch_execute`; a pre-T163.4
 Execution plan: (1) rewrite with `diesel::delete(...).filter(...)` and typed updates inside the existing transaction; (2) T163's `grep` over `src` finds nothing; (3) hook path still ≤ 10 ms (`rtok bench` or the existing timing test); (4) move T163 and all its slices to `done.md`.
 
 Check: T163's Check.
+
+Progress: `purge_related`, `delete_old_calls` and `purge_archive` are `diesel::delete` / `diesel::update`. `doomed_archives` is `sql_ext::DoomedArchives` (UNION of two archive columns plus three `NOT EXISTS` — no typed form). `sql_ext` no longer calls `sql_query`. Store tests (59) and clippy `-D warnings` on `--lib --tests` passed. Still open: T163's grep. Hits left are `migrate()` (T163.4), schema-drift and migration tests, the concurrency tests' `BEGIN IMMEDIATE`, `EXPLAIN QUERY PLAN`, `into_sql::<Bool>()`, and `PRAGMA` via `batch_execute` (a prepared execute leaves `journal_mode` at `delete`).
 
 ### T178. Hook wall-clock time as Claude Code sees it
 

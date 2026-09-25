@@ -2125,30 +2125,11 @@ struct ArchPath {
 /// decision or read-cache row — shared by [`Store::purge_calls_older_than`] (which deletes them)
 /// and [`Store::archives_pending_retention`] (which only previews the same set, T182).
 fn doomed_archives(c: &mut SqliteConnection, cutoff: i64) -> Result<Vec<ArchPath>> {
-    let old = "(SELECT id FROM calls WHERE ts < ?1)";
-    Ok(sql_query(format!(
-        "SELECT DISTINCT a.id, a.path FROM archive a
-             WHERE a.id IN (
-               SELECT request_archive FROM call_io
-               WHERE call_id IN {old} AND request_archive IS NOT NULL
-               UNION
-               SELECT response_archive FROM call_io
-               WHERE call_id IN {old} AND response_archive IS NOT NULL
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM call_io c
-               WHERE c.call_id NOT IN {old}
-               AND (c.request_archive = a.id OR c.response_archive = a.id)
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM archive_decisions d WHERE d.archive_id = a.id
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM read_cache r WHERE r.archive_id = a.id
-             )"
-    ))
-    .bind::<BigInt, _>(cutoff)
-    .load(c)?)
+    let rows: Vec<(String, String)> = sql_ext::DoomedArchives { cutoff }.load(c)?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, path)| ArchPath { id, path })
+        .collect())
 }
 
 /// `(inline json, archive sha, byte count, content sha, archive file path, file created by
@@ -3363,29 +3344,41 @@ mod tests {
         store
             .insert_log("info", "proxy", "x", "m", Some("s"), Some(old), None)
             .unwrap();
-        let n = |sql: &str| -> i64 {
-            let mut conn = store.lock().unwrap();
-            sql_query(sql).load::<Count>(&mut *conn).unwrap()[0].n
-        };
-        {
-            let mut conn = store.lock().unwrap();
-            sql_query("UPDATE calls SET ts = 0 WHERE id = ?")
-                .bind::<Integer, _>(old)
-                .execute(&mut *conn)
-                .unwrap();
-        }
+        store.set_call_ts(old, 0).unwrap();
 
         assert_eq!(store.purge_calls_older_than(1).unwrap(), 1);
-        let ids = |sql: &str| n(&format!("SELECT count(*) AS n FROM calls WHERE {sql}"));
-        assert_eq!(ids(&format!("id IN ({child}, {fresh})")), 2);
-        assert_eq!(ids("parent_id IS NOT NULL"), 0, "the child is detached");
-        for t in ["usage", "measurements"] {
-            let sql = format!("SELECT count(*) AS n FROM {t} WHERE call_id IS NULL");
-            assert_eq!(n(&sql), 1, "{t} row kept, detached");
-        }
-        for t in ["tokens", "call_io", "logs"] {
-            assert_eq!(n(&format!("SELECT count(*) AS n FROM {t}")), 0, "{t}");
-        }
+        let mut conn = store.lock().unwrap();
+        let kept: i64 = calls::table
+            .filter(calls::id.eq_any([child, fresh]))
+            .count()
+            .get_result(&mut *conn)
+            .unwrap();
+        assert_eq!(kept, 2);
+        let attached: i64 = calls::table
+            .filter(calls::parent_id.is_not_null())
+            .count()
+            .get_result(&mut *conn)
+            .unwrap();
+        assert_eq!(attached, 0, "the child is detached");
+        let usage_detached: i64 = usage::table
+            .filter(usage::call_id.is_null())
+            .count()
+            .get_result(&mut *conn)
+            .unwrap();
+        let meas_detached: i64 = measurements::table
+            .filter(measurements::call_id.is_null())
+            .count()
+            .get_result(&mut *conn)
+            .unwrap();
+        assert_eq!(usage_detached, 1, "usage row kept, detached");
+        assert_eq!(meas_detached, 1, "measurements row kept, detached");
+        let token_n: i64 = tokens::table.count().get_result(&mut *conn).unwrap();
+        let io_n: i64 = call_io::table.count().get_result(&mut *conn).unwrap();
+        let log_n: i64 = logs::table.count().get_result(&mut *conn).unwrap();
+        drop(conn);
+        assert_eq!(token_n, 0, "tokens");
+        assert_eq!(io_n, 0, "call_io");
+        assert_eq!(log_n, 0, "logs");
         assert_eq!(
             store.purge_calls_older_than(0).unwrap(),
             0,

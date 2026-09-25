@@ -1,9 +1,14 @@
 //! SQL the typed DSL cannot express. Each item names the construct Diesel 2.3 lacks.
 
+use diesel::alias;
 use diesel::prelude::*;
 use diesel::query_builder::{AstPass, Query, QueryFragment, QueryId};
 use diesel::sql_types::{BigInt, Binary, Double, Integer, Nullable, Text};
 use diesel::sqlite::Sqlite;
+
+use super::schema::{
+    archive, archive_decisions, call_io, calls, logs, measurements, read_cache, tokens, usage,
+};
 
 /// `ROW_NUMBER() OVER (PARTITION BY ended_at ORDER BY id)` — no window functions in
 /// Diesel 2.3's typed DSL. Resumes a watermark that covers several sessions in one second.
@@ -419,40 +424,121 @@ impl Query for RecentCalls {
 
 impl RunQueryDsl<SqliteConnection> for RecentCalls {}
 
-const OLD_CALLS: &str = "(SELECT id FROM calls WHERE ts < ?1)";
-
-/// `?1` is reused inside one statement. T163.8 replaces these with `diesel::delete`.
-fn bind_cutoff(conn: &mut SqliteConnection, sql: String, cutoff: i64) -> QueryResult<usize> {
-    diesel::sql_query(sql)
-        .bind::<BigInt, _>(cutoff)
-        .execute(conn)
+/// `UNION` of two archive columns plus three `NOT EXISTS` — no typed form that stays one
+/// statement. `cutoff` is bound once per comparison.
+#[derive(QueryId)]
+pub(crate) struct DoomedArchives {
+    pub cutoff: i64,
 }
 
-pub(crate) fn purge_related(conn: &mut SqliteConnection, cutoff: i64) -> QueryResult<()> {
-    for sql in [
-        format!("DELETE FROM logs WHERE ts < ?1 OR call_id IN {OLD_CALLS}"),
-        format!("DELETE FROM tokens WHERE ts < ?1 OR call_id IN {OLD_CALLS}"),
-        format!("DELETE FROM call_io WHERE call_id IN {OLD_CALLS}"),
-        format!("UPDATE usage SET call_id = NULL WHERE call_id IN {OLD_CALLS}"),
-        format!("UPDATE measurements SET call_id = NULL WHERE call_id IN {OLD_CALLS}"),
-        format!("UPDATE calls SET parent_id = NULL WHERE parent_id IN {OLD_CALLS}"),
-    ] {
-        bind_cutoff(conn, sql, cutoff)?;
+impl QueryFragment<Sqlite> for DoomedArchives {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(
+            "SELECT DISTINCT a.id, a.path FROM archive a \
+             WHERE a.id IN ( \
+               SELECT request_archive FROM call_io \
+               WHERE call_id IN (SELECT id FROM calls WHERE ts < ",
+        );
+        out.push_bind_param::<BigInt, _>(&self.cutoff)?;
+        out.push_sql(
+            ") AND request_archive IS NOT NULL \
+               UNION \
+               SELECT response_archive FROM call_io \
+               WHERE call_id IN (SELECT id FROM calls WHERE ts < ",
+        );
+        out.push_bind_param::<BigInt, _>(&self.cutoff)?;
+        out.push_sql(
+            ") AND response_archive IS NOT NULL \
+             ) \
+             AND NOT EXISTS ( \
+               SELECT 1 FROM call_io c \
+               WHERE c.call_id NOT IN (SELECT id FROM calls WHERE ts < ",
+        );
+        out.push_bind_param::<BigInt, _>(&self.cutoff)?;
+        out.push_sql(
+            ") \
+               AND (c.request_archive = a.id OR c.response_archive = a.id) \
+             ) \
+             AND NOT EXISTS ( \
+               SELECT 1 FROM archive_decisions d WHERE d.archive_id = a.id \
+             ) \
+             AND NOT EXISTS ( \
+               SELECT 1 FROM read_cache r WHERE r.archive_id = a.id \
+             )",
+        );
+        Ok(())
     }
+}
+
+impl Query for DoomedArchives {
+    type SqlType = (Text, Text);
+}
+
+impl RunQueryDsl<SqliteConnection> for DoomedArchives {}
+
+pub(crate) fn purge_related(conn: &mut SqliteConnection, cutoff: i64) -> QueryResult<()> {
+    diesel::delete(logs::table)
+        .filter(
+            logs::ts.lt(cutoff).or(logs::call_id.eq_any(
+                calls::table
+                    .filter(calls::ts.lt(cutoff))
+                    .select(calls::id.nullable()),
+            )),
+        )
+        .execute(conn)?;
+    diesel::delete(tokens::table)
+        .filter(tokens::ts.lt(cutoff).or(
+            tokens::call_id.eq_any(calls::table.filter(calls::ts.lt(cutoff)).select(calls::id)),
+        ))
+        .execute(conn)?;
+    diesel::delete(call_io::table)
+        .filter(
+            call_io::call_id.eq_any(calls::table.filter(calls::ts.lt(cutoff)).select(calls::id)),
+        )
+        .execute(conn)?;
+    diesel::update(usage::table)
+        .filter(
+            usage::call_id.eq_any(
+                calls::table
+                    .filter(calls::ts.lt(cutoff))
+                    .select(calls::id.nullable()),
+            ),
+        )
+        .set(usage::call_id.eq(None::<i32>))
+        .execute(conn)?;
+    diesel::update(measurements::table)
+        .filter(
+            measurements::call_id.eq_any(
+                calls::table
+                    .filter(calls::ts.lt(cutoff))
+                    .select(calls::id.nullable()),
+            ),
+        )
+        .set(measurements::call_id.eq(None::<i32>))
+        .execute(conn)?;
+    let old = alias!(calls as old);
+    diesel::update(calls::table)
+        .filter(
+            calls::parent_id.eq_any(
+                old.filter(old.field(calls::ts).lt(cutoff))
+                    .select(old.field(calls::id).nullable()),
+            ),
+        )
+        .set(calls::parent_id.eq(None::<i32>))
+        .execute(conn)?;
     Ok(())
 }
 
 pub(crate) fn delete_old_calls(conn: &mut SqliteConnection, cutoff: i64) -> QueryResult<usize> {
-    bind_cutoff(conn, "DELETE FROM calls WHERE ts < ?1".to_string(), cutoff)
+    diesel::delete(calls::table.filter(calls::ts.lt(cutoff))).execute(conn)
 }
 
 pub(crate) fn purge_archive(conn: &mut SqliteConnection, id: &str) -> QueryResult<()> {
-    for sql in [
-        "DELETE FROM archive_decisions WHERE archive_id = ?1",
-        "UPDATE read_cache SET archive_id = NULL WHERE archive_id = ?1",
-        "DELETE FROM archive WHERE id = ?1",
-    ] {
-        diesel::sql_query(sql).bind::<Text, _>(id).execute(conn)?;
-    }
+    diesel::delete(archive_decisions::table.filter(archive_decisions::archive_id.eq(id)))
+        .execute(conn)?;
+    diesel::update(read_cache::table.filter(read_cache::archive_id.eq(id)))
+        .set(read_cache::archive_id.eq(None::<String>))
+        .execute(conn)?;
+    diesel::delete(archive::table.filter(archive::id.eq(id))).execute(conn)?;
     Ok(())
 }
