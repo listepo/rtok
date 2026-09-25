@@ -272,6 +272,16 @@ mod tests {
     use super::*;
     use rtok_plugin_sdk::Ctx;
 
+    /// T131: `measure::subagents::has_spawn_brief` detects a fired brief by this substring
+    /// of `INSTRUCTIONS`, mirrored there as `SPAWN_BRIEF_MARKER` rather than imported (a
+    /// hook-side marker check pulling in the whole digest builder would be backwards). This
+    /// pins the one thing that link needs: rewording `INSTRUCTIONS` so the marker no longer
+    /// matches must fail this test, not silently zero `rtok stats`' "with brief" split.
+    #[test]
+    fn instructions_still_carry_the_spawn_brief_marker() {
+        assert!(INSTRUCTIONS.contains(crate::measure::subagents::SPAWN_BRIEF_MARKER));
+    }
+
     #[test]
     fn stub_records_measurement_when_off() {
         let cx = crate::plugin::Runtime::in_memory("t596").unwrap();
