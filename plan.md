@@ -14,7 +14,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T134 | todo | P1 | 2 | 40% | |
 | T156 | todo | P3 | 3 | 50% | |
 | T159 | todo | P2 | 4 | 0% | |
-| T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
+| T163 | in progress | P2 | 5 | 40% | Cursor / grok 4.7 |
 | T163.4 | in progress | P2 | 4 | 90% | Cursor / grok 4.7 |
 | T163.8 | in progress | P2 | 3 | 80% | Cursor / grok 4.7 |
 | T178 | in progress | P1 | 4 | 95% | Cursor / grok 4.7 |
@@ -102,7 +102,9 @@ Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing s
 
 **Split of `mod.rs` (2026-09-23).** Six slices by area, each ≤ 200 LOC: T163.3 PRAGMA, `unixepoch()` and FTS5 in the shared extension module; T163.4 migrations; T163.5 sessions, calls, measurements and `kv`; T163.6 archive, `call_io` and `read_cache`; T163.7 usage and stats aggregates; T163.8 retention and the last test helpers, which also runs this card's full Check and closes T163. Raw SQL in `mod.rs` tests moves with the slice that owns the table it touches. Execution: T163.3 waits for T163.1's `sql_ext.rs` to land on `main` (one module, never a second); T163.4–T163.7 do not depend on each other; T163.8 goes last. T163.9 (window and CTE queries T163.7 could not express) was split off T163.7 on 2026-09-23 and also waits for `sql_ext.rs`.
 
-Progress (2026-09-26, Cursor / grok 4.7): production `sql_ext::exec_pragma` no longer uses `batch_execute`. It runs each PRAGMA through a `PragmaStmt` `QueryFragment` + `.execute()` (`HAS_STATIC_QUERY_ID = false`). Measured on diesel 2.3.13, on-disk file: before `delete`, after `QueryFragment.execute` → `wal`, still `wal` after reconnect; `get_result` and `sql_query(...).execute` also returned `wal`. `grep -nE 'sql_query|sql::<|batch_execute' src/store/sql_ext.rs` is empty; `open_on_disk_uses_wal` and clippy `-D warnings` on `--lib --tests` green. T163's full `src` grep still hits `migrate()` and tests — card stays open.
+Progress (2026-09-26, Cursor / grok 4.7): production `sql_ext::exec_pragma` no longer uses `batch_execute`. It runs each PRAGMA through a `PragmaStmt` `QueryFragment` + `.execute()` (`HAS_STATIC_QUERY_ID = false`). Measured on diesel 2.3.13, on-disk file: before `delete`, after `QueryFragment.execute` → `wal`, still `wal` after reconnect; `get_result` and `sql_query(...).execute` also returned `wal`. `grep -nE 'sql_query|sql::<|batch_execute' src/store/sql_ext.rs` is empty; `open_on_disk_uses_wal` and clippy `-D warnings` on `--lib --tests` green.
+
+Progress (2026-09-26, Cursor / grok 4.7): schema-drift cluster. Removed: `sql_query` in `live_schema_snapshot` / `schema_drift` (`SqliteMasterSnapshot`, `PragmaTableXinfo` in `sql_ext`, `HAS_STATIC_QUERY_ID = false`); `batch_execute` in `drift_after` (`FixtureSql`); `into_sql::<Bool>()` in `memory_note_aggs`; `sql_query` token in the `schema.rs` `uses` comment. Combined with WAL / BeginImmediate / Explain slices — remaining hits (if any) after the migration-fixtures merge close the card.
 
 ### T163.4. Migrations through `diesel_migrations`
 

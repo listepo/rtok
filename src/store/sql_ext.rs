@@ -256,6 +256,88 @@ impl Query for ExplainArchiveInSessionPlan {
 #[cfg(test)]
 impl RunQueryDsl<SqliteConnection> for ExplainArchiveInSessionPlan {}
 
+/// `sqlite_master` catalog — not a `table!` Diesel can model.
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct SqliteMasterSnapshot;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for SqliteMasterSnapshot {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(
+            "SELECT type AS kind, name, tbl_name, sql FROM sqlite_master \
+             WHERE type IN ('table', 'index', 'trigger')",
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl Query for SqliteMasterSnapshot {
+    type SqlType = (Text, Text, Text, Nullable<Text>);
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for SqliteMasterSnapshot {}
+
+/// `PRAGMA table_xinfo` — no DSL form; table name is a schema identifier, not a bind.
+/// `HAS_STATIC_QUERY_ID = false`: the SQL text changes with `table`, so Diesel must not
+/// reuse a prepared statement from another table.
+#[cfg(test)]
+pub(crate) struct PragmaTableXinfo {
+    pub table: String,
+}
+
+#[cfg(test)]
+impl QueryId for PragmaTableXinfo {
+    type QueryId = ();
+    const HAS_STATIC_QUERY_ID: bool = false;
+}
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for PragmaTableXinfo {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql("SELECT name, type AS ty, \"notnull\", pk FROM pragma_table_xinfo('");
+        out.push_sql(&self.table);
+        out.push_sql("')");
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl Query for PragmaTableXinfo {
+    type SqlType = (Text, Text, Integer, Integer);
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for PragmaTableXinfo {}
+
+/// Fixture DDL for schema-drift mutation tests — one statement per execute (prepared
+/// statements do not run a semicolon-separated batch). Not a static query id: each
+/// fixture string is a different statement.
+#[cfg(test)]
+pub(crate) struct FixtureSql {
+    pub sql: &'static str,
+}
+
+#[cfg(test)]
+impl QueryId for FixtureSql {
+    type QueryId = ();
+    const HAS_STATIC_QUERY_ID: bool = false;
+}
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for FixtureSql {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(self.sql);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for FixtureSql {}
+
+
 /// Expression conflict target `COALESCE(project, '')` — Diesel's `on_conflict` names columns only.
 #[derive(QueryId)]
 pub(crate) struct UpsertNote {
