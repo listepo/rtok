@@ -35,7 +35,7 @@ fn defining_id(line: &str) -> Option<String> {
         rest.split("**").next().unwrap_or("").trim()
     };
     let digits = cell.strip_prefix("I-")?;
-    let digits: String = digits.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let digits: String = digits.chars().take_while(char::is_ascii_digit).collect();
     if digits.is_empty() {
         None
     } else {

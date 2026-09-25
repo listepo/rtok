@@ -177,29 +177,12 @@ fn hook_commands_exec_rtok_from_path_and_fall_back_to_hook_sh() {
 /// install — and still prefers a `~/.ketch/bin/rtok` that does exist over that note.
 #[test]
 fn hook_sh_fails_open_silently_except_one_session_start_note() {
-    use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
-    use std::process::{Command, Stdio};
-
-    let home = tmp("claude-hook-sh-fail-open");
-    let empty_path = home.join("empty-path");
-    fs::create_dir_all(&empty_path).unwrap();
+    let sh = common::HookShell::new("claude-hook-sh-fail-open");
     let script = plugins_dir().join("claude/scripts/hook.sh");
     let run = |event: &str| {
-        let mut child = Command::new("/bin/sh")
-            .args([script.to_str().unwrap(), event])
-            .env("HOME", &home)
-            .env("PATH", &empty_path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        // A fail-open hook may exit before reading stdin: a broken pipe is fine (T251).
-        drop(child.stdin.take().unwrap().write_all(b"{}"));
-        let out = child.wait_with_output().unwrap();
-        assert!(out.status.success(), "{event}: {out:?}");
-        String::from_utf8(out.stdout).unwrap()
+        let (ok, stdout) = sh.sh(&[script.to_str().unwrap(), event]);
+        assert!(ok, "{event}: {stdout:?}");
+        stdout
     };
 
     assert_eq!(run("PreToolUse"), "");
@@ -216,12 +199,8 @@ fn hook_sh_fails_open_silently_except_one_session_start_note() {
         "{note}"
     );
 
-    let ketch = home.join(".ketch/bin/rtok");
-    fs::create_dir_all(ketch.parent().unwrap()).unwrap();
-    fs::write(&ketch, "#!/bin/sh\nprintf 'ketch %s' \"$2\"\n").unwrap();
-    fs::set_permissions(&ketch, fs::Permissions::from_mode(0o755)).unwrap();
+    sh.install_fake_ketch_rtok(common::KETCH_ECHO);
     assert_eq!(run("SessionStart"), "ketch SessionStart");
-    let _ = fs::remove_dir_all(&home);
 }
 
 fn plugins_dir() -> std::path::PathBuf {

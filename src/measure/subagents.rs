@@ -4,6 +4,7 @@
 //! as sessions of their own; now it skips them and they are counted here exactly once.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -138,8 +139,60 @@ impl Parent {
 /// their own), and [`collect`] attributes them to the parent instead.
 pub(crate) fn is_subagent(path: &Path) -> bool {
     path.parent()
-        .and_then(|d| d.file_name())
+        .and_then(Path::file_name)
         .is_some_and(|n| n == "subagents")
+}
+
+/// One sub-agent transcript of a parent: spawn order, file stem, path, agent type, model.
+type SpawnedAgent = (usize, String, PathBuf, String, String);
+
+/// The parent's `subagents/agent-*.jsonl` under `cutoff`, sorted so spawn order decides
+/// "an earlier sibling": the parent's `Agent`/`Task` call order via the meta's `toolUseId`,
+/// unknown metas last by name.
+fn spawned_agents(parent: &Parent, cutoff: SystemTime) -> Vec<SpawnedAgent> {
+    let mut agents: Vec<SpawnedAgent> =
+        super::codex::jsonl_paths(&parent.sidecar.join("subagents"), cutoff)
+            .into_iter()
+            .map(|p| {
+                let stem = p
+                    .file_stem()
+                    .and_then(OsStr::to_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let (agent_type, model, order) = meta(&p, &parent.spawn_order);
+                (order, stem, p, agent_type, model)
+            })
+            .collect();
+    agents.sort();
+    agents
+}
+
+/// A transcript's tool calls by id: every call's tool name, and the path of each `Read`.
+/// `read_paths` keeps the `Read` paths in call order.
+struct ToolIndex<'a> {
+    id_name: BTreeMap<&'a str, &'a str>,
+    id_path: BTreeMap<&'a str, &'a str>,
+    read_paths: Vec<String>,
+}
+
+impl<'a> ToolIndex<'a> {
+    fn new(tool_uses: &'a [jsonl::ToolUse]) -> Self {
+        let mut index = Self {
+            id_name: BTreeMap::new(),
+            id_path: BTreeMap::new(),
+            read_paths: Vec::new(),
+        };
+        for u in tool_uses {
+            index.id_name.insert(u.id.as_str(), u.name.as_str());
+            if u.name == "Read"
+                && let Some(p) = tool_path(&u.input)
+            {
+                index.id_path.insert(u.id.as_str(), p);
+                index.read_paths.push(p.to_string());
+            }
+        }
+        index
+    }
 }
 
 /// Every `<stem>/subagents/agent-*.jsonl` under `cutoff`, attributed to its parent.
@@ -148,24 +201,12 @@ pub(crate) fn collect(parents: &[Parent], cutoff: SystemTime) -> Option<Subagent
     let mut out = Subagents::default();
     let mut by_type: BTreeMap<(String, String), SubagentRow> = BTreeMap::new();
     for parent in parents {
-        let mut agents: Vec<(usize, String, PathBuf, String, String)> = Vec::new();
-        for p in super::codex::jsonl_paths(&parent.sidecar.join("subagents"), cutoff) {
-            let stem = p
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or_default()
-                .to_string();
-            let (agent_type, model, order) = meta(&p, &parent.spawn_order);
-            agents.push((order, stem, p, agent_type, model));
-        }
+        let agents = spawned_agents(parent, cutoff);
         if agents.is_empty() {
             continue;
         }
         out.sessions += 1;
         out.parent_result_bytes += parent.result_bytes;
-        // Spawn order decides "an earlier sibling": the parent's `Agent`/`Task` call
-        // order via the meta's `toolUseId`, unknown metas last by name.
-        agents.sort();
         let mut sibling_paths: Vec<String> = Vec::new();
         for (_, _, path, agent_type, model) in agents {
             let Ok(parsed) = jsonl::parse_path(&path) else {
@@ -179,18 +220,11 @@ pub(crate) fn collect(parents: &[Parent], cutoff: SystemTime) -> Option<Subagent
             let mut agent_read_bytes = 0u64;
             let mut agent_reread_bytes = 0u64;
             let mut agent_usage_input = 0u64;
-            let mut read_paths: Vec<String> = Vec::new();
-            let mut id_name: BTreeMap<&str, &str> = BTreeMap::new();
-            let mut id_path: BTreeMap<&str, &str> = BTreeMap::new();
-            for u in &parsed.tool_uses {
-                id_name.insert(u.id.as_str(), u.name.as_str());
-                if u.name == "Read"
-                    && let Some(p) = tool_path(&u.input)
-                {
-                    id_path.insert(u.id.as_str(), p);
-                    read_paths.push(p.to_string());
-                }
-            }
+            let ToolIndex {
+                id_name,
+                id_path,
+                read_paths,
+            } = ToolIndex::new(&parsed.tool_uses);
             let row = by_type.entry((agent_type, model)).or_default();
             row.count += 1;
             for r in &parsed.tool_results {

@@ -74,7 +74,7 @@ fn p(v: &str) -> PathBuf {
 }
 
 fn strs(v: &[&str]) -> Vec<String> {
-    v.iter().map(|x| x.to_string()).collect()
+    v.iter().map(ToString::to_string).collect()
 }
 
 // ── core ────────────────────────────────────────────────────────────────────

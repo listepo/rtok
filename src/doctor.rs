@@ -10,6 +10,7 @@ use anyhow::Result;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
@@ -533,7 +534,7 @@ fn audit_from(
             let source = plugin.as_deref().unwrap_or(source);
             for sub in subdirs(dir) {
                 // `file_name`, not `rsplit('/')`: Windows paths end in `\<name>` (T83.7).
-                let Some(name) = Path::new(&sub).file_name().and_then(|n| n.to_str()) else {
+                let Some(name) = Path::new(&sub).file_name().and_then(OsStr::to_str) else {
                     continue;
                 };
                 let Some(md) = read(&format!("{sub}/SKILL.md")) else {

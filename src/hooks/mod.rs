@@ -116,7 +116,7 @@ fn note_slow(cx: &Runtime, event: &str, ms: f64) {
 fn log_panic(cx: &Runtime, plugin: &str, event: &str, err: Box<dyn std::any::Any + Send>) {
     let payload = err
         .downcast_ref::<&str>()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .or_else(|| err.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "non-string panic payload".into());
     // `source = "plugin"`, `name = <plugin id>` matches the funnel's existing convention

@@ -44,7 +44,7 @@ fn stale_log_siblings(cfg: &Config) -> Vec<PathBuf> {
         return Vec::new();
     };
     entries
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .filter_map(|e| {
             let fname = e.file_name();
             let suffix = fname.to_str()?.strip_prefix(name)?.strip_prefix('.')?;

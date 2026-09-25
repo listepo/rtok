@@ -230,6 +230,32 @@ fn variant(
     Some((files.collect(), plugin))
 }
 
+/// What each surface of `host`'s `kind` variant loads: the variant itself first (its own
+/// files, cross-loaded hosts' files, and the plugin), then one entry per file for hosts
+/// that read each file as a surface of its own.
+fn surfaces(infos: &BTreeMap<String, Vec<Value>>, host: &str, kind: &str) -> Vec<(String, Seen)> {
+    let mut surfaces: Vec<(String, Seen)> = vec![(kind.into(), Seen::default())];
+    let own = std::iter::once((host, kind, true));
+    for (h, k, with_plugin) in own.chain(cross_loads(host, kind).iter().copied()) {
+        let Some((files, plugin)) = variant(infos, h, k) else {
+            continue;
+        };
+        for f in &files {
+            if h == host && one_surface_per_file(host) {
+                let mut seen = Seen::default();
+                walk_file(Path::new(f), &mut seen);
+                surfaces.push((format!("{kind} {f}"), seen));
+            } else {
+                walk_file(Path::new(f), &mut surfaces[0].1);
+            }
+        }
+        if plugin && with_plugin {
+            walk_plugin(h, &mut surfaces[0].1);
+        }
+    }
+    surfaces
+}
+
 fn duplicates(run: impl Fn(&[&str]) -> String) -> Vec<String> {
     let list: Vec<Value> = serde_json::from_str(&run(&["agents", "list", "--json"])).unwrap();
     let hosts: BTreeSet<&str> = list.iter().filter_map(|v| v["host"].as_str()).collect();
@@ -250,26 +276,7 @@ fn duplicates(run: impl Fn(&[&str]) -> String) -> Vec<String> {
     let mut bad = Vec::new();
     for (host, variants) in &infos {
         for kind in variants.iter().filter_map(|v| v["kind"].as_str()) {
-            let mut surfaces: Vec<(String, Seen)> = vec![(kind.into(), Seen::default())];
-            let own = std::iter::once((host.as_str(), kind, true));
-            for (h, k, with_plugin) in own.chain(cross_loads(host, kind).iter().copied()) {
-                let Some((files, plugin)) = variant(&infos, h, k) else {
-                    continue;
-                };
-                for f in &files {
-                    if h == host && one_surface_per_file(host) {
-                        let mut seen = Seen::default();
-                        walk_file(Path::new(f), &mut seen);
-                        surfaces.push((format!("{kind} {f}"), seen));
-                    } else {
-                        walk_file(Path::new(f), &mut surfaces[0].1);
-                    }
-                }
-                if plugin && with_plugin {
-                    walk_plugin(h, &mut surfaces[0].1);
-                }
-            }
-            for (name, seen) in &surfaces {
+            for (name, seen) in &surfaces(&infos, host, kind) {
                 if seen.mcp.len() > 1 {
                     bad.push(format!(
                         "{host} {name}: rtok MCP servers from {:?}",

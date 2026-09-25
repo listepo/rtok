@@ -7,7 +7,7 @@
 //! client runs `rtok hook` as before.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -16,6 +16,10 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Notify;
 
 use crate::config::Config;
+
+/// The resident's socket is owner-only (`rw-------`): only this user's clients may call it.
+#[cfg(unix)]
+const SOCKET_MODE: u32 = 0o600;
 
 struct State {
     fingerprint: u64,
@@ -58,9 +62,9 @@ pub fn serve() -> Result<()> {
 #[cfg(unix)]
 async fn listen(endpoint: &Path, lock: &Path, state: Arc<State>) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::remove_file(endpoint);
+    let _ = tokio::fs::remove_file(endpoint).await;
     let listener = tokio::net::UnixListener::bind(endpoint)?;
-    std::fs::set_permissions(endpoint, std::fs::Permissions::from_mode(0o600))?;
+    tokio::fs::set_permissions(endpoint, std::fs::Permissions::from_mode(SOCKET_MODE)).await?;
     let mut tick = tokio::time::interval(Duration::from_secs(1));
     loop {
         tokio::select! {
@@ -71,7 +75,7 @@ async fn listen(endpoint: &Path, lock: &Path, state: Arc<State>) -> Result<()> {
             _ = tick.tick() => if !lock.exists() || !endpoint.exists() { break },
         }
     }
-    let _ = std::fs::remove_file(endpoint);
+    let _ = tokio::fs::remove_file(endpoint).await;
     Ok(())
 }
 
@@ -135,7 +139,7 @@ async fn read_request<S: AsyncRead + Unpin>(stream: &mut S) -> Option<Request> {
 impl State {
     /// What `rtok hook <event> [--host]` prints, run in the client's cwd.
     fn run(&self, req: Request) -> Option<Vec<u8>> {
-        let _turn = self.turn.lock().unwrap_or_else(|e| e.into_inner());
+        let _turn = self.turn.lock().unwrap_or_else(PoisonError::into_inner);
         std::env::set_current_dir(PathBuf::from(&req.cwd)).ok()?;
         let host = (!req.host.is_empty()).then_some(req.host);
         let mut cfg = Config::load_lenient(None, crate::cli::hook_host_flag(host));

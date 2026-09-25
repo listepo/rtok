@@ -12,6 +12,7 @@
 //! the answer was actually shortened; an unchanged answer writes no row (T181).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -777,7 +778,7 @@ fn git_changed_files(root: &Path, since: Option<&str>, staged: bool) -> Vec<Stri
 fn test_command(path: &str, name: &str) -> Option<String> {
     match Path::new(path)
         .extension()
-        .and_then(|e| e.to_str())
+        .and_then(OsStr::to_str)
         .unwrap_or("")
     {
         "rs" => Some(format!("cargo test {name}")),

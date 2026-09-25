@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// One transcript's totals, valid while `size` and `mtime_ns` match the file.
@@ -28,7 +28,7 @@ static MEMORY: Mutex<Option<Cache>> = Mutex::new(None);
 /// through the process cache seeded from `file`. The file is rewritten when anything
 /// was parsed.
 pub fn scan(dir: &Path, cutoff: SystemTime, file: Option<&Path>) -> Vec<(PathBuf, FileAgg)> {
-    let mut guard = MEMORY.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = MEMORY.lock().unwrap_or_else(PoisonError::into_inner);
     let cache = guard.get_or_insert_with(|| file.map(load).unwrap_or_default());
     let (out, parsed) = scan_with(cache, dir, cutoff);
     if parsed > 0

@@ -123,25 +123,8 @@ fn assert_hooks_fail_open(doc: &Value, field: &str, run: &dyn Fn(&str) -> (bool,
 #[cfg(unix)]
 #[test]
 fn bash_hooks_resolve_rtok_then_ketch_then_fail_open_silently() {
-    use std::os::unix::fs::PermissionsExt;
-    use std::process::{Command, Stdio};
-
-    let home = tmp("copilot-resolver-sh");
-    let empty_path = home.join("empty-path");
-    fs::create_dir_all(&empty_path).unwrap();
-    let run = |bash: &str| -> (bool, String) {
-        let out = Command::new("/bin/sh")
-            .args(["-c", bash])
-            .envs([("HOME", home.as_path()), ("PATH", empty_path.as_path())])
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()
-            .unwrap();
-        (
-            out.status.success(),
-            String::from_utf8_lossy(&out.stdout).into_owned(),
-        )
-    };
+    let sh = common::HookShell::new("copilot-resolver-sh");
+    let run = |bash: &str| sh.run(bash);
     let doc = read("hooks/hooks.json");
     assert_hooks_fail_open(&doc, "bash", &run);
     // sessionStart's fallback is Copilot's flat shape, never Claude's hookSpecificOutput.
@@ -149,14 +132,10 @@ fn bash_hooks_resolve_rtok_then_ketch_then_fail_open_silently() {
     let v: Value = serde_json::from_str(&run(start).1).unwrap();
     assert!(v.get("hookSpecificOutput").is_none(), "{v}");
     // With `~/.ketch/bin/rtok` present, the resolved fallback actually runs it.
-    let fake = home.join(".ketch/bin/rtok");
-    fs::create_dir_all(fake.parent().unwrap()).unwrap();
-    fs::write(&fake, "#!/bin/sh\nprintf 'ketch %s' \"$2\"\n").unwrap();
-    fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+    sh.install_fake_ketch_rtok(common::KETCH_ECHO);
     let (ok, stdout) = run(start);
     assert!(ok);
     assert_eq!(stdout, "ketch SessionStart");
-    let _ = fs::remove_dir_all(&home);
 }
 
 /// Windows twin for Copilot's `powershell` field; runs only in Windows CI.

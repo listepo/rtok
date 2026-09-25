@@ -5,7 +5,7 @@ use anyhow::{Result, bail};
 use rtok_plugin_sdk::{Archive, Class, Measurement};
 use std::io::Read;
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
 use super::{formatters, rules};
@@ -329,8 +329,8 @@ fn capture(mut cmd: Command) -> Result<(Vec<u8>, i32)> {
             break;
         }
     }
-    let mut body = std::mem::take(&mut *out.lock().unwrap_or_else(|e| e.into_inner()));
-    body.append(&mut err.lock().unwrap_or_else(|e| e.into_inner()));
+    let mut body = std::mem::take(&mut *out.lock().unwrap_or_else(PoisonError::into_inner));
+    body.append(&mut err.lock().unwrap_or_else(PoisonError::into_inner));
     Ok((body, code))
 }
 
@@ -343,7 +343,7 @@ fn drain(pipe: Option<impl Read + Send + 'static>, done: mpsc::Sender<()>) -> Ar
             let mut chunk = [0u8; 8192];
             while let Ok(n @ 1..) = pipe.read(&mut chunk) {
                 sink.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(PoisonError::into_inner)
                     .extend_from_slice(&chunk[..n]);
             }
         }

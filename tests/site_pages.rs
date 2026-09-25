@@ -7,6 +7,7 @@
 //! adapter is mounted but unreachable. A `site/content/docs/*.md` whose name also exists
 //! under `docs/` is a hand-authored fork of a file that should be the single source of truth.
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
 
@@ -26,7 +27,7 @@ fn docs_md_files() -> Vec<String> {
     let mut out = Vec::new();
     for e in fs::read_dir(repo_root().join("docs")).unwrap().flatten() {
         let p = e.path();
-        if p.extension().and_then(|s| s.to_str()) == Some("md") {
+        if p.extension().and_then(OsStr::to_str) == Some("md") {
             out.push(p.file_name().unwrap().to_str().unwrap().to_string());
         }
     }
@@ -43,7 +44,7 @@ fn gotmpl_content() -> String {
             let p = e.path();
             if p.is_dir() {
                 stack.push(p);
-            } else if p.file_name().and_then(|s| s.to_str()) == Some("_content.gotmpl") {
+            } else if p.file_name().and_then(OsStr::to_str) == Some("_content.gotmpl") {
                 out.push_str(&fs::read_to_string(&p).unwrap());
                 out.push('\n');
             }
@@ -61,8 +62,8 @@ fn site_content_md_files() -> Vec<PathBuf> {
             let p = e.path();
             if p.is_dir() {
                 stack.push(p);
-            } else if p.extension().and_then(|s| s.to_str()) == Some("md")
-                && p.file_name().and_then(|s| s.to_str()) != Some("_index.md")
+            } else if p.extension().and_then(OsStr::to_str) == Some("md")
+                && p.file_name().and_then(OsStr::to_str) != Some("_index.md")
             {
                 out.push(p);
             }

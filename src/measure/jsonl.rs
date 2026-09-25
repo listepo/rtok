@@ -6,6 +6,7 @@
 
 use serde_json::Value;
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
@@ -119,7 +120,7 @@ pub fn parse_dir(dir: &Path) -> std::io::Result<Parsed> {
             let p = e.path();
             if p.is_dir() {
                 stack.push(p);
-            } else if p.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+            } else if p.extension().and_then(OsStr::to_str) == Some("jsonl") {
                 let one = parse_path(&p)?;
                 acc.lines += one.lines;
                 acc.malformed += one.malformed;

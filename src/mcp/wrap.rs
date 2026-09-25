@@ -9,6 +9,7 @@
 //! `Content-Length` headers (LSP-style servers).
 
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -67,7 +68,7 @@ pub fn run(cfg: &Config, argv: &[String]) -> Result<i32> {
     let settings = Settings::from_config(cfg);
     let server = Path::new(bin)
         .file_stem()
-        .and_then(|s| s.to_str())
+        .and_then(OsStr::to_str)
         .unwrap_or("mcp")
         .to_string();
     let mut stdout = std::io::stdout().lock();

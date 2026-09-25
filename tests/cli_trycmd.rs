@@ -10,6 +10,7 @@
 use clap::{Command, CommandFactory};
 use rtok::cli::Cli;
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 
@@ -106,7 +107,7 @@ fn covered_commands() -> HashSet<String> {
     let mut out = HashSet::new();
     for ent in fs::read_dir(&root).unwrap() {
         let path = ent.unwrap().path();
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let ext = path.extension().and_then(OsStr::to_str).unwrap_or("");
         let text = match ext {
             "toml" | "trycmd" => fs::read_to_string(&path).unwrap(),
             _ => continue,
