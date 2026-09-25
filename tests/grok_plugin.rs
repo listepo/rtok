@@ -1,5 +1,7 @@
 //! T99 + D21: the Grok Build plugin tree is one unit — a manifest, rtok's hooks and one MCP server.
 
+mod common;
+
 use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
@@ -69,67 +71,23 @@ fn hooks_are_the_claude_set_without_read_and_skill() {
 #[cfg(unix)]
 #[test]
 fn hooks_resolve_rtok_from_path_then_ketch_else_exit_0_silently() {
-    use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
-    use std::process::{Command, Stdio};
-
     let hooks = read("hooks/hooks.json")["hooks"].clone();
     let events: Vec<String> = hooks.as_object().unwrap().keys().cloned().collect();
     assert!(!events.is_empty());
 
-    let unique = format!(
-        "rtok-t250.4-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let home = std::env::temp_dir().join(format!("{unique}-home"));
-    let empty_path = std::env::temp_dir().join(format!("{unique}-path"));
-    fs::create_dir_all(&home).unwrap();
-    fs::create_dir_all(&empty_path).unwrap();
-
-    let run = |command: &str| -> (bool, String) {
-        let mut child = Command::new("/bin/sh")
-            .arg("-c")
-            .arg(command)
-            .env("HOME", &home)
-            .env("PATH", &empty_path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        // A fail-open hook with no rtok exits without reading stdin: the write may hit BrokenPipe.
-        let _ = child.stdin.take().unwrap().write_all(b"{}");
-        let out = child.wait_with_output().unwrap();
-        (
-            out.status.success(),
-            String::from_utf8_lossy(&out.stdout).into_owned(),
-        )
-    };
-
+    let sh = common::HookShell::new("t250.4-grok");
     for event in &events {
         let command = hooks[event][0]["hooks"][0]["command"].as_str().unwrap();
-        let (ok, stdout) = run(command);
+        let (ok, stdout) = sh.run(command);
         assert!(ok, "{event}: expected exit 0 with no rtok anywhere");
         assert_eq!(stdout, "", "{event}: expected silence, got {stdout:?}");
     }
 
-    let ketch_dir = home.join(".ketch").join("bin");
-    fs::create_dir_all(&ketch_dir).unwrap();
-    let ketch_rtok = ketch_dir.join("rtok");
-    fs::write(&ketch_rtok, "#!/bin/sh\nprintf 'ketch %s' \"$2\"\n").unwrap();
-    fs::set_permissions(&ketch_rtok, fs::Permissions::from_mode(0o755)).unwrap();
-
+    sh.install_fake_ketch_rtok(common::KETCH_ECHO);
     for event in &events {
         let command = hooks[event][0]["hooks"][0]["command"].as_str().unwrap();
-        let (ok, stdout) = run(command);
+        let (ok, stdout) = sh.run(command);
         assert!(ok, "{event}: expected exit 0 with ketch rtok");
         assert_eq!(stdout, format!("ketch {event}"), "{event}");
     }
-
-    let _ = fs::remove_dir_all(&home);
-    let _ = fs::remove_dir_all(&empty_path);
 }

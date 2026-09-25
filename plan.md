@@ -25,7 +25,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T262.3 | todo | P2 | 2 | 0% | |
 | T261 | in progress | P2 | 3 | 80% | Claude Code / claude-opus-5-5 |
-| T266 | in progress | P3 | 2 | 0% | Claude Code / claude-opus-5-5 |
 
 
 ### T87. `rtok hook <event> --host devin` reads Devin's payload
@@ -210,17 +209,6 @@ Plan (a draft PR; each change measured with `workflow_dispatch` runs on the bran
 4. Estimate folding `tests/*.rs` into one integration binary (78 links become 1); report it, do not do it here.
 
 Check: warm-cache `workflow_dispatch` runs on the draft PR are green, and a PR comment gives before/after timings per job.
-
-### T266. One shared harness for plugin hook fail-open tests
-
-Six plugin test files (`tests/{grok,codex,cursor,copilot,cline,claude}_plugin.rs`) each carry their own copy of the same harness: run a hook command through `/bin/sh` with an empty `PATH` and a temp `HOME` (expect exit 0 and silence), then again with a fake `~/.ketch/bin/rtok` (expect it to be exec'd). AGENTS.md: no duplicated logic.
-
-Plan:
-1. `tests/common/mod.rs`: `HookShell` (unix) — a temp `HOME` holding an empty `PATH` dir; `run(command)` (`sh -c`) and `sh(args)` return `(exit 0?, stdout)` with `{}` on stdin and stderr dropped; `install_fake_ketch_rtok(script)`; `KETCH_ECHO` (the shared fake); the dir is removed on `Drop`.
-2. Switch the grok, codex, cursor, copilot (bash), cline and claude (`hook.sh`) tests to it; no assertion changes. The Windows PowerShell twin and Claude's PATH-exec test use a different harness and stay.
-3. `tests/devin_plugin.rs` (T88) is not on `main` yet; it uses `HookShell` when it lands.
-
-Check: the six test files assert what they asserted before and pass; `just check` green; ≤300 LOC.
 
 ## Reference
 
