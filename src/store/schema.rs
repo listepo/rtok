@@ -72,6 +72,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    note_embeddings (note_id) {
+        note_id -> Integer,
+        model -> Text,
+        dims -> Integer,
+        text_hash -> Text,
+        embedded_at -> BigInt,
+        vector -> Binary,
+    }
+}
+
+diesel::table! {
     notes (id) {
         id -> Integer,
         ts -> BigInt,
@@ -272,6 +283,7 @@ diesel::joinable!(tokens -> calls (call_id));
 diesel::joinable!(logs -> calls (call_id));
 diesel::joinable!(measurements -> calls (call_id));
 diesel::joinable!(usage -> calls (call_id));
+diesel::joinable!(note_embeddings -> notes (note_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     events,
@@ -280,6 +292,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     archive_decisions,
     read_cache,
     notes,
+    note_embeddings,
     usage,
     hosts,
     providers,

@@ -4,6 +4,8 @@ pub mod embed;
 pub mod models;
 pub mod otel;
 pub mod schema;
+// Statements the typed DSL cannot express (window functions). T163.3 and T163.9 add to this module.
+mod sql_ext;
 // T163: shared Diesel extension for SQL the DSL cannot express (recursive CTEs, FTS5).
 // Symbol index (graph plugin) — SQLite only (D18 loser deleted; P39: Ladybug/Grafeo removed).
 mod symbols;
@@ -4249,7 +4251,6 @@ mod tests {
     // `table!` models neither) defaults/indexes/triggers via a golden `sqlite_master` dump.
     /// A migrated table with no `table!` macro, and why.
     const RAW_SQL_TABLES: &[&str] = &[
-        "note_embeddings",   // 0012: brute-force cosine KNN beside FTS5, sql_query only
         "notes_fts",         // 0001: FTS5 virtual table, sql_query only (T13.1)
         "notes_fts_data",    // FTS5 shadow table for notes_fts
         "notes_fts_idx",     // FTS5 shadow table for notes_fts

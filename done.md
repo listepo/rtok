@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+### T163.2. `src/store/otel.rs` and `src/store/embed.rs` without raw SQL
+
+Second slice of T163: the 6 sites in `otel.rs` and 4 in `embed.rs` move to the Diesel DSL over `schema.rs` (aggregates via `diesel::dsl::{min, count}` and `group_by`). Anything the DSL cannot express goes through the shared extension module from T163.1 — whichever slice lands first creates it.
+
+Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/otel.rs src/store/embed.rs` finds nothing; tests unchanged and green; `just check`.
+
+Result: aggregates (`otel_token_totals`, `otel_call_totals`, `otel_first_ts`, the stale-embedding join, the cosine candidate select) are typed DSL, and `note_embeddings` is a `table!`. Two statements have no form in Diesel 2.3: `sessions_pending_export`'s `ROW_NUMBER() OVER`, and the embedding upsert's `ON CONFLICT DO UPDATE … WHERE` (`DoUpdate` has no WHERE). Both live in `src/store/sql_ext.rs` as `QueryFragment`s, each with a comment naming the missing construct. The grep over the two files is empty. `cargo test -p rtok --lib store::` (59), `sessions_pending` (2) and `--test p29_memory` (2) passed; clippy `-D warnings` on `--lib --tests` passed.
+
 ### T255. Tests run under a fake `HOME`
 
 Creator request 2026-09-24. T254 closes the leaks through `Config`, but code that resolves home itself (`agents::home_dir`, `Config::home_dir`, `env_user_home`) still sees the real `HOME` in any test that does not set it. Give every test process a throwaway `HOME` (and `USERPROFILE`) under `target/` so a missed path lands in a sandbox, never in `~/.claude` or `~/.codex`. The obvious place is cargo's `[env]` in `.cargo/config.toml` with `force = true`, provided nextest honours it and build scripts are not affected; if either fails, use a nextest setup script instead. Tests that need git settings from the home (commits in fixtures) get an explicit `user.name`/`user.email` instead.
