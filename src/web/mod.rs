@@ -344,9 +344,26 @@ fn origin_allowed(headers: &HeaderMap) -> bool {
     let Some(host) = headers.get("host").and_then(|v| v.to_str().ok()) else {
         return false;
     };
-    match (origin_host(origin), host_host(host)) {
-        (Some(o), Some(h)) => o.eq_ignore_ascii_case(h) && rebind_safe(h),
-        _ => false,
+    let (Some(o), Some(h)) = (origin_authority(origin), host_authority(host)) else {
+        return false;
+    };
+    // The port is part of the origin: another local app's page must not get in.
+    let default = default_port(origin);
+    let same_port = port_of(o).unwrap_or(default) == port_of(h).unwrap_or(default);
+    let (o, h) = (strip_port(o), strip_port(h));
+    o.eq_ignore_ascii_case(h) && same_port && rebind_safe(h)
+}
+
+const HTTP_DEFAULT_PORT: &str = "80";
+const HTTPS_DEFAULT_PORT: &str = "443";
+
+/// The port a browser implies for `origin`'s scheme when the authority names none.
+fn default_port(origin: &str) -> &'static str {
+    let scheme = origin.split("://").next().unwrap_or_default();
+    if scheme.eq_ignore_ascii_case("https") || scheme.eq_ignore_ascii_case("wss") {
+        HTTPS_DEFAULT_PORT
+    } else {
+        HTTP_DEFAULT_PORT
     }
 }
 
@@ -356,18 +373,29 @@ fn rebind_safe(host: &str) -> bool {
         || host.to_ascii_lowercase().ends_with(".localhost")
 }
 
-fn origin_host(origin: &str) -> Option<&str> {
+fn origin_authority(origin: &str) -> Option<&str> {
     let rest = origin.split("://").nth(1)?;
     let authority = rest.split(['/', '?', '#']).next()?;
-    Some(strip_port(authority.split('@').next_back()?))
+    authority.split('@').next_back()
 }
 
-fn host_host(host: &str) -> Option<&str> {
+fn host_authority(host: &str) -> Option<&str> {
     let host = host.split(',').next_back()?.trim();
     if host.is_empty() {
         return None;
     }
-    Some(strip_port(host.split('@').next_back()?))
+    host.split('@').next_back()
+}
+
+/// The explicit port of `authority` (`host:port` or `[v6]:port`), if any.
+fn port_of(authority: &str) -> Option<&str> {
+    if let Some(rest) = authority.strip_prefix('[') {
+        return rest.split_once(']')?.1.strip_prefix(':');
+    }
+    if authority.matches(':').count() == 1 {
+        return authority.split_once(':').map(|(_, port)| port);
+    }
+    None
 }
 
 fn strip_port(authority: &str) -> &str {
@@ -506,6 +534,34 @@ mod tests {
         ] {
             assert!(
                 !origin_allowed(&headers(Some(origin), host)),
+                "{origin} {host}"
+            );
+        }
+    }
+
+    /// The port is part of the origin: a page served by another local app
+    /// (`http://localhost:3000`) must not open the dashboard socket on `:4444`, where it
+    /// could read archived payloads through `expand` and toggle plugins through `set`.
+    #[test]
+    fn origin_gate_blocks_another_port_on_the_same_host() {
+        for (origin, host) in [
+            ("http://localhost:3000", "localhost:4444"),
+            ("http://127.0.0.1:3000", "127.0.0.1:4444"),
+            ("http://[::1]:3000", "[::1]:4444"),
+            ("http://127.0.0.1", "127.0.0.1:4444"),
+        ] {
+            assert!(
+                !origin_allowed(&headers(Some(origin), host)),
+                "{origin} {host}"
+            );
+        }
+        for (origin, host) in [
+            ("http://127.0.0.1", "127.0.0.1"),
+            ("http://127.0.0.1:80", "127.0.0.1"),
+            ("https://localhost", "localhost:443"),
+        ] {
+            assert!(
+                origin_allowed(&headers(Some(origin), host)),
                 "{origin} {host}"
             );
         }
