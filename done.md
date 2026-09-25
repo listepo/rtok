@@ -8,6 +8,56 @@ Check: the unit tests above; `rtok agents list` shows `devin`; `agents_doc`, `ho
 
 Result: `installed()` never reports `plugin`. Devin's plugins overview (fetched 2026-09-25) does not name a store path, `devin plugins list` is a live command rather than a file, and this machine's `~/.config/devin/` has no plugin store — guessing would either double-fire hooks or delete entries the plugin still needs. Setup always writes the user files (the path without the plugin) and, behind `--yes`, prints `devin plugins install --local <plugins/devin>` only when something else changed, so a second install is all `NO_CHANGES`. Remove strips our hooks and `mcpServers.rtok` and leaves the plugin. `hooks_doc()` equals `plugins/devin/hooks.json`. Foreign hooks in the real `~/.config/devin/config.json` survive install and remove (`devin_keeps_the_real_config_and_mcp_json`). `agents list` shows Devin CLI and Devin. `agents::devin` (4), `agents_doc`, `agents_list_content`, `host_docs`, `config_coverage`, `readme_tables_match_support`, and `default_toml_is_the_defaults` passed; clippy `-D warnings` on `--lib --tests` passed.
 
+### T267. Normalized dedupe treats `1src` as a duration and never matches `d:d:d`
+
+`duration_at` scanned only digits and `.`, then treated any following `s` as a duration. `copied 1src/a.rs` and `copied 2src/a.rs` collapsed to the same key. The `d:d:d` branch (`1:2:3`) required five digits after a scan that stops at `:`, so it never matched. `s` and `ms` now match only at a token boundary, and `d:d:d` is recognized before that scan.
+
+Check: `duration_clock_and_s_suffix_do_not_merge_distinct_lines`; existing normalized-dedupe tests stay green.
+
+### T268. A pipe of two programs is formatted as the first program
+
+`mixed_chain` recorded only the first stage of each pipeline, so `git log | grep foo` was not a mix and `git log`'s 20-line formatter ran on grep's output. Every stage's program is counted now. `cargo build && cargo test` stays one family. A pipe whose last stage is already bounded (`| head`, `| tail -n`) still returns early from `is_bounded`.
+
+Check: `mixed_program_forms` includes `git log | grep foo`; `same_program_forms` and `bounded_forms` stay green.
+
+### T269. `rtok mcp` wrapper drops the stream on a non-UTF-8 header byte
+
+Header lines were read with `read_line`. One invalid UTF-8 byte returned `Err`, and `read_frame` treated that as EOF, so the header and every following frame were dropped. Header lines are read as bytes (`read_until`). A line that is not UTF-8 is kept and skipped for `Content-Length` parsing; the next frame is still read.
+
+Check: `invalid_utf8_in_a_header_is_forwarded_not_eof`; the existing framing tests stay green.
+
+### T270. The rotating text log lives in `rtok-log`
+
+The file writer (line format, level floor, rotation, the rename lock) was inside `src/log.rs` and took rtok's `Config`. Another project could not use it without the binary. It is now `crates/rtok-log`: a `FileLog` of path, `max_bytes`, `files` and level, with no database and no stderr viewer. rtok still mirrors each line to the `log` facade and, when `[log] to_db` is on, inserts the same text into the `logs` table. `rtok logs`, tailspin and `logs watch` stay in the binary.
+
+An `error` line is also copied, same bytes, to `errors.log` beside the live file (`append_split` / `error_path`). `warn`, `info` and `debug` stay in the general log only. rtok always passes that sibling path, so every existing `error` record lands in both files. Warnings that used to be stderr-only (lenient config, a bad `.env`, a legacy key, MCP and proxy retention, graph watchman fallback, agent restart, a missing web bundle, deprecated commands, the MCP-under-demon note) are now `warn` lines in the general log. Failures that used to be stderr-only (hook stdin, hook panic, a locked store, an MCP tool error, graph notify, a wasm plugin that will not load, a wasm guest `rtok_log`, `config validate`, a CLI `run` error) are `error` lines, so they also reach `errors.log`. The message keeps the full `{:#}` cause.
+
+Check: `cargo test -p rtok-log` (date, level floor, rotation, newline, a line below the floor, the stale-size lock, error copied and warn left in the main file); `cargo test -p rtok --lib log::` still green.
+
+### T163.9. Window and CTE queries through the shared extension module
+
+Left over from T163.7: `usage_ctt` (`COUNT() OVER`, `ROW_NUMBER() OVER`), `session_totals`/`recent_session_totals` (four CTEs, `UNION ALL`, per-group `MAX(id)` subqueries) and `recent_calls` (correlated `MAX(id)` subquery in a `LEFT JOIN`) have no form in Diesel 2.3.13's typed DSL. They move into T163.1's `src/store/sql_ext.rs` as typed `QueryFragment`s with bound parameters, each with a comment naming the construct the DSL lacks (the rulebook's exception for statements the ORM cannot express).
+
+Check: no `sql_query` left in the three functions; tests unchanged and green; `just check`.
+
+Result: `UsageCtt`, `UsageCttTail`, `RecentSessionTotals` and `RecentCalls` are `QueryFragment`s in `sql_ext`. `usage_ctt`, `session_totals`, `recent_session_totals` and `recent_calls` contain no `sql_query`. `SessionTotals` and `CallRow` also derive `Queryable` so the positional load matches the previous column order. `cargo test -p rtok --lib store::` (59), `overview_matches_the_per_session_loop`, and clippy `-D warnings` on `--lib --tests` passed.
+
+### T163.3. PRAGMA, `unixepoch()` and FTS5 through the shared extension module
+
+`mod.rs` sites the typed DSL cannot express: the PRAGMAs in `set_busy`, `connect`, `init`, `set_query_only` and `purge_calls_older_than`; `sql::<>("unixepoch()")` in `upsert_note` and `retire_note`; FTS5 `MATCH`/`bm25()` in `search_notes`; tests `open_on_disk_uses_wal`, `fts5_match_finds_inserted_note`. They become typed helpers in T163.1's `src/store/sql_ext.rs` (`define_sql_function!` for `unixepoch`, a `QueryFragment` per PRAGMA and for the FTS5 match), the only home for non-DSL SQL; `schema.rs`'s `notes_fts` comment is updated. The typed SQL functions declared in `mod.rs` move there too: `coalesce` (T163.5), `length` and `sum_bigint` (T163.7), `substr` (T163.6).
+
+Check: no `sql_query|sql::<|batch_execute` left in the listed functions and tests; `note_search_treats_query_text_literally` and the WAL test green; `just check`.
+
+Result: `set_busy`, `connect`, `init` and `set_query_only` call `sql_ext` helpers. `PRAGMA` writes go through `batch_execute` because a prepared `execute` leaves `journal_mode` at `delete`. `unixepoch()` is `define_sql_function!` (`Nullable<BigInt>`, matching `notes.retired`). `upsert_note`'s expression-index `ON CONFLICT` and `search_notes`' FTS5 `MATCH`/`bm25` are `QueryFragment`s. `coalesce`, `length`, `sum_bigint` and `substr` moved into `sql_ext` and are re-exported. The ten listed functions contain none of `sql_query`, `sql::<` or `batch_execute`. `cargo test -p rtok --lib store::` (59) and clippy `-D warnings` on `--lib --tests` passed.
+
+### T163.2. `src/store/otel.rs` and `src/store/embed.rs` without raw SQL
+
+Second slice of T163: the 6 sites in `otel.rs` and 4 in `embed.rs` move to the Diesel DSL over `schema.rs` (aggregates via `diesel::dsl::{min, count}` and `group_by`). Anything the DSL cannot express goes through the shared extension module from T163.1 — whichever slice lands first creates it.
+
+Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/otel.rs src/store/embed.rs` finds nothing; tests unchanged and green; `just check`.
+
+Result: aggregates (`otel_token_totals`, `otel_call_totals`, `otel_first_ts`, the stale-embedding join, the cosine candidate select) are typed DSL, and `note_embeddings` is a `table!`. Two statements have no form in Diesel 2.3: `sessions_pending_export`'s `ROW_NUMBER() OVER`, and the embedding upsert's `ON CONFLICT DO UPDATE … WHERE` (`DoUpdate` has no WHERE). Both live in `src/store/sql_ext.rs` as `QueryFragment`s, each with a comment naming the missing construct. The grep over the two files is empty. `cargo test -p rtok --lib store::` (59), `sessions_pending` (2) and `--test p29_memory` (2) passed; clippy `-D warnings` on `--lib --tests` passed.
+
 ### T255. Tests run under a fake `HOME`
 
 Creator request 2026-09-24. T254 closes the leaks through `Config`, but code that resolves home itself (`agents::home_dir`, `Config::home_dir`, `env_user_home`) still sees the real `HOME` in any test that does not set it. Give every test process a throwaway `HOME` (and `USERPROFILE`) under `target/` so a missed path lands in a sandbox, never in `~/.claude` or `~/.codex`. The obvious place is cargo's `[env]` in `.cargo/config.toml` with `force = true`, provided nextest honours it and build scripts are not affected; if either fails, use a nextest setup script instead. Tests that need git settings from the home (commits in fixtures) get an explicit `user.name`/`user.email` instead.

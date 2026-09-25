@@ -896,6 +896,13 @@ impl Config {
                 let home = Self::home_dir();
                 let mut c = Self::default();
                 c.finish(&home);
+                crate::log::append(
+                    &c,
+                    "warn",
+                    "config",
+                    "load",
+                    &format!("ignored ({e:#}); using defaults"),
+                );
                 c
             }
         }
@@ -942,40 +949,45 @@ impl Config {
     /// Migrate legacy keys and expand `~` in paths. Called after every parse.
     fn finish(&mut self, home: &Path) {
         apply_legacy_fold(self);
+        let mut notes = Vec::new();
         if let Some(budget) = self.core.inject_budget_tokens.take()
             && self.plugins.inject.budget_tokens == budget
         {
-            eprintln!(
-                "rtok: core.inject_budget_tokens is now plugins.inject.budget_tokens (using {budget})"
-            );
+            notes.push(format!(
+                "core.inject_budget_tokens is now plugins.inject.budget_tokens (using {budget})"
+            ));
         }
         if let Some(web) = self.dashboard.take()
             && self.web == web
         {
-            eprintln!("rtok: [dashboard] is now [web] (using it)");
+            notes.push("[dashboard] is now [web] (using it)".to_string());
         }
         // T24.5 / D26: `[core] log_*` → `[log]`. Taken once so they are not re-read.
         if let Some(path) = self.core.log_file.take()
             && self.log.path == path
         {
-            eprintln!(
-                "rtok: core.log_file is now log.path (using {})",
+            notes.push(format!(
+                "core.log_file is now log.path (using {})",
                 path.display()
-            );
+            ));
         }
         if let Some(level) = self.core.log_level.take()
             && self.log.level == level
         {
-            eprintln!("rtok: core.log_level is now log.level (using {level})");
+            notes.push(format!("core.log_level is now log.level (using {level})"));
         }
         if let Some(to_db) = self.core.log_to_db.take()
             && self.log.to_db == to_db
         {
-            eprintln!("rtok: core.log_to_db is now log.to_db (using {to_db})");
+            notes.push(format!("core.log_to_db is now log.to_db (using {to_db})"));
         }
         self.home = home.to_path_buf();
         let user_home = env_user_home();
         self.expand_paths_with(home, user_home.as_deref());
+        for note in &notes {
+            eprintln!("rtok: {note}");
+            crate::log::append(self, "warn", "config", "legacy", note);
+        }
     }
 
     /// Resolve every `~` path under `dir`, `~/.rtok/x` and `~/x` alike. For a config that never

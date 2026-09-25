@@ -37,16 +37,30 @@ pub fn run(event: &str, mut stdin: impl Read, mut stdout: impl Write, cfg: &Conf
     let max = u64::from(cfg.core.hook_max_input_bytes);
     if cfg.hook.fail_open {
         let mut buf = Vec::new();
-        let _ = stdin.by_ref().take(max + 1).read_to_end(&mut buf);
+        if let Err(e) = stdin.by_ref().take(max + 1).read_to_end(&mut buf) {
+            let msg = format!("stdin read failed: {e}; failing open");
+            eprintln!("rtok: hook {event} {msg}");
+            crate::log::append(cfg, "error", "hook", event, &msg);
+            let _ = stdout.write_all(b"{}");
+            return;
+        }
         if buf.len() as u64 > max {
-            eprintln!(
-                "rtok: hook {event} stdin over core.hook_max_input_bytes ({max} bytes); failing open"
+            let msg = format!(
+                "stdin over core.hook_max_input_bytes ({max} bytes, got {}); failing open",
+                buf.len()
             );
+            eprintln!("rtok: hook {event} {msg}");
+            crate::log::append(cfg, "error", "hook", event, &msg);
             let _ = stdout.write_all(b"{}");
             return;
         }
         let out = panic::catch_unwind(AssertUnwindSafe(|| dispatch_owned(&buf, event, cfg)))
-            .unwrap_or_else(|_| b"{}".to_vec());
+            .unwrap_or_else(|payload| {
+                let msg = format!("panicked: {}; failing open", panic_message(&payload));
+                eprintln!("rtok: hook {event} {msg}");
+                crate::log::append(cfg, "error", "hook", event, &msg);
+                b"{}".to_vec()
+            });
         let _ = stdout.write_all(&out);
     } else {
         let mut buf = Vec::new();
@@ -113,12 +127,15 @@ fn note_slow(cx: &Runtime, event: &str, ms: f64) {
 /// saw it. One funnel for the four per-plugin loops below: extract the payload and log it at
 /// `error` before the caller drops the plugin's output and moves on (fail open, D1). Runs only
 /// on the panic path, so the budget stays untouched the rest of the time.
-fn log_panic(cx: &Runtime, plugin: &str, event: &str, err: Box<dyn std::any::Any + Send>) {
-    let payload = err
-        .downcast_ref::<&str>()
-        .map(ToString::to_string)
+fn panic_message(err: &Box<dyn std::any::Any + Send>) -> String {
+    err.downcast_ref::<&str>()
+        .map(|s| (*s).to_string())
         .or_else(|| err.downcast_ref::<String>().cloned())
-        .unwrap_or_else(|| "non-string panic payload".into());
+        .unwrap_or_else(|| "non-string panic payload".into())
+}
+
+fn log_panic(cx: &Runtime, plugin: &str, event: &str, err: Box<dyn std::any::Any + Send>) {
+    let payload = panic_message(&err);
     // `source = "plugin"`, `name = <plugin id>` matches the funnel's existing convention
     // (see `insert_log`'s callers) — a `rtok logs`/`doctor` reader can filter on the plugin.
     cx.log(
@@ -356,11 +373,22 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         // T178: another process held the writer lock past `LOCK_WAIT`. Every later write would
         // wait again, so pass the input through unchanged and record nothing.
         Err(e) if crate::store::is_locked(&e) => {
-            eprintln!("rtok: hook {} skipped: store locked", input.hook_event_name);
+            let msg = format!("skipped: store locked: {e:#}");
+            eprintln!("rtok: hook {} {msg}", input.hook_event_name);
+            crate::log::append(&cx.config, "error", "hook", &input.hook_event_name, &msg);
             defer_session_end(&cx.config, &input.hook_event_name, stdin);
             return b"{}".to_vec();
         }
-        Err(_) => None,
+        Err(e) => {
+            crate::log::append(
+                &cx.config,
+                "error",
+                "hook",
+                &input.hook_event_name,
+                &format!("record_call failed: {e:#}"),
+            );
+            None
+        }
     };
     let out = match input.hook_event_name.as_str() {
         "PreToolUse" => pre_tool(input, cx, &registry),

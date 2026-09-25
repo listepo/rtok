@@ -2,10 +2,11 @@
 //! past them. A second `impl Store`; `src/otel/` never sees SQL.
 
 use anyhow::Result;
+use diesel::dsl::{count_star, min};
 use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::{BigInt, Integer, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
+
+use super::sum_bigint;
 
 use super::Store;
 use super::models::{Call, CallIo, LogRow, Session, TokenRow};
@@ -49,68 +50,31 @@ pub struct CallMeasurement {
 }
 
 /// `usage` summed per model and wire (T16.7).
-#[derive(Debug, QueryableByName)]
+#[derive(Debug)]
 pub struct TokenTotal {
-    #[diesel(sql_type = Nullable<Text>)]
     pub model: Option<String>,
-    #[diesel(sql_type = Text)]
     pub api: String,
-    #[diesel(sql_type = BigInt)]
     pub input: i64,
-    #[diesel(sql_type = BigInt)]
     pub cache_create: i64,
-    #[diesel(sql_type = BigInt)]
     pub cache_read: i64,
-    #[diesel(sql_type = BigInt)]
     pub output: i64,
 }
 
 /// `measurements` saved tokens per plugin and kind (T16.7).
-#[derive(Debug, QueryableByName)]
+#[derive(Debug)]
 pub struct SavedTotal {
-    #[diesel(sql_type = Text)]
     pub plugin: String,
-    #[diesel(sql_type = Text)]
     pub kind: String,
-    #[diesel(sql_type = BigInt)]
     pub saved: i64,
 }
 
 /// `calls` counted per surface, kind and outcome (T16.7).
-#[derive(Debug, QueryableByName)]
+#[derive(Debug)]
 pub struct CallTotal {
-    #[diesel(sql_type = Text)]
     pub surface: String,
-    #[diesel(sql_type = Text)]
     pub kind: String,
-    #[diesel(sql_type = Integer)]
     pub ok: i32,
-    #[diesel(sql_type = BigInt)]
     pub n: i64,
-}
-
-#[derive(QueryableByName)]
-struct Ts {
-    #[diesel(sql_type = BigInt)]
-    ts: i64,
-}
-
-#[derive(QueryableByName)]
-struct PendingSession {
-    #[diesel(sql_type = Text)]
-    id: String,
-    #[diesel(sql_type = Nullable<Integer>)]
-    host_id: Option<i32>,
-    #[diesel(sql_type = Nullable<Text>)]
-    project: Option<String>,
-    #[diesel(sql_type = Nullable<Text>)]
-    cwd: Option<String>,
-    #[diesel(sql_type = Nullable<Text>)]
-    source: Option<String>,
-    #[diesel(sql_type = BigInt)]
-    started_at: i64,
-    #[diesel(sql_type = Nullable<BigInt>)]
-    ended_at: Option<i64>,
 }
 
 fn clamp(id: i64) -> i32 {
@@ -159,15 +123,38 @@ impl Store {
 
     pub fn otel_token_totals(&self) -> Result<Vec<TokenTotal>> {
         let mut conn = self.lock()?;
-        Ok(sql_query(
-            "SELECT model, api,
-                    COALESCE(SUM(input),0) AS input,
-                    COALESCE(SUM(cache_create),0) AS cache_create,
-                    COALESCE(SUM(cache_read),0) AS cache_read,
-                    COALESCE(SUM(output),0) AS output
-             FROM usage GROUP BY model, api ORDER BY model, api",
-        )
-        .load(&mut *conn)?)
+        let rows = usage::table
+            .group_by((usage::model, usage::api))
+            .select((
+                usage::model,
+                usage::api,
+                sum_bigint(usage::input),
+                sum_bigint(usage::cache_create),
+                sum_bigint(usage::cache_read),
+                sum_bigint(usage::output),
+            ))
+            .order((usage::model.asc(), usage::api.asc()))
+            .load::<(
+                Option<String>,
+                String,
+                Option<i64>,
+                Option<i64>,
+                Option<i64>,
+                Option<i64>,
+            )>(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(model, api, input, cache_create, cache_read, output)| TokenTotal {
+                    model,
+                    api,
+                    input: input.unwrap_or(0),
+                    cache_create: cache_create.unwrap_or(0),
+                    cache_read: cache_read.unwrap_or(0),
+                    output: output.unwrap_or(0),
+                },
+            )
+            .collect())
     }
 
     /// T207: reads [`Store::measurement_totals`] instead of its own raw `GROUP BY` — the
@@ -190,19 +177,29 @@ impl Store {
 
     pub fn otel_call_totals(&self) -> Result<Vec<CallTotal>> {
         let mut conn = self.lock()?;
-        Ok(sql_query(
-            "SELECT surface, kind, ok, COUNT(*) AS n
-             FROM calls GROUP BY surface, kind, ok ORDER BY surface, kind, ok",
-        )
-        .load(&mut *conn)?)
+        let rows = calls::table
+            .group_by((calls::surface, calls::kind, calls::ok))
+            .select((calls::surface, calls::kind, calls::ok, count_star()))
+            .order((calls::surface.asc(), calls::kind.asc(), calls::ok.asc()))
+            .load::<(String, String, i32, i64)>(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|(surface, kind, ok, n)| CallTotal {
+                surface,
+                kind,
+                ok,
+                n,
+            })
+            .collect())
     }
 
     /// Earliest `calls.ts`, the sums' start time; 0 on an empty ledger.
     pub fn otel_first_ts(&self) -> Result<i64> {
         let mut conn = self.lock()?;
-        let rows: Vec<Ts> =
-            sql_query("SELECT COALESCE(MIN(ts),0) AS ts FROM calls").load(&mut *conn)?;
-        Ok(rows.first().map(|r| r.ts).unwrap_or(0))
+        Ok(calls::table
+            .select(min(calls::ts))
+            .first::<Option<i64>>(&mut *conn)?
+            .unwrap_or(0))
     }
 
     /// Last value posted for `stream`; 0 before the first successful flush.
@@ -272,33 +269,7 @@ impl Store {
         limit: i64,
     ) -> Result<Vec<Session>> {
         let mut conn = self.lock()?;
-        Ok(sql_query(
-            "SELECT id, host_id, project, cwd, source, started_at, ended_at FROM (
-                SELECT id, host_id, project, cwd, source, started_at, ended_at,
-                       ROW_NUMBER() OVER (PARTITION BY ended_at ORDER BY id) AS rn
-                FROM sessions
-                WHERE ended_at IS NOT NULL
-             )
-             WHERE ended_at > ?1 OR (ended_at = ?2 AND rn > ?3)
-             ORDER BY ended_at ASC, id ASC
-             LIMIT ?4",
-        )
-        .bind::<BigInt, _>(mark)
-        .bind::<BigInt, _>(mark)
-        .bind::<BigInt, _>(tail)
-        .bind::<BigInt, _>(limit)
-        .load::<PendingSession>(&mut *conn)?
-        .into_iter()
-        .map(|r| Session {
-            id: r.id,
-            host_id: r.host_id,
-            project: r.project,
-            cwd: r.cwd,
-            source: r.source,
-            started_at: r.started_at,
-            ended_at: r.ended_at,
-        })
-        .collect())
+        Ok(super::sql_ext::SessionsPending { mark, tail, limit }.load(&mut *conn)?)
     }
 
     pub fn end_session(&self, id: &str, ended_at: i64) -> Result<()> {

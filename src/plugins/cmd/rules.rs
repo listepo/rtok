@@ -605,8 +605,31 @@ fn long_hex_at(rest: &str) -> Option<usize> {
     if n >= 16 { Some(n) } else { None }
 }
 
+/// `s` / `ms` only at a token edge. `1src` is a path, not a one-second duration.
+fn duration_boundary(rest: &str, n: usize) -> bool {
+    rest[n..]
+        .chars()
+        .next()
+        .is_none_or(|c| !c.is_ascii_alphanumeric())
+}
+
+/// Byte length of the `d:d:d` clock form (`1:2:3`).
+const CLOCK_LEN: usize = 5;
+
 fn duration_at(rest: &str) -> Option<(usize, ())> {
     let b = rest.as_bytes();
+    // `d:d:d` (`1:2:3`). The old scan stopped at `:` and then required five
+    // digits, so this form never matched.
+    if b.len() >= CLOCK_LEN
+        && b[0].is_ascii_digit()
+        && b[1] == b':'
+        && b[2].is_ascii_digit()
+        && b[3] == b':'
+        && b[4].is_ascii_digit()
+        && duration_boundary(rest, CLOCK_LEN)
+    {
+        return Some((CLOCK_LEN, ()));
+    }
     let mut i = 0usize;
     while i < b.len() && (b[i].is_ascii_digit() || b[i] == b'.') {
         i += 1;
@@ -614,14 +637,11 @@ fn duration_at(rest: &str) -> Option<(usize, ())> {
     if i == 0 {
         return None;
     }
-    if rest[i..].starts_with("ms") {
+    if rest[i..].starts_with("ms") && duration_boundary(rest, i + 2) {
         return Some((i + 2, ()));
     }
-    if rest[i..].starts_with('s') {
+    if rest[i..].starts_with('s') && duration_boundary(rest, i + 1) {
         return Some((i + 1, ()));
-    }
-    if i >= 5 && b[1] == b':' && b[3] == b':' {
-        return Some((5, ()));
     }
     None
 }
@@ -1233,6 +1253,24 @@ mod tests {
         );
         let content = out.lines().filter(|l| !l.contains("lines omitted")).count();
         assert_eq!(n_lines - content, expect_omitted, "{out}");
+    }
+
+    #[test]
+    fn duration_clock_and_s_suffix_do_not_merge_distinct_lines() {
+        assert_eq!(
+            normalize_line_key("took 1:2:3"),
+            normalize_line_key("took 9:8:7"),
+            "d:d:d durations should collapse to <DUR>"
+        );
+        assert_ne!(
+            normalize_line_key("copied 1src/a.rs"),
+            normalize_line_key("copied 2src/a.rs"),
+            "a digit plus s must not swallow the next token"
+        );
+        assert_eq!(
+            normalize_line_key("wait 12ms"),
+            normalize_line_key("wait 3ms")
+        );
     }
 
     #[test]

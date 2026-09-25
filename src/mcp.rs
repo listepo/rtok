@@ -37,7 +37,9 @@ pub fn run(cfg: &Config) -> Result<()> {
     // contended store (T75) — WAL reads keep every tool serving while another process
     // writes, and the purge queues behind it under the maintenance busy window.
     if let Err(e) = server.cx.store.run_retention(cfg.core.retain_calls_days) {
-        eprintln!("rtok mcp: retention skipped until next start: {e:#}");
+        let msg = format!("retention skipped until next start: {e:#}");
+        eprintln!("rtok mcp: {msg}");
+        crate::log::append(cfg, "warn", "mcp", "retention", &msg);
     }
     crate::otel::export::spawn_ticker(cfg);
     // P8d watcher (T8.16): a thread inside this process, never a second writer.
@@ -54,7 +56,9 @@ pub fn run(cfg: &Config) -> Result<()> {
         if let Some(root) = &watch_root {
             // T263: never watch `/` or the home directory.
             if let Err(e) = crate::plugins::read::walk_root_ok(root) {
-                eprintln!("rtok mcp: watcher skipped: {e:#}");
+                let msg = format!("watcher skipped for {}: {e:#}", root.display());
+                eprintln!("rtok mcp: {msg}");
+                crate::log::append(cfg, "warn", "mcp", "watch", &msg);
             } else {
                 s.spawn(|| {
                     crate::plugins::graph::watch::run(
@@ -420,6 +424,10 @@ impl Server {
             invoke_text(&self.cx, name, &args)
         };
         let _ = record(&self.cx, plugin, name, &args, &text);
+        if !ok {
+            self.cx
+                .log("error", "mcp", name, &format!("tool failed: {text}"));
+        }
         let content = vec![ContentBlock::text(text)];
         if ok {
             CallToolResult::success(content)
