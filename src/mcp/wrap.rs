@@ -114,8 +114,10 @@ fn read_frame(r: &mut impl BufRead, buf: &mut Vec<u8>) -> Option<Framing> {
     let mut header = Vec::new();
     let mut len = None;
     loop {
-        let mut line = String::new();
-        if r.read_line(&mut line).ok()? == 0 {
+        let mut line = Vec::new();
+        // Bytes, not `read_line`: a non-UTF-8 header byte used to become `Err`,
+        // which this function treated as EOF and dropped the rest of the stream.
+        if r.read_until(b'\n', &mut line).ok()? == 0 {
             // Stream closed mid-header: forward whatever real bytes already arrived
             // rather than silently dropping them.
             return if header.is_empty() {
@@ -125,12 +127,13 @@ fn read_frame(r: &mut impl BufRead, buf: &mut Vec<u8>) -> Option<Framing> {
                 Some(Framing::Raw)
             };
         }
-        header.extend_from_slice(line.as_bytes());
-        let trimmed = line.trim_end();
+        header.extend_from_slice(&line);
+        let trimmed = line.trim_ascii_end();
         if trimmed.is_empty() {
             break;
         }
-        if let Some((name, value)) = trimmed.split_once(':')
+        if let Ok(text) = std::str::from_utf8(trimmed)
+            && let Some((name, value)) = text.split_once(':')
             && name.eq_ignore_ascii_case("content-length")
         {
             len = value.trim().parse::<usize>().ok();
@@ -305,6 +308,21 @@ mod tests {
         assert!(matches!(read_frame(&mut r, &mut buf), Some(Framing::Raw)));
         assert_eq!(buf, [head.as_bytes(), b"{}"].concat());
         assert!(read_frame(&mut r, &mut buf).is_none());
+    }
+
+    #[test]
+    fn invalid_utf8_in_a_header_is_forwarded_not_eof() {
+        let mut stream = b"Content-Length: 2\r\nX-Bin: \xff\r\n\r\n{}".to_vec();
+        stream.extend_from_slice(b"{\"ok\":1}\n");
+        let mut r = Cursor::new(stream);
+        let mut buf = Vec::new();
+        let first = read_frame(&mut r, &mut buf);
+        assert!(first.is_some(), "header bytes must not be dropped as EOF");
+        let second = read_frame(&mut r, &mut buf);
+        assert!(
+            second.is_some(),
+            "the following JSON frame must still be readable, got {buf:?}"
+        );
     }
 
     #[test]

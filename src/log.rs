@@ -1,64 +1,46 @@
 //! `[log]` — rtok's own log (plan T24.0, decision D26).
 //!
-//! One rotating text file: the thing an operator reads and `rtok logs` prints. The `logs` table
-//! keeps the same lines as rows for `rtok otel`; [`record`] is the one funnel both come out of.
+//! One rotating text file: the thing an operator reads and `rtok logs` prints. The bytes are
+//! written by [`rtok_log`]; the `logs` table keeps the same lines as rows for `rtok otel`.
+//! [`record`] is the one funnel both come out of.
 
-use crate::config::{Config, Log};
+use crate::config::Config;
 use crate::store::Store;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-/// Levels, most severe first. A line is written when it is at least as severe as `[log] level`.
-const LEVELS: [&str; 4] = ["error", "warn", "info", "debug"];
-
-/// An unknown level ranks most severe: a line whose level we cannot read is the last one worth
-/// dropping silently.
-fn rank(level: &str) -> usize {
-    LEVELS
-        .iter()
-        .position(|l| l.eq_ignore_ascii_case(level))
-        .unwrap_or(0)
-}
+use std::time::Duration;
 
 /// Whether `[log] level` lets this line through — checked before any I/O.
 pub fn enabled(cfg: &Config, level: &str) -> bool {
-    rank(level) <= rank(&cfg.log.level)
+    rtok_log::enabled(&cfg.log.level, level)
 }
 
 pub fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    rtok_log::now()
 }
 
 /// `2026-09-09 15:04:05`, UTC. The store keeps unix seconds everywhere; a log line is the one
 /// place in the binary that has to spell a date out, and std has no calendar.
 pub fn stamp(secs: u64) -> String {
-    let (days, rem) = (secs / 86_400, secs % 86_400);
-    // civil_from_days: an era is the 400-year cycle starting 0000-03-01.
-    let z = days as i64 + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = era * 400 + yoe + i64::from(m <= 2);
-    let (h, min, s) = (rem / 3600, rem % 3600 / 60, rem % 60);
-    format!("{y:04}-{m:02}-{d:02} {h:02}:{min:02}:{s:02}")
+    rtok_log::stamp(secs)
 }
 
 /// One line: `<ts> <level> <source>/<name>: <message>`. Newlines in the message would make one
 /// event look like several, so they become spaces — `rtok logs` counts lines.
 pub fn line(secs: u64, level: &str, source: &str, name: &str, message: &str) -> String {
-    let message = message.replace(['\n', '\r'], " ");
-    format!("{} {level} {source}/{name}: {message}", stamp(secs))
+    rtok_log::line(secs, level, source, name, message)
+}
+
+fn file_log(log: &crate::config::Log) -> rtok_log::FileLog<'_> {
+    rtok_log::FileLog {
+        path: &log.path,
+        max_bytes: log.max_bytes,
+        files: log.files,
+        level: &log.level,
+    }
 }
 
 /// The one path a log line takes (T24.1): [`append`] for the file, then the same line as a
@@ -131,86 +113,20 @@ fn facade_level(level: &str) -> log::Level {
 
 /// [`append`] past the level check, for a caller that already made it.
 fn append_line(cfg: &Config, level: &str, source: &str, name: &str, message: &str) {
-    let _ = write_line(&cfg.log, &line(now(), level, source, name, message));
+    let errors = rtok_log::error_path(&cfg.log.path);
+    rtok_log::append_split(
+        &file_log(&cfg.log),
+        Some(&errors),
+        level,
+        source,
+        name,
+        message,
+    );
 }
 
-fn write_line(log: &Log, text: &str) -> std::io::Result<()> {
-    if let Some(dir) = log.path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let incoming = text.len() as u64 + 1;
-    if over(log, incoming) {
-        rotate_if_over(log, incoming)?;
-    }
-    writeln!(open_append(&log.path)?, "{text}")
-}
-
-fn open_append(path: &Path) -> std::io::Result<fs::File> {
-    OpenOptions::new().create(true).append(true).open(path)
-}
-
-fn over(log: &Log, incoming: u64) -> bool {
-    let len = fs::metadata(&log.path).map(|m| m.len()).unwrap_or(0);
-    len > 0 && len + incoming > log.max_bytes
-}
-
-/// Hooks, `mcp`, `proxy` and `otel flush` append from separate processes. Two past the cap at
-/// once both rotated: the second shifted the first's fresh `.1` to `.2` and then failed to
-/// rename the live file the first had already moved, dropping its own line. The decision is
-/// made again under an exclusive lock, so the loser sees the new small file and leaves it
-/// alone. T83.1: the lock used to sit on `log.path` itself — the inode that gets renamed, no
-/// lock file needed, since Unix allows renaming a file you hold locked. Windows does not: with
-/// `live` still open and locked, `rotate()`'s rename of that same path failed every time with
-/// `Os { code: 5, PermissionDenied }`, `FILE_SHARE_DELETE` (already std's Windows default)
-/// notwithstanding. A dedicated lock file coordinates the same race without ever locking the
-/// file that gets renamed.
-fn rotate_if_over(log: &Log, incoming: u64) -> std::io::Result<()> {
-    let lock = open_rotate_lock(&log.path)?;
-    rtok_sys::lock_exclusive(&lock)?;
-    if over(log, incoming) {
-        rotate(&log.path, log.files)?;
-    }
-    Ok(()) // closing `lock` releases the lock
-}
-
-/// The lock file `rotate_if_over` holds across its decision and the rename — keyed by a hash
-/// of `path` so two `[log] path`s never collide, and kept in the OS temp dir rather than
-/// beside `path` so it is never one of the log's own siblings (a directory listing of the
-/// log's folder should show exactly the rotated files, not a lock).
-fn open_rotate_lock(path: &Path) -> std::io::Result<fs::File> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    path.hash(&mut hasher);
-    let lock_path =
-        std::env::temp_dir().join(format!("rtok-log-rotate-{:x}.lock", hasher.finish()));
-    OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(lock_path)
-}
-
-/// `rtok.log` → `.1`, `.1` → `.2`, and whatever falls past `[log] files` is deleted. Keeping
-/// everything is the disk-full bug D26 is about; nothing here is archived, because a log line is
-/// not a saving and D2's lossless rule does not reach it.
-fn rotate(path: &Path, files: u32) -> std::io::Result<()> {
-    if files == 0 {
-        return fs::write(path, b""); // no history wanted: start the file over
-    }
-    let _ = fs::remove_file(nth(path, files));
-    for i in (1..files).rev() {
-        let _ = fs::rename(nth(path, i), nth(path, i + 1));
-    }
-    fs::rename(path, nth(path, 1))
-}
-
-/// `rtok.log` → `rtok.log.<i>`; the suffix goes after the extension, so the current file keeps the
-/// name every editor and `tail` already knows.
+/// `rtok.log` → `rtok.log.<i>`. The suffix lives in `rtok-log`; tail still walks it.
 fn nth(path: &Path, i: u32) -> PathBuf {
-    let mut s = path.as_os_str().to_os_string();
-    s.push(format!(".{i}"));
-    PathBuf::from(s)
+    rtok_log::rotated_path(path, i)
 }
 
 /// The last `n` lines across `path`, then `.1`, `.2`, … newest first (plan T24.2). `n` is
@@ -612,26 +528,28 @@ mod tests {
         assert!(enabled(&cfg, "PANIC"), "an unreadable level is not dropped");
     }
 
-    /// The race's loser: its unlocked check saw a full file, but by the time it holds the lock
-    /// another process has rotated. It must not rotate again and push that `.1` to `.2`.
     #[test]
-    fn a_rotation_decided_on_a_stale_size_is_dropped_under_the_lock() {
-        let dir = tmp("rotate-race");
-        let cfg = cfg_at(&dir, 100, 3);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("rtok.log.1"), "history\n").unwrap();
-        fs::write(&cfg.log.path, "fresh\n").unwrap();
-        rotate_if_over(&cfg.log, 10).unwrap();
-        assert_eq!(
-            fs::read_to_string(dir.join("rtok.log.1")).unwrap(),
-            "history\n"
+    fn an_error_is_copied_to_errors_log_and_a_warning_is_not() {
+        let dir = tmp("split");
+        let cfg = cfg_at(&dir, 1 << 20, 2);
+        append(&cfg, "warn", "test", "split", "careful");
+        append(&cfg, "info", "test", "split", "note");
+        append(&cfg, "debug", "test", "split", "trace");
+        append(&cfg, "error", "test", "split", "broken");
+        let main = fs::read_to_string(&cfg.log.path).unwrap();
+        let errs = fs::read_to_string(rtok_log::error_path(&cfg.log.path)).unwrap();
+        assert!(
+            main.contains("careful") && main.contains("note") && main.contains("trace"),
+            "{main}"
         );
-        assert!(!dir.join("rtok.log.2").exists());
-        fs::write(&cfg.log.path, "x".repeat(99)).unwrap();
-        rotate_if_over(&cfg.log, 10).unwrap();
-        assert_eq!(
-            fs::read_to_string(dir.join("rtok.log.2")).unwrap(),
-            "history\n"
+        assert!(main.contains("broken"), "{main}");
+        assert!(
+            errs.contains("broken") && errs.lines().count() == 1,
+            "{errs}"
+        );
+        assert!(
+            !errs.contains("careful") && !errs.contains("note"),
+            "{errs}"
         );
         let _ = fs::remove_dir_all(&dir);
     }

@@ -809,7 +809,8 @@ pub fn run() -> Result<()> {
                     // The filter drop-ins are deployment state, not part of the
                     // file: read them through the same file as the user layer
                     // (`--config` wins when both are given). `layers::load`
-                    // creates nothing, so a read-only check stays read-only.
+                    // does not create the user config. A reported issue is
+                    // also appended to the log.
                     let layer = config_file.as_deref().or(Some(&path));
                     let cfg = crate::config::layers::load(&home, layer, None).unwrap_or_default();
                     errs.extend(validate::rules_issues(
@@ -821,6 +822,7 @@ pub fn run() -> Result<()> {
                     } else {
                         for e in &errs {
                             eprintln!("{e}");
+                            crate::log::append(&cfg, "error", "config", "validate", &e.to_string());
                         }
                         std::process::exit(1);
                     }
@@ -1061,8 +1063,10 @@ pub fn run() -> Result<()> {
             crate::tui::run(cfg)?;
         }
         Cmd::Dashboard { host, port } => {
-            eprintln!("warning: `rtok dashboard` is deprecated; use `rtok web`");
+            let msg = "`rtok dashboard` is deprecated; use `rtok web`";
+            eprintln!("warning: {msg}");
             let cfg = Config::load_with(config_file.as_deref(), layers::web_flags(host, port))?;
+            crate::log::append(&cfg, "warn", "cli", "dashboard", msg);
             crate::web::serve_blocking(cfg)?;
         }
         Cmd::Agents { action } => match action {
@@ -1163,10 +1167,13 @@ pub fn run() -> Result<()> {
             }
         },
         Cmd::Setup(args) => {
-            eprintln!(
-                "warning: `rtok setup {0}` is deprecated; use `rtok agents install {0}`",
+            let msg = format!(
+                "`rtok setup {0}` is deprecated; use `rtok agents install {0}`",
                 args.host
             );
+            eprintln!("warning: {msg}");
+            let cfg = Config::load_lenient(config_file.as_deref(), None);
+            crate::log::append(&cfg, "warn", "cli", "setup", &msg);
             setup_host(config_file.as_deref(), args)?;
         }
         #[cfg(feature = "cmd")]
@@ -1533,7 +1540,12 @@ pub fn run() -> Result<()> {
             }
         }
         #[cfg(not(feature = "cmd"))]
-        Cmd::Run { .. } => eprintln!("rtok run: not implemented"),
+        Cmd::Run { .. } => {
+            let msg = "rtok run: not implemented (built without the cmd feature)";
+            eprintln!("{msg}");
+            let cfg = Config::load_lenient(config_file.as_deref(), None);
+            crate::log::append(&cfg, "error", "cli", "run", msg);
+        }
         #[cfg(not(feature = "cmd"))]
         Cmd::Filter { .. } => {
             let mut buf = String::new();

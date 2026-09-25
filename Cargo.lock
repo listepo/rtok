@@ -3672,6 +3672,7 @@ dependencies = [
  "rstest",
  "rtok-agent-sdk",
  "rtok-hook",
+ "rtok-log",
  "rtok-plugin-sdk",
  "rtok-sys",
  "rustls",
@@ -3717,6 +3718,10 @@ dependencies = [
 
 [[package]]
 name = "rtok-hook"
+version = "0.0.1"
+
+[[package]]
+name = "rtok-log"
 version = "0.0.1"
 
 [[package]]

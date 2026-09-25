@@ -5,6 +5,8 @@ mod migrations;
 pub mod models;
 pub mod otel;
 pub mod schema;
+// Statements the typed DSL cannot express (window functions). T163.3 and T163.9 add to this module.
+mod sql_ext;
 // T163: shared Diesel extension for SQL the DSL cannot express (recursive CTEs, FTS5).
 // Symbol index (graph plugin) — SQLite only (D18 loser deleted; P39: Ladybug/Grafeo removed).
 mod symbols;
@@ -15,8 +17,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use anyhow::{Context, Result};
+#[cfg(test)]
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
+#[cfg(test)]
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Bool, Double, Integer, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
@@ -34,39 +38,7 @@ use schema::{
     read_cache, sessions, tokens, usage,
 };
 
-/// `COALESCE(x, y)` for an upsert `DO UPDATE SET` (T163.5): not one of Diesel's built-in
-/// functions, so declared here rather than dropping to raw SQL.
-#[diesel::declare_sql_function]
-extern "SQL" {
-    fn coalesce<T: diesel::sql_types::SqlType + diesel::sql_types::SingleValue>(
-        x: diesel::sql_types::Nullable<T>,
-        y: diesel::sql_types::Nullable<T>,
-    ) -> diesel::sql_types::Nullable<T>;
-}
-
-// SQLite `length()`: character count of a TEXT value (not byte count) — matches what the
-// raw SQL it replaces computed, so `memory_note_aggs`'s `body_bytes` stays unchanged.
-diesel::define_sql_function!(fn length(x: Text) -> BigInt);
-// `SUM` declared to return `Nullable<BigInt>`: Diesel's generic `sum()` widens every
-// integer sum to `Nullable<Numeric>` (ANSI's overflow-safe rule, via `Foldable`), which
-// this crate has no `bigdecimal` support to deserialize. SQLite has no separate NUMERIC
-// storage class — an integer sum is still an integer — so a `BigInt` result is exact.
-diesel::define_sql_function! {
-    #[aggregate]
-    #[sql_name = "SUM"]
-    fn sum_bigint(x: BigInt) -> Nullable<BigInt>;
-}
-
-/// `substr(text, start, length)` for a byte-prefix compare (T163.6): `read_cache.path` can
-/// itself hold `%`/`_`, so `LIKE` cannot express "starts with" — not one of Diesel's built-ins.
-#[diesel::declare_sql_function]
-extern "SQL" {
-    fn substr(
-        x: diesel::sql_types::Text,
-        start: diesel::sql_types::Integer,
-        length: diesel::sql_types::Integer,
-    ) -> diesel::sql_types::Text;
-}
+pub(crate) use sql_ext::{coalesce, length, substr, sum_bigint, unixepoch};
 
 /// Pause between `open` attempts while another connection holds the lock.
 const OPEN_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(100);
@@ -102,7 +74,9 @@ pub fn is_locked(e: &anyhow::Error) -> bool {
 }
 
 fn set_busy(conn: &mut SqliteConnection, busy: std::time::Duration) -> Result<()> {
-    Ok(conn.batch_execute(&format!("PRAGMA busy_timeout = {};", busy.as_millis()))?)
+    // PRAGMA rejects a bound parameter; `sql_ext` writes the digits.
+    sql_ext::busy_timeout(conn, busy.as_millis())?;
+    Ok(())
 }
 
 /// One row of [`Store::sessions_by_cwd`].
@@ -195,7 +169,8 @@ impl Store {
         // "database is locked" instead of waiting the few ms the first one holds the lock. First,
         // so switching to WAL waits too; `wait.busy` bounds each statement's wait.
         set_busy(&mut conn, wait.busy)?;
-        conn.batch_execute("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+        sql_ext::pragma_journal_wal(&mut conn)?;
+        sql_ext::pragma_synchronous_normal(&mut conn)?;
         Self::init(conn, wait)
     }
 
@@ -207,7 +182,7 @@ impl Store {
     fn init(mut conn: SqliteConnection, wait: LockWait) -> Result<Self> {
         #[cfg(test)]
         OPEN_COUNT.with(|n| n.set(n.get() + 1));
-        conn.batch_execute("PRAGMA foreign_keys = ON;")?;
+        sql_ext::pragma_foreign_keys_on(&mut conn)?;
         let store = Self {
             conn: Mutex::new(conn),
             wait,
@@ -1067,23 +1042,13 @@ impl Store {
         };
         let updated = existed_q.first::<i32>(&mut *conn).optional()?.is_some();
 
-        let id = sql_query(
-            "INSERT INTO notes (project, kind, title, body) VALUES (?, ?, ?, ?)
-             ON CONFLICT (COALESCE(project, ''), kind, title) DO UPDATE SET
-                 body = excluded.body,
-                 ts = unixepoch(),
-                 -- An explicit re-save revives the topic: a retired tombstone does not
-                 -- outlive the human/agent writing the note again (T69.1).
-                 retired = NULL,
-                 superseded_by = NULL
-             RETURNING id",
-        )
-        .bind::<Nullable<Text>, _>(project)
-        .bind::<Text, _>(kind)
-        .bind::<Text, _>(title)
-        .bind::<Text, _>(body)
-        .get_result::<UpsertedId>(&mut *conn)?
-        .id;
+        let id = sql_ext::UpsertNote {
+            project: project.map(str::to_string),
+            kind: kind.to_string(),
+            title: title.to_string(),
+            body: body.to_string(),
+        }
+        .get_result(&mut *conn)?;
         Ok((id, updated))
     }
 
@@ -1228,7 +1193,7 @@ impl Store {
         let mut conn = self.lock()?;
         let n = diesel::update(notes::table.find(id))
             .set((
-                notes::retired.eq(diesel::dsl::sql::<Nullable<BigInt>>("unixepoch()")),
+                notes::retired.eq(unixepoch()),
                 notes::superseded_by.eq(superseded_by),
             ))
             .execute(&mut *conn)?;
@@ -1304,22 +1269,13 @@ impl Store {
             return Ok(Vec::new());
         };
         let mut conn = self.lock()?;
-        let hits = sql_query(
-            "SELECT n.id AS id, n.title AS title, substr(n.body, 1, 120) AS snippet
-             FROM notes_fts f JOIN notes n ON n.id = f.rowid
-             WHERE notes_fts MATCH ? AND n.retired IS NULL
-             ORDER BY bm25(notes_fts)
-             LIMIT ?",
-        )
-        .bind::<Text, _>(q)
-        .bind::<Integer, _>(i32::try_from(limit).unwrap_or(5))
-        .load::<NoteHitRow>(&mut *conn)?
+        let hits = sql_ext::SearchNotes {
+            query: q,
+            limit: i32::try_from(limit).unwrap_or(5),
+        }
+        .load::<(i32, String, String)>(&mut *conn)?
         .into_iter()
-        .map(|r| NoteHit {
-            id: r.id,
-            title: r.title,
-            snippet: r.snippet,
-        })
+        .map(|(id, title, snippet)| NoteHit { id, title, snippet })
         .collect::<Vec<_>>();
         Ok(hits)
     }
@@ -1801,29 +1757,10 @@ impl Store {
     /// Overview used to load every usage row, one query per session, on each 2 s tick.
     pub fn usage_ctt(&self, turns: i64) -> Result<(i64, Vec<i64>)> {
         let mut conn = self.lock()?;
-        let ctt: Vec<Count> = sql_query(
-            "SELECT COALESCE(SUM(ctx * (total - rn)), 0) AS n FROM (
-                SELECT input + cache_create + cache_read AS ctx,
-                       COUNT(*) OVER (PARTITION BY session) AS total,
-                       ROW_NUMBER() OVER (PARTITION BY session ORDER BY ts, id) AS rn
-                FROM usage)",
-        )
-        .load(&mut *conn)?;
-        let mut tail: Vec<i64> = sql_query(
-            "SELECT u.input + u.cache_create + u.cache_read AS n
-             FROM usage u
-             JOIN (SELECT session, MIN(ts) AS first_ts, MIN(id) AS first_id
-                   FROM usage GROUP BY session) f ON f.session = u.session
-             ORDER BY f.first_ts DESC, f.first_id DESC, u.ts DESC, u.id DESC
-             LIMIT ?",
-        )
-        .bind::<BigInt, _>(turns)
-        .load::<Count>(&mut *conn)?
-        .into_iter()
-        .map(|c| c.n)
-        .collect();
+        let ctt: i64 = sql_ext::UsageCtt.get_result(&mut *conn)?;
+        let mut tail: Vec<i64> = sql_ext::UsageCttTail { turns }.load(&mut *conn)?;
         tail.reverse();
-        Ok((ctt.first().map_or(0, |c| c.n), tail))
+        Ok((ctt, tail))
     }
 
     pub fn usage_by_api(&self) -> Result<Vec<ApiUsage>> {
@@ -1915,56 +1852,10 @@ impl Store {
     /// page does not load every session to show a screenful. A negative `limit` is no cap.
     pub fn recent_session_totals(&self, since: i64, limit: i64) -> Result<Vec<SessionTotals>> {
         let mut conn = self.lock()?;
-        // tot: the four sums per session. last_u: the newest `usage` row's api and
-        // model — what the session is spending on now. act: last activity as MAX(ts)
-        // over both tables (no `[agents] idle_secs`; T25.0's clause was not built).
-        // prov: the newest provider-bearing `calls` row's `providers.slug`.
-        sql_query(
-            "WITH tot AS (
-                 SELECT session AS sid, SUM(input) AS input, SUM(cache_create) AS cache_create,
-                        SUM(cache_read) AS cache_read, SUM(output) AS output
-                 FROM usage GROUP BY session
-             ),
-             last_u AS (
-                 SELECT session AS sid, api, model FROM usage
-                 WHERE id IN (SELECT MAX(id) FROM usage GROUP BY session)
-             ),
-             act AS (
-                 SELECT sid, MAX(ts) AS ts FROM (
-                     SELECT session AS sid, ts FROM usage
-                     UNION ALL
-                     SELECT session_id AS sid, ts FROM calls
-                 ) GROUP BY sid
-             ),
-             prov AS (
-                 SELECT c.session_id AS sid, p.slug AS provider
-                 FROM calls c JOIN providers p ON p.id = c.provider_id
-                 WHERE c.id IN (SELECT MAX(id) FROM calls
-                                WHERE provider_id IS NOT NULL GROUP BY session_id)
-             )
-             SELECT s.id AS id, h.slug AS host, s.project AS project,
-                    prov.provider AS provider, last_u.api AS api, last_u.model AS model,
-                    COALESCE(tot.input, 0) AS input,
-                    COALESCE(tot.cache_create, 0) AS cache_create,
-                    COALESCE(tot.cache_read, 0) AS cache_read,
-                    COALESCE(tot.output, 0) AS output,
-                    s.started_at AS started_at,
-                    COALESCE(act.ts, s.started_at) AS last_activity,
-                    s.ended_at AS ended_at
-             FROM sessions s
-             LEFT JOIN hosts h ON h.id = s.host_id
-             LEFT JOIN tot ON tot.sid = s.id
-             LEFT JOIN last_u ON last_u.sid = s.id
-             LEFT JOIN act ON act.sid = s.id
-             LEFT JOIN prov ON prov.sid = s.id
-             WHERE s.started_at >= ?
-             ORDER BY s.started_at DESC, s.id
-             LIMIT ?",
-        )
-        .bind::<BigInt, _>(since)
-        .bind::<BigInt, _>(limit)
-        .load::<SessionTotals>(&mut *conn)
-        .map_err(Into::into)
+        // tot / last_u / act / prov: four CTEs in `sql_ext::RecentSessionTotals`.
+        sql_ext::RecentSessionTotals { since, limit }
+            .load(&mut *conn)
+            .map_err(Into::into)
     }
 
     /// The Calls page's one read (T15.5, D27): the newest `limit` `calls` rows, newest
@@ -1973,25 +1864,9 @@ impl Store {
     /// otel span). One statement, so no renderer can re-derive a field differently.
     pub fn recent_calls(&self, limit: i64) -> Result<Vec<CallRow>> {
         let mut conn = self.lock()?;
-        sql_query(
-            "SELECT c.id AS id, c.ts AS ts, c.session_id AS session, c.surface AS surface,
-                    c.kind AS kind, c.plugin AS plugin, c.name AS name,
-                    c.parent_id AS parent_id, c.ms AS ms, c.ok AS ok, c.error AS error,
-                    h.slug AS host, p.slug AS provider, m.slug AS model,
-                    u.api AS api, u.input AS input, u.cache_create AS cache_create,
-                    u.cache_read AS cache_read, u.output AS output
-             FROM calls c
-             LEFT JOIN hosts h ON h.id = c.host_id
-             LEFT JOIN providers p ON p.id = c.provider_id
-             LEFT JOIN models m ON m.id = c.model_id
-             LEFT JOIN usage u ON u.call_id = c.id
-                  AND u.id = (SELECT MAX(id) FROM usage WHERE call_id = c.id)
-             ORDER BY c.id DESC
-             LIMIT ?",
-        )
-        .bind::<BigInt, _>(limit)
-        .load::<CallRow>(&mut *conn)
-        .map_err(Into::into)
+        sql_ext::RecentCalls { limit }
+            .load(&mut *conn)
+            .map_err(Into::into)
     }
 
     /// `models.slug` recorded on a call — the proxy Check asserts it equals the request `model`.
@@ -2073,7 +1948,6 @@ impl Store {
         }
         let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
         let cutoff = now.saturating_sub(days.saturating_mul(86_400));
-        let old = "(SELECT id FROM calls WHERE ts < ?1)";
         let mut conn = self.lock()?;
         // T75: every surface opens this one file, and a purge starting while another
         // process held the write lock came back "database is locked" — the deferred
@@ -2082,33 +1956,14 @@ impl Store {
         // session start. Same contract as `migrate`: take the writer lock up front
         // under the maintenance window, and restore the hook's 1 s bound after,
         // whatever happened inside.
-        conn.batch_execute("PRAGMA busy_timeout = 30000;")?;
+        set_busy(&mut conn, std::time::Duration::from_secs(30))?;
         let purged = conn.exclusive_transaction::<_, anyhow::Error, _>(|c| {
             let doomed = doomed_archives(c, cutoff)?;
-            for sql in [
-                format!("DELETE FROM logs WHERE ts < ?1 OR call_id IN {old}"),
-                format!("DELETE FROM tokens WHERE ts < ?1 OR call_id IN {old}"),
-                format!("DELETE FROM call_io WHERE call_id IN {old}"),
-                format!("UPDATE usage SET call_id = NULL WHERE call_id IN {old}"),
-                format!("UPDATE measurements SET call_id = NULL WHERE call_id IN {old}"),
-                format!("UPDATE calls SET parent_id = NULL WHERE parent_id IN {old}"),
-            ] {
-                sql_query(sql).bind::<BigInt, _>(cutoff).execute(c)?;
-            }
+            sql_ext::purge_related(c, cutoff)?;
             for arch in &doomed {
-                sql_query("DELETE FROM archive_decisions WHERE archive_id = ?1")
-                    .bind::<Text, _>(&arch.id)
-                    .execute(c)?;
-                sql_query("UPDATE read_cache SET archive_id = NULL WHERE archive_id = ?1")
-                    .bind::<Text, _>(&arch.id)
-                    .execute(c)?;
-                sql_query("DELETE FROM archive WHERE id = ?1")
-                    .bind::<Text, _>(&arch.id)
-                    .execute(c)?;
+                sql_ext::purge_archive(c, &arch.id)?;
             }
-            let n = sql_query("DELETE FROM calls WHERE ts < ?1")
-                .bind::<BigInt, _>(cutoff)
-                .execute(c)?;
+            let n = sql_ext::delete_old_calls(c, cutoff)?;
             Ok((
                 n,
                 doomed
@@ -2133,7 +1988,8 @@ impl Store {
 
     #[cfg(test)]
     pub fn set_query_only(&self) -> Result<()> {
-        self.lock()?.batch_execute("PRAGMA query_only = ON;")?;
+        let mut conn = self.lock()?;
+        sql_ext::pragma_query_only_on(&mut conn)?;
         Ok(())
     }
 }
@@ -2150,30 +2006,11 @@ struct ArchPath {
 /// decision or read-cache row — shared by [`Store::purge_calls_older_than`] (which deletes them)
 /// and [`Store::archives_pending_retention`] (which only previews the same set, T182).
 fn doomed_archives(c: &mut SqliteConnection, cutoff: i64) -> Result<Vec<ArchPath>> {
-    let old = "(SELECT id FROM calls WHERE ts < ?1)";
-    Ok(sql_query(format!(
-        "SELECT DISTINCT a.id, a.path FROM archive a
-             WHERE a.id IN (
-               SELECT request_archive FROM call_io
-               WHERE call_id IN {old} AND request_archive IS NOT NULL
-               UNION
-               SELECT response_archive FROM call_io
-               WHERE call_id IN {old} AND response_archive IS NOT NULL
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM call_io c
-               WHERE c.call_id NOT IN {old}
-               AND (c.request_archive = a.id OR c.response_archive = a.id)
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM archive_decisions d WHERE d.archive_id = a.id
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM read_cache r WHERE r.archive_id = a.id
-             )"
-    ))
-    .bind::<BigInt, _>(cutoff)
-    .load(c)?)
+    let rows: Vec<(String, String)> = sql_ext::DoomedArchives { cutoff }.load(c)?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, path)| ArchPath { id, path })
+        .collect())
 }
 
 /// `(inline json, archive sha, byte count, content sha, archive file path, file created by
@@ -2305,29 +2142,11 @@ fn insert_measurement_conn(
     Ok(())
 }
 
+#[cfg(test)]
 #[derive(QueryableByName)]
 struct Count {
     #[diesel(sql_type = BigInt)]
     n: i64,
-}
-
-/// [`Store::upsert_note`]'s `RETURNING id` row.
-#[derive(QueryableByName)]
-struct UpsertedId {
-    #[diesel(sql_type = Integer)]
-    id: i32,
-}
-
-/// FTS5 search hit (T6.1). The shape is the published contract's (D25); this is only the
-/// row diesel loads it into.
-#[derive(Debug, QueryableByName)]
-struct NoteHitRow {
-    #[diesel(sql_type = Integer)]
-    id: i32,
-    #[diesel(sql_type = Text)]
-    title: String,
-    #[diesel(sql_type = Text)]
-    snippet: String,
 }
 
 /// One `notes` row's lifecycle-relevant fields (T69.1): revise needs `kind`/`project`,
@@ -2425,7 +2244,7 @@ pub struct UsageRow {
 /// session sums of `usage`, `last_activity` is the MAX ts over the session's `usage`
 /// and `calls` rows (falling back to `started_at` when there are none), and `ended_at`
 /// `None` means live.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, QueryableByName)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Queryable, QueryableByName)]
 pub struct SessionTotals {
     #[diesel(sql_type = Text)]
     pub id: String,
@@ -2460,7 +2279,7 @@ pub struct SessionTotals {
 /// that recorded usage — the newest `usage` row linked to it. One query's output, so
 /// no renderer can re-derive a field differently (D27); `api` `None` means no usage
 /// row is linked (a hook, MCP call or plugin run carries none).
-#[derive(Debug, Clone, PartialEq, Serialize, QueryableByName)]
+#[derive(Debug, Clone, PartialEq, Serialize, Queryable, QueryableByName)]
 pub struct CallRow {
     #[diesel(sql_type = Integer)]
     pub id: i32,
@@ -2510,18 +2329,6 @@ mod tests {
     use crate::config::Config;
     use schema::notes;
 
-    #[derive(QueryableByName)]
-    struct Title {
-        #[diesel(sql_type = Text)]
-        title: String,
-    }
-
-    #[derive(QueryableByName)]
-    struct Journal {
-        #[diesel(sql_type = Text)]
-        journal_mode: String,
-    }
-
     /// FTS5 reads `*`, `(`, `-` and bare operators as syntax, so `mem_search "read("` used to
     /// raise a SQL error instead of returning no hits. User text is quoted now.
     #[test]
@@ -2550,14 +2357,14 @@ mod tests {
             0,
             "init already applied everything"
         );
+        // Core tables from the embedded migrations — typed counts, not sqlite_master.
         let mut conn = store.lock().unwrap();
-        let rows: Vec<Count> = sql_query(
-            "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN
-             ('events','measurements','archive','read_cache','notes','usage')",
-        )
-        .load(&mut *conn)
-        .unwrap();
-        assert_eq!(rows[0].n, 6);
+        let _: i64 = schema::events::table.count().get_result(&mut *conn).unwrap();
+        let _: i64 = measurements::table.count().get_result(&mut *conn).unwrap();
+        let _: i64 = archive::table.count().get_result(&mut *conn).unwrap();
+        let _: i64 = read_cache::table.count().get_result(&mut *conn).unwrap();
+        let _: i64 = notes::table.count().get_result(&mut *conn).unwrap();
+        let _: i64 = usage::table.count().get_result(&mut *conn).unwrap();
     }
 
     /// A database that already recorded `NNNN.sql` in `schema_migrations` must not run those
@@ -2824,13 +2631,9 @@ mod tests {
                 ))
                 .execute(&mut *conn)
                 .unwrap();
-            let rows: Vec<Title> = sql_query(
-                "SELECT n.title FROM notes_fts f JOIN notes n ON n.id = f.rowid WHERE notes_fts MATCH 'journal'",
-            )
-            .load(&mut *conn)
-            .unwrap();
-            assert_eq!(rows[0].title, "WAL mode");
         }
+        let hits = store.search_notes("journal", 5).unwrap();
+        assert_eq!(hits[0].title, "WAL mode");
     }
 
     #[test]
@@ -2840,8 +2643,9 @@ mod tests {
         let store = Store::open(&dir.join("rtok.db")).unwrap();
         let mode = {
             let mut conn = store.lock().unwrap();
-            let rows: Vec<Journal> = sql_query("PRAGMA journal_mode").load(&mut *conn).unwrap();
-            rows[0].journal_mode.clone()
+            sql_ext::JournalMode
+                .get_result::<String>(&mut *conn)
+                .unwrap()
         };
         assert_eq!(mode, "wal");
         drop(store);
@@ -3433,29 +3237,41 @@ mod tests {
         store
             .insert_log("info", "proxy", "x", "m", Some("s"), Some(old), None)
             .unwrap();
-        let n = |sql: &str| -> i64 {
-            let mut conn = store.lock().unwrap();
-            sql_query(sql).load::<Count>(&mut *conn).unwrap()[0].n
-        };
-        {
-            let mut conn = store.lock().unwrap();
-            sql_query("UPDATE calls SET ts = 0 WHERE id = ?")
-                .bind::<Integer, _>(old)
-                .execute(&mut *conn)
-                .unwrap();
-        }
+        store.set_call_ts(old, 0).unwrap();
 
         assert_eq!(store.purge_calls_older_than(1).unwrap(), 1);
-        let ids = |sql: &str| n(&format!("SELECT count(*) AS n FROM calls WHERE {sql}"));
-        assert_eq!(ids(&format!("id IN ({child}, {fresh})")), 2);
-        assert_eq!(ids("parent_id IS NOT NULL"), 0, "the child is detached");
-        for t in ["usage", "measurements"] {
-            let sql = format!("SELECT count(*) AS n FROM {t} WHERE call_id IS NULL");
-            assert_eq!(n(&sql), 1, "{t} row kept, detached");
-        }
-        for t in ["tokens", "call_io", "logs"] {
-            assert_eq!(n(&format!("SELECT count(*) AS n FROM {t}")), 0, "{t}");
-        }
+        let mut conn = store.lock().unwrap();
+        let kept: i64 = calls::table
+            .filter(calls::id.eq_any([child, fresh]))
+            .count()
+            .get_result(&mut *conn)
+            .unwrap();
+        assert_eq!(kept, 2);
+        let attached: i64 = calls::table
+            .filter(calls::parent_id.is_not_null())
+            .count()
+            .get_result(&mut *conn)
+            .unwrap();
+        assert_eq!(attached, 0, "the child is detached");
+        let usage_detached: i64 = usage::table
+            .filter(usage::call_id.is_null())
+            .count()
+            .get_result(&mut *conn)
+            .unwrap();
+        let meas_detached: i64 = measurements::table
+            .filter(measurements::call_id.is_null())
+            .count()
+            .get_result(&mut *conn)
+            .unwrap();
+        assert_eq!(usage_detached, 1, "usage row kept, detached");
+        assert_eq!(meas_detached, 1, "measurements row kept, detached");
+        let token_n: i64 = tokens::table.count().get_result(&mut *conn).unwrap();
+        let io_n: i64 = call_io::table.count().get_result(&mut *conn).unwrap();
+        let log_n: i64 = logs::table.count().get_result(&mut *conn).unwrap();
+        drop(conn);
+        assert_eq!(token_n, 0, "tokens");
+        assert_eq!(io_n, 0, "call_io");
+        assert_eq!(log_n, 0, "logs");
         assert_eq!(
             store.purge_calls_older_than(0).unwrap(),
             0,
@@ -4138,8 +3954,7 @@ mod tests {
     // `table!` models neither) defaults/indexes/triggers via a golden `sqlite_master` dump.
     /// A migrated table with no `table!` macro, and why.
     const RAW_SQL_TABLES: &[&str] = &[
-        "note_embeddings",   // 0012: brute-force cosine KNN beside FTS5, sql_query only
-        "notes_fts",         // 0001: FTS5 virtual table, sql_query only (T13.1)
+        "notes_fts",         // 0001: FTS5 virtual table, MATCH/bm25 in sql_ext (T163.3)
         "notes_fts_data",    // FTS5 shadow table for notes_fts
         "notes_fts_idx",     // FTS5 shadow table for notes_fts
         "notes_fts_docsize", // FTS5 shadow table for notes_fts

@@ -7,8 +7,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T87 | in progress | P1 | 2 | 70% | Claude Code / claude-fable-5-1 |
-| T88 | todo | P1 | 2 | 0% | |
-| T89 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
 | T124 | todo | P3 | 2 | 0% | |
 | T131 | todo | P2 | 3 | 70% | |
@@ -17,11 +15,9 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T156 | todo | P3 | 3 | 50% | |
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
-| T163.2 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T163.3 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
-| T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
-| T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
-| T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
+| T163.4 | in progress | P2 | 4 | 90% | Cursor / grok 4.7 |
+| T163.8 | in progress | P2 | 3 | 70% | Cursor / grok 4.7 |
+| T178 | in progress | P1 | 4 | 95% | Cursor / grok 4.7 |
 | T262.3 | todo | P2 | 2 | 0% | |
 | T261 | in progress | P2 | 3 | 80% | Claude Code / claude-opus-5-5 |
 
@@ -40,32 +36,6 @@ Progress: steps 1–3 are written and their tests pass (`devin_maps_tool_names_r
 Check: the unit tests above pass; `rtok hook PreToolUse --host devin` on the captured `exec` payload returns the same decision as `rtok hook PreToolUse` on the equivalent Claude `Bash` payload; an unknown tool returns `{}`; `just check`.
 
 Extra tests (creator request 2026-09-21): garbage and empty stdin with `--host devin` print `{}` and exit 0; `mcp__<server>__<tool>` names pass through unmapped; PostToolUse with `{success: false, output: "", error: "…"}` does not panic and lifts no stdout; `cwd` from stdin wins over `DEVIN_PROJECT_DIR`; an integration test that `rtok hook PostCompaction --host devin` reaches the PostCompact plugins.
-
-### T88. Devin plugin tree (`plugins/devin/`)
-
-After T87. Devin's plugin format is a directory: manifest `.devin-plugin/plugin.json` (only `name` is required), `hooks.json` and `.mcp.json` at the plugin root, optional `skills/<name>/SKILL.md`. One tree loads in the CLI and in Devin Desktop (hooks load "in local Devin agents only — the CLI and Devin Desktop"), so it is D21's one unit for both surfaces. Local install is `devin plugins install --local <dir>`. Evidence: https://docs.devin.ai/cli/extensibility/plugins/overview.
-
-Plan:
-1. `plugins/devin/.devin-plugin/plugin.json` — `name: "rtok"`, version, description, homepage; `plugins/devin/.mcp.json` — `mcpServers.rtok` → `rtok mcp` directly (I-37: launcher scripts never run; the ketch hint lives in the README).
-2. `plugins/devin/hooks.json` — `PreToolUse` (`^exec$`, `^read$`), `PostToolUse` (all), `UserPromptSubmit`, `SessionStart`, `PostCompaction`, `SessionEnd`, each `rtok hook <event> --host devin`, timeout 5.
-3. `plugins/devin/README.md` — install by hand, files, `## Docs` (plugins, hooks, MCP, skills, Desktop pages).
-4. `agents::devin::tests::plugin_manifest_matches_the_installer` lands with T89; here a `tests/` check that the three JSON files parse, every hook command passes `is_ours`, and `mcpServers` is exactly `rtok`.
-Verify first: whether a plugin's `hooks.json` puts event names at the top level (like `.devin/hooks.v1.json`) or under a `"hooks"` key — the overview page does not show the file.
-
-Check: `host_docs` and the new manifest test green; `just check`.
-
-### T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton
-
-After T88. New host `devin` in `src/agents/devin/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()`. Variants: CLI (`devin` on PATH) and Desktop (`Devin.app`), same files. Without the plugin, install edits the user files directly: the `"hooks"` key of `~/.config/devin/config.json` (`%APPDATA%\devin\` on Windows) and `mcpServers.rtok` in `~/.config/devin/mcp_config.json`. The plugin offer prints the exact `devin plugins install --local <resolved plugins/devin path>` line — rtok does not write Devin's plugin store, its on-disk location is undocumented (the Kimi rule from T86). D21 singleton: while the plugin is installed, setup strips rtok's own hooks and `mcpServers.rtok` from the user files instead of adding them. The existing `windsurf` host stays untouched for machines that still run Windsurf; retiring or aliasing it is not part of this task.
-
-Plan:
-1. `src/agents/devin/mod.rs` — `Agent` impl on the Kimi/Cursor pattern, reusing `edit_json` and the Claude `ENTRIES` mapped to Devin event and matcher names (one source of truth); `[agents.devin]` paths in `config/default.toml` / `src/config/mod.rs` / `docs/config.md`.
-2. Unit tests: install writes the hooks and the MCP entry and is idempotent; remove takes back exactly ours; foreign hooks in `config.json` survive both (this machine's file has other tools' hooks under every event); the offer names `plugins/devin` and `devin plugins install --local`; the plugin manifest equals the installer's entries.
-3. `docs/agents.md` via `RTOK_BLESS=1` on `tests/agents_doc.rs`; `tests/trycmd/agents-list*.toml` re-blessed; `tests/agents_real_config.rs` case for the real `~/.config/devin/config.json`.
-Verify first: how an installed plugin can be detected (a documented path or a `devin plugins list` output) — if neither is stable, `installed()` reports `plugin` only from a marker rtok can honestly read, otherwise says "unknown" rather than guessing.
-Over the ≤200 LOC / ≤3 files limit as written — split into T89.1 (host + hooks/MCP install) and T89.2 (plugin offer + singleton + docs) when claiming.
-
-Check: the unit tests above; `rtok agents list` shows `devin`; `agents_doc`, `host_docs`, `config_coverage` green; `just check`.
 
 ### T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
 
@@ -132,21 +102,15 @@ Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing s
 
 **Split of `mod.rs` (2026-09-23).** Six slices by area, each ≤ 200 LOC: T163.3 PRAGMA, `unixepoch()` and FTS5 in the shared extension module; T163.4 migrations; T163.5 sessions, calls, measurements and `kv`; T163.6 archive, `call_io` and `read_cache`; T163.7 usage and stats aggregates; T163.8 retention and the last test helpers, which also runs this card's full Check and closes T163. Raw SQL in `mod.rs` tests moves with the slice that owns the table it touches. Execution: T163.3 waits for T163.1's `sql_ext.rs` to land on `main` (one module, never a second); T163.4–T163.7 do not depend on each other; T163.8 goes last. T163.9 (window and CTE queries T163.7 could not express) was split off T163.7 on 2026-09-23 and also waits for `sql_ext.rs`.
 
-### T163.2. `src/store/otel.rs` and `src/store/embed.rs` without raw SQL
+### T163.4. Migrations through `diesel_migrations`
 
-Second slice of T163: the 6 sites in `otel.rs` and 4 in `embed.rs` move to the Diesel DSL over `schema.rs` (aggregates via `diesel::dsl::{min, count}` and `group_by`). Anything the DSL cannot express goes through the shared extension module from T163.1 — whichever slice lands first creates it.
+`migrate()` (`schema_migrations` bookkeeping plus `batch_execute` of each file) moves to `diesel_migrations` (approved 2026-09-23). Existing databases must not re-run anything: the names already in `schema_migrations` map onto Diesel's version table in a one-time, idempotent bridge, and a DB that was never migrated still gets every file once. Tests move with it: `migration_is_idempotent`, `concurrent_opens_of_a_fresh_store_all_migrate`, `migration_0015_adds_lifecycle_columns_to_a_previous_schema_db`, `schema_0002_seeds_hosts_and_rejects_bad_fk`, `migrations_list_matches_the_directory`, `schema_rs_matches_the_migrated_tables`. The `.sql` files stay raw SQL (the rulebook allows it in migrations).
 
-Execution plan: (1) map each site to `schema.rs`; (2) rewrite, keeping signatures and result order; (3) run the otel, embed and store tests unchanged; (4) move this card to `done.md`.
+Execution plan: (1) choose between Diesel's `<version>/up.sql` layout and a `MigrationSource` over the flat `migrations/NNNN.sql` files — the layout move alone touches every file, so if chosen it lands as its own mechanical PR; (2) write the bridge and a test that opens a DB migrated by the current code and sees no re-run; (3) toolchain row for `diesel_migrations`; (4) `just check`.
 
-Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/otel.rs src/store/embed.rs` finds nothing; tests unchanged and green; `just check`.
+Check: `migrate()` and its tests hold no `sql_query|batch_execute`; a pre-T163.4 database opens, keeps its data and applies only newer migrations; fresh and concurrent opens green; `just check`.
 
-### T163.3. PRAGMA, `unixepoch()` and FTS5 through the shared extension module
-
-`mod.rs` sites the typed DSL cannot express: the PRAGMAs in `set_busy`, `connect`, `init`, `set_query_only` and `purge_calls_older_than`; `sql::<>("unixepoch()")` in `upsert_note` and `retire_note`; FTS5 `MATCH`/`bm25()` in `search_notes`; tests `open_on_disk_uses_wal`, `fts5_match_finds_inserted_note`. They become typed helpers in T163.1's `src/store/sql_ext.rs` (`define_sql_function!` for `unixepoch`, a `QueryFragment` per PRAGMA and for the FTS5 match), the only home for non-DSL SQL; `schema.rs`'s `notes_fts` comment is updated. The typed SQL functions declared in `mod.rs` move there too: `coalesce` (T163.5), `length` and `sum_bigint` (T163.7), `substr` (T163.6).
-
-Execution plan: (1) wait for T163.1 on `main`, reuse its module; (2) add the helpers with unit tests; (3) swap the call sites, signatures unchanged; (4) store tests unchanged and green, `just check`.
-
-Check: no `sql_query|sql::<|batch_execute` left in the listed functions and tests; `note_search_treats_query_text_literally` and the WAL test green; `just check`.
+Progress (2026-09-26, Cursor / grok 4.7): merged `origin/main` into `t163.4-migration-bridge` and re-applied the diesel_migrations bridge onto main's typed store (`sql_ext`, purge, FTS, windows, otel, embed). `Store::migrate` / `db_before_migration` / `migration_is_idempotent` / `migration_0015_*` hold no `sql_query` / `sql::<` / `batch_execute`. Still open: `migration_0020`, `migration_0021`, and `schema_0002` still contain those tokens (other open PRs own them) — do not close until those land clean.
 
 ### T163.8. Retention without raw SQL; close T163
 
@@ -156,13 +120,7 @@ Execution plan: (1) rewrite with `diesel::delete(...).filter(...)` and typed upd
 
 Check: T163's Check.
 
-### T163.9. Window and CTE queries through the shared extension module
-
-Left over from T163.7: `usage_ctt` (`COUNT() OVER`, `ROW_NUMBER() OVER`), `session_totals`/`recent_session_totals` (four CTEs, `UNION ALL`, per-group `MAX(id)` subqueries) and `recent_calls` (correlated `MAX(id)` subquery in a `LEFT JOIN`) have no form in Diesel 2.3.13's typed DSL. They move into T163.1's `src/store/sql_ext.rs` as typed `QueryFragment`s with bound parameters, each with a comment naming the construct the DSL lacks (the rulebook's exception for statements the ORM cannot express).
-
-Execution plan: (1) wait for T163.1 on `main`; (2) move the three statements, signatures and row order unchanged; (3) the `session_totals` and `recent_calls` tests unchanged and green, `rtok stats` unchanged on a DB clone; (4) `just check`.
-
-Check: no `sql_query` left in the three functions; tests unchanged and green; `just check`.
+Progress: `purge_related`, `delete_old_calls` and `purge_archive` are `diesel::delete` / `diesel::update`. `doomed_archives` is `sql_ext::DoomedArchives` (UNION of two archive columns plus three `NOT EXISTS` — no typed form). `sql_ext` no longer calls `sql_query`. Store tests (59) and clippy `-D warnings` on `--lib --tests` passed. Still open: T163's grep. Hits left are `migrate()` (T163.4), schema-drift and migration tests, the concurrency tests' `BEGIN IMMEDIATE`, `EXPLAIN QUERY PLAN`, `into_sql::<Bool>()`, and `PRAGMA` via `batch_execute` (a prepared execute leaves `journal_mode` at `delete`).
 
 ### T178. Hook wall-clock time as Claude Code sees it
 
@@ -177,6 +135,8 @@ Step 2 plan (D32): (a) `crates/rtok-hook`, the std-only wire format; (b) `rtok h
 Check: a dated `research.md` row with measured start time before/after; hook p50 as seen by Claude Code under 10 ms on this machine; `just test` green.
 
 Progress (research.md §19): the plugin launcher (a second `/bin/sh` per call) was the largest cost; `hooks.json` now execs `rtok` from PATH directly, p50 as Claude Code sees it 20.9 → 14.6 ms (PreToolUse) and 19.0 → 13.3 ms (PostToolUse). Remaining: the node + `/bin/sh` floor (5 ms) plus `rtok --version` (5.6 ms) already exceed 10 ms, so the Check needs a resident process with a small hook client — proposed as its own task. Locked store (§19.6): the hook now waits 5 ms on another writer, not 1 s per statement, and fails open with the input unchanged — 1.06–2.13 s → ~20 ms. Remaining: the resident process and hook client.
+
+Measured (Cursor / grok 4.7, 2026-09-26): shipped `hooks.json` order `rtok-hook` → `rtok` → `hook.sh`. §19.2 node harness (`spawn` `{shell: true}`, isolated `RTOK_HOME`, resident up, release `6e608af2`, 300 rounds, load 46.23 → 39.18): `true` floor p50 5.63 ms; PreToolUse p50 **12.28** / p95 25.18 ms; PostToolUse p50 **12.54** / p95 29.22 ms. Check **not met** (need p50 < 10 ms). Numbers in `research.md` §19.7. Card stays in progress.
 
 ### T262.3. Codex: spawn brief on `SubagentStart`
 

@@ -173,9 +173,11 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
         }
         let _ = fs::remove_file(file(cfg, service, "stop"));
         if service == Service::Mcp {
-            eprintln!(
+            let msg = format!(
                 "{service}: no stdin client under the demon — `rtok mcp` exits at EOF and is restarted"
             );
+            eprintln!("{msg}");
+            crate::log::append(cfg, "warn", "demon", service.as_str(), &msg);
         }
         let mut cmd = Command::new(&exe);
         if let Some(c) = config_file {

@@ -261,9 +261,11 @@ fn with_restart(
                 if cfg.setup.dry_run {
                     out.push_str(&format!("{}: would close/reopen {name}\n", agent.id()));
                 } else if let Err(e) = procs.quit(&name) {
-                    eprintln!(
-                        "warning: could not quit {name}: {e:#}; restart it manually to load the new config"
+                    let msg = format!(
+                        "could not quit {name}: {e:#}; restart it manually to load the new config"
                     );
+                    eprintln!("warning: {msg}");
+                    crate::log::append(cfg, "warn", "agents", "restart", &msg);
                 } else {
                     wait_until_not_running(procs, &name, Duration::from_secs(5));
                     to_reopen.push((name, path));
@@ -282,7 +284,9 @@ fn with_restart(
     let written = write(cfg);
     for (name, path) in to_reopen {
         if let Err(e) = procs.open(&name, &path) {
-            eprintln!("warning: could not reopen {name}: {e:#}; open it manually");
+            let msg = format!("could not reopen {name}: {e:#}; open it manually");
+            eprintln!("warning: {msg}");
+            crate::log::append(cfg, "warn", "agents", "restart", &msg);
         }
     }
     out.push_str(&written?);
@@ -496,6 +500,7 @@ mod tests {
             "Claude Desktop" => "Claude",
             "GitHub Copilot" => "GitHub Copilot",
             "Cursor" => "Cursor",
+            "Devin" => "Devin",
             "Cline for VS Code" => "Visual Studio Code",
             "Kilo Code for VS Code" => "Visual Studio Code",
             "Kimi Code Desktop" => "Kimi Code",

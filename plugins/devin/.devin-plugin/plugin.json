@@ -1,0 +1,11 @@
+{
+  "name": "rtok",
+  "version": "0.0.1",
+  "description": "rtok hooks and MCP server for Devin CLI and Devin Desktop",
+  "author": {
+    "name": "listepo"
+  },
+  "homepage": "https://github.com/listepo/rtok",
+  "repository": "https://github.com/listepo/rtok",
+  "keywords": ["tokens", "hooks", "mcp"]
+}
