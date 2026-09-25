@@ -1,5 +1,5 @@
 //! Diesel `table!` macros for the six 0001 tables (plan T13.1).
-//! `notes_fts` is a VIRTUAL TABLE — queried with `sql_query`, not modelled here.
+//! `notes_fts` is a VIRTUAL TABLE — FTS5 `MATCH` / `bm25` have no Diesel DSL form (T163.3).
 
 #![allow(unused)]
 

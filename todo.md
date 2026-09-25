@@ -12,7 +12,6 @@
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T163. Replace raw SQL in `src/store/` with Diesel's query builder
-- T163.3. PRAGMA, `unixepoch()` and FTS5 through the shared extension module
 - T163.4. Migrations through `diesel_migrations`
 - T163.8. Retention without raw SQL; close T163
 - T163.9. Window and CTE queries through the shared extension module

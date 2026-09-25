@@ -35,39 +35,7 @@ use schema::{
     read_cache, sessions, tokens, usage,
 };
 
-/// `COALESCE(x, y)` for an upsert `DO UPDATE SET` (T163.5): not one of Diesel's built-in
-/// functions, so declared here rather than dropping to raw SQL.
-#[diesel::declare_sql_function]
-extern "SQL" {
-    fn coalesce<T: diesel::sql_types::SqlType + diesel::sql_types::SingleValue>(
-        x: diesel::sql_types::Nullable<T>,
-        y: diesel::sql_types::Nullable<T>,
-    ) -> diesel::sql_types::Nullable<T>;
-}
-
-// SQLite `length()`: character count of a TEXT value (not byte count) — matches what the
-// raw SQL it replaces computed, so `memory_note_aggs`'s `body_bytes` stays unchanged.
-diesel::define_sql_function!(fn length(x: Text) -> BigInt);
-// `SUM` declared to return `Nullable<BigInt>`: Diesel's generic `sum()` widens every
-// integer sum to `Nullable<Numeric>` (ANSI's overflow-safe rule, via `Foldable`), which
-// this crate has no `bigdecimal` support to deserialize. SQLite has no separate NUMERIC
-// storage class — an integer sum is still an integer — so a `BigInt` result is exact.
-diesel::define_sql_function! {
-    #[aggregate]
-    #[sql_name = "SUM"]
-    fn sum_bigint(x: BigInt) -> Nullable<BigInt>;
-}
-
-/// `substr(text, start, length)` for a byte-prefix compare (T163.6): `read_cache.path` can
-/// itself hold `%`/`_`, so `LIKE` cannot express "starts with" — not one of Diesel's built-ins.
-#[diesel::declare_sql_function]
-extern "SQL" {
-    fn substr(
-        x: diesel::sql_types::Text,
-        start: diesel::sql_types::Integer,
-        length: diesel::sql_types::Integer,
-    ) -> diesel::sql_types::Text;
-}
+pub(crate) use sql_ext::{coalesce, length, substr, sum_bigint, unixepoch};
 
 /// Embedded migrations, applied in order, each exactly once.
 /// Pause between `open` attempts while another connection holds the lock.
@@ -199,7 +167,9 @@ pub fn is_locked(e: &anyhow::Error) -> bool {
 }
 
 fn set_busy(conn: &mut SqliteConnection, busy: std::time::Duration) -> Result<()> {
-    Ok(conn.batch_execute(&format!("PRAGMA busy_timeout = {};", busy.as_millis()))?)
+    // PRAGMA rejects a bound parameter; `sql_ext` writes the digits.
+    sql_ext::busy_timeout(conn, busy.as_millis())?;
+    Ok(())
 }
 
 /// One row of [`Store::sessions_by_cwd`].
@@ -292,7 +262,8 @@ impl Store {
         // "database is locked" instead of waiting the few ms the first one holds the lock. First,
         // so switching to WAL waits too; `wait.busy` bounds each statement's wait.
         set_busy(&mut conn, wait.busy)?;
-        conn.batch_execute("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+        sql_ext::pragma_journal_wal(&mut conn)?;
+        sql_ext::pragma_synchronous_normal(&mut conn)?;
         Self::init(conn, wait)
     }
 
@@ -304,7 +275,7 @@ impl Store {
     fn init(mut conn: SqliteConnection, wait: LockWait) -> Result<Self> {
         #[cfg(test)]
         OPEN_COUNT.with(|n| n.set(n.get() + 1));
-        conn.batch_execute("PRAGMA foreign_keys = ON;")?;
+        sql_ext::pragma_foreign_keys_on(&mut conn)?;
         let store = Self {
             conn: Mutex::new(conn),
             wait,
@@ -1190,23 +1161,13 @@ impl Store {
         };
         let updated = existed_q.first::<i32>(&mut *conn).optional()?.is_some();
 
-        let id = sql_query(
-            "INSERT INTO notes (project, kind, title, body) VALUES (?, ?, ?, ?)
-             ON CONFLICT (COALESCE(project, ''), kind, title) DO UPDATE SET
-                 body = excluded.body,
-                 ts = unixepoch(),
-                 -- An explicit re-save revives the topic: a retired tombstone does not
-                 -- outlive the human/agent writing the note again (T69.1).
-                 retired = NULL,
-                 superseded_by = NULL
-             RETURNING id",
-        )
-        .bind::<Nullable<Text>, _>(project)
-        .bind::<Text, _>(kind)
-        .bind::<Text, _>(title)
-        .bind::<Text, _>(body)
-        .get_result::<UpsertedId>(&mut *conn)?
-        .id;
+        let id = sql_ext::UpsertNote {
+            project: project.map(str::to_string),
+            kind: kind.to_string(),
+            title: title.to_string(),
+            body: body.to_string(),
+        }
+        .get_result(&mut *conn)?;
         Ok((id, updated))
     }
 
@@ -1351,7 +1312,7 @@ impl Store {
         let mut conn = self.lock()?;
         let n = diesel::update(notes::table.find(id))
             .set((
-                notes::retired.eq(diesel::dsl::sql::<Nullable<BigInt>>("unixepoch()")),
+                notes::retired.eq(unixepoch()),
                 notes::superseded_by.eq(superseded_by),
             ))
             .execute(&mut *conn)?;
@@ -1427,22 +1388,13 @@ impl Store {
             return Ok(Vec::new());
         };
         let mut conn = self.lock()?;
-        let hits = sql_query(
-            "SELECT n.id AS id, n.title AS title, substr(n.body, 1, 120) AS snippet
-             FROM notes_fts f JOIN notes n ON n.id = f.rowid
-             WHERE notes_fts MATCH ? AND n.retired IS NULL
-             ORDER BY bm25(notes_fts)
-             LIMIT ?",
-        )
-        .bind::<Text, _>(q)
-        .bind::<Integer, _>(i32::try_from(limit).unwrap_or(5))
-        .load::<NoteHitRow>(&mut *conn)?
+        let hits = sql_ext::SearchNotes {
+            query: q,
+            limit: i32::try_from(limit).unwrap_or(5),
+        }
+        .load::<(i32, String, String)>(&mut *conn)?
         .into_iter()
-        .map(|r| NoteHit {
-            id: r.id,
-            title: r.title,
-            snippet: r.snippet,
-        })
+        .map(|(id, title, snippet)| NoteHit { id, title, snippet })
         .collect::<Vec<_>>();
         Ok(hits)
     }
@@ -2196,7 +2148,6 @@ impl Store {
         }
         let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
         let cutoff = now.saturating_sub(days.saturating_mul(86_400));
-        let old = "(SELECT id FROM calls WHERE ts < ?1)";
         let mut conn = self.lock()?;
         // T75: every surface opens this one file, and a purge starting while another
         // process held the write lock came back "database is locked" — the deferred
@@ -2205,33 +2156,14 @@ impl Store {
         // session start. Same contract as `migrate`: take the writer lock up front
         // under the maintenance window, and restore the hook's 1 s bound after,
         // whatever happened inside.
-        conn.batch_execute("PRAGMA busy_timeout = 30000;")?;
+        set_busy(&mut conn, std::time::Duration::from_secs(30))?;
         let purged = conn.exclusive_transaction::<_, anyhow::Error, _>(|c| {
             let doomed = doomed_archives(c, cutoff)?;
-            for sql in [
-                format!("DELETE FROM logs WHERE ts < ?1 OR call_id IN {old}"),
-                format!("DELETE FROM tokens WHERE ts < ?1 OR call_id IN {old}"),
-                format!("DELETE FROM call_io WHERE call_id IN {old}"),
-                format!("UPDATE usage SET call_id = NULL WHERE call_id IN {old}"),
-                format!("UPDATE measurements SET call_id = NULL WHERE call_id IN {old}"),
-                format!("UPDATE calls SET parent_id = NULL WHERE parent_id IN {old}"),
-            ] {
-                sql_query(sql).bind::<BigInt, _>(cutoff).execute(c)?;
-            }
+            sql_ext::purge_related(c, cutoff)?;
             for arch in &doomed {
-                sql_query("DELETE FROM archive_decisions WHERE archive_id = ?1")
-                    .bind::<Text, _>(&arch.id)
-                    .execute(c)?;
-                sql_query("UPDATE read_cache SET archive_id = NULL WHERE archive_id = ?1")
-                    .bind::<Text, _>(&arch.id)
-                    .execute(c)?;
-                sql_query("DELETE FROM archive WHERE id = ?1")
-                    .bind::<Text, _>(&arch.id)
-                    .execute(c)?;
+                sql_ext::purge_archive(c, &arch.id)?;
             }
-            let n = sql_query("DELETE FROM calls WHERE ts < ?1")
-                .bind::<BigInt, _>(cutoff)
-                .execute(c)?;
+            let n = sql_ext::delete_old_calls(c, cutoff)?;
             Ok((
                 n,
                 doomed
@@ -2256,7 +2188,8 @@ impl Store {
 
     #[cfg(test)]
     pub fn set_query_only(&self) -> Result<()> {
-        self.lock()?.batch_execute("PRAGMA query_only = ON;")?;
+        let mut conn = self.lock()?;
+        sql_ext::pragma_query_only_on(&mut conn)?;
         Ok(())
     }
 }
@@ -2432,25 +2365,6 @@ fn insert_measurement_conn(
 struct Count {
     #[diesel(sql_type = BigInt)]
     n: i64,
-}
-
-/// [`Store::upsert_note`]'s `RETURNING id` row.
-#[derive(QueryableByName)]
-struct UpsertedId {
-    #[diesel(sql_type = Integer)]
-    id: i32,
-}
-
-/// FTS5 search hit (T6.1). The shape is the published contract's (D25); this is only the
-/// row diesel loads it into.
-#[derive(Debug, QueryableByName)]
-struct NoteHitRow {
-    #[diesel(sql_type = Integer)]
-    id: i32,
-    #[diesel(sql_type = Text)]
-    title: String,
-    #[diesel(sql_type = Text)]
-    snippet: String,
 }
 
 /// One `notes` row's lifecycle-relevant fields (T69.1): revise needs `kind`/`project`,
@@ -2632,18 +2546,6 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use schema::notes;
-
-    #[derive(QueryableByName)]
-    struct Title {
-        #[diesel(sql_type = Text)]
-        title: String,
-    }
-
-    #[derive(QueryableByName)]
-    struct Journal {
-        #[diesel(sql_type = Text)]
-        journal_mode: String,
-    }
 
     /// FTS5 reads `*`, `(`, `-` and bare operators as syntax, so `mem_search "read("` used to
     /// raise a SQL error instead of returning no hits. User text is quoted now.
@@ -2935,13 +2837,9 @@ mod tests {
                 ))
                 .execute(&mut *conn)
                 .unwrap();
-            let rows: Vec<Title> = sql_query(
-                "SELECT n.title FROM notes_fts f JOIN notes n ON n.id = f.rowid WHERE notes_fts MATCH 'journal'",
-            )
-            .load(&mut *conn)
-            .unwrap();
-            assert_eq!(rows[0].title, "WAL mode");
         }
+        let hits = store.search_notes("journal", 5).unwrap();
+        assert_eq!(hits[0].title, "WAL mode");
     }
 
     #[test]
@@ -2951,8 +2849,9 @@ mod tests {
         let store = Store::open(&dir.join("rtok.db")).unwrap();
         let mode = {
             let mut conn = store.lock().unwrap();
-            let rows: Vec<Journal> = sql_query("PRAGMA journal_mode").load(&mut *conn).unwrap();
-            rows[0].journal_mode.clone()
+            sql_ext::JournalMode
+                .get_result::<String>(&mut *conn)
+                .unwrap()
         };
         assert_eq!(mode, "wal");
         drop(store);
@@ -4251,7 +4150,7 @@ mod tests {
     // `table!` models neither) defaults/indexes/triggers via a golden `sqlite_master` dump.
     /// A migrated table with no `table!` macro, and why.
     const RAW_SQL_TABLES: &[&str] = &[
-        "notes_fts",         // 0001: FTS5 virtual table, sql_query only (T13.1)
+        "notes_fts",         // 0001: FTS5 virtual table, MATCH/bm25 in sql_ext (T163.3)
         "notes_fts_data",    // FTS5 shadow table for notes_fts
         "notes_fts_idx",     // FTS5 shadow table for notes_fts
         "notes_fts_docsize", // FTS5 shadow table for notes_fts

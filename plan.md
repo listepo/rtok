@@ -17,7 +17,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T156 | todo | P3 | 3 | 50% | |
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
-| T163.3 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
@@ -131,14 +130,6 @@ Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing s
 **Split (2026-09-23).** T163.1 (`symbols.rs`, done — see `done.md`) created the shared `src/store/sql_ext.rs` extension module. T163.2 takes `otel.rs` and `embed.rs`, reusing it. `mod.rs` (92 sites, including migration DDL and PRAGMA) stays in this card and is split further when claimed; `diesel_migrations` is approved (2026-09-23).
 
 **Split of `mod.rs` (2026-09-23).** Six slices by area, each ≤ 200 LOC: T163.3 PRAGMA, `unixepoch()` and FTS5 in the shared extension module; T163.4 migrations; T163.5 sessions, calls, measurements and `kv`; T163.6 archive, `call_io` and `read_cache`; T163.7 usage and stats aggregates; T163.8 retention and the last test helpers, which also runs this card's full Check and closes T163. Raw SQL in `mod.rs` tests moves with the slice that owns the table it touches. Execution: T163.3 waits for T163.1's `sql_ext.rs` to land on `main` (one module, never a second); T163.4–T163.7 do not depend on each other; T163.8 goes last. T163.9 (window and CTE queries T163.7 could not express) was split off T163.7 on 2026-09-23 and also waits for `sql_ext.rs`.
-
-### T163.3. PRAGMA, `unixepoch()` and FTS5 through the shared extension module
-
-`mod.rs` sites the typed DSL cannot express: the PRAGMAs in `set_busy`, `connect`, `init`, `set_query_only` and `purge_calls_older_than`; `sql::<>("unixepoch()")` in `upsert_note` and `retire_note`; FTS5 `MATCH`/`bm25()` in `search_notes`; tests `open_on_disk_uses_wal`, `fts5_match_finds_inserted_note`. They become typed helpers in T163.1's `src/store/sql_ext.rs` (`define_sql_function!` for `unixepoch`, a `QueryFragment` per PRAGMA and for the FTS5 match), the only home for non-DSL SQL; `schema.rs`'s `notes_fts` comment is updated. The typed SQL functions declared in `mod.rs` move there too: `coalesce` (T163.5), `length` and `sum_bigint` (T163.7), `substr` (T163.6).
-
-Execution plan: (1) wait for T163.1 on `main`, reuse its module; (2) add the helpers with unit tests; (3) swap the call sites, signatures unchanged; (4) store tests unchanged and green, `just check`.
-
-Check: no `sql_query|sql::<|batch_execute` left in the listed functions and tests; `note_search_treats_query_text_literally` and the WAL test green; `just check`.
 
 ### T163.4. Migrations through `diesel_migrations`
 
