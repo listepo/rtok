@@ -7,9 +7,10 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::{Binary, Integer, Text};
 use sha2::{Digest, Sha256};
+
+use super::schema::{note_embeddings, notes};
+use super::substr;
 
 use crate::config::MemoryEmbed;
 use crate::plugin::NoteHit;
@@ -104,24 +105,15 @@ impl Store {
         let vector = hash_embed(&text, cfg.dimensions);
         let blob = embed_to_blob(&vector);
         let mut conn = self.lock()?;
-        sql_query(
-            "INSERT INTO note_embeddings (note_id, model, dims, text_hash, vector)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(note_id) DO UPDATE SET
-               model = excluded.model,
-               dims = excluded.dims,
-               text_hash = excluded.text_hash,
-               embedded_at = unixepoch(),
-               vector = excluded.vector
-             WHERE excluded.text_hash != note_embeddings.text_hash
-                OR excluded.model != note_embeddings.model
-                OR excluded.dims != note_embeddings.dims",
-        )
-        .bind::<Integer, _>(note_id)
-        .bind::<Text, _>(model_key(cfg))
-        .bind::<Integer, _>(dims(cfg))
-        .bind::<Text, _>(&hash)
-        .bind::<Binary, _>(&blob)
+        let model = model_key(cfg);
+        let dims = dims(cfg);
+        super::sql_ext::UpsertNoteEmbedding {
+            note_id,
+            model,
+            dims,
+            text_hash: hash,
+            vector: blob,
+        }
         .execute(&mut *conn)?;
         Ok(())
     }
@@ -133,25 +125,20 @@ impl Store {
         if !cfg.enabled {
             return Ok(());
         }
-        #[derive(QueryableByName)]
-        struct Stale {
-            #[diesel(sql_type = Integer)]
-            id: i32,
-            #[diesel(sql_type = Text)]
-            title: String,
-            #[diesel(sql_type = Text)]
-            body: String,
-        }
-        let stale: Vec<Stale> = sql_query(
-            "SELECT n.id AS id, n.title AS title, n.body AS body
-             FROM notes n LEFT JOIN note_embeddings e ON e.note_id = n.id
-             WHERE e.note_id IS NULL OR e.model != ?1 OR e.dims != ?2",
-        )
-        .bind::<Text, _>(model_key(cfg))
-        .bind::<Integer, _>(dims(cfg))
-        .load(&mut *self.lock()?)?;
-        for n in stale {
-            self.upsert_note_embedding(n.id, &n.title, &n.body, cfg)?;
+        let model = model_key(cfg);
+        let dims = dims(cfg);
+        let stale: Vec<(i32, String, String)> = notes::table
+            .left_join(note_embeddings::table)
+            .filter(
+                note_embeddings::note_id
+                    .is_null()
+                    .or(note_embeddings::model.ne(&model))
+                    .or(note_embeddings::dims.ne(dims)),
+            )
+            .select((notes::id, notes::title, notes::body))
+            .load(&mut *self.lock()?)?;
+        for (id, title, body) in stale {
+            self.upsert_note_embedding(id, &title, &body, cfg)?;
         }
         Ok(())
     }
@@ -165,44 +152,27 @@ impl Store {
         self.embed_stale(cfg)?;
         let qv = hash_embed(query, cfg.dimensions);
         let mut conn = self.lock()?;
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Integer)]
-            id: i32,
-            #[diesel(sql_type = Text)]
-            title: String,
-            #[diesel(sql_type = Text)]
-            snippet: String,
-            #[diesel(sql_type = Binary)]
-            vector: Vec<u8>,
-            #[diesel(sql_type = Integer)]
-            dims: i32,
-        }
         // Only vectors of the query's own model, scheme and `dimensions` are scored: `cosine`
         // zips to the shorter vector, so a stale 384-dim row against an 8-dim query ranked on
         // noise. `embed_stale` has just brought every row up to date.
-        let rows: Vec<Row> = sql_query(
-            "SELECT n.id AS id, n.title AS title, substr(n.body, 1, 120) AS snippet,
-                    e.vector AS vector, e.dims AS dims
-             FROM note_embeddings e
-             JOIN notes n ON n.id = e.note_id
-             WHERE e.model = ? AND e.dims = ? AND n.retired IS NULL",
-        )
-        .bind::<Text, _>(model_key(cfg))
-        .bind::<Integer, _>(dims(cfg))
-        .load(&mut *conn)?;
+        let rows: Vec<(i32, String, String, Vec<u8>, i32)> = note_embeddings::table
+            .inner_join(notes::table)
+            .filter(note_embeddings::model.eq(model_key(cfg)))
+            .filter(note_embeddings::dims.eq(dims(cfg)))
+            .filter(notes::retired.is_null())
+            .select((
+                notes::id,
+                notes::title,
+                substr(notes::body, 1, 120),
+                note_embeddings::vector,
+                note_embeddings::dims,
+            ))
+            .load(&mut *conn)?;
         let mut scored: Vec<(f32, NoteHit)> = rows
             .into_iter()
-            .filter_map(|r| {
-                let v = blob_to_embed(&r.vector, r.dims as u32)?;
-                Some((
-                    cosine(&qv, &v),
-                    NoteHit {
-                        id: r.id,
-                        title: r.title,
-                        snippet: r.snippet,
-                    },
-                ))
+            .filter_map(|(id, title, snippet, vector, dims)| {
+                let v = blob_to_embed(&vector, dims as u32)?;
+                Some((cosine(&qv, &v), NoteHit { id, title, snippet }))
             })
             .collect();
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
