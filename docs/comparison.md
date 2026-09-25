@@ -238,12 +238,35 @@ Stated plainly, because §4 is only worth reading if this section exists.
   ten per-family formatters, against rtk's ~80 filters and sqz's 45+ (`research.md` §11;
   the T65.1 content-hash dedup, T65.2 JSON compact and T65.3 column collapse are in —
   the library itself is still the smallest of the three).
+- **No Batch observe, Flex prepare, or model router yet.** Provider Batch paths already pass through the proxy fallback; Flex `service_tier` injection and D9 routing are planned (`docs/batch-flex.md`). bifrost, Portkey and LiteLLM ship routers today.
 - **Younger, and a single maintainer.** Several tools in §2 have five-figure star counts and
   years of edge cases baked in. rtok is at v0.0.1.
 - **`toon` and `graph-watchman` are opt-in** because they lost their gates on this machine.
   LadybugDB and Grafeo were measured then **removed** (P39, 2026-09-12): Ladybug won depth-4
   impact by 77× but missed the hook ≤10 ms bar; Grafeo abandoned after warm `impact(2)` ~22 000×
   slower than SQLite. The symbol index is SQLite only.
+
+
+### Batch, Flex, and routing gateways
+
+rtok is a token-reduction middleware with a local proxy; bifrost, Portkey, and LiteLLM are
+primarily **routing / gateway** products. Batch (async provider APIs), Flex (`service_tier`),
+and model routing are distinct levers — rtok documents them in [`batch-flex.md`](batch-flex.md)
+and does **not** auto-convert sync agent turns into Batch jobs.
+
+| Capability | rtok | bifrost | Portkey | LiteLLM |
+|------------|------|---------|---------|---------|
+| Provider **Batch** pass-through | Fallback forward today; observe/usage **planned** | Gateway routing; Batch support varies by provider plugin | Virtual keys + provider Batch where configured | Provider pass-through / mapped Batch endpoints |
+| **Flex** / `service_tier` | Client-set forwarded; `prepare` inject **planned** | Depends on provider config | Can set tier via config/hooks | Can set `service_tier` in request params |
+| **Model routing** (cheap→expensive) | D9 **planned**; off by default | First-class router | First-class router / fallbacks | First-class model alias + router |
+| Prompt-cache **sticky** upstream | Documented intent (I-84); flag **planned** | Load-balancer / deployment choice | Deployment / gateway affinity | Deployment / load-balance settings |
+| Sync→Batch auto-convert | **Never** (by design) | Not the coding-agent default | Possible via workflows; not rtok's model | Possible via custom callbacks |
+| Semantic response cache | Opt-in P31, default off (agent false-hit risk) | Shipping feature (false-hits on agents) | Available | Available |
+
+Where rtok stays different: measurement into one SQLite ledger, cache-byte-stable compress,
+and hooks/MCP that never see the LLM HTTP path. Where it is behind: bifrost/Portkey/LiteLLM
+already ship production routers; rtok's Batch observe, Flex prepare, and D9 routing are
+still backlog items in `ideas.md` (I-100/I-101).
 
 ## 6. Check any of it yourself
 

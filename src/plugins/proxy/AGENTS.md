@@ -17,3 +17,16 @@
 **Dependencies allowed**: `tokio`, `axum`/`hyper`, `reqwest` (streaming). One-line reason each.
 
 **Checks**: `plan.md` T5.1, T5.2.
+
+**Batch / Flex / routing** (see `docs/batch-flex.md`)
+- Batch ≠ Flex ≠ model routing. Never auto-convert sync agent turns into Batch jobs.
+- Batch paths (`/v1/batches`, `/v1/messages/batches`, …) miss every `Wire::matches` (exact
+  sync paths only) and ride the axum fallback: byte-forward today; observe + result usage
+  parsing are **planned** under `[proxy.batch]`.
+- Flex is OpenAI `service_tier` on sync Chat/Responses wires — inject/override in `prepare`
+  (**planned**, `[proxy.flex]`), not a separate HTTP API.
+- Model routing (D9) and sticky upstream for prompt-cache affinity (I-84) are **planned**
+  under `[proxy.routing]`; hooks/MCP never see this traffic.
+- Extension points: new `Wire` / path matchers in `src/proxy/` for Batch observe; `prepare`
+  for Flex; routing policy beside `shape_request`. Do not teach hooks or MCP about LLM HTTP.
+

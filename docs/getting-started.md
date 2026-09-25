@@ -82,6 +82,7 @@ file it writes. See the root [README](../README.md) for other hosts
 
 ## Next
 
+- [batch-flex.md](batch-flex.md) — Batch / Flex / routing on the proxy (pass-through vs rewrite)
 - [config.md](config.md) — full key reference and precedence
 - [comparison.md](comparison.md) — against the tools rtok replaces (and where it is behind)
 - [otel.md](otel.md) — OTLP export of the ledger
