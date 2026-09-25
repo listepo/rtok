@@ -1,5 +1,5 @@
 "use strict";
-// postinstall: on Unix, put the native binary where npm linked `rtok` (bin/rtok), next to the
+// postinstall: on Unix, put the native binary where npm linked `rtok` and `rtok-cli` (bin/rtok), next to the
 // plugins/ and skills/ it resolves beside itself, so a hook that runs `rtok` from PATH does
 // not pay for a Node start (the hook budget is 10 ms). Fails open: on any error the Node
 // launcher stays in place and still works. Windows keeps the launcher, because npm's .cmd

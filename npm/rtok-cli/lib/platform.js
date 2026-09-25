@@ -7,15 +7,15 @@
 const path = require("node:path");
 
 const PLATFORMS = [
-  { pkg: "rtok-darwin-arm64", os: "darwin", cpu: "arm64", target: "aarch64-apple-darwin" },
+  { pkg: "rtok-cli-darwin-arm64", os: "darwin", cpu: "arm64", target: "aarch64-apple-darwin" },
   {
-    pkg: "rtok-linux-x64-gnu",
+    pkg: "rtok-cli-linux-x64-gnu",
     os: "linux",
     cpu: "x64",
     libc: "glibc",
     target: "x86_64-unknown-linux-gnu",
   },
-  { pkg: "rtok-win32-x64-msvc", os: "win32", cpu: "x64", target: "x86_64-pc-windows-msvc" },
+  { pkg: "rtok-cli-win32-x64-msvc", os: "win32", cpu: "x64", target: "x86_64-pc-windows-msvc" },
 ];
 
 /** The executable name of `name` on `os` (`rtok.exe` on Windows). */
@@ -61,7 +61,7 @@ function nativeBinary() {
   } catch {
     throw new Error(
       `the platform package ${platform.pkg} is not installed. It is an optional dependency of ` +
-        "rtok; reinstall without --no-optional / --omit=optional, e.g. `npm i -g rtok`.",
+        "rtok-cli; reinstall without --no-optional / --omit=optional, e.g. `npm i -g rtok-cli`.",
     );
   }
   return path.join(dir, "bin", exeName(platform.os));

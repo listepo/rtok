@@ -92,7 +92,7 @@ publish-dry:
     @echo "rtok-plugin-sdk crates.io publish paused; skipping dry-run"
 
 # Host build by default; `--release vX.Y.Z` packs every platform from the dist Release archives.
-# npm: `rtok` launcher + one package per platform, tarballs in target/npm/dist (docs/release.md).
+# npm: `rtok-cli` launcher + one package per platform, tarballs in target/npm/dist (docs/release.md).
 npm-build *flags:
     {{node}} tools/npm/build.mjs {{flags}}
 

@@ -1,5 +1,5 @@
 {
-  "name": "rtok",
+  "name": "rtok-cli",
   "version": "0.7.0",
   "description": "Token-reduction CLI for AI coding agents: hooks, MCP server and API proxy with pluggable methods",
   "keywords": ["rtok", "llm", "tokens", "mcp", "agents", "claude", "cli"],
@@ -8,11 +8,12 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/listepo/rtok.git",
-    "directory": "npm/rtok"
+    "directory": "npm/rtok-cli"
   },
   "license": "(GPL-3.0-only OR LicenseRef-Royalty-Free OR LicenseRef-Commercial)",
   "bin": {
-    "rtok": "bin/rtok"
+    "rtok": "bin/rtok",
+    "rtok-cli": "bin/rtok"
   },
   "files": ["bin/rtok", "lib/", "install.js", "LICENSE", "LICENSE-ROYALTY-FREE.md", "PRICING.md"],
   "scripts": {
@@ -22,8 +23,8 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "rtok-darwin-arm64": "0.7.0",
-    "rtok-linux-x64-gnu": "0.7.0",
-    "rtok-win32-x64-msvc": "0.7.0"
+    "rtok-cli-darwin-arm64": "0.7.0",
+    "rtok-cli-linux-x64-gnu": "0.7.0",
+    "rtok-cli-win32-x64-msvc": "0.7.0"
   }
 }

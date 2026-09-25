@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds the npm tarballs into target/npm/dist: `rtok` (the launcher, esbuild layout) plus one
+// Builds the npm tarballs into target/npm/dist: `rtok-cli` (the launcher, esbuild layout) plus one
 // package per platform with the native binary, rtok-hook and the plugins/ and skills/ trees
 // the binary resolves beside itself. Versions come from Cargo.toml.
 //
@@ -18,6 +18,7 @@ import {
     LICENSE_FILES,
     MAIN_DIR,
     MAIN_PKG,
+    CARGO_PKG,
     PLATFORMS,
     ROOT,
     cargoMetadata,
@@ -75,7 +76,15 @@ function localSources(targetDir) {
         const platform = platformFor(target);
         const cross = target !== host;
         if (!opts["no-build"]) {
-            const args = ["build", "--locked", "--profile", opts.profile, "-p", MAIN_PKG, "--bins"];
+            const args = [
+                "build",
+                "--locked",
+                "--profile",
+                opts.profile,
+                "-p",
+                CARGO_PKG,
+                "--bins",
+            ];
             run("cargo", cross ? [...args, "--target", target] : args, { cwd: ROOT });
         }
         const binDir = cross
@@ -130,7 +139,7 @@ function stagePlatform({ platform, binDir, dataDir }, main, stage) {
     if (!fs.existsSync(rtok)) {
         throw new Error(`missing ${rtok}`);
     }
-    for (const name of [MAIN_PKG, HOOK_BIN]) {
+    for (const name of [CARGO_PKG, HOOK_BIN]) {
         const src = path.join(binDir, exeName(platform.os, name));
         if (fs.existsSync(src)) {
             fs.copyFileSync(src, path.join(bin, path.basename(src)));
@@ -147,13 +156,13 @@ function stagePlatform({ platform, binDir, dataDir }, main, stage) {
     copyLicenses(dir);
     fs.writeFileSync(
         path.join(dir, "README.md"),
-        `# ${platform.pkg}\n\nThe \`${platform.target}\` binary of [rtok](https://www.npmjs.com/package/rtok). ` +
-            "Install `rtok`, not this package; npm picks it for you.\n",
+        `# ${platform.pkg}\n\nThe \`${platform.target}\` binary of [rtok-cli](https://www.npmjs.com/package/rtok-cli). ` +
+            "Install `rtok-cli`, not this package; npm picks it for you.\n",
     );
     writeJson(path.join(dir, "package.json"), {
         name: platform.pkg,
         version: main.version,
-        description: `The ${platform.target} binary of rtok; install the rtok package instead`,
+        description: `The ${platform.target} binary of rtok; install the rtok-cli package instead`,
         homepage: main.homepage,
         bugs: main.bugs,
         repository: main.repository,

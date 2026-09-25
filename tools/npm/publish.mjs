@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Publishes the tarballs tools/npm/build.mjs left in target/npm/dist: every platform package
-// first, `rtok` last, so no one installs a launcher whose binary is not on the registry yet.
+// first, `rtok-cli` last, so no one installs a launcher whose binary is not on the registry yet.
 // Manual only; no workflow runs this. Refuses to start when a tarball is missing or any
 // version differs from Cargo.toml.
 //
@@ -61,7 +61,7 @@ function problems(version, dist) {
             for (const { pkg: platform } of PLATFORMS) {
                 if (deps[platform] !== version) {
                     found.push(
-                        `rtok's optionalDependencies has ${platform}@${deps[platform]}, expected ${version}`,
+                        `rtok-cli's optionalDependencies has ${platform}@${deps[platform]}, expected ${version}`,
                     );
                 }
             }
@@ -75,7 +75,7 @@ function main() {
     const { dist } = outDirs(targetDir);
     const found = problems(version, dist);
     if (found.length > 0) {
-        console.error(`refusing to publish rtok ${version}:`);
+        console.error(`refusing to publish ${MAIN_PKG} ${version}:`);
         for (const p of found) {
             console.error(`  - ${p}`);
         }
@@ -101,7 +101,7 @@ function main() {
         console.log(`\n== npm ${args.join(" ")}`);
         run("npm", args);
     }
-    console.log(`\n${opts["dry-run"] ? "dry run of" : "published"} rtok ${version}`);
+    console.log(`\n${opts["dry-run"] ? "dry run of" : "published"} ${MAIN_PKG} ${version}`);
 }
 
 main();

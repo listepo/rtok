@@ -41,11 +41,12 @@ Windows x86-64); no Node or Python code runs once it is installed. Both are publ
 so check the registry for the version you want ([docs/release.md](docs/release.md#npm-pypi-and-cratesio)):
 
 ```bash
-npm i -g rtok                # or: npx rtok --help
+npm i -g rtok-cli            # or: npx rtok-cli --help
 uv tool install rtok-cli     # or: pipx install rtok-cli, uvx --from rtok-cli rtok --help
 ```
 
-`rtok` on PyPI is an unrelated project, so the PyPI name is `rtok-cli`; the command is `rtok`.
+The package is `rtok-cli` on both registries; the command it installs is `rtok` (npm also
+links `rtok-cli`).
 Prefer a global install over `npx`/`uvx` before `rtok agents install`: hosts call `rtok` from
 `PATH`, and a cached one-off copy can disappear.
 
@@ -428,9 +429,9 @@ Packaging for npm, PyPI and crates.io is manual and local; no workflow publishes
 try the npm package for this machine without touching a registry:
 
 ```bash
-just npm-build                                   # target/npm/dist/rtok-*.tgz
+just npm-build                                   # target/npm/dist/rtok-cli-*.tgz
 tmp=$(mktemp -d) && cd "$tmp" && npm init -y >/dev/null
-npm i <repo>/target/npm/dist/rtok-*.tgz          # rtok + the platform tarball
+npm i <repo>/target/npm/dist/rtok-cli-*.tgz      # rtok-cli + the platform tarball
 npx rtok --version
 ```
 

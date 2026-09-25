@@ -60,7 +60,7 @@ if [ ${#missing[@]} -gt 0 ]; then
   fi
 fi
 if [ ${#problems[@]} -gt 0 ]; then
-  echo "pypi-publish: refusing to upload rtok ${version}:" >&2
+  echo "pypi-publish: refusing to upload rtok-cli ${version}:" >&2
   printf '  - %s\n' "${problems[@]}" >&2
   exit 1
 fi

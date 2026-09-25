@@ -1,7 +1,7 @@
 # PyPI packaging of the rtok binary (the ruff/uv layout): maturin with `bindings = "bin"` puts
 # the native `rtok` and `rtok-hook` in each platform wheel, so `pip install rtok-cli` or
-# `uvx --from rtok-cli rtok` runs the Rust binary with no Python code in between. `rtok` on
-# PyPI belongs to an unrelated project, hence `rtok-cli`; the command is still `rtok`.
+# `uvx --from rtok-cli rtok` runs the Rust binary with no Python code in between. The name is
+# `rtok-cli`, as on npm (`rtok` on PyPI is an unrelated project); the command is still `rtok`.
 # Build with tools/pypi-build.sh, publish by hand with tools/pypi-publish.sh (docs/release.md).
 [build-system]
 requires = ["maturin>=1.9,<2"]
