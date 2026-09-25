@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Bool, Double, Integer, Nullable, Text};
+use diesel::sql_types::{BigInt, Double, Integer, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -1572,7 +1572,6 @@ impl Store {
 
     /// Per `(project, kind)` note counts for `memory status` (T69.4).
     pub fn memory_note_aggs(&self, project: Option<&str>) -> Result<Vec<MemoryNoteKindAgg>> {
-        use diesel::IntoSql;
         use diesel::dsl::{case_when, max, min};
         type Row = (
             Option<String>,
@@ -1585,37 +1584,42 @@ impl Store {
             Option<i64>,
         );
         let mut conn = self.lock()?;
-        // One statement for both `project` cases: `project.is_none()` is bound as a SQL
-        // boolean literal and OR'd ahead of the equality check, so a `None` short-circuits
-        // the whole condition to true (no project filter) while `Some(p)` falls through to
-        // `notes::project.eq(p)` — the same filter the two-statement version used per branch.
-        let no_project_filter = project.is_none().into_sql::<Bool>().nullable();
-        let rows: Vec<Row> = notes::table
-            .filter(notes::kind.not_like("checkpoint%"))
-            .filter(no_project_filter.or(notes::project.eq(project.unwrap_or_default())))
-            .group_by((notes::project, notes::kind))
-            .select((
-                notes::project,
-                notes::kind,
-                sum_bigint(
-                    case_when::<_, _, BigInt>(notes::retired.is_null(), 1i64).otherwise(0i64),
-                ),
-                sum_bigint(
-                    case_when::<_, _, BigInt>(
-                        notes::retired.is_null().and(notes::pinned.ne(0)),
-                        1i64,
-                    )
-                    .otherwise(0i64),
-                ),
-                sum_bigint(
-                    case_when::<_, _, BigInt>(notes::retired.is_not_null(), 1i64).otherwise(0i64),
-                ),
-                sum_bigint(length(notes::body)),
-                min(notes::ts),
-                max(notes::ts),
-            ))
-            .order((notes::project, notes::kind))
-            .load(&mut *conn)?;
+        // `None` = no project filter; `Some(p)` = equality. Two typed arms — boxed queries
+        // cannot `group_by` this select shape.
+        macro_rules! load_aggs {
+            ($q:expr) => {
+                $q.group_by((notes::project, notes::kind))
+                    .select((
+                        notes::project,
+                        notes::kind,
+                        sum_bigint(
+                            case_when::<_, _, BigInt>(notes::retired.is_null(), 1i64)
+                                .otherwise(0i64),
+                        ),
+                        sum_bigint(
+                            case_when::<_, _, BigInt>(
+                                notes::retired.is_null().and(notes::pinned.ne(0)),
+                                1i64,
+                            )
+                            .otherwise(0i64),
+                        ),
+                        sum_bigint(
+                            case_when::<_, _, BigInt>(notes::retired.is_not_null(), 1i64)
+                                .otherwise(0i64),
+                        ),
+                        sum_bigint(length(notes::body)),
+                        min(notes::ts),
+                        max(notes::ts),
+                    ))
+                    .order((notes::project, notes::kind))
+                    .load(&mut *conn)?
+            };
+        }
+        let base = notes::table.filter(notes::kind.not_like("checkpoint%"));
+        let rows: Vec<Row> = match project {
+            Some(p) => load_aggs!(base.filter(notes::project.eq(p))),
+            None => load_aggs!(base),
+        };
         Ok(rows
             .into_iter()
             .map(
@@ -4142,29 +4146,14 @@ mod tests {
     /// `sqlite_master` normalized for a golden diff: tables/indexes/triggers, sorted, `sql`
     /// collapsed to single-spaced so reindenting a migration is not itself drift.
     fn live_schema_snapshot(conn: &mut SqliteConnection) -> String {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            kind: String,
-            #[diesel(sql_type = Text)]
-            name: String,
-            #[diesel(sql_type = Text)]
-            tbl_name: String,
-            #[diesel(sql_type = Nullable<Text>)]
-            sql: Option<String>,
-        }
-        let mut rows: Vec<Row> = sql_query(
-            "SELECT type AS kind, name, tbl_name, sql FROM sqlite_master \
-             WHERE type IN ('table', 'index', 'trigger')",
-        )
-        .load(conn)
-        .unwrap();
-        rows.sort_by(|a, b| (&a.kind, &a.name).cmp(&(&b.kind, &b.name)));
+        let mut rows: Vec<(String, String, String, Option<String>)> =
+            sql_ext::SqliteMasterSnapshot.load(conn).unwrap();
+        rows.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
         rows.into_iter()
-            .map(|r| {
-                let sql = r.sql.unwrap_or_default();
+            .map(|(kind, name, tbl_name, sql)| {
+                let sql = sql.unwrap_or_default();
                 let sql = sql.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("{}|{}|{}|{}\n", r.kind, r.name, r.tbl_name, sql)
+                format!("{kind}|{name}|{tbl_name}|{sql}\n")
             })
             .collect()
     }
@@ -4190,27 +4179,15 @@ mod tests {
             ));
         }
 
-        #[derive(QueryableByName)]
-        struct XCol {
-            #[diesel(sql_type = Text)]
-            name: String,
-            #[diesel(sql_type = Text)]
-            ty: String,
-            #[diesel(sql_type = Integer)]
-            notnull: i32,
-            #[diesel(sql_type = Integer)]
-            pk: i32,
-        }
         for t in &tables {
             // `notnull` is a SQLite keyword; the pragma's own column of that name needs quoting.
-            let live: Vec<XCol> = sql_query(format!(
-                "SELECT name, type AS ty, \"notnull\", pk FROM pragma_table_xinfo('{}')",
-                t.name
-            ))
+            let live: Vec<(String, String, i32, i32)> = sql_ext::PragmaTableXinfo {
+                table: t.name.clone(),
+            }
             .load(conn)
             .unwrap();
             let live_names: std::collections::BTreeSet<&str> =
-                live.iter().map(|c| c.name.as_str()).collect();
+                live.iter().map(|c| c.0.as_str()).collect();
             let want_names: std::collections::BTreeSet<&str> =
                 t.cols.iter().map(|c| c.0.as_str()).collect();
             if live_names != want_names {
@@ -4221,21 +4198,21 @@ mod tests {
                 continue;
             }
             for (name, ty) in &t.cols {
-                let live = live.iter().find(|c| &c.name == name).unwrap();
+                let live = live.iter().find(|c| &c.0 == name).unwrap();
                 let (base, nullable) = ty
                     .strip_prefix("Nullable<")
                     .map_or((ty.as_str(), false), |i| (i.trim_end_matches('>'), true));
                 let want_pk = t.pk.iter().any(|p| p == name);
-                let ty_ok = diesel_affinity(base).is_none_or(|w| sqlite_affinity(&live.ty) == w);
-                let pk_ok = want_pk == (live.pk > 0);
+                let ty_ok = diesel_affinity(base).is_none_or(|w| sqlite_affinity(&live.1) == w);
+                let pk_ok = want_pk == (live.3 > 0);
                 // A bare SQLite `PRIMARY KEY` does not itself imply `NOT NULL` (unlike standard
                 // SQL, and several migrations rely on it), so a PK column's live `notnull` is
                 // never compared against `table!`'s always-non-`Nullable` Rust type.
-                let notnull_ok = want_pk || nullable != (live.notnull != 0);
+                let notnull_ok = want_pk || nullable != (live.2 != 0);
                 if !(ty_ok && pk_ok && notnull_ok) {
                     out.push(format!(
                         "{}.{name}: schema.rs `{ty}` pk={want_pk} vs live `{}` notnull={} pk={}",
-                        t.name, live.ty, live.notnull, live.pk
+                        t.name, live.1, live.2, live.3
                     ));
                 }
             }
@@ -4261,11 +4238,15 @@ mod tests {
         assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
     }
 
-    /// Runs `sql` on a fresh migrated in-memory DB, then the guard — for the mutation tests.
-    fn drift_after(sql: &str) -> Vec<String> {
+    /// Runs each statement on a fresh migrated in-memory DB, then the guard.
+    fn drift_after(sql: &[&'static str]) -> Vec<String> {
         let store = Store::open_in_memory().unwrap();
         let mut conn = store.lock().unwrap();
-        conn.batch_execute(sql).unwrap();
+        for s in sql {
+            sql_ext::FixtureSql { sql: s }
+                .execute(&mut *conn)
+                .unwrap();
+        }
         schema_drift(&mut conn)
     }
 
@@ -4273,23 +4254,25 @@ mod tests {
     // catches them. A column dropped from a live table still fails, as it always has.
     #[test]
     fn schema_drift_catches_a_changed_default() {
-        let m = drift_after(
-            "DROP TABLE otel_export; CREATE TABLE otel_export (stream TEXT PRIMARY KEY, mark BIGINT NOT NULL DEFAULT 1)",
-        );
+        let m = drift_after(&[
+            "DROP TABLE otel_export",
+            "CREATE TABLE otel_export (stream TEXT PRIMARY KEY, mark BIGINT NOT NULL DEFAULT 1)",
+        ]);
         assert!(m.iter().any(|s| s.contains("schema_snapshot.txt")), "{m:?}");
     }
 
     #[test]
     fn schema_drift_catches_a_dropped_index() {
-        let m = drift_after("DROP INDEX usage_call"); // 0013
+        let m = drift_after(&["DROP INDEX usage_call"]); // 0013
         assert!(m.iter().any(|s| s.contains("schema_snapshot.txt")), "{m:?}");
     }
 
     #[test]
     fn schema_drift_catches_a_column_removed_from_the_live_table() {
-        let m = drift_after(
-            "DROP TABLE otel_export; CREATE TABLE otel_export (stream TEXT PRIMARY KEY)",
-        );
+        let m = drift_after(&[
+            "DROP TABLE otel_export",
+            "CREATE TABLE otel_export (stream TEXT PRIMARY KEY)",
+        ]);
         assert!(m.iter().any(|s| s.starts_with("otel_export:")), "{m:?}");
     }
 }

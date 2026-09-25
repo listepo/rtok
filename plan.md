@@ -14,7 +14,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T134 | todo | P1 | 2 | 40% | |
 | T156 | todo | P3 | 3 | 50% | |
 | T159 | todo | P2 | 4 | 0% | |
-| T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
+| T163 | in progress | P2 | 5 | 40% | Cursor / grok 4.7 |
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T163.8 | in progress | P2 | 3 | 70% | Cursor / grok 4.7 |
 | T178 | in progress | P1 | 4 | 95% | Cursor / grok 4.7 |
@@ -101,6 +101,8 @@ Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing s
 **Split (2026-09-23).** T163.1 (`symbols.rs`, done — see `done.md`) created the shared `src/store/sql_ext.rs` extension module. T163.2 takes `otel.rs` and `embed.rs`, reusing it. `mod.rs` (92 sites, including migration DDL and PRAGMA) stays in this card and is split further when claimed; `diesel_migrations` is approved (2026-09-23).
 
 **Split of `mod.rs` (2026-09-23).** Six slices by area, each ≤ 200 LOC: T163.3 PRAGMA, `unixepoch()` and FTS5 in the shared extension module; T163.4 migrations; T163.5 sessions, calls, measurements and `kv`; T163.6 archive, `call_io` and `read_cache`; T163.7 usage and stats aggregates; T163.8 retention and the last test helpers, which also runs this card's full Check and closes T163. Raw SQL in `mod.rs` tests moves with the slice that owns the table it touches. Execution: T163.3 waits for T163.1's `sql_ext.rs` to land on `main` (one module, never a second); T163.4–T163.7 do not depend on each other; T163.8 goes last. T163.9 (window and CTE queries T163.7 could not express) was split off T163.7 on 2026-09-23 and also waits for `sql_ext.rs`.
+
+Progress (2026-09-26, Cursor / grok 4.7): schema-drift cluster only. Removed: `sql_query` in `live_schema_snapshot` / `schema_drift` (`SqliteMasterSnapshot`, `PragmaTableXinfo` in `sql_ext`, `HAS_STATIC_QUERY_ID = false` so table names and fixture DDL are not statement-cached); `batch_execute` in `drift_after` (`FixtureSql`, one statement per execute); `into_sql::<Bool>()` in `memory_note_aggs` (two typed arms — boxed queries cannot `group_by` this select); `sql_query` token in the `schema.rs` `uses` comment. Grep hits left on purpose: `migrate()` and migration/concurrency tests (T163.4), `purge_waits_out_a_concurrent_writer` / `archive_in_session_query_plan_uses_the_session_ts_index` (T163.8), and `sql_ext::exec_pragma`'s WAL `batch_execute` (prepared execute leaves `journal_mode` at `delete`). Do not close this card.
 
 ### T163.4. Migrations through `diesel_migrations`
 
