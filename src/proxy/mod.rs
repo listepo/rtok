@@ -174,7 +174,9 @@ pub async fn serve(cfg: &Config) -> Result<()> {
     // contended store (T75) — requests still proxy while another process writes, and
     // the purge queues behind it under the maintenance busy window.
     if let Err(e) = state.store.run_retention(cfg.core.retain_calls_days) {
-        eprintln!("rtok proxy: retention skipped until next start: {e:#}");
+        let msg = format!("retention skipped until next start: {e:#}");
+        eprintln!("rtok proxy: {msg}");
+        crate::log::append(cfg, "warn", "proxy", "retention", &msg);
     }
     // A plain thread, not a task: a flush is blocking SQLite plus a blocking `flock`, and on
     // this runtime it stalled whichever worker also served live requests.

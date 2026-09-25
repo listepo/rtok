@@ -145,20 +145,31 @@ fn find_up(start: &Path, name: &str) -> Option<PathBuf> {
 /// then `<home>/.env`; the first file to define a key wins. Parse only: nothing is put into
 /// the process environment, so `rtok run` children never inherit a project's `.env`, and
 /// non-`RTOK_` keys are ignored. A malformed file is one stderr line, not an error (fail open).
-fn dotenv_pairs(home: &Path, cwd: Option<&Path>) -> Vec<(String, String)> {
+struct DotenvFile {
+    pairs: Vec<(String, String)>,
+    /// Malformed `.env` files. A missing file is not one of these.
+    warnings: Vec<String>,
+}
+
+fn read_dotenv(home: &Path, cwd: Option<&Path>) -> DotenvFile {
     let mut files: Vec<PathBuf> = cwd
         .and_then(|c| find_up(c, ".env"))
         .map(|d| d.join(".env"))
         .into_iter()
         .collect();
     files.push(home.join(".env"));
-    let mut out: Vec<(String, String)> = Vec::new();
+    let mut out = DotenvFile {
+        pairs: Vec::new(),
+        warnings: Vec::new(),
+    };
     for path in files {
         let iter = match dotenvy::from_path_iter(&path) {
             Ok(it) => it,
             Err(dotenvy::Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(e) => {
-                eprintln!("rtok: {}: {e}", path.display());
+                let msg = format!("{}: {e}", path.display());
+                eprintln!("rtok: {msg}");
+                out.warnings.push(msg);
                 continue;
             }
         };
@@ -169,18 +180,25 @@ fn dotenv_pairs(home: &Path, cwd: Option<&Path>) -> Vec<(String, String)> {
                         continue;
                     };
                     let suffix = suffix.to_uppercase();
-                    if !out.iter().any(|(s, _)| *s == suffix) {
-                        out.push((suffix, v));
+                    if !out.pairs.iter().any(|(s, _)| *s == suffix) {
+                        out.pairs.push((suffix, v));
                     }
                 }
                 Err(e) => {
-                    eprintln!("rtok: {}: {e}", path.display());
+                    let msg = format!("{}: {e}", path.display());
+                    eprintln!("rtok: {msg}");
+                    out.warnings.push(msg);
                     break;
                 }
             }
         }
     }
     out
+}
+
+#[cfg(test)]
+fn dotenv_pairs(home: &Path, cwd: Option<&Path>) -> Vec<(String, String)> {
+    read_dotenv(home, cwd).pairs
 }
 
 /// `RTOK_<SECTION>_<KEY...>` → `section.key...`, plus whether the default value is an array
@@ -236,6 +254,8 @@ struct RtokEnv {
     table: &'static BTreeMap<String, (String, bool)>,
     /// `RTOK_`-stripped, uppercased names. Empty in tests so ambient env cannot leak.
     vars: Vec<(String, String)>,
+    /// `.env` files that could not be parsed. Empty for the process layer.
+    warnings: Vec<String>,
 }
 
 impl RtokEnv {
@@ -247,14 +267,17 @@ impl RtokEnv {
                 .iter()
                 .map(|(k, v)| (k.as_str().to_uppercase(), v))
                 .collect(),
+            warnings: Vec::new(),
         }
     }
 
     fn from_dotenv(home: &Path, cwd: Option<&Path>) -> Self {
+        let file = read_dotenv(home, cwd);
         Self {
             name: "dotenv",
             table: env_leaf_table(),
-            vars: dotenv_pairs(home, cwd),
+            vars: file.pairs,
+            warnings: file.warnings,
         }
     }
 
@@ -267,6 +290,7 @@ impl RtokEnv {
                 .iter()
                 .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
                 .collect(),
+            warnings: Vec::new(),
         }
     }
 
@@ -460,8 +484,22 @@ pub fn web_flags(host: Option<String>, port: Option<u16>) -> Option<Dict> {
 
 /// [`figment`], extracted and finished (legacy-key migration + `~` expansion).
 pub fn load(home: &Path, config_file: Option<&Path>, flags: Option<Dict>) -> Result<Config> {
-    let mut cfg: Config = figment(home, config_file, flags).extract()?;
+    let cwd = std::env::current_dir().ok();
+    let dotenv = RtokEnv::from_dotenv(home, cwd.as_deref());
+    let warnings = dotenv.warnings.clone();
+    let mut cfg: Config = assemble(
+        home,
+        config_file,
+        flags,
+        RtokEnv::from_process(),
+        cwd.as_deref(),
+        dotenv,
+    )
+    .extract()?;
     cfg.finish(home);
+    for w in &warnings {
+        crate::log::append(&cfg, "warn", "config", "dotenv", w);
+    }
     Ok(cfg)
 }
 
@@ -744,6 +782,27 @@ mod tests {
         assert_eq!(dotenv_pairs(&home, None)[0].1, "8801");
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&proj);
+    }
+
+    #[test]
+    fn a_malformed_dotenv_is_a_warning_and_not_an_error_file() {
+        let home = tmp("dotenv-bad");
+        let log = home.join("rtok.log");
+        std::fs::write(home.join(".env"), "this is not a pair\n").unwrap();
+        let toml = format!("[log]\npath = \"{}\"\n", log.display());
+        std::fs::write(Config::path_for(&home), toml).unwrap();
+        let cfg = load(&home, Some(&Config::path_for(&home)), None).unwrap();
+        let text = std::fs::read_to_string(&cfg.log.path).unwrap();
+        assert!(
+            text.contains("warn config/dotenv") && text.contains(".env"),
+            "{text}"
+        );
+        let errors = rtok_log::error_path(&cfg.log.path);
+        assert!(
+            !errors.exists() || !std::fs::read_to_string(&errors).unwrap().contains("dotenv"),
+            "a warning stays out of errors.log"
+        );
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]

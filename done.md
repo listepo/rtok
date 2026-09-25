@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+### T270. The rotating text log lives in `rtok-log`
+
+The file writer (line format, level floor, rotation, the rename lock) was inside `src/log.rs` and took rtok's `Config`. Another project could not use it without the binary. It is now `crates/rtok-log`: a `FileLog` of path, `max_bytes`, `files` and level, with no database and no stderr viewer. rtok still mirrors each line to the `log` facade and, when `[log] to_db` is on, inserts the same text into the `logs` table. `rtok logs`, tailspin and `logs watch` stay in the binary.
+
+An `error` line is also copied, same bytes, to `errors.log` beside the live file (`append_split` / `error_path`). `warn`, `info` and `debug` stay in the general log only. rtok always passes that sibling path, so every existing `error` record lands in both files. Warnings that used to be stderr-only (lenient config, a bad `.env`, a legacy key, MCP and proxy retention, graph watchman fallback, agent restart, a missing web bundle, deprecated commands, the MCP-under-demon note) are now `warn` lines in the general log. Failures that used to be stderr-only (hook stdin, hook panic, a locked store, an MCP tool error, graph notify, a wasm plugin that will not load, a wasm guest `rtok_log`, `config validate`, a CLI `run` error) are `error` lines, so they also reach `errors.log`. The message keeps the full `{:#}` cause.
+
+Check: `cargo test -p rtok-log` (date, level floor, rotation, newline, a line below the floor, the stale-size lock, error copied and warn left in the main file); `cargo test -p rtok --lib log::` still green.
+
 ### T255. Tests run under a fake `HOME`
 
 Creator request 2026-09-24. T254 closes the leaks through `Config`, but code that resolves home itself (`agents::home_dir`, `Config::home_dir`, `env_user_home`) still sees the real `HOME` in any test that does not set it. Give every test process a throwaway `HOME` (and `USERPROFILE`) under `target/` so a missed path lands in a sandbox, never in `~/.claude` or `~/.codex`. The obvious place is cargo's `[env]` in `.cargo/config.toml` with `force = true`, provided nextest honours it and build scripts are not affected; if either fails, use a nextest setup script instead. Tests that need git settings from the home (commits in fixtures) get an explicit `user.name`/`user.email` instead.

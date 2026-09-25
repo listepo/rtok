@@ -149,10 +149,14 @@ pub async fn serve(cfg: Config) -> Result<()> {
     let listener = TcpListener::bind(addr)
         .await
         .with_context(|| format!("bind {addr}"))?;
-    eprintln!("rtok web http://{addr}  (ws://{addr}/ws)");
+    let listen = format!("http://{addr} ws://{addr}/ws");
+    eprintln!("rtok web {listen}");
+    crate::log::append(&cfg, "info", "web", "serve", &listen);
     let pkg = resolve_pkg();
     if matches!(pkg, Pkg::Missing) {
-        eprintln!("{}", pkg_missing_text());
+        let msg = pkg_missing_text();
+        eprintln!("{msg}");
+        crate::log::append(&cfg, "warn", "web", "pkg", &msg);
     }
     axum::serve(listener, app_with_pkg(Arc::new(DashState::new(cfg)), pkg))
         .await
