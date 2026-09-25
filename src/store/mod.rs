@@ -11,7 +11,7 @@ mod symbols;
 use std::collections::{BTreeMap, HashMap};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use anyhow::{Context, Result};
 use diesel::connection::SimpleConnection;
@@ -274,7 +274,7 @@ impl Store {
                 Err(e) if is_locked(&e) && attempt + 1 < attempts => {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
-                Err(e) => return Err(e.context(path.display().to_string())),
+                Err(e) => return Err(e).with_context(|| path.display().to_string()),
             }
         }
         unreachable!("open: the retry loop always returns")
@@ -309,7 +309,7 @@ impl Store {
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, SqliteConnection>> {
-        Ok(self.conn.lock().unwrap_or_else(|e| e.into_inner()))
+        Ok(self.conn.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     /// Apply pending migrations; returns how many ran. Idempotent.

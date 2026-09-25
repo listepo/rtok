@@ -1,6 +1,7 @@
 //! Walk overrides and extension map for the graph index (T68.10).
 
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use ignore::WalkBuilder;
@@ -87,7 +88,7 @@ impl Matcher {
 
     /// True when `path` is only indexable because of `extensions` (not built-in `supported`).
     pub fn uses_extension_map(&self, path: &Path) -> bool {
-        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+        let Some(ext) = path.extension().and_then(OsStr::to_str) else {
             return false;
         };
         self.extensions.contains_key(ext) && !outline::supported(path)

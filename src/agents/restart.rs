@@ -6,6 +6,7 @@
 //! a dry-run via [`super::would_change`]). CLI-only hosts are never killed — a running CLI
 //! binary just gets a one-line reminder to restart its session.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -182,7 +183,7 @@ fn desktop_app_name(spec: &str, fallback: &str) -> (String, PathBuf) {
     let path = expand_app_path(spec);
     let name = path
         .file_name()
-        .and_then(|n| n.to_str())
+        .and_then(OsStr::to_str)
         .map(|n| n.strip_suffix(".app").unwrap_or(n).to_string())
         .unwrap_or_else(|| fallback.to_string());
     (name, path)

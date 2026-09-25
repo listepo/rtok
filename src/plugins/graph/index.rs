@@ -339,7 +339,7 @@ fn parse(job: &Job) -> Parsed {
 /// from `write` drops the receiver, and each worker stops at its next send.
 fn each_parsed(jobs: &[Job], mut write: impl FnMut(&Job, Parsed) -> Result<()>) -> Result<()> {
     let workers = std::thread::available_parallelism()
-        .map_or(1, |n| n.get())
+        .map_or(1, std::num::NonZeroUsize::get)
         .min(jobs.len());
     let next = AtomicUsize::new(0);
     let (tx, rx) = std::sync::mpsc::sync_channel(workers.max(1) * 2);

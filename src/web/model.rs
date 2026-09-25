@@ -763,7 +763,7 @@ fn report_calls(all: &[crate::store::models::Call], from: i64) -> ReportCallsSec
             .filter(|c| c.surface == surface && c.ts >= from)
             .collect();
         let mut ms: Vec<f64> = group.iter().filter_map(|c| c.ms).collect();
-        ms.sort_by(|a, b| a.total_cmp(b));
+        ms.sort_by(f64::total_cmp);
         rows.push(ReportCalls {
             surface: surface.to_string(),
             calls: group.len() as u64,

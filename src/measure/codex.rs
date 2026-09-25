@@ -9,6 +9,7 @@
 
 use super::stats::ApiRow;
 use serde_json::Value;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -27,7 +28,7 @@ pub(crate) fn jsonl_paths(dir: &Path, cutoff: SystemTime) -> Vec<PathBuf> {
                 stack.push(p);
                 continue;
             }
-            if p.extension().and_then(|s| s.to_str()) != Some("jsonl") {
+            if p.extension().and_then(OsStr::to_str) != Some("jsonl") {
                 continue;
             }
             let mtime = e

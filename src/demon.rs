@@ -293,7 +293,7 @@ pub fn upgrade(cfg: &Config, config_file: Option<&Path>) -> Result<()> {
         (Ok(()), Ok(())) => Ok(()),
         (Err(e), Ok(())) => Err(e),
         (Ok(()), Err(e)) => Err(e),
-        (Err(e), Err(s)) => Err(e.context(format!("and restart failed: {s}"))),
+        (Err(e), Err(s)) => Err(e).with_context(|| format!("and restart failed: {s}")),
     }
 }
 

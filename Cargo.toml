@@ -117,7 +117,7 @@ indicatif = "0.18" # progress for `graph index` (T21.2); `ProgressBar::hidden()`
 owo-colors = { version = "4", features = ["supports-colors"] } # ANSI + the tty/NO_COLOR/CLICOLOR/TERM=dumb question in one call (T20.2)
 printpdf = "0.12.8" # paged-PDF renderer for `rtok report --format pdf` (T22.0 survey choice, T22.3)
 regex = "1" # search pattern (T4.5)
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time", "fs"] }
 axum = { version = "0.8.9", features = ["ws"] } # dashboard WebSocket (P19); proxy HTTP unchanged
 tower-http = { version = "0.7", features = ["fs"] } # ServeDir for Slint WASM assets
 futures-util = "0.3.34"
