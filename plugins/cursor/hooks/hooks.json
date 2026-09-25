@@ -3,31 +3,34 @@
   "hooks": {
     "beforeShellExecution": [
       {
-        "command": "rtok hook PreToolUse --host cursor"
+        "command": "{ command -v rtok >/dev/null 2>&1 && exec rtok hook PreToolUse --host cursor; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PreToolUse --host cursor; true; exit 0; }"
       }
     ],
     "afterShellExecution": [
       {
-        "command": "rtok hook PostToolUse --host cursor"
+        "command": "{ command -v rtok >/dev/null 2>&1 && exec rtok hook PostToolUse --host cursor; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PostToolUse --host cursor; true; exit 0; }"
       }
     ],
     "sessionStart": [
       {
-        "command": "rtok hook SessionStart --host cursor"
+        "command": "{ command -v rtok >/dev/null 2>&1 && exec rtok hook SessionStart --host cursor; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook SessionStart --host cursor; true && printf '%s' '{\"additional_context\":\"rtok is not installed; run ketch install listepo/rtok to enable it.\"}'; exit 0; }"
       }
     ],
     "preCompact": [
       {
-        "command": "rtok hook PreCompact --host cursor"
+        "command": "{ command -v rtok >/dev/null 2>&1 && exec rtok hook PreCompact --host cursor; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PreCompact --host cursor; true; exit 0; }"
       }
     ],
     "afterMCPExecution": [
       {
-        "command": "rtok hook AfterMCPExecution --host cursor"
+        "command": "{ command -v rtok >/dev/null 2>&1 && exec rtok hook AfterMCPExecution --host cursor; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook AfterMCPExecution --host cursor; true; exit 0; }"
       }
     ],
     "postToolUse": [
-      { "command": "rtok hook PostToolUse --host cursor", "matcher": "MCP:" }
+      {
+        "command": "{ command -v rtok >/dev/null 2>&1 && exec rtok hook PostToolUse --host cursor; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PostToolUse --host cursor; true; exit 0; }",
+        "matcher": "MCP:"
+      }
     ]
   }
 }

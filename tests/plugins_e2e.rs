@@ -178,10 +178,15 @@ fn graph_session_start_map_off_by_default_and_on_when_capped() {
     .unwrap();
     let arg = repo.to_string_lossy().into_owned();
     let _ = run(&home, &["graph", "index", &arg], "", &home.0);
-    let input = format!(
-        r#"{{"session_id":"s-map","cwd":"{cwd}","hook_event_name":"SessionStart","source":"startup"}}"#,
-        cwd = repo.display()
-    );
+    // Built with `json!`: a Windows path's `\` spliced into a JSON literal is an invalid
+    // escape, the hook fails open and prints `{}` (T83.14).
+    let input = json!({
+        "session_id": "s-map",
+        "cwd": repo,
+        "hook_event_name": "SessionStart",
+        "source": "startup"
+    })
+    .to_string();
     let off = run(&home, &["hook", "SessionStart"], &input, &home.0);
     let off_v = js(&off);
     let off_ctx = off_v

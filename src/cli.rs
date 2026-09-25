@@ -17,7 +17,8 @@ pub(crate) const VERSION: &str =
 
 /// Token-reduction CLI for AI coding agents. See plan.md for the task list.
 #[derive(Parser)]
-#[command(name = "rtok", version = VERSION, about)]
+// `bin_name`: clap would print argv[0]'s file name, `rtok.exe` on Windows (T83.7).
+#[command(name = "rtok", bin_name = "rtok", version = VERSION, about)]
 pub struct Cli {
     /// User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
     #[arg(long, global = true, value_name = "PATH")]
@@ -32,7 +33,7 @@ enum Cmd {
     Hook {
         #[arg(required_unless_present = "serve")]
         event: Option<String>,
-        /// Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin`)
+        /// Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin` | `cline`)
         #[arg(long)]
         host: Option<String>,
         /// Run the resident hook process `rtok-hook` talks to (T178, D32)
@@ -735,7 +736,12 @@ enum ConfigCmd {
         json: bool,
     },
     /// Print one key's effective value
-    Get { key: String },
+    Get {
+        key: String,
+        /// JSON `{key,value,source}` instead of the bare value (T228)
+        #[arg(long)]
+        json: bool,
+    },
     /// Reject unknown keys, wrong types, and out-of-range values
     Validate {
         /// File to check (else the user config file)
@@ -789,9 +795,10 @@ pub fn run() -> Result<()> {
                     let rows = model::config_entries(&home, config_file.as_deref())?;
                     show(&rows, sources, json)?;
                 }
-                ConfigCmd::Get { key } => {
+                ConfigCmd::Get { key, json } => {
                     let rows = model::config_entries(&home, config_file.as_deref())?;
                     match rows.into_iter().find(|r| r.key == key) {
+                        Some(r) if json => print_json(&r)?,
                         Some(r) => println!("{}", r.value),
                         None => bail!("unknown key: {key}"),
                     }

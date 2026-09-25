@@ -40,7 +40,8 @@ fn write_cfg(home: &Path) -> PathBuf {
         &cfg,
         format!(
             "[setup.pi]\nextensions_path = \"{}/extensions\"\n",
-            home.display()
+            // `/`: a `\` in a TOML basic string starts an escape (T83.4).
+            home.display().to_string().replace('\\', "/")
         ),
     )
     .unwrap();

@@ -9,7 +9,9 @@
 //! `rtok agents list` and `rtok doctor` read the same files back through the same contract.
 
 pub mod aider;
+pub mod antigravity;
 pub mod claude;
+pub mod cline;
 pub mod codewhale;
 pub mod codex;
 pub mod copilot;
@@ -59,9 +61,11 @@ pub const HOSTS: &[&str] = &[
     "aider",
     "windsurf",
     "zed",
+    "cline",
     "gemini",
     "codewhale",
     "mimo",
+    "antigravity",
 ];
 
 /// Every module an rtok install can carry, in print order.
@@ -85,9 +89,11 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "windsurf" => Some(&windsurf::Windsurf),
         "aider" => Some(&aider::Aider),
         "zed" => Some(&zed::Zed),
+        "cline" => Some(&cline::Cline),
         "gemini" => Some(&gemini::Gemini),
         "codewhale" => Some(&codewhale::Codewhale),
         "mimo" => Some(&mimo::Mimo),
+        "antigravity" => Some(&antigravity::Antigravity),
         _ => None,
     }
 }
@@ -891,6 +897,48 @@ pub(crate) fn unregister_ours(
     rtok_agent_sdk::unregister_owned(&apply(cfg), path, key, name, ours, is_rtok_bin)
 }
 
+/// Whether a host's `strip_ours` takes an rtok hook it found (T246.3, T246.6): one still as
+/// the installer writes it (`unchanged`) goes; one the user changed goes only as
+/// [`rtok_agent_sdk::keep_edited`] decides, its `leave`/`?` line (naming `at`) joining `kept`.
+pub(crate) fn takes_hook(
+    apply: &rtok_agent_sdk::Apply,
+    unchanged: bool,
+    at: impl FnOnce() -> String,
+    kept: &mut Vec<String>,
+) -> bool {
+    if unchanged {
+        return true;
+    }
+    match rtok_agent_sdk::keep_edited(apply, &at()) {
+        Some(line) => {
+            kept.push(line);
+            false
+        }
+        None => true,
+    }
+}
+
+/// `{n} removed`, or [`NO_CHANGES`] for none — the tail of a `strip_ours` report.
+pub(crate) fn removed_report(removed: usize) -> String {
+    if removed == 0 {
+        NO_CHANGES.into()
+    } else {
+        format!("{removed} removed")
+    }
+}
+
+/// A `strip_ours` report: the `kept` lines, then `report` unless it is [`NO_CHANGES`].
+pub(crate) fn with_kept(mut kept: Vec<String>, report: String) -> String {
+    if report != NO_CHANGES {
+        kept.push(report);
+    }
+    if kept.is_empty() {
+        NO_CHANGES.into()
+    } else {
+        kept.join("\n")
+    }
+}
+
 /// [`unregister_ours`] for the `mcpServers` entry [`rtok_agent_sdk::register_mcp`] writes.
 pub(crate) fn unregister_mcp_ours(
     cfg: &crate::config::Config,
@@ -1075,6 +1123,32 @@ pub(crate) fn offer_plugin(
         }),
         Err(e) => Ok(format!("offer {src_rel} → {shown} ({bin} failed: {e})")),
     }
+}
+
+/// A plugin whose store only the host writes (T86, `Support::Offer("--yes")`: Kimi's
+/// `/plugins install`, Antigravity CLI's `agy plugin install`). rtok prints `install` behind
+/// `--yes` — dry-run and apply alike — and never runs it; the flag never turns the line into
+/// state (`installed` is the caller's own marker read). Remove leaves a staged copy alone and
+/// says so with `keep`.
+pub(crate) fn print_offer(
+    cfg: &Config,
+    remove: bool,
+    installed: bool,
+    src_rel: &str,
+    install: &str,
+    keep: &str,
+) -> String {
+    let a = apply(cfg);
+    if remove && !a.dry_run {
+        return if installed { keep } else { NO_CHANGES }.into();
+    }
+    if !a.yes {
+        return NO_CHANGES.into();
+    }
+    format!(
+        "offer {src_rel} → {install} {}",
+        rtok_agent_sdk::KETCH_INSTALL
+    )
 }
 
 /// The per-host fn items [`d21_plugin_apply`] threads through: Copilot's and Gemini's own

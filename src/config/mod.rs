@@ -377,9 +377,11 @@ section! {
         aider: SetupAider = SetupAider::default(),
         windsurf: SetupWindsurf = SetupWindsurf::default(),
         zed: SetupZed = SetupZed::default(),
+        cline: SetupCline = SetupCline::default(),
         gemini: SetupGemini = SetupGemini::default(),
         codewhale: SetupCodewhale = SetupCodewhale::default(),
         mimo: SetupMimo = SetupMimo::default(),
+        antigravity: SetupAntigravity = SetupAntigravity::default(),
     }
 }
 
@@ -406,6 +408,15 @@ section! {
 section! {
     /// `[setup.kilo]` — `kilo.json`, merged by Kilo with a user's `kilo.jsonc` (T97).
     SetupKilo { config_path: PathBuf = p("~/.config/kilo/kilo.json") }
+}
+
+section! {
+    /// `[setup.cline]` — hooks dir serves CLI + extension (D21 singleton, T96);
+    /// MCP is per surface (CLI path below + VS Code extension globalStorage).
+    SetupCline {
+        hooks_path: PathBuf = p("~/Documents/Cline/Hooks"),
+        mcp_path: PathBuf = p("~/.cline/data/settings/cline_mcp_settings.json"),
+    }
 }
 
 section! {
@@ -487,6 +498,16 @@ section! {
     /// `[setup.mimo]` — MiMo Code's `mimocode.json` (`mcp`), the OpenCode-fork config file
     /// (T186, `MIMOCODE_HOME`/`MIMOCODE_CONFIG` move it).
     SetupMimo { config_path: PathBuf = p("~/.config/mimocode/mimocode.json") }
+}
+
+section! {
+    /// `[setup.antigravity]` — Antigravity 2.0 / IDE plugin root (`plugins_path`, rtok links
+    /// `plugins/antigravity` there) and the CLI's staged-plugin root (`cli_plugins_path`,
+    /// written only by `agy plugin install`; read to detect it) (T91.1).
+    SetupAntigravity {
+        plugins_path: PathBuf = p("~/.gemini/config/plugins"),
+        cli_plugins_path: PathBuf = p("~/.gemini/antigravity-cli/plugins"),
+    }
 }
 
 section! {
@@ -1003,9 +1024,13 @@ impl Config {
             setup.aider.config_path,
             setup.windsurf.config_path,
             setup.zed.config_path,
+            setup.cline.hooks_path,
+            setup.cline.mcp_path,
             setup.gemini.dir,
             setup.codewhale.dir,
             setup.mimo.config_path,
+            setup.antigravity.plugins_path,
+            setup.antigravity.cli_plugins_path,
             plugins.cmd.rules,
             plugins.cmd.rules_dir,
             plugins.inject.modes_dir,

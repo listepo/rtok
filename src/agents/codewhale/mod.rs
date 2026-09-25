@@ -25,7 +25,7 @@
 //! (`src/hooks/types.rs::adapt_codewhale`, `src/hooks/mod.rs::codewhale_output`), mirroring
 //! T118.1's Gemini adapter.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use rtok_agent_sdk::NO_CHANGES;
@@ -112,7 +112,15 @@ fn insert_ours(doc: &mut DocumentMut, timeout: u64) -> Result<String> {
     Ok(format!("+ [[hooks.hooks]] {EVENT} {cmd}\n1 addition"))
 }
 
-fn strip_ours(doc: &mut DocumentMut) -> String {
+/// Remove rtok's `[[hooks.hooks]]` table (T246.6). One still as [`insert_ours`] writes it —
+/// exactly `name`, `event`, `command` and `timeout_secs` — goes; one the user changed goes
+/// only as [`rtok_agent_sdk::keep_edited`] decides.
+fn strip_ours(
+    apply: &rtok_agent_sdk::Apply,
+    path: &Path,
+    doc: &mut DocumentMut,
+    timeout: u64,
+) -> String {
     let Some(hooks_tbl) = doc.get_mut("hooks").and_then(Item::as_table_mut) else {
         return NO_CHANGES.into();
     };
@@ -122,17 +130,23 @@ fn strip_ours(doc: &mut DocumentMut) -> String {
     else {
         return NO_CHANGES.into();
     };
-    let before = arr.len();
-    arr.retain(|t| !table_is_ours(t));
-    let removed = before - arr.len();
+    let (mut removed, mut kept) = (0usize, Vec::new());
+    arr.retain(|t| {
+        if !table_is_ours(t) {
+            return true;
+        }
+        let unchanged = t.len() == 4
+            && t.get("name").and_then(Item::as_str) == Some(NAME)
+            && t.get("timeout_secs").and_then(Item::as_integer) == i64::try_from(timeout).ok();
+        let at = || format!("[[hooks.hooks]] {EVENT} in {}", path.display());
+        let take = super::takes_hook(apply, unchanged, at, &mut kept);
+        removed += usize::from(take);
+        !take
+    });
     if arr.is_empty() {
         hooks_tbl.remove("hooks");
     }
-    if removed == 0 {
-        NO_CHANGES.into()
-    } else {
-        format!("{removed} removed")
-    }
+    super::with_kept(kept, super::removed_report(removed))
 }
 
 /// Apply, dry-run, or remove the `[[hooks.hooks]]` entry.
@@ -140,7 +154,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     let path = config_path(cfg);
     let mut doc = super::load_toml(&path)?;
     let report = if remove {
-        strip_ours(&mut doc)
+        strip_ours(&apply(cfg), &path, &mut doc, cfg.setup.hook_timeout_s)
     } else {
         insert_ours(&mut doc, cfg.setup.hook_timeout_s)?
     };

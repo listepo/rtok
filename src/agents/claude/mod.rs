@@ -5,11 +5,16 @@
 
 pub mod migrate;
 
+use std::fmt;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use crate::config::Config;
 use anyhow::Result;
 use rtok_agent_sdk::{Apply, KETCH_INSTALL, NO_CHANGES, array_at, edit_json, object_at};
+use serde::Deserialize;
+use serde::de::{Deserializer, MapAccess, Visitor};
 use serde_json::{Value, json};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -28,6 +33,58 @@ pub(super) const ENTRIES: &[(&str, &str)] = &[
     ("PostCompact", ""),
     ("SessionEnd", ""),
 ];
+
+/// Claude's own list, read from the plugin's `hooks/hooks.json` in file order — the one place
+/// it is written (T262.1), so the GitHub plugin install and the settings-file install cannot
+/// drift. It is [`ENTRIES`] plus `SubagentStart`, the spawn brief's event (T130.2); Kimi takes
+/// `ENTRIES` wholesale and discards a `SubagentStart` hook's output, so it stays out of there.
+fn claude_entries() -> &'static [(&'static str, &'static str)] {
+    static LIST: LazyLock<Vec<(&str, &str)>> = LazyLock::new(|| {
+        serde_json::from_str::<PluginHooks>(include_str!(
+            "../../../plugins/claude/hooks/hooks.json"
+        ))
+        .expect("plugins/claude/hooks/hooks.json parses (plugin_tree_matches_the_installer)")
+        .hooks
+        .0
+    });
+    &LIST
+}
+
+#[derive(Deserialize)]
+struct PluginHooks<'a> {
+    #[serde(borrow)]
+    hooks: Events<'a>,
+}
+
+#[derive(Deserialize)]
+struct Matcher<'a> {
+    #[serde(borrow)]
+    matcher: Option<&'a str>,
+}
+
+/// `(event, matcher)` pairs of a `hooks` object in file order; a `Value` would sort the events
+/// (no `preserve_order` here) and reorder every install report.
+struct Events<'a>(Vec<(&'a str, &'a str)>);
+
+impl<'de: 'a, 'a> Deserialize<'de> for Events<'a> {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Visit<'a>(PhantomData<&'a ()>);
+        impl<'de: 'a, 'a> Visitor<'de> for Visit<'a> {
+            type Value = Events<'a>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a map of hook events")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Events<'a>, A::Error> {
+                let mut out = Vec::new();
+                while let Some((event, list)) = map.next_entry::<&'a str, Vec<Matcher<'a>>>()? {
+                    out.extend(list.into_iter().map(|m| (event, m.matcher.unwrap_or(""))));
+                }
+                Ok(Events(out))
+            }
+        }
+        d.deserialize_map(Visit(PhantomData))
+    }
+}
 
 /// T174: `rtok_command()` deliberately keeps the bare name on non-Windows even when PATH
 /// lookup fails (an absolute path is the Windows spawn edge, not a Unix one) — so a settings
@@ -67,12 +124,19 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     edit_json(&a, path, |root| {
         if remove {
             let timeout = cfg.setup.hook_timeout_s;
-            strip_ours(&a, path, root.get_mut("hooks"), ENTRIES, "timeout", timeout)
+            strip_ours(
+                &a,
+                path,
+                root.get_mut("hooks"),
+                claude_entries(),
+                "timeout",
+                timeout,
+            )
         } else {
             let bin = super::rtok_hook_bin();
             insert_ours(
                 object_at(root, "hooks"),
-                ENTRIES,
+                claude_entries(),
                 &bin,
                 "timeout",
                 cfg.setup.hook_timeout_s,
@@ -152,7 +216,7 @@ pub(super) fn insert_ours(
 }
 
 /// ` <matcher>` for a report line; nothing for an empty matcher.
-fn show(matcher: &str) -> String {
+pub(super) fn show(matcher: &str) -> String {
     if matcher.is_empty() {
         String::new()
     } else {
@@ -235,15 +299,10 @@ pub(super) fn strip_ours(
                     return true;
                 };
                 let want = json!({"type": "command", "command": cmd, timeout_key: timeout});
-                if !listed || *h != want {
-                    let at = format!("hooks.{event}{} in {}", show(&matcher), path.display());
-                    if let Some(leave) = rtok_agent_sdk::keep_edited(apply, &at) {
-                        kept.push(leave);
-                        return true;
-                    }
-                }
-                removed += 1;
-                false
+                let at = || format!("hooks.{event}{} in {}", show(&matcher), path.display());
+                let take = super::takes_hook(apply, listed && *h == want, at, &mut kept);
+                removed += usize::from(take);
+                !take
             });
         }
         arr.retain(|e| {
@@ -253,14 +312,7 @@ pub(super) fn strip_ours(
         });
     }
     hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
-    if removed > 0 {
-        kept.push(format!("{removed} removed"));
-    }
-    if kept.is_empty() {
-        NO_CHANGES.into()
-    } else {
-        kept.join("\n")
-    }
+    super::with_kept(kept, super::removed_report(removed))
 }
 
 /// Add `rtok mcp` to `mcpServers` in `~/.claude.json` (T4.7).
@@ -700,12 +752,20 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_empty_is_nine_additions() {
+    fn dry_run_empty_is_ten_additions() {
         let path = tmp("setup-dry");
         let report = run(&cfg(path.clone(), true), false).unwrap();
-        assert!(report.contains("9 additions"), "{report}");
+        assert!(report.contains("10 additions"), "{report}");
         assert!(
             report.contains(&format!("+ SessionEnd {}", command("rtok", "SessionEnd"))),
+            "{report}"
+        );
+        // T130.2: the spawn brief's event is installed for Claude (and only Claude).
+        assert!(
+            report.contains(&format!(
+                "+ SubagentStart {}",
+                command("rtok", "SubagentStart")
+            )),
             "{report}"
         );
         assert!(!path.exists());
@@ -792,7 +852,7 @@ mod tests {
         let path = tmp("setup-apply");
         fs::write(&path, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo other"}]}]}}"#).unwrap();
         let first = run(&cfg(path.clone(), false), false).unwrap();
-        assert!(first.contains("9 additions"), "{first}");
+        assert!(first.contains("10 additions"), "{first}");
         assert_eq!(run(&cfg(path.clone(), false), false).unwrap(), NO_CHANGES);
         let rm = run(&cfg(path.clone(), false), true).unwrap();
         assert!(rm.contains("removed"), "{rm}");
@@ -843,8 +903,14 @@ mod tests {
         let path = tmp("desktop-mcp");
         let a = apply(&cfg(path.clone(), false));
         rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"]).unwrap();
+        // Compare the parsed value: a Windows path's `\` is `\\` in the raw JSON (T83.5).
         let raw = fs::read_to_string(&path).unwrap();
-        assert!(raw.contains(&desktop_command()), "{raw}");
+        let written: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            written["mcpServers"]["rtok"]["command"],
+            json!(desktop_command()),
+            "{raw}"
+        );
         assert_ne!(
             rtok_agent_sdk::unregister_mcp(&a, &path, "rtok").unwrap(),
             NO_CHANGES
@@ -877,9 +943,22 @@ mod tests {
                 ..Apply::default()
             };
             let at = std::path::Path::new(path);
-            strip_ours(&yes, at, root.get_mut("hooks"), ENTRIES, "timeout", 5)
+            strip_ours(
+                &yes,
+                at,
+                root.get_mut("hooks"),
+                claude_entries(),
+                "timeout",
+                5,
+            )
         } else {
-            insert_ours(object_at(&mut root, "hooks"), ENTRIES, "rtok", "timeout", 5)
+            insert_ours(
+                object_at(&mut root, "hooks"),
+                claude_entries(),
+                "rtok",
+                "timeout",
+                5,
+            )
         };
         vfs.write(path, serde_json::to_string_pretty(&root).unwrap());
         report
@@ -894,7 +973,7 @@ mod tests {
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo other"}]}]}}"#,
         );
         let first = hooks_roundtrip_vfs(&mut vfs, path, false);
-        assert!(first.contains("9 additions"), "{first}");
+        assert!(first.contains("10 additions"), "{first}");
         assert_eq!(hooks_roundtrip_vfs(&mut vfs, path, false), NO_CHANGES);
         let rm = hooks_roundtrip_vfs(&mut vfs, path, true);
         assert!(rm.contains("removed"), "{rm}");
@@ -933,19 +1012,19 @@ mod tests {
             let path = "settings.json";
             vfs.write(path, body);
             let report = hooks_roundtrip_vfs(&mut vfs, path, false);
-            assert!(report.contains("9 additions"), "{body} → {report}");
+            assert!(report.contains("10 additions"), "{body} → {report}");
             let root: Value = serde_json::from_str(vfs.read_str(path).unwrap()).unwrap();
             assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
         }
     }
 
     #[test]
-    fn dry_run_empty_is_nine_additions_from_vfs() {
+    fn dry_run_empty_is_ten_additions_from_vfs() {
         let mut vfs = crate::testutil::Vfs::new();
         // Absent file → empty object; dry-run style: mutate report only, do not require prior write.
         let path = "Users/Ivan Tuhai/.claude/settings.json";
         let report = hooks_roundtrip_vfs(&mut vfs, path, false);
-        assert!(report.contains("9 additions"), "{report}");
+        assert!(report.contains("10 additions"), "{report}");
         assert!(
             report.contains(&format!("+ SessionEnd {}", command("rtok", "SessionEnd"))),
             "{report}"
@@ -967,7 +1046,7 @@ mod tests {
             let path = tmp(&format!("setup-shape-{}", body.len()));
             fs::write(&path, body).unwrap();
             let report = run(&cfg(path.clone(), false), false).unwrap();
-            assert!(report.contains("9 additions"), "{body} → {report}");
+            assert!(report.contains("10 additions"), "{body} → {report}");
             let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
             assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
         }
@@ -1049,8 +1128,11 @@ mod tests {
         let parse = |s: &str| serde_json::from_str::<Value>(s).unwrap();
         let hooks = parse(include_str!("../../../plugins/claude/hooks/hooks.json"));
         let timeout = Config::default().setup.hook_timeout_s;
+        // T262.1: the file is the list; the shared `ENTRIES` other hosts take must lead it.
+        assert_eq!(claude_entries()[..ENTRIES.len()], *ENTRIES);
+        assert!(claude_entries().contains(&("SubagentStart", "")));
         let mut want = json!({});
-        for &(event, matcher) in ENTRIES {
+        for &(event, matcher) in claude_entries() {
             // T178: `rtok` on PATH is exec'd from Claude Code's own shell; `hook.sh` (a second
             // shell, ~6 ms) only runs when PATH has no `rtok` (desktop app, fail-open hint).
             let cmd = format!(
@@ -1077,6 +1159,27 @@ mod tests {
         ));
         assert_eq!(market["plugins"][0]["name"], manifest["name"]);
         assert_eq!(market["plugins"][0]["source"], "./");
+    }
+
+    /// T132: the shipped scout stays cheap (`model: haiku`) and scoped to the plugin-scoped
+    /// rtok MCP tool names Claude Code resolves for a plugin's own server
+    /// (`mcp__plugin_<plugin>_<server>__<tool>`, per the plugins reference doc) — a bare or
+    /// unscoped name would silently never fire.
+    #[test]
+    fn scout_agent_ships_with_the_cheap_scoped_frontmatter() {
+        let text = include_str!("../../../plugins/claude/agents/rtok-scout.md");
+        let front = text
+            .strip_prefix("---\n")
+            .and_then(|s| s.split_once("\n---\n"))
+            .expect("frontmatter fenced by `---`")
+            .0;
+        assert!(front.contains("name: rtok-scout"), "{front}");
+        assert!(front.contains("model: haiku"), "{front}");
+        for tool in ["read", "search", "outline", "explore", "expand"] {
+            let want = format!("mcp__plugin_rtok_rtok__{tool}");
+            assert!(front.contains(&want), "{front}: missing {want}");
+        }
+        assert!(!front.contains("mcp__rtok__"), "{front}: unscoped MCP name");
     }
 
     // --- T139: `plugin()` decision logic — installed/known-marketplace/fresh, no real `claude` ---

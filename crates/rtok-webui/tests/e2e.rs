@@ -241,6 +241,54 @@ fn fail_open_snapshot_renders_empty_pages() {
 }
 
 #[test]
+fn sessions_live_only_checkbox_hides_ended() {
+    let ui = window();
+    let mut v = snapshot();
+    v["sessions"] = json!([
+        {
+            "id": "a", "host": "claude", "project": "rtok", "provider": "anthropic",
+            "api": "anthropic", "model": "x", "input": 30, "cache_create": 1,
+            "cache_read": 7, "output": 7, "started_at": 1, "last_activity": 2, "ended_at": null
+        },
+        {
+            "id": "b", "host": "claude", "project": "rtok", "provider": "anthropic",
+            "api": "anthropic", "model": "x", "input": 5, "cache_create": 0,
+            "cache_read": 0, "output": 1, "started_at": 3, "last_activity": 4, "ended_at": 5
+        }
+    ]);
+    apply_snapshot(&ui, &v);
+    let tab = ElementHandle::find_by_accessible_label(&ui, "sessions")
+        .next()
+        .unwrap_or_else(|| panic!("sessions tab (run with SLINT_EMIT_DEBUG_INFO=1)"));
+    tab.mock_single_click(slint::platform::PointerEventButton::Left);
+    assert_eq!(ui.get_page_id().as_str(), "sessions");
+    assert_eq!(ui.get_sessions().row_count(), 2);
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "session b")
+            .next()
+            .is_some(),
+        "ended session is listed"
+    );
+    let filter = ElementHandle::find_by_accessible_label(&ui, "live only")
+        .next()
+        .unwrap_or_else(|| panic!("live-only checkbox (run with SLINT_EMIT_DEBUG_INFO=1)"));
+    filter.mock_single_click(slint::platform::PointerEventButton::Left);
+    assert!(ui.get_sessions_live_only(), "checkbox toggles");
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "session a")
+            .next()
+            .is_some(),
+        "live row stays"
+    );
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "session b")
+            .next()
+            .is_none(),
+        "ended row is hidden"
+    );
+}
+
+#[test]
 fn skills_never_only_checkbox_hides_invoked() {
     let ui = window();
     let mut v = snapshot();

@@ -34,6 +34,21 @@ pub fn root(host: &str, cfg: &Config) -> Option<PathBuf> {
             .extensions_path
             .parent()
             .map(|p| p.join("skills")),
+        // T91.2: Antigravity 2.0 / IDE and the CLI each read their own global root, beside
+        // their plugin roots (https://antigravity.google/docs/skills); `antigravity-cli` is the
+        // CLI variant's key, not a host id.
+        "antigravity" => cfg
+            .setup
+            .antigravity
+            .plugins_path
+            .parent()
+            .map(|p| p.join("skills")),
+        "antigravity-cli" => cfg
+            .setup
+            .antigravity
+            .cli_plugins_path
+            .parent()
+            .map(|p| p.join("skills")),
         _ => None,
     }
 }
@@ -51,6 +66,8 @@ fn label(host: &str) -> Option<&'static str> {
         "opencode" => Some("~/.config/opencode/skills"),
         "copilot" => Some("~/.copilot/skills"),
         "pi" => Some("~/.pi/agent/skills"),
+        "antigravity" => Some("~/.gemini/config/skills"),
+        "antigravity-cli" => Some("~/.gemini/antigravity-cli/skills"),
         _ => None,
     }
 }
@@ -165,7 +182,7 @@ mod tests {
         let cfg = Config::default();
         for id in HOSTS {
             match *id {
-                "claude" | "cursor" | "codex" | "opencode" | "copilot" | "pi" => {
+                "claude" | "cursor" | "codex" | "opencode" | "copilot" | "pi" | "antigravity" => {
                     assert!(root(id, &cfg).is_some(), "{id} has a §10.1 skill root");
                     assert!(label(id).is_some(), "{id} root has a label");
                 }
@@ -180,7 +197,10 @@ mod tests {
             ("opencode", "opencode/skills"),
             ("copilot", ".copilot/skills"),
             ("pi", ".pi/agent/skills"),
+            ("antigravity", ".gemini/config/skills"),
+            ("antigravity-cli", ".gemini/antigravity-cli/skills"),
         ] {
+            assert!(label(host).unwrap().ends_with(tail), "{host} label");
             assert!(root(host, &cfg).unwrap().ends_with(tail), "{host} root");
             for name in SKILLS {
                 let dest = dest(host, &cfg, name).unwrap();

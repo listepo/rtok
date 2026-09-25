@@ -199,6 +199,32 @@ fn skills_page_exists_on_both_surfaces() {
     );
 }
 
+/// T260: both surfaces filter the Sessions page to live rows — the TUI Sessions
+/// tab's `l` key and KEYS entry in `src/tui/app.rs`, the web's "live only" checkbox
+/// in `crates/rtok-webui/ui/app.slint`. Both read the `ended_at`-derived `live` flag
+/// that already rides the snapshot wire, so this is a UI-only feature and the check
+/// fails by name if either surface drops it.
+#[test]
+fn sessions_live_filter_exists_on_both_surfaces() {
+    let Surfaces { app, slint, .. } = SURFACES;
+    assert!(
+        app.contains("(\"sessions\", \"l\", \"live-only filter\")"),
+        "the TUI's KEYS table documents the sessions live-only filter"
+    );
+    assert!(
+        app.contains("self.sessions.live_only = !self.sessions.live_only"),
+        "the TUI Sessions tab toggles live_only on `l`"
+    );
+    assert!(
+        slint.contains("sessions-live-only"),
+        "the web Sessions page has a live-only property bound from the shell"
+    );
+    assert!(
+        slint.contains("\"live only\"") && slint.contains("!live-only || s.live"),
+        "the web Sessions page has a live-only checkbox that filters on `live`"
+    );
+}
+
 /// T227: both surfaces render the Stats page from the same model accessor — `rtok
 /// stats --price`'s table plus `rtok stats --cache`'s table, D27's one page for two
 /// commands.
@@ -289,6 +315,96 @@ fn hosts_page_exists_on_both_surfaces() {
     );
 }
 
+/// T228: both surfaces render the Config page — `config show`'s rows, key/value/D12
+/// source — from the same model accessor, so `config show`/`config get` can leave
+/// EXEMPT for COMMAND_PAGES.
+#[test]
+fn config_page_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        web,
+        slint,
+        ..
+    } = SURFACES;
+    assert!(
+        model.contains("(\"config\", \"config\")"),
+        "pages() offers config"
+    );
+    assert!(
+        model.contains("fn config_page_text"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("\"config\" =>"),
+        "the TUI renders the config page"
+    );
+    assert!(
+        web.contains("config_text") && slint.contains("page-id == \"config\""),
+        "the web Config page renders the same text"
+    );
+}
+
+/// T229: both surfaces render the Services page — `demon status`'s per-service rows
+/// plus `otel status`'s exporter health — from the same model accessor, so `demon
+/// status`/`otel status` can join `COMMAND_PAGES`.
+#[test]
+fn services_page_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        web,
+        slint,
+        ..
+    } = SURFACES;
+    assert!(
+        model.contains("(\"services\", \"services\")"),
+        "pages() offers services"
+    );
+    assert!(
+        model.contains("fn services_page_text"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("\"services\" =>"),
+        "the TUI renders the services page"
+    );
+    assert!(
+        web.contains("services_text") && slint.contains("page-id == \"services\""),
+        "the web Services page renders the same text"
+    );
+}
+
+/// T232: both surfaces render the Worktrees page — `worktree list`'s table (path,
+/// branch, owner, state, age, `target/` size) — from the same model accessor, so
+/// `worktree list` can leave EXEMPT for COMMAND_PAGES; `gc`/`clean` stay CLI-only.
+#[test]
+fn worktrees_page_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        web,
+        slint,
+        ..
+    } = SURFACES;
+    assert!(
+        model.contains("(\"worktrees\", \"worktrees\")"),
+        "pages() offers worktrees"
+    );
+    assert!(
+        model.contains("fn worktrees_page_text"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("\"worktrees\" =>"),
+        "the TUI renders the worktrees page"
+    );
+    assert!(
+        web.contains("worktrees_text") && slint.contains("page-id == \"worktrees\""),
+        "the web Worktrees page renders the same text"
+    );
+}
+
 #[test]
 fn wasm_ui_renders_every_model_page() {
     let lib = include_str!(concat!(
@@ -347,6 +463,14 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     // the Hosts page rides the snapshot since T231, so both render it
     ("agents list", "hosts"),
     ("agents info", "hosts"),
+    // the Config page rides the snapshot since T228, so both render it
+    ("config show", "config"),
+    ("config get", "config"),
+    // the Services page rides the snapshot since T229, so both render it
+    ("demon status", "services"),
+    ("otel status", "services"),
+    // the Worktrees page rides the snapshot since T232, so `worktree list` renders it
+    ("worktree list", "worktrees"),
 ];
 
 /// The commands D27 exempts, each with its reason. Streaming commands print a stream,
@@ -465,14 +589,6 @@ const EXEMPT: &[(&str, &str)] = &[
         "memory export",
         "dumps notes as the portable JSONL `memory import` reads; the Memory page is where they render (T66.2)",
     ),
-    (
-        "otel status",
-        "exporter echo: endpoint, watermarks, pending rows",
-    ),
-    (
-        "worktree list",
-        "reads git and the checkout's file system, not the store: no model data (T151)",
-    ),
     // reading, but on-demand today (T15.11); the frame does not carry the page yet
     (
         "report",
@@ -481,18 +597,9 @@ const EXEMPT: &[(&str, &str)] = &[
     ("graph impact", "need a target; CLI/MCP only"),
     ("graph affected", "need a target; CLI/MCP only"),
     (
-        "config show",
-        "renders model::config_entries; no snapshot page yet",
-    ),
-    (
-        "config get",
-        "renders model::config_entries; no snapshot page yet",
-    ),
-    (
         "logs export",
         "the same Logs selection, unnumbered and uncoloured",
     ),
-    ("demon status", "renders Model::demon; no snapshot page yet"),
 ];
 
 /// Every runnable command path, space-joined — the walk `config_coverage` already
@@ -561,6 +668,7 @@ const JSON_READERS: &[&str] = &[
     "stats",
     "info",
     "config show",
+    "config get",
     "doctor",
     "plugins",
     "agents list",

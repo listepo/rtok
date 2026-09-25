@@ -323,12 +323,23 @@ pub fn page(cfg: &Config) -> Result<Report> {
             .instructions
             .then(|| instruction_audit(cfg, settings.as_ref(), claude.as_ref())),
         skills: skills_audit(cfg),
-        overlaps: overlap_lines(
-            cfg.plugin_enabled("archive", true),
-            cfg.plugin_enabled("memory", true) && cfg.plugins.memory.recall_tokens > 0,
-            sync_block_present(),
-            &detected_hosts(settings.as_ref()),
-        ),
+        overlaps: {
+            let mut lines = overlap_lines(
+                cfg.plugin_enabled("archive", true),
+                cfg.plugin_enabled("memory", true) && cfg.plugins.memory.recall_tokens > 0,
+                sync_block_present(),
+                &detected_hosts(settings.as_ref()),
+            );
+            let desktop = crate::agents::claude::desktop_path();
+            lines.extend(mcp_duplicate_lines(
+                crate::agents::claude::plugin_installed(cfg),
+                &[
+                    (cfg.doctor.claude_json.as_path(), claude.as_ref()),
+                    (desktop.as_path(), read_json(&desktop).as_ref()),
+                ],
+            ));
+            lines
+        },
         tools_rewrite_advice: tools_rewrite_adv,
         // File reads only: no `--version` probe, so the 2 s dashboard tick stays cheap.
         agents: crate::agents::HOSTS
@@ -413,6 +424,26 @@ fn overlap_lines(
         );
     }
     out
+}
+
+/// T171: every file that still registers `mcpServers.rtok` while the Claude plugin is
+/// installed — Claude Code or the desktop app's Code tab then runs a second rtok server
+/// (D21). `rtok agents install claude` strips the file entry under the plugin (T243).
+fn mcp_duplicate_lines(plugin: bool, files: &[(&Path, Option<&Value>)]) -> Vec<String> {
+    if !plugin {
+        return Vec::new();
+    }
+    files
+        .iter()
+        .filter(|(_, v)| v.and_then(|v| v.pointer("/mcpServers/rtok")).is_some())
+        .map(|(path, _)| {
+            format!(
+                "duplicate: the Claude plugin and mcpServers.rtok in {} both serve rtok's MCP \
+                 — rtok side: rtok agents install claude",
+                path.display()
+            )
+        })
+        .collect()
 }
 
 /// The skills audit probe (T61.3): the documented roots of every host on this
@@ -501,7 +532,8 @@ fn audit_from(
             };
             let source = plugin.as_deref().unwrap_or(source);
             for sub in subdirs(dir) {
-                let Some(name) = sub.rsplit('/').next() else {
+                // `file_name`, not `rsplit('/')`: Windows paths end in `\<name>` (T83.7).
+                let Some(name) = Path::new(&sub).file_name().and_then(|n| n.to_str()) else {
                     continue;
                 };
                 let Some(md) = read(&format!("{sub}/SKILL.md")) else {
@@ -1284,6 +1316,25 @@ mod tests {
         );
         assert!(sync[0].starts_with("duplicate:"), "{sync:?}");
         assert!(!sync[0].contains("saves"), "{sync:?}");
+    }
+
+    /// T171: an `mcpServers.rtok` next to the installed Claude plugin is one `duplicate:`
+    /// line per file; without the plugin, or without the entry, there is none.
+    #[test]
+    fn mcp_entry_next_to_the_claude_plugin_is_a_duplicate() {
+        let (code, desktop) = (Path::new("/h/.claude.json"), Path::new("/h/desktop.json"));
+        let ours = json!({"mcpServers": {"rtok": {"command": "rtok", "args": ["mcp"]}}});
+        let other = json!({"mcpServers": {"serena": {"command": "uvx"}}});
+        let lines = mcp_duplicate_lines(true, &[(code, Some(&other)), (desktop, Some(&ours))]);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("duplicate:"), "{lines:?}");
+        assert!(lines[0].contains("/h/desktop.json"), "{lines:?}");
+        assert!(lines[0].contains("rtok agents install claude"), "{lines:?}");
+        assert!(!lines[0].contains("saves"), "{lines:?}");
+        let both = mcp_duplicate_lines(true, &[(code, Some(&ours)), (desktop, Some(&ours))]);
+        assert_eq!(both.len(), 2, "{both:?}");
+        assert!(mcp_duplicate_lines(false, &[(code, Some(&ours))]).is_empty());
+        assert!(mcp_duplicate_lines(true, &[(code, None), (desktop, Some(&other))]).is_empty());
     }
 
     /// The doctor text carries the section with the header total and per-row flags.

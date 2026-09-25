@@ -55,11 +55,24 @@ file.\nGet the archived body with rtok expand <id>; answer with path:line citati
 /// about 100 `PreToolUse` rows.
 const LEDGER_SCAN_ROWS: i64 = 100;
 
+/// Symbol ranges one pointer may carry (T130.3, creator decision): the newest three.
+const MAX_RANGES: usize = 3;
+
 /// One path this session's own traffic named, and the archive id of its last full MCP read
 /// when the (unrelated, optional) `read` plugin's cache still has one.
 struct Pointer {
     path: String,
     archive_id: Option<String>,
+    /// Innermost indexed definitions around what this session read or edited in `path`, newest
+    /// first, as `(line, end_line, name)`. Empty without a graph index (T130.3).
+    ranges: Vec<(i32, i32, String)>,
+}
+
+/// Where one `Read`/`Edit` call landed in its file: a `Read` line window, or an `Edit`'s
+/// `new_string`, located in the file only when the index has definitions to widen it to.
+enum Touch {
+    Lines(i32, i32),
+    Text(String),
 }
 
 /// Paths this session read or edited, most recent first, each path once (T130).
@@ -69,10 +82,10 @@ struct Pointer {
 /// most wants to keep. `memory` has no Cargo feature dependency on `read` (`memory = []`), so
 /// this scans raw hook JSON instead of importing its types.
 fn ledger(cx: &Ctx) -> Vec<Pointer> {
-    let mut seen = std::collections::HashSet::new();
-    let mut out = Vec::new();
+    let mut seen = std::collections::HashMap::new();
+    let mut touched: Vec<(String, String, Vec<Touch>)> = Vec::new();
     let Ok(bodies) = cx.recent_hook_inputs_for_event("PreToolUse", LEDGER_SCAN_ROWS) else {
-        return out;
+        return Vec::new();
     };
     for b in &bodies {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(b) else {
@@ -82,20 +95,106 @@ fn ledger(cx: &Ctx) -> Vec<Pointer> {
         if !matches!(tool, "Read" | "Edit" | "Write") {
             continue;
         }
-        let Some(path) = v
-            .get("tool_input")
+        let input = v.get("tool_input");
+        let Some(path) = input
             .and_then(|i| i.get("file_path").or_else(|| i.get("path")))
             .and_then(|p| p.as_str())
         else {
             continue;
         };
-        if !seen.insert(path.to_string()) {
-            continue;
-        }
-        out.push(Pointer {
-            archive_id: last_full_read_id(cx, path),
-            path: path.to_string(),
+        let at = *seen.entry(path.to_string()).or_insert_with(|| {
+            let cwd = v.get("cwd").and_then(|c| c.as_str()).unwrap_or(".");
+            touched.push((path.to_string(), cwd.to_string(), Vec::new()));
+            touched.len() - 1
         });
+        let int = |k: &str| input.and_then(|i| i.get(k)).and_then(|n| n.as_i64());
+        let touch = match tool {
+            "Read" if int("offset").is_some() || int("limit").is_some() => {
+                let from = int("offset").unwrap_or(1).max(1);
+                let to = from.saturating_add(int("limit").unwrap_or(2000).max(1) - 1);
+                let line = |n: i64| i32::try_from(n).unwrap_or(i32::MAX);
+                Some(Touch::Lines(line(from), line(to)))
+            }
+            "Edit" => input
+                .and_then(|i| i.get("new_string"))
+                .and_then(|s| s.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| Touch::Text(s.to_string())),
+            _ => None,
+        };
+        touched[at].2.extend(touch);
+    }
+    touched
+        .into_iter()
+        .map(|(path, cwd, touches)| Pointer {
+            archive_id: last_full_read_id(cx, &path),
+            ranges: symbol_ranges(cx, &cwd, &path, &touches),
+            path,
+        })
+        .collect()
+}
+
+/// Widens each touch to the innermost indexed definition that encloses it (T130.3), newest
+/// first, deduped, at most [`MAX_RANGES`]. The index is keyed like `graph::index::canon`
+/// (canonical root, `/`-separated relative path) — mirrored here, as `last_full_read_id`
+/// mirrors the read cache, so `memory = []` needs no `graph` feature. The file is read only
+/// when the index has definitions for it and an `Edit` must be located.
+fn symbol_ranges(cx: &Ctx, cwd: &str, path: &str, touches: &[Touch]) -> Vec<(i32, i32, String)> {
+    let canon = |p: &std::path::Path| {
+        dunce::canonicalize(p)
+            .unwrap_or_else(|_| p.to_path_buf())
+            .to_string_lossy()
+            .replace('\\', "/")
+    };
+    if touches.is_empty() {
+        return Vec::new();
+    }
+    let abs = std::path::Path::new(cwd).join(path);
+    let (root, file) = (canon(std::path::Path::new(cwd)), canon(&abs));
+    let Some(rel) = file.strip_prefix(&root).and_then(|r| r.strip_prefix('/')) else {
+        return Vec::new();
+    };
+    let defs = cx.symbol_file_defs(&root, rel).unwrap_or_default();
+    if defs.is_empty() {
+        return Vec::new();
+    }
+    let text = touches
+        .iter()
+        .any(|t| matches!(t, Touch::Text(_)))
+        .then(|| std::fs::read_to_string(&abs).ok())
+        .flatten();
+    let mut out = Vec::new();
+    for t in touches {
+        let (from, to) = match t {
+            Touch::Lines(a, b) => (*a, *b),
+            Touch::Text(s) => {
+                let Some(at) = text
+                    .as_deref()
+                    .and_then(|x| x.find(s.as_str()).map(|i| (x, i)))
+                else {
+                    continue;
+                };
+                let from = at.0[..at.1].matches('\n').count() as i32 + 1;
+                (
+                    from,
+                    from + s.trim_end_matches('\n').matches('\n').count() as i32,
+                )
+            }
+        };
+        let Some((name, _, line, end)) = defs
+            .iter()
+            .filter(|d| d.2 <= from && d.3 >= to)
+            .min_by_key(|d| d.3 - d.2)
+        else {
+            continue;
+        };
+        let range = (*line, *end, name.clone());
+        if !out.contains(&range) {
+            out.push(range);
+        }
+        if out.len() == MAX_RANGES {
+            break;
+        }
     }
     out
 }
@@ -119,21 +218,41 @@ pub fn build_brief(cx: &Ctx, budget_tokens: u32, hint: &str) -> Option<String> {
         return None;
     }
     pointers.sort_by_key(|p| !hint.contains(p.path.as_str()));
-    let lines: Vec<String> = pointers
-        .iter()
-        .map(|p| match &p.archive_id {
-            Some(id) => format!("{} — rtok expand {id}", p.path),
-            None => p.path.clone(),
-        })
-        .collect();
-    let full = format!("{}\n{INSTRUCTIONS}", lines.join("\n"));
+    let digest = |ranged: bool| {
+        let lines: Vec<String> = pointers
+            .iter()
+            .map(|p| {
+                let mut line = p.path.clone();
+                if ranged && !p.ranges.is_empty() {
+                    let spans: Vec<String> = p
+                        .ranges
+                        .iter()
+                        .map(|(a, b, n)| format!("{a}-{b} {n}"))
+                        .collect();
+                    line = format!("{line}:{}", spans.join(", "));
+                }
+                match &p.archive_id {
+                    Some(id) => format!("{line} — rtok expand {id}"),
+                    None => line,
+                }
+            })
+            .collect();
+        format!("{}\n{INSTRUCTIONS}", lines.join("\n"))
+    };
+    let full = digest(true);
     let archived = cx.put_archive(full.as_bytes()).ok();
     let trailer = archived
         .as_ref()
         .map(|id| format!("\n[rtok {id} · expand: rtok expand {id}]"))
         .unwrap_or_default();
     let room = budget_tokens.saturating_sub(cx.estimate(&trailer, Class::Prose));
-    let capped = crate::plugin::fit_budget(cx, &full, Class::Prose, room);
+    // T130.3: ranges go before any pointer does; the archived body keeps them.
+    let shown = if cx.estimate(&full, Class::Prose) <= room {
+        full
+    } else {
+        digest(false)
+    };
+    let capped = crate::plugin::fit_budget(cx, &shown, Class::Prose, room);
     let text = format!("{capped}{trailer}");
     let _ = cx.record(&Measurement {
         plugin: "memory",
@@ -152,6 +271,16 @@ pub fn build_brief(cx: &Ctx, budget_tokens: u32, hint: &str) -> Option<String> {
 mod tests {
     use super::*;
     use rtok_plugin_sdk::Ctx;
+
+    /// T131: `measure::subagents::has_spawn_brief` detects a fired brief by this substring
+    /// of `INSTRUCTIONS`, mirrored there as `SPAWN_BRIEF_MARKER` rather than imported (a
+    /// hook-side marker check pulling in the whole digest builder would be backwards). This
+    /// pins the one thing that link needs: rewording `INSTRUCTIONS` so the marker no longer
+    /// matches must fail this test, not silently zero `rtok stats`' "with brief" split.
+    #[test]
+    fn instructions_still_carry_the_spawn_brief_marker() {
+        assert!(INSTRUCTIONS.contains(crate::measure::subagents::SPAWN_BRIEF_MARKER));
+    }
 
     #[test]
     fn stub_records_measurement_when_off() {
@@ -191,10 +320,16 @@ mod tests {
     /// same shape `hooks::dispatch` archives on every real call — including `calls.name`
     /// (T202 filters `ledger()`'s query on it, same as real dispatch does).
     fn touch(cx: &crate::plugin::Runtime, tool: &str, path: &str) {
+        touch_at(cx, ".", tool, serde_json::json!({"file_path": path}));
+    }
+
+    /// [`touch`] with a session `cwd` and the whole `tool_input` (T130.3 ranges).
+    fn touch_at(cx: &crate::plugin::Runtime, cwd: &str, tool: &str, input: serde_json::Value) {
         let stdin = serde_json::json!({
             "hook_event_name": "PreToolUse",
+            "cwd": cwd,
             "tool_name": tool,
-            "tool_input": {"file_path": path},
+            "tool_input": input,
         });
         let id = cx.record_call("hook", "hook", Some("PreToolUse")).unwrap();
         cx.store
@@ -206,6 +341,57 @@ mod tests {
                 None,
             )
             .unwrap();
+    }
+
+    /// T130.3: an indexed file gets the innermost definitions its `Read` window and `Edit`
+    /// landed in, newest first; a file the index lacks gets a bare path; an over-budget brief
+    /// drops the ranges before any pointer.
+    #[cfg(feature = "graph")]
+    #[test]
+    fn pointers_carry_enclosing_symbol_ranges_when_indexed() {
+        let (cx, dir) = crate::testutil::runtime("t130-3-ranges");
+        let repo = dir.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let src =
+            "fn alpha() {\n    let x = 1;\n    let y = 2;\n}\n\nfn beta() {\n    let z = 3;\n}\n";
+        std::fs::write(repo.join("lib.rs"), src).unwrap();
+        std::fs::write(repo.join("notes.txt"), "a\nb\nc\n").unwrap();
+        crate::plugins::graph::index::run(&Ctx::new(&cx), &repo, false).unwrap();
+        let cwd = repo.to_str().unwrap();
+        let lib = repo.join("lib.rs").to_string_lossy().into_owned();
+        let notes = repo.join("notes.txt").to_string_lossy().into_owned();
+        touch_at(
+            &cx,
+            cwd,
+            "Read",
+            serde_json::json!({"file_path": notes, "offset": 2, "limit": 1}),
+        );
+        touch_at(
+            &cx,
+            cwd,
+            "Read",
+            serde_json::json!({"file_path": lib, "offset": 2, "limit": 2}),
+        );
+        let edit =
+            serde_json::json!({"file_path": lib, "old_string": "1", "new_string": "let z = 3;"});
+        touch_at(&cx, cwd, "Edit", edit);
+        let ctx = Ctx::new(&cx);
+        let text = build_brief(&ctx, 300, "").unwrap();
+        assert!(
+            text.contains(&format!("{lib}:6-8 beta, 1-4 alpha")),
+            "{text}"
+        );
+        assert!(
+            text.lines().any(|l| l == notes),
+            "unindexed: bare path\n{text}"
+        );
+
+        let budget = ctx.estimate(&text, Class::Prose) - 2;
+        let tight = build_brief(&ctx, budget, "").unwrap();
+        assert!(
+            tight.contains(&lib) && !tight.contains("1-4 alpha"),
+            "{tight}"
+        );
     }
 
     #[test]

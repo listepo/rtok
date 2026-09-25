@@ -273,26 +273,35 @@ component CallDetail inherits PageScroll {
 component SessionList inherits Panel {
     in property <[SessionRow]> sessions;
     in-out property <int> cursor;
+    in-out property <bool> live-only: false;
     PanelTitle {
         text: "sessions";
+    }
+    CheckBox {
+        accessible-label: "live only";
+        text: "live only";
+        checked: live-only;
+        toggled() => { live-only = self.checked; }
     }
     if sessions.length == 0: PanelNote {
         text: "no sessions yet";
     }
     ListView {
-        for s[i] in root.sessions: ListRow {
-            selected: i == root.cursor;
-            label: "session " + s.id;
-            row-height: 52px;
-            activated => { root.cursor = i; }
-            RowText {
-                text: s.summary;
+        for s[i] in root.sessions: VerticalLayout {
+            if !live-only || s.live: ListRow {
                 selected: i == root.cursor;
-                font-weight: 600;
-            }
-            MetaText {
-                text: s.activity;
-                overflow: elide;
+                label: "session " + s.id;
+                row-height: 52px;
+                activated => { root.cursor = i; }
+                RowText {
+                    text: s.summary;
+                    selected: i == root.cursor;
+                    font-weight: 600;
+                }
+                MetaText {
+                    text: s.activity;
+                    overflow: elide;
+                }
             }
         }
     }
@@ -343,14 +352,22 @@ export component MainWindow inherits Window {
     in-out property <[SessionRow]> sessions;
     in-out property <int> session-cursor: 0;
     out property <SessionRow> selected-session: sessions[session-cursor];
+    in-out property <bool> sessions-live-only: false;
     in property <string> doctor-text;
     in property <string> stats-text;
     in property <string> graph-text;
     in property <string> hosts-text;
+    in property <string> config-text;
+    in-out property <string> config-view;
+    in-out property <string> config-filter;
+    in property <string> worktrees-text;
+    callback filter-config(string);
+    in property <string> services-text;
     in-out property <[string]> logs;
     in property <string> skills-header;
     in-out property <[SkillRow]> skills;
     in-out property <bool> skills-never-only: false;
+    in-out property <bool> help-open: false;
     in property <string> status: "connecting";
     in property <string> error: "";
     in-out property <bool> dark: true;
@@ -448,6 +465,11 @@ export component MainWindow inherits Window {
                     icon-only: true;
                     activated => { root.dark = !root.dark; root.theme-toggle(); }
                 }
+                Button {
+                    accessible-label: "help";
+                    text: "?";
+                    clicked => { help-open = !help-open; }
+                }
             }
         }
 
@@ -532,6 +554,11 @@ export component MainWindow inherits Window {
                     show-label: full-nav;
                     icon-only: rail;
                     activated => { root.dark = !root.dark; root.theme-toggle(); }
+                }
+                Button {
+                    accessible-label: "help";
+                    text: "?";
+                    clicked => { help-open = !help-open; }
                 }
             }
 
@@ -646,6 +673,7 @@ export component MainWindow inherits Window {
                         max-height: stacked-list-h;
                         sessions: root.sessions;
                         cursor <=> root.session-cursor;
+                        live-only <=> root.sessions-live-only;
                     }
                     SessionDetail {
                         vertical-stretch: 1;
@@ -660,6 +688,7 @@ export component MainWindow inherits Window {
                         width: calls-list-w;
                         sessions: root.sessions;
                         cursor <=> root.session-cursor;
+                        live-only <=> root.sessions-live-only;
                     }
                     SessionDetail {
                         horizontal-stretch: 1;
@@ -755,6 +784,88 @@ export component MainWindow inherits Window {
                     BodyText {
                         text: hosts-text;
                     }
+                }
+
+                if page-id == "config": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-2;
+                    TitleText {
+                        text: "config";
+                    }
+                    LineEdit {
+                        placeholder-text: "filter";
+                        text <=> root.config-filter;
+                        edited => { root.filter-config(self.text); }
+                    }
+                    BodyText {
+                        text: root.config-view;
+                    }
+                }
+
+                if page-id == "services": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-2;
+                    TitleText {
+                        text: "services";
+                    }
+                    BodyText {
+                        text: services-text;
+                    }
+                }
+
+                if page-id == "worktrees": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-2;
+                    TitleText {
+                        text: "worktrees";
+                    }
+                    BodyText {
+                        text: worktrees-text;
+                    }
+                }
+            }
+        }
+    }
+
+    if help-open: Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        background: RtokTheme.canvas;
+        opacity: 0.96;
+        TouchArea {
+            clicked => { help-open = false; }
+        }
+        Card {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: min(360px, parent.width - RtokTheme.space-4 * 2);
+            VerticalLayout {
+                padding: RtokTheme.space-3;
+                spacing: RtokTheme.space-1;
+                TitleText {
+                    text: "help";
+                }
+                BodyText {
+                    text: "expand — open a call or skill's full detail";
+                }
+                BodyText {
+                    text: "filter — narrow calls, config or skills text";
+                }
+                BodyText {
+                    text: "toggle — enable or disable a plugin";
+                }
+                BodyText {
+                    text: "theme — switch light and dark mode";
+                }
+                BodyText {
+                    text: "live — show only sessions still running";
+                }
+                Button {
+                    accessible-label: "close help";
+                    text: "close";
+                    clicked => { help-open = false; }
                 }
             }
         }

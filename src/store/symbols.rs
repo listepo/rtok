@@ -440,6 +440,30 @@ impl Store {
         Ok(())
     }
 
+    /// T130.3: definitions in one file as `(name, kind, line, end_line)`, ordered by line.
+    pub fn symbol_file_defs(
+        &self,
+        root: &str,
+        path: &str,
+    ) -> Result<Vec<(String, String, i32, i32)>> {
+        let mut conn = self.lock()?;
+        Ok(symbols::table
+            .filter(
+                symbols::root
+                    .eq(root)
+                    .and(symbols::path.eq(path))
+                    .and(symbols::is_def.eq(1)),
+            )
+            .order(symbols::line.asc())
+            .select((
+                symbols::name,
+                symbols::kind,
+                symbols::line,
+                symbols::end_line,
+            ))
+            .load(&mut *conn)?)
+    }
+
     /// Definitions of `name` as `(path, kind, line)`, ordered by path then line (T8.2 `symbol`).
     pub fn symbol_defs(&self, root: &str, name: &str) -> Result<Vec<(String, String, i32, i32)>> {
         let mut conn = self.lock()?;

@@ -17,24 +17,96 @@ fn hosts(sub: &str) -> Vec<PathBuf> {
     dirs
 }
 
+/// The text between a `## Docs` heading and the next `## ` heading, or end of file if
+/// `## Docs` is the last section. Stopping here (instead of running to end of file) matters:
+/// a `## Docs` list left empty by a bad edit used to read as non-empty whenever any later
+/// section happened to carry an `https://` line (T216).
+fn docs_section(text: &str) -> Option<&str> {
+    let start = text.find("## Docs")?;
+    let after = &text[start + "## Docs".len()..];
+    Some(match after.find("\n## ") {
+        Some(end) => &after[..end],
+        None => after,
+    })
+}
+
+/// Each host's official docs domain, exactly as it already appears in that host's own
+/// `## Docs` links (never invented) — `plugins/<id>` and `src/agents/<id>` are checked
+/// separately because a few hosts point their plugin docs and their installer docs at
+/// different domains (Kimi: kimi.com vs. moonshotai.github.io). Extends the `SKILL_HOSTS`
+/// pattern: a generic `>= 1` link count cannot tell the host's own docs from a stray link
+/// copy-pasted from another host or a later section.
+const DOC_DOMAINS: &[(&str, &str)] = &[
+    ("plugins/antigravity", "antigravity.google"),
+    ("plugins/claude", "code.claude.com"),
+    ("plugins/cline", "docs.cline.bot"),
+    ("plugins/codex", "chatgpt.com"),
+    ("plugins/copilot", "docs.github.com"),
+    ("plugins/cursor", "cursor.com"),
+    ("plugins/gemini", "geminicli.com"),
+    ("plugins/grok", "docs.x.ai"),
+    ("plugins/kimi", "kimi.com"),
+    ("plugins/opencode", "opencode.ai"),
+    ("plugins/pi", "pi.dev"),
+    ("plugins/zcode", "zcode.z.ai"),
+    ("src/agents/aider", "aider.chat"),
+    ("src/agents/antigravity", "antigravity.google"),
+    ("src/agents/claude", "code.claude.com"),
+    ("src/agents/cline", "docs.cline.bot"),
+    ("src/agents/codewhale", "github.com"),
+    ("src/agents/codex", "chatgpt.com"),
+    ("src/agents/copilot", "docs.github.com"),
+    ("src/agents/cursor", "cursor.com"),
+    ("src/agents/gemini", "geminicli.com"),
+    ("src/agents/grok", "docs.x.ai"),
+    ("src/agents/kilo", "kilo.ai"),
+    ("src/agents/kimi", "moonshotai.github.io"),
+    ("src/agents/mimo", "mimo.xiaomi.com"),
+    ("src/agents/omp", "github.com"),
+    ("src/agents/opencode", "opencode.ai"),
+    ("src/agents/pi", "pi.dev"),
+    ("src/agents/vscode", "code.visualstudio.com"),
+    ("src/agents/windsurf", "docs.windsurf.com"),
+    ("src/agents/zcode", "zcode.z.ai"),
+    ("src/agents/zed", "zed.dev"),
+];
+
 #[test]
 fn every_host_readme_links_its_docs() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for dir in hosts("plugins").into_iter().chain(hosts("src/agents")) {
         let readme = dir.join("README.md");
         let text =
             fs::read_to_string(&readme).unwrap_or_else(|e| panic!("{}: {e}", readme.display()));
-        let docs = text
-            .split("## Docs")
-            .nth(1)
+        let docs = docs_section(&text)
             .unwrap_or_else(|| panic!("{}: no `## Docs` section", readme.display()));
-        let links = docs
+        let links: Vec<&str> = docs
             .lines()
             .filter(|l| l.trim_start().starts_with("- ") && l.contains("https://"))
-            .count();
+            .collect();
         assert!(
-            links >= 1,
-            "{}: `## Docs` has no `- … https://` link",
-            readme.display()
+            links.len() >= 2,
+            "{}: `## Docs` needs at least 2 `- … https://` links, found {}",
+            readme.display(),
+            links.len()
+        );
+        let key = dir
+            .strip_prefix(&root)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .replace('\\', "/");
+        let domain = DOC_DOMAINS
+            .iter()
+            .find(|(k, _)| *k == key)
+            .unwrap_or_else(|| panic!("{}: add its docs domain to DOC_DOMAINS", readme.display()))
+            .1;
+        let hits = links.iter().filter(|l| l.contains(domain)).count();
+        assert!(
+            hits >= 2,
+            "{}: `## Docs` must link {domain} (its own docs) at least twice, found {hits} of {} links",
+            readme.display(),
+            links.len()
         );
     }
 }

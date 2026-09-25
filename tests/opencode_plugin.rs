@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::agents::{json, rtok, tmp, write_cfg};
+use common::agents::{json, rtok, slash, tmp, write_cfg};
 use std::fs;
 use std::path::PathBuf;
 
@@ -55,7 +55,10 @@ fn dry_run_offers_the_plugin_and_writes_nothing() {
         &home,
     );
     assert!(out.contains("offer plugins/opencode/rtok.ts →"), "{out}");
-    assert!(out.contains(&dest.display().to_string()), "{out}");
+    assert!(
+        slash(&out).contains(&slash(dest.display().to_string())),
+        "{out}"
+    );
     assert!(out.contains("ketch install listepo/rtok"), "{out}");
     assert!(dest.symlink_metadata().is_err(), "dry-run must not link");
     assert!(!home.join(".config/opencode/opencode.json").exists());

@@ -501,6 +501,10 @@ pub fn spawn_child(cx: &Runtime) {
     if !cx.config.home.as_os_str().is_empty() {
         cmd.env("RTOK_HOME", &cx.config.home);
     }
+    // The flush child outlives this hook; on Windows it would otherwise inherit whatever piped
+    // our own stdout/stderr (the agent, a test harness) and hold that pipe open until the flush
+    // gives up on the endpoint, so the reader's wait for EOF stalls (T83.3, T83.9). No-op on Unix.
+    rtok_sys::stop_inheriting_own_stdio();
     if let Ok(child) = cmd.spawn() {
         FlushTrace::spawned(child.id());
     }
