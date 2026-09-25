@@ -423,8 +423,10 @@ pub fn unregister_mcp(apply: &Apply, path: &Path, name: &str) -> Result<String> 
 }
 
 /// [`unregister_mcp`] under another map key (OpenCode's `mcp`), dotted for a nested one
-/// (ZCode's `mcp.servers`); only the last level is dropped when it ends up empty.
-pub fn unregister_server(apply: &Apply, path: &Path, key: &str, name: &str) -> Result<String> {
+/// (ZCode's `mcp.servers`); only the last level is dropped when it ends up empty. Private
+/// (T246.5): it drops an entry by name alone, with no ownership check, so every caller outside
+/// this module goes through [`unregister_owned`] instead.
+fn unregister_server(apply: &Apply, path: &Path, key: &str, name: &str) -> Result<String> {
     edit_json(apply, path, |root| {
         let mut parts: Vec<&str> = key.split('.').collect();
         let last = parts.pop().unwrap_or(key);
@@ -450,9 +452,7 @@ pub fn unregister_server(apply: &Apply, path: &Path, key: &str, name: &str) -> R
 
 /// [`unregister_server`] that takes back only what rtok wrote (T246). `ours` is the entry the
 /// installer writes now; `is_bin` says whether a string names the rtok binary, so any rtok
-/// path counts as the same. An entry equal to `ours` goes. One that runs rtok but differs was
-/// changed by the user: it goes only when [`confirmed`]; else it stays and the report says
-/// `leave …`, which writes nothing. One that does not run rtok is not rtok's and stays.
+/// path counts as the same. The ownership call is [`judge_owned`]; a slot it clears goes.
 pub fn unregister_owned(
     apply: &Apply,
     path: &Path,
@@ -470,15 +470,33 @@ pub fn unregister_owned(
         return Ok(NO_CHANGES.into());
     };
     let at = format!("{key}.{name} in {}", path.display());
-    if !runs_bin(&have, is_bin) {
-        return Ok(format!("leave {at} (not rtok's; remove by hand)"));
-    }
-    if rtok_as_one(&have, is_bin) != rtok_as_one(ours, is_bin)
-        && let Some(leave) = keep_edited(apply, &at)
-    {
+    if let Some(leave) = judge_owned(apply, &at, &have, ours, is_bin) {
         return Ok(leave);
     }
     unregister_server(apply, path, key, name)
+}
+
+/// The three-step ownership check every removal path runs on an entry named `rtok` (T246,
+/// T246.5): not a string naming the rtok binary anywhere in `have` → not ours,
+/// `Some("leave … (not rtok's; remove by hand)")`; runs rtok but `have` differs from `ours`
+/// once every rtok string in both is folded to one placeholder → the user changed it,
+/// `Some(`[`keep_edited`]`)` (`?` on a dry run, `leave …` once declined, `None` on `--yes` or a
+/// yes); otherwise unchanged, `None` — go ahead and remove it. `pub` so a host whose config
+/// [`unregister_owned`] cannot read directly (Zed's JSONC, Grok's TOML) runs the same check on
+/// a value it converted itself, instead of copying the three steps.
+pub fn judge_owned(
+    apply: &Apply,
+    at: &str,
+    have: &Value,
+    ours: &Value,
+    is_bin: fn(&str) -> bool,
+) -> Option<String> {
+    if !runs_bin(have, is_bin) {
+        return Some(format!("leave {at} (not rtok's; remove by hand)"));
+    }
+    (rtok_as_one(have, is_bin) != rtok_as_one(ours, is_bin))
+        .then(|| keep_edited(apply, at))
+        .flatten()
 }
 
 /// For an rtok entry the user changed, `at` naming it: `None` removes it (`--yes`, or the
@@ -491,6 +509,8 @@ pub fn keep_edited(apply: &Apply, at: &str) -> Option<String> {
         .then(|| format!("leave {at} (changed by you; remove by hand)"))
 }
 
+/// True when `v` (or anything nested in it) is a string naming the rtok binary — [`judge_owned`]'s
+/// "not rtok's" check.
 fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
     match v {
         Value::String(s) => is_bin(s),
@@ -500,7 +520,8 @@ fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
     }
 }
 
-/// `v` with every string naming the rtok binary replaced by one placeholder.
+/// `v` with every string naming the rtok binary replaced by one placeholder — [`judge_owned`]'s
+/// "did the user change it" comparison.
 fn rtok_as_one(v: &Value, is_bin: fn(&str) -> bool) -> Value {
     match v {
         Value::String(s) if is_bin(s) => Value::Null,
