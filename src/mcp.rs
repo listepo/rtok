@@ -525,18 +525,24 @@ fn mem_search(cx: &Runtime, args: &Value) -> Result<String> {
     .to_string())
 }
 
+/// A JSON unsigned integer as `u32`, saturating: `as u32` would wrap `2^32 + 1` to `1`.
+#[cfg(feature = "read")]
+fn saturating_u32(v: &Value) -> Option<u32> {
+    v.as_u64().map(|n| u32::try_from(n).unwrap_or(u32::MAX))
+}
+
 #[cfg(feature = "read")]
 fn search_files(cx: &Runtime, args: &Value) -> Result<String> {
     let pattern = args["pattern"].as_str().unwrap_or("");
     let path = args["path"].as_str().unwrap_or(".");
-    let max = args["max"].as_u64().map(|n| n as u32);
+    let max = saturating_u32(&args["max"]);
     crate::plugins::read::search::search(&crate::plugin::Ctx::new(cx), pattern, path, max)
 }
 
 #[cfg(feature = "read")]
 fn tree_files(cx: &Runtime, args: &Value) -> Result<String> {
     let path = args["path"].as_str().unwrap_or(".");
-    let depth = args["depth"].as_u64().map(|n| n as u32);
+    let depth = saturating_u32(&args["depth"]);
     crate::plugins::read::search::tree(&crate::plugin::Ctx::new(cx), path, depth)
 }
 
@@ -862,6 +868,31 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert_eq!(err, "unknown tool: search");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// `max` / `depth` arrive as JSON `u64`; `as u32` wrapped `2^32 + 1` to `1`, so asking
+    /// for more rows returned a single one. They saturate like `handoff`'s budget (T213).
+    #[cfg(feature = "read")]
+    #[test]
+    fn search_and_tree_saturate_huge_limits_instead_of_wrapping() {
+        let (mut cfg, dir) = tmp("mcp-u32-wrap");
+        let root = dir.join("src-tree");
+        fs::create_dir_all(root.join("a").join("b")).unwrap();
+        fs::write(root.join("hits.txt"), "needle\nneedle\nneedle\n").unwrap();
+        fs::write(root.join("a").join("b").join("deep.txt"), "x").unwrap();
+        cfg.plugins.read.allow_paths = vec![root.clone()];
+        let wraps_to_one = u64::from(u32::MAX) + 2;
+        let path = root.to_string_lossy();
+        let out = call(
+            &cfg,
+            "search",
+            &json!({"pattern": "needle", "path": path, "max": wraps_to_one}),
+        )
+        .unwrap();
+        assert_eq!(out.lines().count(), 3, "{out}");
+        let out = call(&cfg, "tree", &json!({"path": path, "depth": wraps_to_one})).unwrap();
+        assert!(out.contains("deep.txt"), "{out}");
         let _ = fs::remove_dir_all(dir);
     }
 
