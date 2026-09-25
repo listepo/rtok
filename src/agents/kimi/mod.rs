@@ -368,7 +368,7 @@ fn strip_ours(
 mod tests {
     use super::*;
 
-    /// Shared fixture (T86 tests live in `t86_tests` below and reuse it).
+    /// Shared fixture (the T86 tests below reuse it).
     fn cfg(name: &str, dry: bool) -> (Config, PathBuf) {
         let dir = std::env::temp_dir().join(format!("rtok-kimi-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);

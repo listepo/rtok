@@ -68,6 +68,9 @@ extern "SQL" {
 }
 
 /// Embedded migrations, applied in order, each exactly once.
+/// Pause between `open` attempts while another connection holds the lock.
+const OPEN_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(100);
+
 const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0001.sql",
@@ -272,7 +275,7 @@ impl Store {
             match Self::connect(url, wait) {
                 Ok(store) => return Ok(store),
                 Err(e) if is_locked(&e) && attempt + 1 < attempts => {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    std::thread::sleep(OPEN_RETRY_DELAY);
                 }
                 Err(e) => return Err(e).with_context(|| path.display().to_string()),
             }

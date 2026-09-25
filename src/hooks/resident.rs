@@ -17,6 +17,10 @@ use tokio::sync::Notify;
 
 use crate::config::Config;
 
+/// The resident's socket is owner-only (`rw-------`): only this user's clients may call it.
+#[cfg(unix)]
+const SOCKET_MODE: u32 = 0o600;
+
 struct State {
     fingerprint: u64,
     /// One call at a time: each one sets the process cwd.
@@ -60,7 +64,7 @@ async fn listen(endpoint: &Path, lock: &Path, state: Arc<State>) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let _ = tokio::fs::remove_file(endpoint).await;
     let listener = tokio::net::UnixListener::bind(endpoint)?;
-    tokio::fs::set_permissions(endpoint, std::fs::Permissions::from_mode(0o600)).await?;
+    tokio::fs::set_permissions(endpoint, std::fs::Permissions::from_mode(SOCKET_MODE)).await?;
     let mut tick = tokio::time::interval(Duration::from_secs(1));
     loop {
         tokio::select! {
