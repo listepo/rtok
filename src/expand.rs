@@ -91,7 +91,7 @@ pub fn filter_lines(
             continue;
         }
         let lo = i.saturating_sub(context);
-        let hi = (i + context).min(out.len() - 1);
+        let hi = i.saturating_add(context).min(out.len() - 1);
         match windows.last_mut() {
             Some(last) if lo <= last.1 + 1 => last.1 = last.1.max(hi),
             _ => windows.push((lo, hi)),
@@ -244,6 +244,16 @@ mod tests {
 
     fn cfg(name: &str) -> Config {
         crate::testutil::config(name).0
+    }
+
+    /// The MCP `expand` tool takes `context` straight from the model's JSON (`u64`), so a
+    /// huge value must clamp to the whole payload instead of overflowing `hit + context`
+    /// (a panic in debug builds, a wrapped window that dropped the hit itself in release).
+    #[test]
+    fn huge_grep_context_clamps_to_the_whole_payload() {
+        let text = "a\nb\nHIT\nc";
+        let out = filter_lines(text, None, Some("HIT"), usize::MAX).unwrap();
+        assert_eq!(out, ["1:a", "2:b", "3:HIT", "4:c"]);
     }
 
     #[test]

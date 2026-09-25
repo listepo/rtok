@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -142,19 +142,12 @@ fn read_frame(r: &mut impl BufRead, buf: &mut Vec<u8>) -> Option<Framing> {
         *buf = header;
         return Some(Framing::Raw);
     };
-    buf.resize(len, 0);
-    let mut got = 0;
-    while got < len {
-        match r.read(&mut buf[got..]) {
-            Ok(0) => break,
-            Ok(n) => got += n,
-            Err(_) => break,
-        }
-    }
-    if got < len {
+    // Grow with the bytes that actually arrive: the length is the peer's claim, and
+    // allocating it up front let one bogus header abort the wrapper.
+    let _ = r.by_ref().take(len as u64).read_to_end(buf);
+    if buf.len() < len {
         // Body shorter than declared: forward the header plus whatever body bytes
         // arrived, byte-for-byte, instead of blocking forever or dropping data.
-        buf.truncate(got);
         header.extend_from_slice(buf);
         *buf = header;
         return Some(Framing::Raw);
@@ -296,6 +289,21 @@ mod tests {
             Some(Framing::Header)
         ));
         assert_eq!(buf, b"{}");
+        assert!(read_frame(&mut r, &mut buf).is_none());
+    }
+
+    /// A peer-declared `Content-Length` far past what it sends must not be allocated up
+    /// front: `usize::MAX` used to panic with `capacity overflow` (and a merely huge value
+    /// aborted on OOM), killing the wrapper. The bytes that did arrive pass through raw.
+    #[test]
+    fn huge_declared_content_length_is_not_preallocated() {
+        let head = format!("Content-Length: {}\r\n\r\n", usize::MAX);
+        let mut stream = head.clone().into_bytes();
+        stream.extend_from_slice(b"{}");
+        let mut r = Cursor::new(stream);
+        let mut buf = Vec::new();
+        assert!(matches!(read_frame(&mut r, &mut buf), Some(Framing::Raw)));
+        assert_eq!(buf, [head.as_bytes(), b"{}"].concat());
         assert!(read_frame(&mut r, &mut buf).is_none());
     }
 
