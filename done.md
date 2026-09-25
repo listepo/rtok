@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+### T163.9. Window and CTE queries through the shared extension module
+
+Left over from T163.7: `usage_ctt` (`COUNT() OVER`, `ROW_NUMBER() OVER`), `session_totals`/`recent_session_totals` (four CTEs, `UNION ALL`, per-group `MAX(id)` subqueries) and `recent_calls` (correlated `MAX(id)` subquery in a `LEFT JOIN`) have no form in Diesel 2.3.13's typed DSL. They move into T163.1's `src/store/sql_ext.rs` as typed `QueryFragment`s with bound parameters, each with a comment naming the construct the DSL lacks (the rulebook's exception for statements the ORM cannot express).
+
+Check: no `sql_query` left in the three functions; tests unchanged and green; `just check`.
+
+Result: `UsageCtt`, `UsageCttTail`, `RecentSessionTotals` and `RecentCalls` are `QueryFragment`s in `sql_ext`. `usage_ctt`, `session_totals`, `recent_session_totals` and `recent_calls` contain no `sql_query`. `SessionTotals` and `CallRow` also derive `Queryable` so the positional load matches the previous column order. `cargo test -p rtok --lib store::` (59), `overview_matches_the_per_session_loop`, and clippy `-D warnings` on `--lib --tests` passed.
+
 ### T163.3. PRAGMA, `unixepoch()` and FTS5 through the shared extension module
 
 `mod.rs` sites the typed DSL cannot express: the PRAGMAs in `set_busy`, `connect`, `init`, `set_query_only` and `purge_calls_older_than`; `sql::<>("unixepoch()")` in `upsert_note` and `retire_note`; FTS5 `MATCH`/`bm25()` in `search_notes`; tests `open_on_disk_uses_wal`, `fts5_match_finds_inserted_note`. They become typed helpers in T163.1's `src/store/sql_ext.rs` (`define_sql_function!` for `unixepoch`, a `QueryFragment` per PRAGMA and for the FTS5 match), the only home for non-DSL SQL; `schema.rs`'s `notes_fts` comment is updated. The typed SQL functions declared in `mod.rs` move there too: `coalesce` (T163.5), `length` and `sum_bigint` (T163.7), `substr` (T163.6).
