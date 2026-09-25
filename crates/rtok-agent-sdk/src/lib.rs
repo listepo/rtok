@@ -20,7 +20,7 @@
 //! let dir = std::env::temp_dir().join(format!("rtok-agent-sdk-doc-{}", std::process::id()));
 //! std::fs::create_dir_all(&dir).unwrap();
 //! let path = dir.join("mcp.json");
-//! let apply = Apply { dry_run: false, backup: true, yes: false };
+//! let apply = Apply { dry_run: false, backup: true, backup_files: 0, yes: false };
 //! let first = register_mcp(&apply, &path, "rtok", "rtok", &["mcp"]).unwrap();
 //! assert_eq!(first, "mcpServers.rtok: rtok mcp");
 //! assert_eq!(register_mcp(&apply, &path, "rtok", "rtok", &["mcp"]).unwrap(), NO_CHANGES);
@@ -54,14 +54,21 @@ pub struct Apply {
     pub dry_run: bool,
     /// Copy each file to `_backup/<name>.bak-<unix-seconds>` before the first write to it.
     pub backup: bool,
+    /// Newest `.bak-*` generations kept per file after a backup; `0` keeps all.
+    pub backup_files: usize,
     /// Accept every offer without asking. The only way to say yes without a terminal.
     pub yes: bool,
 }
 
 impl Apply {
-    /// True when this run may write a file for `report`.
+    /// True when this run may write a file for `report`. A report of only `leave …` / `? …`
+    /// lines changed nothing, so it writes nothing either (T246).
     pub fn writes(&self, report: &str) -> bool {
-        !self.dry_run && report != NO_CHANGES
+        !self.dry_run
+            && report != NO_CHANGES
+            && !report
+                .lines()
+                .all(|l| l.starts_with("leave ") || l.starts_with("? "))
     }
 }
 
@@ -71,7 +78,9 @@ pub const BACKUP_DIR: &str = "_backup";
 /// Copy `path` to `_backup/<name>.bak-<unix-seconds>` beside it. `None` when there is no file
 /// yet, or when any file in that folder already holds the same bytes — a second install or
 /// uninstall of unchanged content is the same undo, whatever the copy is named.
-pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
+///
+/// After a copy is taken, [`prune_backups`] keeps the newest `keep` generations of that name.
+pub fn backup(path: &Path, keep: usize) -> Result<Option<PathBuf>> {
     if !path.exists() {
         return Ok(None);
     }
@@ -79,7 +88,61 @@ pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    backup_at(path, ts)
+    let bak = backup_at(path, ts)?;
+    if let Some(b) = &bak {
+        prune_backups(b, keep);
+    }
+    Ok(bak)
+}
+
+/// Delete the oldest `_backup/<name>.bak-<ts>[-<n>]` generations beside `kept` — a copy
+/// [`backup`] returned — until `keep` remain. `kept` itself is never deleted; `0` keeps all.
+/// Only regular files with that exact name shape inside a `_backup` folder are candidates.
+/// Best effort: an fs error leaves the rest in place and is not reported.
+pub fn prune_backups(kept: &Path, keep: usize) {
+    let (Some(dir), Some(file)) = (kept.parent(), kept.file_name().and_then(|f| f.to_str())) else {
+        return;
+    };
+    if keep == 0 || dir.file_name().is_none_or(|d| d != BACKUP_DIR) {
+        return;
+    }
+    let Some((name, _)) = file.rsplit_once(".bak-") else {
+        return;
+    };
+    let mut older = generations(dir, name);
+    older.retain(|(_, p)| p != kept);
+    older.sort();
+    let excess = (older.len() + 1).saturating_sub(keep);
+    for (_, p) in older.into_iter().take(excess) {
+        let _ = fs::remove_file(p);
+    }
+}
+
+/// Regular files in `dir` named `<name>.bak-<ts>[-<n>]`, with `(ts, n)` to sort them by.
+fn generations(dir: &Path, name: &str) -> Vec<((u64, u64), PathBuf)> {
+    let prefix = format!("{name}.bak-");
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .filter_map(|e| {
+            let f = e.file_name().into_string().ok()?;
+            Some((generation(f.strip_prefix(&prefix)?)?, e.path()))
+        })
+        .collect()
+}
+
+/// `<ts>` or `<ts>-<n>`, the suffix [`backup`] writes, as a sortable pair; anything else is `None`.
+fn generation(suffix: &str) -> Option<(u64, u64)> {
+    let (ts, n) = suffix.split_once('-').unwrap_or((suffix, "0"));
+    let num = |s: &str| {
+        (!s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| s.parse().ok())
+            .flatten()
+    };
+    Some((num(ts)?, num(n)?))
 }
 
 fn backup_dir(path: &Path) -> Option<PathBuf> {
@@ -97,11 +160,22 @@ fn backup_at(path: &Path, ts: u64) -> Result<Option<PathBuf>> {
         return Ok(None);
     }
     fs::create_dir_all(&dir).with_context(|| dir.display().to_string())?;
-    let mut n = 0u32;
-    let mut bak = dir.join(format!("{name}.bak-{ts}"));
+    // Past the highest `-<n>` of this second, never a slot pruning freed: the new copy must
+    // sort newest, or the next prune would delete it first.
+    let mut n = generations(&dir, &name)
+        .iter()
+        .filter(|((t, _), _)| *t == ts)
+        .map(|((_, n), _)| n + 1)
+        .max()
+        .unwrap_or(0);
+    let slot = |n: u64| match n {
+        0 => dir.join(format!("{name}.bak-{ts}")),
+        n => dir.join(format!("{name}.bak-{ts}-{n}")),
+    };
+    let mut bak = slot(n);
     while bak.exists() {
         n += 1;
-        bak = dir.join(format!("{name}.bak-{ts}-{n}"));
+        bak = slot(n);
     }
     fs::copy(path, &bak).with_context(|| bak.display().to_string())?;
     Ok(Some(bak))
@@ -209,7 +283,7 @@ pub fn write(apply: &Apply, path: &Path, body: &str, report: &str) -> Result<()>
         return Ok(());
     }
     if apply.backup {
-        backup(path)?;
+        backup(path, apply.backup_files)?;
     }
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).ok();
@@ -334,7 +408,7 @@ pub fn register_server(
 ) -> Result<String> {
     edit_json(apply, path, |root| {
         let servers = key.split('.').fold(root, |o, k| object_at(o, k));
-        if servers.get(name) == Some(&entry) {
+        if servers.get(name).map(without_default_type) == Some(without_default_type(&entry)) {
             return NO_CHANGES.into();
         }
         servers[name] = entry;
@@ -349,8 +423,10 @@ pub fn unregister_mcp(apply: &Apply, path: &Path, name: &str) -> Result<String> 
 }
 
 /// [`unregister_mcp`] under another map key (OpenCode's `mcp`), dotted for a nested one
-/// (ZCode's `mcp.servers`); only the last level is dropped when it ends up empty.
-pub fn unregister_server(apply: &Apply, path: &Path, key: &str, name: &str) -> Result<String> {
+/// (ZCode's `mcp.servers`); only the last level is dropped when it ends up empty. Private
+/// (T246.5): it drops an entry by name alone, with no ownership check, so every caller outside
+/// this module goes through [`unregister_owned`] instead.
+fn unregister_server(apply: &Apply, path: &Path, key: &str, name: &str) -> Result<String> {
     edit_json(apply, path, |root| {
         let mut parts: Vec<&str> = key.split('.').collect();
         let last = parts.pop().unwrap_or(key);
@@ -376,9 +452,7 @@ pub fn unregister_server(apply: &Apply, path: &Path, key: &str, name: &str) -> R
 
 /// [`unregister_server`] that takes back only what rtok wrote (T246). `ours` is the entry the
 /// installer writes now; `is_bin` says whether a string names the rtok binary, so any rtok
-/// path counts as the same. An entry equal to `ours` goes. One that runs rtok but differs was
-/// changed by the user: it goes only when [`confirmed`]; else it stays and the report says
-/// `leave …`, which writes nothing. One that does not run rtok is not rtok's and stays.
+/// path counts as the same. The ownership call is [`judge_owned`]; a slot it clears goes.
 pub fn unregister_owned(
     apply: &Apply,
     path: &Path,
@@ -396,19 +470,49 @@ pub fn unregister_owned(
         return Ok(NO_CHANGES.into());
     };
     let at = format!("{key}.{name} in {}", path.display());
-    if !runs_bin(&have, is_bin) {
-        return Ok(format!("leave {at} (not rtok's; remove by hand)"));
-    }
-    let changed = rtok_as_one(&have, is_bin) != rtok_as_one(ours, is_bin);
-    if changed && apply.dry_run && !apply.yes {
-        return Ok(format!("? {at} (changed by you; remove asks)"));
-    }
-    if changed && !confirmed(apply, &format!("remove {at}? you changed it")) {
-        return Ok(format!("leave {at} (changed by you; remove by hand)"));
+    if let Some(leave) = judge_owned(apply, &at, &have, ours, is_bin) {
+        return Ok(leave);
     }
     unregister_server(apply, path, key, name)
 }
 
+/// The three-step ownership check every removal path runs on an entry named `rtok` (T246,
+/// T246.5): not a string naming the rtok binary anywhere in `have` → not ours,
+/// `Some("leave … (not rtok's; remove by hand)")`; runs rtok but `have` differs from `ours`
+/// once every rtok string in both is folded to one placeholder and a top-level
+/// `"type": "stdio"` is dropped (T265) → the user changed it,
+/// `Some(`[`keep_edited`]`)` (`?` on a dry run, `leave …` once declined, `None` on `--yes` or a
+/// yes); otherwise unchanged, `None` — go ahead and remove it. `pub` so a host whose config
+/// [`unregister_owned`] cannot read directly (Zed's JSONC, Grok's TOML) runs the same check on
+/// a value it converted itself, instead of copying the three steps.
+pub fn judge_owned(
+    apply: &Apply,
+    at: &str,
+    have: &Value,
+    ours: &Value,
+    is_bin: fn(&str) -> bool,
+) -> Option<String> {
+    if !runs_bin(have, is_bin) {
+        return Some(format!("leave {at} (not rtok's; remove by hand)"));
+    }
+    (rtok_as_one(&without_default_type(have), is_bin)
+        != rtok_as_one(&without_default_type(ours), is_bin))
+    .then(|| keep_edited(apply, at))
+    .flatten()
+}
+
+/// For an rtok entry the user changed, `at` naming it: `None` removes it (`--yes`, or the
+/// user said yes); `Some(report)` keeps it — `? …` on a dry run, `leave …` once declined.
+pub fn keep_edited(apply: &Apply, at: &str) -> Option<String> {
+    if apply.dry_run && !apply.yes {
+        return Some(format!("? {at} (changed by you; remove asks)"));
+    }
+    (!confirmed(apply, &format!("remove {at}? you changed it")))
+        .then(|| format!("leave {at} (changed by you; remove by hand)"))
+}
+
+/// True when `v` (or anything nested in it) is a string naming the rtok binary — [`judge_owned`]'s
+/// "not rtok's" check.
 fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
     match v {
         Value::String(s) => is_bin(s),
@@ -418,7 +522,21 @@ fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
     }
 }
 
-/// `v` with every string naming the rtok binary replaced by one placeholder.
+/// `v` without a top-level `"type": "stdio"`, the MCP default [`mcp_entry`] spells out:
+/// Claude.app drops it when it re-saves its config (T265). Anything else is unchanged.
+fn without_default_type(v: &Value) -> Value {
+    match v {
+        Value::Object(m) if m.get("type").and_then(Value::as_str) == Some("stdio") => {
+            let mut m = m.clone();
+            m.remove("type");
+            Value::Object(m)
+        }
+        _ => v.clone(),
+    }
+}
+
+/// `v` with every string naming the rtok binary replaced by one placeholder — [`judge_owned`]'s
+/// "did the user change it" comparison.
 fn rtok_as_one(v: &Value, is_bin: fn(&str) -> bool) -> Value {
     match v {
         Value::String(s) if is_bin(s) => Value::Null,
@@ -544,6 +662,13 @@ impl PluginLink<'_> {
     /// Offer, link, or unlink. Returns the one-line report; a dry run and a declined offer both
     /// describe the offer and touch nothing.
     pub fn run(&self, apply: &Apply, remove: bool) -> Result<String> {
+        self.run_with(apply, remove, keep_bytes)
+    }
+
+    /// [`run`](Self::run) whose owned copy (the non-Unix install) passes every file through
+    /// `fix`; the up-to-date check compares against the fixed bytes, so a fixed copy is not
+    /// reinstalled on every run (T250.3: Cursor's POSIX hook lines go back to bare `rtok`).
+    pub fn run_with(&self, apply: &Apply, remove: bool, fix: CopyFix) -> Result<String> {
         if apply.dry_run {
             return Ok(format!(
                 "offer {} → {} {KETCH_INSTALL}",
@@ -567,7 +692,7 @@ impl PluginLink<'_> {
             return Ok(format!("- plugin {}", self.dest.display()));
         }
         if self.linked() {
-            if self.up_to_date() {
+            if self.up_to_date(fix) {
                 return Ok(NO_CHANGES.into());
             }
             // Something else is at the destination: never overwrite ground we did not
@@ -599,7 +724,7 @@ impl PluginLink<'_> {
         if let Some(dir) = self.dest.parent() {
             fs::create_dir_all(dir).ok();
         }
-        install_plugin(&self.src, &self.dest)?;
+        install_plugin(&self.src, &self.dest, fix)?;
         let label = self.label.map(|l| format!(" {l}")).unwrap_or_default();
         Ok(format!(
             "+ plugin {} → {}{}",
@@ -628,7 +753,7 @@ impl PluginLink<'_> {
     /// elsewhere. A link into a different — typically older — ketch store version, or a
     /// dangling one, is not up to date: [`run`] relinks it like a fresh install instead of
     /// reporting [`NO_CHANGES`] forever (T164).
-    fn up_to_date(&self) -> bool {
+    fn up_to_date(&self, fix: CopyFix) -> bool {
         let Ok(meta) = self.dest.symlink_metadata() else {
             return false;
         };
@@ -639,7 +764,7 @@ impl PluginLink<'_> {
         if meta.file_type().is_file() {
             return self.src.is_file() && fs::read(&self.dest).ok() == fs::read(&self.src).ok();
         }
-        meta.is_dir() && tree_copies(&self.src, &self.dest)
+        meta.is_dir() && tree_copies_with(&self.src, &self.dest, fix, Path::new(""))
     }
 }
 
@@ -711,6 +836,11 @@ impl SkillCopy {
                 self.dest.display()
             )),
             SkillPlan::Remove => {
+                if edited_since_marked(&self.dest)
+                    && let Some(leave) = keep_edited(apply, &self.dest.display().to_string())
+                {
+                    return Ok(leave);
+                }
                 let report = if apply.dry_run {
                     format!("- skill {}", self.dest_desc())
                 } else {
@@ -735,12 +865,37 @@ impl SkillCopy {
     }
 }
 
+/// True when something under the owned copy `dest` is newer than its [`OWNED_MARKER`] (T246.4):
+/// [`copy_owned`] writes the marker last, so a later write is the user's — an edited or an
+/// added file. An older rtok's copy is not an edit. An unreadable time proves nothing.
+fn edited_since_marked(dest: &Path) -> bool {
+    fn mtime(p: &Path) -> Option<SystemTime> {
+        fs::metadata(p).and_then(|m| m.modified()).ok()
+    }
+    fn newer(dir: &Path, marked: SystemTime) -> bool {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return false;
+        };
+        entries.flatten().any(|e| {
+            let p = e.path();
+            e.file_name() != OWNED_MARKER
+                && (mtime(&p).is_some_and(|t| t > marked) || (p.is_dir() && newer(&p, marked)))
+        })
+    }
+    mtime(&dest.join(OWNED_MARKER)).is_some_and(|marked| newer(dest, marked))
+}
+
 /// True when every file under `src` sits in `dest` with the same bytes — extra files in
 /// `dest` are allowed, a host may put its own beside ours. This is what lets remove take
 /// back a directory a host materialized from our symlink, while a foreign directory
 /// (which fails the first differing byte) still stands. An empty or unreadable `src`
 /// proves nothing.
 fn tree_copies(src: &Path, dest: &Path) -> bool {
+    tree_copies_with(src, dest, keep_bytes, Path::new(""))
+}
+
+/// [`tree_copies`] against `fix`ed source bytes; `rel` is `src`'s path under the plugin root.
+fn tree_copies_with(src: &Path, dest: &Path, fix: CopyFix, rel: &Path) -> bool {
     let Ok(entries) = fs::read_dir(src) else {
         return false;
     };
@@ -751,15 +906,16 @@ fn tree_copies(src: &Path, dest: &Path) -> bool {
             return false;
         };
         let there = dest.join(entry.file_name());
+        let rel = rel.join(entry.file_name());
         if ft.is_dir() {
-            if !there.is_dir() || !tree_copies(&entry.path(), &there) {
+            if !there.is_dir() || !tree_copies_with(&entry.path(), &there, fix, &rel) {
                 return false;
             }
         } else {
             let (Ok(a), Ok(b)) = (fs::read(entry.path()), fs::read(&there)) else {
                 return false;
             };
-            if a != b {
+            if fix(&rel, a) != b {
                 return false;
             }
         }
@@ -767,30 +923,44 @@ fn tree_copies(src: &Path, dest: &Path) -> bool {
     seen > 0
 }
 
+/// Rewrites one plugin file on its way into an owned copy: `(path under the plugin root,
+/// source bytes) → bytes written`. A symlinked install carries the source unchanged.
+pub type CopyFix = fn(&Path, Vec<u8>) -> Vec<u8>;
+
+/// The [`CopyFix`] that changes nothing.
+pub fn keep_bytes(_: &Path, bytes: Vec<u8>) -> Vec<u8> {
+    bytes
+}
+
 /// Install the plugin tree at `dest`: symlink on Unix, owned copy elsewhere.
-fn install_plugin(src: &Path, dest: &Path) -> Result<()> {
+fn install_plugin(src: &Path, dest: &Path, fix: CopyFix) -> Result<()> {
     #[cfg(unix)]
     {
+        let _ = fix;
         std::os::unix::fs::symlink(src, dest)
             .with_context(|| format!("symlink {} → {}", src.display(), dest.display()))
     }
     #[cfg(not(unix))]
     {
-        copy_owned(src, dest)
+        copy_owned_with(src, dest, fix)
     }
 }
 
 /// Recursively copy `src` into `dest` and leave [`OWNED_MARKER`] so remove can undo it.
 /// A single-file plugin (OpenCode's `rtok.ts`) is one copy; remove already unlinks a plain
 /// file. Compiled on every target so unit tests cover the Windows install path on Unix CI too.
-#[allow(dead_code)] // used on non-unix install and by unit tests
 fn copy_owned(src: &Path, dest: &Path) -> Result<()> {
+    copy_owned_with(src, dest, keep_bytes)
+}
+
+/// [`copy_owned`] with every tree file passed through `fix`.
+fn copy_owned_with(src: &Path, dest: &Path, fix: CopyFix) -> Result<()> {
     if src.is_file() {
         fs::copy(src, dest)
             .with_context(|| format!("copy plugin {} → {}", src.display(), dest.display()))?;
         return Ok(());
     }
-    copy_dir(src, dest)
+    copy_dir(src, dest, fix, Path::new(""))
         .with_context(|| format!("copy plugin {} → {}", src.display(), dest.display()))?;
     fs::write(dest.join(OWNED_MARKER), b"")
         .with_context(|| format!("mark owned {}", dest.display()))?;
@@ -798,19 +968,26 @@ fn copy_owned(src: &Path, dest: &Path) -> Result<()> {
 }
 
 #[allow(dead_code)]
-fn copy_dir(src: &Path, dest: &Path) -> Result<()> {
+fn copy_dir(src: &Path, dest: &Path, fix: CopyFix, rel: &Path) -> Result<()> {
     fs::create_dir_all(dest)?;
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let from = entry.path();
         let to = dest.join(entry.file_name());
+        let rel = rel.join(entry.file_name());
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            copy_dir(&from, &to)?;
+            copy_dir(&from, &to, fix, &rel)?;
         } else {
             // Plain files and symlink targets we can read: plugins ship as a normal tree.
+            // `fs::copy` keeps the mode (a skill's scripts); a fix rewrites the bytes after.
             fs::copy(&from, &to)
                 .with_context(|| format!("copy {} → {}", from.display(), to.display()))?;
+            let bytes = fs::read(&to)?;
+            let fixed = fix(&rel, bytes.clone());
+            if fixed != bytes {
+                fs::write(&to, fixed).with_context(|| format!("fix {}", to.display()))?;
+            }
         }
     }
     Ok(())
@@ -823,6 +1000,7 @@ mod tests {
     const YES: Apply = Apply {
         dry_run: false,
         backup: false,
+        backup_files: 0,
         yes: true,
     };
 
@@ -866,6 +1044,7 @@ mod tests {
         Apply {
             dry_run: false,
             backup: false,
+            backup_files: 0,
             yes: false,
         }
     }
@@ -878,6 +1057,15 @@ mod tests {
         assert!(!accepted(&a, "install?"), "a headless run must not accept");
         a.yes = true;
         assert!(accepted(&a, "install?"), "--yes must accept without asking");
+    }
+
+    /// T246.3: a report that only leaves or asks changed nothing, so it writes nothing; one
+    /// real change beside it still writes.
+    #[test]
+    fn a_leave_only_report_writes_nothing() {
+        let a = Apply::default();
+        assert!(!a.writes("leave a (changed by you; remove by hand)\n? b (remove asks)"));
+        assert!(a.writes("leave a (changed by you; remove by hand)\n3 removed"));
     }
 
     /// The one line `accepted` reads, judged: Enter keeps the default (yes — the old
@@ -954,6 +1142,39 @@ mod tests {
         assert!(read_json(&path).unwrap()["mcpServers"]["rtok"].is_object());
     }
 
+    /// T265: an entry Claude.app re-saved without `type` is still rtok's; a changed `args`
+    /// is still the user's.
+    #[test]
+    fn unregister_owned_matches_an_entry_missing_the_default_type() {
+        let path = tmp("owned-no-type").join("claude_desktop_config.json");
+        let ours = mcp_entry("rtok", &["mcp"]);
+        let go = |a: &Apply| unregister_owned(a, &path, "mcpServers", "rtok", &ours, rtok_stem);
+        let seed = |entry: Value| {
+            let body = json!({"mcpServers": {"rtok": entry}});
+            fs::write(&path, body.to_string()).unwrap();
+        };
+
+        seed(json!({"command": "/Users/x/.ketch/bin/rtok", "args": ["mcp"]}));
+        assert_eq!(
+            go(&apply()).unwrap(),
+            "- mcpServers.rtok",
+            "a missing type must not read as changed by the user"
+        );
+        assert!(
+            read_json(&path).unwrap()["mcpServers"]
+                .get("rtok")
+                .is_none()
+        );
+
+        seed(json!({"command": "/Users/x/.ketch/bin/rtok", "args": ["mcp", "--x"]}));
+        let kept = go(&apply()).unwrap();
+        assert!(
+            kept.starts_with("leave mcpServers.rtok") && kept.contains("changed by you"),
+            "a real edit must still be kept: {kept}"
+        );
+        assert!(read_json(&path).unwrap()["mcpServers"]["rtok"].is_object());
+    }
+
     #[test]
     fn dry_run_writes_nothing_and_backup_keeps_the_old_file() {
         let dir = tmp("write");
@@ -961,6 +1182,7 @@ mod tests {
         let dry = Apply {
             dry_run: true,
             backup: true,
+            backup_files: 0,
             yes: false,
         };
         write(&dry, &path, "{}", "+ something").unwrap();
@@ -1070,6 +1292,115 @@ mod tests {
             None,
             "bytes anywhere in _backup count"
         );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn names(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// T249: a cap keeps the newest generations of one name and nothing else is touched.
+    #[test]
+    fn prune_keeps_the_newest_generations_of_that_name_only() {
+        let dir = tmp("backup-prune");
+        let path = dir.join("settings.json");
+        let backup = dir.join(BACKUP_DIR);
+        for (i, ts) in [(1, "10"), (2, "10-1"), (3, "10-2"), (4, "11"), (5, "9")] {
+            fs::write(&path, format!("v{i}")).unwrap();
+            let b = backup_at(&path, 0).unwrap().unwrap();
+            fs::rename(b, backup.join(format!("settings.json.bak-{ts}"))).unwrap();
+        }
+        let foreign = [
+            "settings.json.bak-old",
+            "settings.json.bak-1-x",
+            "settings.json.bak-+1",
+            "settings.json.bak-",
+            "settings.json.bak-1.bak-2",
+            "mcp.json.bak-1",
+            "notes.txt",
+        ];
+        for f in foreign {
+            fs::write(backup.join(f), f).unwrap();
+        }
+        fs::write(&path, "v6").unwrap();
+        let kept = backup_at(&path, 12).unwrap().unwrap();
+        prune_backups(&kept, 3);
+        let mut want: Vec<String> = foreign.iter().map(|s| s.to_string()).collect();
+        want.extend(
+            [
+                "settings.json.bak-10-2",
+                "settings.json.bak-11",
+                "settings.json.bak-12",
+            ]
+            .map(String::from),
+        );
+        want.sort();
+        assert_eq!(names(&backup), want);
+        // 0 keeps all; a copy outside a `_backup` folder prunes nothing.
+        prune_backups(&kept, 0);
+        prune_backups(&dir.join("settings.json.bak-99"), 1);
+        assert_eq!(names(&backup), want);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T249: the copy just taken is never deleted, even when an older name sorts newer.
+    #[test]
+    fn prune_never_deletes_the_copy_just_taken() {
+        let dir = tmp("backup-prune-kept");
+        let path = dir.join("settings.json");
+        fs::write(&path, "future").unwrap();
+        let future = backup_at(&path, 99).unwrap().unwrap();
+        fs::write(&path, "now").unwrap();
+        let kept = backup_at(&path, 5).unwrap().unwrap();
+        prune_backups(&kept, 1);
+        assert!(kept.exists(), "just taken");
+        assert!(!future.exists(), "over the cap");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T249: within one second a new copy never reuses a slot pruning freed, so it sorts newest.
+    #[test]
+    fn a_copy_in_the_same_second_sorts_after_every_kept_one() {
+        let dir = tmp("backup-slot");
+        let path = dir.join("settings.json");
+        fs::write(&path, "a").unwrap();
+        let first = backup_at(&path, 7).unwrap().unwrap();
+        fs::write(&path, "b").unwrap();
+        backup_at(&path, 7).unwrap().unwrap();
+        fs::remove_file(&first).unwrap();
+        fs::write(&path, "c").unwrap();
+        let third = backup_at(&path, 7).unwrap().unwrap();
+        assert!(
+            third.ends_with("settings.json.bak-7-2"),
+            "{}",
+            third.display()
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T249: `backup` itself prunes after a copy; a skipped (identical) copy prunes nothing.
+    #[test]
+    fn backup_caps_generations_per_file() {
+        let dir = tmp("backup-cap");
+        let path = dir.join("settings.json");
+        for i in 0..4 {
+            fs::write(&path, format!("v{i}")).unwrap();
+            backup(&path, 2).unwrap().expect("new bytes are copied");
+        }
+        let backup_dir = dir.join(BACKUP_DIR);
+        assert_eq!(names(&backup_dir).len(), 2);
+        let bodies: Vec<String> = names(&backup_dir)
+            .iter()
+            .map(|n| fs::read_to_string(backup_dir.join(n)).unwrap())
+            .collect();
+        assert_eq!(bodies, ["v2", "v3"], "the newest two survive");
+        assert_eq!(backup(&path, 1).unwrap(), None, "identical: no copy");
+        assert_eq!(names(&backup_dir).len(), 2, "and no prune");
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -1241,7 +1572,10 @@ mod tests {
         let dest = dir.join("host/rtok");
         std::os::unix::fs::symlink(&old_src, &dest).unwrap();
         let link = demo_link(new_src.clone(), dest.clone());
-        assert!(!link.up_to_date(), "an old version is not up to date");
+        assert!(
+            !link.up_to_date(keep_bytes),
+            "an old version is not up to date"
+        );
         assert_eq!(
             link.run(&YES, false).unwrap(),
             format!("+ plugin plugins/demo → {}", dest.display())
@@ -1264,12 +1598,45 @@ mod tests {
         fs::write(dest.join("plugin.json"), "v1").unwrap(); // an older, now-stale copy
         let link = demo_link(src, dest.clone());
         assert!(link.ours(), "an owned copy with our marker is ours");
-        assert!(!link.up_to_date(), "stale content is not up to date");
+        assert!(
+            !link.up_to_date(keep_bytes),
+            "stale content is not up to date"
+        );
         assert_eq!(
             link.run(&YES, false).unwrap(),
             format!("+ plugin plugins/demo → {}", dest.display())
         );
         assert_eq!(fs::read_to_string(dest.join("plugin.json")).unwrap(), "v2");
+    }
+
+    /// T250.3: a `CopyFix` rewrites only the file it names on the way into an owned copy,
+    /// and that fixed copy counts as up to date — not as stale bytes to reinstall each run.
+    #[test]
+    fn a_fixed_owned_copy_is_up_to_date() {
+        fn upper_hooks(rel: &Path, bytes: Vec<u8>) -> Vec<u8> {
+            if rel == Path::new("hooks/hooks.json") {
+                bytes.to_ascii_uppercase()
+            } else {
+                bytes
+            }
+        }
+        let dir = tmp("fixed-copy");
+        let src = dir.join("plugins/demo");
+        fs::create_dir_all(src.join("hooks")).unwrap();
+        fs::write(src.join("plugin.json"), "v1").unwrap();
+        fs::write(src.join("hooks/hooks.json"), "posix").unwrap();
+        let dest = dir.join("host/plugins/rtok");
+        copy_owned_with(&src, &dest, upper_hooks).unwrap();
+        assert_eq!(
+            fs::read_to_string(dest.join("hooks/hooks.json")).unwrap(),
+            "POSIX"
+        );
+        assert_eq!(fs::read_to_string(dest.join("plugin.json")).unwrap(), "v1");
+        let link = demo_link(src, dest);
+        assert!(link.ours());
+        assert!(link.up_to_date(upper_hooks));
+        assert!(!link.up_to_date(keep_bytes), "unfixed source bytes differ");
+        assert_eq!(link.run_with(&YES, false, upper_hooks).unwrap(), NO_CHANGES);
     }
 
     /// T164: default-install hosts must never overwrite a foreign directory at the plugin
@@ -1330,6 +1697,7 @@ mod tests {
                 &Apply {
                     dry_run: true,
                     backup: false,
+                    backup_files: 0,
                     yes: false,
                 },
                 false,
@@ -1358,6 +1726,7 @@ mod tests {
                 &Apply {
                     dry_run: true,
                     backup: false,
+                    backup_files: 0,
                     yes: false,
                 },
                 false,
@@ -1383,6 +1752,7 @@ mod tests {
         let yes = Apply {
             dry_run: false,
             backup: false,
+            backup_files: 0,
             yes: true,
         };
         assert_eq!(
@@ -1416,6 +1786,7 @@ mod tests {
         let yes = Apply {
             dry_run: false,
             backup: false,
+            backup_files: 0,
             yes: true,
         };
         let report = link.run(&yes, true).unwrap();
@@ -1444,6 +1815,7 @@ mod tests {
         let yes = Apply {
             dry_run: false,
             backup: false,
+            backup_files: 0,
             yes: true,
         };
 
@@ -1476,6 +1848,7 @@ mod tests {
         let yes = Apply {
             dry_run: false,
             backup: false,
+            backup_files: 0,
             yes: true,
         };
         let report = link.run(&yes, true).unwrap();
@@ -1580,6 +1953,43 @@ mod tests {
         );
         assert_eq!(copy.run(&apply(), true).unwrap(), NO_CHANGES);
         assert!(foreign.join("SKILL.md").is_file());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T246.4: a skill copy the user wrote to after rtok marked it stays unless `--yes`; with
+    /// no terminal here nobody answers, so the remove leaves it and says why.
+    #[test]
+    fn skill_copy_remove_asks_before_taking_an_edited_copy() {
+        let dir = tmp("skill-edited");
+        let src = dir.join("src");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("SKILL.md"), "hub body\n").unwrap();
+        let dest = dir.join("skills/rtok");
+        let copy = SkillCopy {
+            src,
+            dest: dest.clone(),
+            label: None,
+        };
+        copy.run(&apply(), false).unwrap();
+        let later = SystemTime::now() + std::time::Duration::from_secs(60);
+        let file = fs::File::options()
+            .write(true)
+            .open(dest.join("SKILL.md"))
+            .unwrap();
+        file.set_modified(later).unwrap();
+
+        let out = copy.run(&apply(), true).unwrap();
+        assert!(
+            out.starts_with("leave ") && out.contains("changed by you"),
+            "{out}"
+        );
+        assert!(dest.join("SKILL.md").is_file());
+        let yes = Apply {
+            yes: true,
+            ..apply()
+        };
+        assert!(copy.run(&yes, true).unwrap().starts_with("- skill"));
+        assert!(!dest.exists());
         let _ = fs::remove_dir_all(dir);
     }
 

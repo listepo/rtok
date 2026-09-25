@@ -81,9 +81,7 @@ fn last_ref_id(cx: &rtok::plugin::Runtime, plugin: &str) -> Option<String> {
 /// the Measurement row names the id; a body nothing was dropped from stores nothing.
 fn cmd(kind: &str, body: &[u8]) -> usize {
     let dir = tmp(&format!("cmd-{kind}"));
-    let mut cfg = rtok::config::Config::default();
-    cfg.core.db_path = dir.join("rtok.db");
-    cfg.core.archive_dir = dir.join("archive");
+    let cfg = rtok::testutil::config_in(&dir);
     rtok::plugins::cmd::run::emit_filtered(&cfg, &["fixture".into()], body, 0, None);
     let cx = rtok::plugin::Runtime::open(cfg, format!("t102-cmd-{kind}")).unwrap();
     let n = match last_ref_id(&cx, "cmd") {

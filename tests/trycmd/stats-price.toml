@@ -7,4 +7,6 @@ args = "--config tests/trycmd/input/stats-price.toml stats --price"
 # usage ledger and the `--price` section render deterministically.
 [env]
 inherit = false
+
+[env.add]
 RTOK_HOME = "target/tmp/trycmd-stats-price"

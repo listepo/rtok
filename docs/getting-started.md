@@ -41,6 +41,9 @@ rtok doctor           # inspect hooks, MCP servers, proxy chain
 hooks and MCP servers you already have, including description tokens re-sent
 on every turn.
 
+A subcommand whose plugin was compiled out prints `not implemented` and exits
+0, so a stripped or half-installed rtok never blocks the host agent.
+
 ## Wire into Claude Code
 
 ```bash
@@ -68,6 +71,14 @@ file it writes. See the root [README](../README.md) for other hosts
 ~/.rtok/archive/        raw payloads, addressed by expand id
 <git root>/.rtok.toml   optional per-project overrides
 ```
+
+## Caveats
+
+- Token counts from `rtok stats` are estimates (see `src/tokens.rs`) plus real `usage` rows
+  from the proxy. Only the proxy rows are the actual bill.
+- The committed A/B bench has only been run offline, so it reports zeros for
+  both configurations. Rerun it against live traffic before adopting a
+  configuration on its word.
 
 ## Next
 

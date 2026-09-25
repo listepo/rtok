@@ -7,6 +7,36 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
+/// T263: `child.stdout` lines with a bounded wait, so a stalled exchange fails, not hangs.
+struct LineReader {
+    rx: std::sync::mpsc::Receiver<String>,
+}
+
+impl LineReader {
+    fn new(stdout: std::process::ChildStdout) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut reader = std::io::BufReader::new(stdout);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match std::io::BufRead::read_line(&mut reader, &mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) if tx.send(line.trim_end().to_string()).is_err() => break,
+                    Ok(_) => {}
+                }
+            }
+        });
+        Self { rx }
+    }
+
+    fn next_line(&self) -> String {
+        self.rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("rtok mcp did not answer in time")
+    }
+}
+
 #[test]
 fn tools_list_includes_expand() {
     let tmp = std::env::temp_dir().join(format!("rtok-mcp-list-{}", std::process::id()));
@@ -161,6 +191,10 @@ fn initialize_names_the_server_rtok() {
             .is_some_and(|s| !s.is_empty()),
         "{stdout}"
     );
+    // T213: a client that requests a version this server supports gets that exact version
+    // back (MCP lifecycle spec, "Initialization" — https://modelcontextprotocol.io/specification),
+    // not whatever `ProtocolVersion::default()` happens to resolve to in the linked `rmcp`.
+    assert_eq!(v["result"]["protocolVersion"], "2025-06-18", "{stdout}");
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -309,5 +343,135 @@ fn mcp_watchman_watch_list_names_the_root() {
     let _ = Command::new("/opt/homebrew/bin/watchman")
         .args(["watch-del", &root.display().to_string()])
         .output();
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// T263: a client with the `roots` capability is asked `roots/list` after `initialized`;
+/// the first `file://` root becomes the cwd, so `symbol` finds a repo the launch cwd is not.
+#[test]
+fn mcp_moves_into_the_first_file_root_after_roots_list() {
+    let home = std::env::temp_dir().join(format!("rtok-mcp-roots-home-{}", std::process::id()));
+    let outside = std::env::temp_dir().join(format!("rtok-mcp-roots-out-{}", std::process::id()));
+    let repo = std::env::temp_dir().join(format!("rtok-mcp-roots-repo-{}", std::process::id()));
+    for d in [&home, &outside, &repo] {
+        let _ = std::fs::remove_dir_all(d);
+        std::fs::create_dir_all(d).unwrap();
+    }
+    std::fs::write(repo.join("a.rs"), "fn alpha() {}\n").unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
+        .arg("mcp")
+        .env("RTOK_HOME", &home)
+        .current_dir(&outside)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn rtok mcp");
+    let mut stdin = child.stdin.take().expect("stdin");
+    let lines = LineReader::new(child.stdout.take().expect("stdout"));
+
+    writeln!(
+        stdin,
+        r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"2025-06-18","capabilities":{{"roots":{{"listChanged":true}}}},"clientInfo":{{"name":"t","version":"1"}}}}}}"#
+    )
+    .unwrap();
+    let init: serde_json::Value =
+        serde_json::from_str(&lines.next_line()).expect("initialize response");
+    assert_eq!(init["result"]["serverInfo"]["name"], "rtok", "{init}");
+
+    writeln!(
+        stdin,
+        r#"{{"jsonrpc":"2.0","method":"notifications/initialized"}}"#
+    )
+    .unwrap();
+    let roots_req: serde_json::Value =
+        serde_json::from_str(&lines.next_line()).expect("roots/list request");
+    assert_eq!(roots_req["method"], "roots/list", "{roots_req}");
+    assert_eq!(roots_req["id"], "rtok-roots", "{roots_req}");
+
+    let uri =
+        url::Url::from_directory_path(repo.canonicalize().unwrap()).expect("file:// uri for repo");
+    writeln!(
+        stdin,
+        r#"{{"jsonrpc":"2.0","id":"rtok-roots","result":{{"roots":[{{"uri":"{uri}","name":"r"}}]}}}}"#
+    )
+    .unwrap();
+
+    writeln!(
+        stdin,
+        r#"{{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{{"name":"symbol","arguments":{{"name":"alpha"}}}}}}"#
+    )
+    .unwrap();
+    let call: serde_json::Value =
+        serde_json::from_str(&lines.next_line()).expect("tools/call response");
+    assert_eq!(call["result"]["isError"], false, "{call}");
+    assert!(
+        call["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("a.rs"),
+        "{call}"
+    );
+
+    drop(stdin);
+    let _ = child.wait();
+    for d in [&home, &outside, &repo] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
+/// T263: launched in `/` (Claude.app) with no roots, `symbol` refuses at once instead of
+/// walking the disk.
+#[test]
+fn mcp_refuses_symbol_at_filesystem_root_without_walking() {
+    let home = std::env::temp_dir().join(format!("rtok-mcp-noroot-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
+        .arg("mcp")
+        .env("RTOK_HOME", &home)
+        .current_dir("/")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn rtok mcp");
+    let mut stdin = child.stdin.take().expect("stdin");
+    let lines = LineReader::new(child.stdout.take().expect("stdout"));
+
+    writeln!(
+        stdin,
+        r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"2025-06-18","capabilities":{{}},"clientInfo":{{"name":"t","version":"1"}}}}}}"#
+    )
+    .unwrap();
+    let _init = lines.next_line();
+    writeln!(
+        stdin,
+        r#"{{"jsonrpc":"2.0","method":"notifications/initialized"}}"#
+    )
+    .unwrap();
+
+    let start = Instant::now();
+    writeln!(
+        stdin,
+        r#"{{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{{"name":"symbol","arguments":{{"name":"alpha"}}}}}}"#
+    )
+    .unwrap();
+    let call: serde_json::Value =
+        serde_json::from_str(&lines.next_line()).expect("tools/call response");
+    let ms = start.elapsed().as_millis();
+    assert!(ms < 5000, "symbol at / took {ms} ms: must refuse, not walk");
+    assert_eq!(call["result"]["isError"], true, "{call}");
+    assert!(
+        call["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("no project root"),
+        "{call}"
+    );
+
+    drop(stdin);
+    let _ = child.wait();
     let _ = std::fs::remove_dir_all(&home);
 }

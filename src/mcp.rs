@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Result, bail};
 use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, JsonObject, ListToolsResult, ServerCapabilities,
-    ServerInfo, Tool,
+    CallToolResult, ContentBlock, Implementation, JsonObject, ListToolsResult, ProtocolVersion,
+    ServerCapabilities, ServerConfig, Tool,
 };
 use serde_json::{Value, json};
 
@@ -52,9 +52,18 @@ pub fn run(cfg: &Config) -> Result<()> {
     std::thread::scope(|s| {
         #[cfg(feature = "graph")]
         if let Some(root) = &watch_root {
-            s.spawn(|| {
-                crate::plugins::graph::watch::run(&crate::plugin::Ctx::new(&server.cx), root, &stop)
-            });
+            // T263: never watch `/` or the home directory.
+            if let Err(e) = crate::plugins::read::walk_root_ok(root) {
+                eprintln!("rtok mcp: watcher skipped: {e:#}");
+            } else {
+                s.spawn(|| {
+                    crate::plugins::graph::watch::run(
+                        &crate::plugin::Ctx::new(&server.cx),
+                        root,
+                        &stop,
+                    )
+                });
+            }
         }
         let res: Result<()> = (|| {
             let mut stdin = std::io::stdin().lock();
@@ -100,23 +109,36 @@ pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
     if !server.allows(name) {
         return Err(unknown_tool(name));
     }
-    let plugin = server
-        .listed
-        .iter()
-        .find(|t| t.def.name == name)
-        .map(|t| t.plugin)
-        .unwrap_or("archive");
+    let found = server.listed.iter().find(|t| t.def.name == name);
+    let plugin = found.map(|t| t.plugin).unwrap_or("archive");
     let args = if args.is_null() {
         json!({})
     } else {
         args.clone()
     };
-    let (text, ok) = match invoke(&server.cx, name, &args) {
-        Ok(t) => (t, true),
-        Err(e) => (e.to_string(), false),
-    };
+    // Same required-field gate as `call_tool` (T213): a missing argument must not reach
+    // `invoke` and become a handler-level default.
+    let (text, ok) =
+        if let Some(msg) = found.and_then(|t| missing_required(&t.def.input_schema, &args)) {
+            (format!("invalid params: {msg}"), false)
+        } else {
+            invoke_text(&server.cx, name, &args)
+        };
     let _ = record(&server.cx, plugin, name, &args, &text);
     if ok { Ok(text) } else { bail!("{text}") }
+}
+
+/// Runs `invoke` and maps its `Result` to `(text, ok)` — the one place that happens, so
+/// `tools/call` (`call_tool`) and the one-shot `--call` (`call` above) read a tool failure
+/// identically instead of keeping two copies of the same match arms in sync by hand.
+/// `anyhow::Error`'s `Display` (`{e}`, not the chained `{e:#}`) is always the bare message
+/// with no prefix of its own (T172: a failure must not read `Error: Error: …`), so nothing
+/// here needs to guard against doubling one up.
+fn invoke_text(cx: &Runtime, name: &str, args: &Value) -> (String, bool) {
+    match invoke(cx, name, args) {
+        Ok(t) => (t, true),
+        Err(e) => (e.to_string(), false),
+    }
 }
 
 /// Longest request line kept in memory. Tool arguments are notes and paths, far below this.
@@ -124,6 +146,85 @@ const MAX_LINE: u64 = 8 << 20;
 
 fn rpc_error(id: Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
+}
+
+/// T263: the first `file://` root of a `roots/list` answer becomes the cwd, so every tool's
+/// `current_dir()` is the project even when the host launched us in `/` (Claude.app).
+/// Anything else keeps the launch cwd.
+fn apply_roots_response(result: &Value) {
+    let Some(path) = result["roots"].as_array().and_then(|roots| {
+        roots
+            .iter()
+            .filter_map(|r| r["uri"].as_str())
+            .find(|uri| uri.starts_with("file://"))
+            .and_then(|uri| url::Url::parse(uri).ok())
+            .and_then(|url| url.to_file_path().ok())
+    }) else {
+        return;
+    };
+    if path.is_dir() {
+        let _ = std::env::set_current_dir(path);
+    }
+}
+
+/// Protocol dialects `rtok mcp` has been built and tested against, oldest first. Per the
+/// MCP lifecycle spec's version negotiation
+/// (https://modelcontextprotocol.io/specification — "Initialization"): a server answers
+/// `initialize` with the client's requested `protocolVersion` when it supports that
+/// version, else the latest version it does support. `initialize` used to ignore the
+/// request entirely and answer with `ProtocolVersion::default()` — whatever `rmcp` itself
+/// considers current — so a dependency bump could silently change the advertised dialect
+/// with no test to catch it (T213); the last entry here is that pinned fallback instead.
+const SUPPORTED_PROTOCOL_VERSIONS: &[ProtocolVersion] = &[
+    ProtocolVersion::V_2024_11_05,
+    ProtocolVersion::V_2025_03_26,
+    ProtocolVersion::V_2025_06_18,
+];
+
+fn negotiate_protocol_version(requested: &Value) -> ProtocolVersion {
+    if let Ok(v) = serde_json::from_value::<ProtocolVersion>(requested.clone())
+        && SUPPORTED_PROTOCOL_VERSIONS.contains(&v)
+    {
+        return v;
+    }
+    SUPPORTED_PROTOCOL_VERSIONS
+        .last()
+        .cloned()
+        .unwrap_or(ProtocolVersion::LATEST)
+}
+
+/// A missing required argument used to become a handler-level default instead of a visible
+/// error — `mem_save` without `body` stored an empty note, a missing `expand` `id` came
+/// back as `"unknown archive id: "`, `handoff` silently ran with a default budget, turning
+/// a client's bug into corrupt or misleading data (T213). JSON-RPC 2.0 has a dedicated code
+/// for this, `-32602` "Invalid params" (https://www.jsonrpc.org/specification#error_object);
+/// `rtok mcp` reports it the way it already reports `unknown tool` / `unknown archive id` —
+/// an `isError` `CallToolResult` carrying the message, not a protocol-level error object —
+/// so every client sees it whether or not it inspects JSON-RPC error codes. The `required`
+/// list lives once, on each tool's own `input_schema` (`mcp_tools()`); this reads that
+/// instead of hand-maintaining a second, driftable copy per tool.
+fn missing_required(schema: &Value, args: &Value) -> Option<String> {
+    let required = schema.get("required")?.as_array()?;
+    let props = schema.get("properties");
+    for field in required.iter().filter_map(Value::as_str) {
+        let kind = props
+            .and_then(|p| p.get(field))
+            .and_then(|p| p.get("type"))
+            .and_then(Value::as_str);
+        let present = match args.get(field) {
+            None | Some(Value::Null) => false,
+            Some(v) => match kind {
+                Some("string") => v.as_str().is_some_and(|s| !s.is_empty()),
+                Some("integer") => v.is_i64() || v.is_u64(),
+                Some("boolean") => v.is_boolean(),
+                _ => true,
+            },
+        };
+        if !present {
+            return Some(format!("missing `{field}`"));
+        }
+    }
+    None
 }
 
 /// The one place `"unknown tool: <name>"` is worded — a name `invoke` never heard of and a
@@ -160,6 +261,8 @@ struct Listed {
 struct Server {
     cx: Runtime,
     listed: Vec<Listed>,
+    /// T263: `initialize` declared `capabilities.roots`.
+    roots_capable: AtomicBool,
 }
 
 impl Server {
@@ -196,7 +299,11 @@ impl Server {
                 t.def.name == "expand" || cfg.mcp.tools.iter().any(|n| n.as_str() == t.def.name)
             });
         }
-        Ok(Self { cx, listed })
+        Ok(Self {
+            cx,
+            listed,
+            roots_capable: AtomicBool::new(false),
+        })
     }
 
     fn tools(&self) -> Vec<Tool> {
@@ -234,18 +341,39 @@ impl Server {
         };
         let method = obj.get("method").and_then(|m| m.as_str()).unwrap_or("");
         if obj.get("id").is_none() || method.starts_with("notifications/") {
+            // T263: the one server-to-client request: ask for roots once the client can answer.
+            if self.roots_capable.load(Ordering::Relaxed)
+                && matches!(
+                    method,
+                    "notifications/initialized" | "notifications/roots/list_changed"
+                )
+            {
+                return Some(json!({"jsonrpc":"2.0","id":"rtok-roots","method":"roots/list"}));
+            }
             return None;
         }
         let id = obj["id"].clone();
         if method.is_empty() {
+            // T263: the answer to our `roots/list` (result or error) is a response, not a request.
+            if id == "rtok-roots" {
+                if let Some(result) = obj.get("result") {
+                    apply_roots_response(result);
+                }
+                return None;
+            }
             return Some(rpc_error(id, -32600, "invalid request"));
         }
         let result = match method {
             "initialize" => {
+                if !req["params"]["capabilities"]["roots"].is_null() {
+                    self.roots_capable.store(true, Ordering::Relaxed);
+                }
                 // Default `Implementation` still comes from rmcp's build env (`name: "rmcp"`).
                 // 3.x types are non_exhaustive; construct via the public builders.
-                let info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-                    .with_server_info(Implementation::new("rtok", env!("CARGO_PKG_VERSION")));
+                let version = negotiate_protocol_version(&req["params"]["protocolVersion"]);
+                let info = ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+                    .with_server_info(Implementation::new("rtok", env!("CARGO_PKG_VERSION")))
+                    .with_protocol_version(version);
                 serde_json::to_value(&info).unwrap_or(json!({}))
             }
             "ping" => json!({}),
@@ -257,21 +385,22 @@ impl Server {
                 serde_json::to_value(self.call_tool(name, &args)).unwrap_or(json!({}))
             }
             _ => {
-                return Some(
-                    json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":method}}),
-                );
+                // JSON-RPC 2.0's own wording for -32601, not the raw method name (T213):
+                // https://www.jsonrpc.org/specification#error_object. The method still
+                // reaches the client, in `data`, for anyone who wants it.
+                return Some(json!({
+                    "jsonrpc":"2.0",
+                    "id":id,
+                    "error":{"code":-32601,"message":"Method not found","data":{"method":method}},
+                }));
             }
         };
         Some(json!({"jsonrpc":"2.0","id":id,"result":result}))
     }
 
     fn call_tool(&self, name: &str, args: &Value) -> CallToolResult {
-        let plugin = self
-            .listed
-            .iter()
-            .find(|t| t.def.name == name)
-            .map(|t| t.plugin)
-            .unwrap_or("archive");
+        let found = self.listed.iter().find(|t| t.def.name == name);
+        let plugin = found.map(|t| t.plugin).unwrap_or("archive");
         let args = if args.is_null() {
             json!({})
         } else {
@@ -280,14 +409,15 @@ impl Server {
         // A failure is an `isError` result with the same message text, not a success block
         // the model has to recognise by wording. A name the allow-list dropped never reaches
         // `invoke` — it must not run a tool the config says is off — but it fails with the
-        // exact text `invoke`'s own unknown-name arm would give (`unknown_tool`, T192).
-        let (text, ok) = if self.allows(name) {
-            match invoke(&self.cx, name, &args) {
-                Ok(t) => (t, true),
-                Err(e) => (e.to_string(), false),
-            }
-        } else {
+        // exact text `invoke`'s own unknown-name arm would give (`unknown_tool`, T192). A
+        // request missing one of the tool's own `required` fields never reaches `invoke`
+        // either, so no handler can turn it into a silent default or a store write (T213).
+        let (text, ok) = if !self.allows(name) {
             (unknown_tool(name).to_string(), false)
+        } else if let Some(msg) = found.and_then(|t| missing_required(&t.def.input_schema, &args)) {
+            (format!("invalid params: {msg}"), false)
+        } else {
+            invoke_text(&self.cx, name, &args)
         };
         let _ = record(&self.cx, plugin, name, &args, &text);
         let content = vec![ContentBlock::text(text)];
@@ -477,7 +607,11 @@ fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) ->
 
 #[cfg(feature = "memory")]
 fn handoff(cx: &Runtime, args: &Value) -> Result<String> {
-    let budget = args["budget_tokens"].as_u64().unwrap_or(800) as u32;
+    // `missing_required` already rejected an absent value; saturate instead of `as u32`
+    // wrapping a huge budget into a tiny one (T213).
+    let budget = args["budget_tokens"]
+        .as_u64()
+        .map_or(800, |n| u32::try_from(n).unwrap_or(u32::MAX));
     Ok(crate::plugins::memory::handoff::handoff(
         &crate::plugin::Ctx::new(cx),
         budget,
@@ -641,6 +775,69 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// T172: the `read` root guard (`src/plugins/read/mod.rs`'s `resolve_with`) answers
+    /// `isError: true` with the refusal text, never a plain-text success block the model
+    /// could mistake for file content.
+    #[test]
+    fn read_outside_cwd_sets_is_error() {
+        let (cfg, dir) = tmp("outside-cwd");
+        let server = Server::new(&cfg).unwrap();
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read","arguments":{"path":"/etc/hosts"}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], true, "{v}");
+        assert!(
+            v["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("path outside cwd"),
+            "{v}"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T172: a range the model quotes verbatim (`"1-1"`, copied from earlier output) reads
+    /// the same file the bare form does instead of failing with `invalid line range`.
+    #[test]
+    fn read_accepts_a_quoted_range() {
+        let (cfg, dir) = tmp("quoted-range");
+        let server = Server::new(&cfg).unwrap();
+        let bare = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read","arguments":{"path":"Cargo.toml","range":"1-1"}}}"#;
+        let quoted = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read","arguments":{"path":"Cargo.toml","range":"\"1-1\""}}}"#;
+        let v_bare: Value = serde_json::from_str(&server.handle_line(bare).unwrap()).unwrap();
+        let v_quoted: Value = serde_json::from_str(&server.handle_line(quoted).unwrap()).unwrap();
+        assert_eq!(v_bare["result"]["isError"], false, "{v_bare}");
+        assert_eq!(v_quoted["result"]["isError"], false, "{v_quoted}");
+        assert_eq!(
+            v_bare["result"]["content"][0]["text"],
+            v_quoted["result"]["content"][0]["text"]
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T172: `invoke_text` never doubles an `Error:` prefix onto a failure's text — there is
+    /// exactly one site (`invoke_text`) that turns a tool `Err` into content text, and it
+    /// never adds a prefix of its own, across the tool surfaces most likely to fail (an
+    /// unknown name, the read root guard, and a malformed range — the audit's "timeout"
+    /// case is the same code path once the error reaches `invoke_text`).
+    #[test]
+    fn failed_call_text_never_doubles_the_error_prefix() {
+        let (cfg, dir) = tmp("no-double-prefix");
+        let server = Server::new(&cfg).unwrap();
+        let lines = [
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nope","arguments":{}}}"#,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read","arguments":{"path":"/etc/hosts"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"read","arguments":{"path":"Cargo.toml","range":"975-1015"}}}"#,
+        ];
+        for line in lines {
+            let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+            assert_eq!(v["result"]["isError"], true, "{v}");
+            let text = v["result"]["content"][0]["text"].as_str().unwrap();
+            assert!(!text.contains("Error: Error:"), "{text}");
+            assert!(text.matches("Error:").count() <= 1, "{text}");
+        }
+        let _ = fs::remove_dir_all(dir);
+    }
+
     /// T192: `cfg.mcp.tools` allow-list filters listing and calls; `expand` stays
     /// listed unconditionally (D4 losslessness).
     #[test]
@@ -695,6 +892,8 @@ mod tests {
         assert_eq!(arr.len(), 2, "{v}");
         assert_eq!(arr[0]["id"], 1);
         assert_eq!(arr[1]["error"]["code"], -32601);
+        assert_eq!(arr[1]["error"]["message"], "Method not found", "{v}");
+        assert_eq!(arr[1]["error"]["data"]["method"], "nope", "{v}");
         assert!(server.handle_line("[]").unwrap().contains("-32600"));
         assert!(
             server
@@ -744,6 +943,54 @@ mod tests {
             .run_retention(cfg.core.retain_calls_days)
             .unwrap();
         assert_eq!(server.cx.store.count_calls().unwrap(), 0);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T213: `initialize` echoes back a `protocolVersion` this server supports, and falls
+    /// back to the pinned latest-supported version (never `ProtocolVersion::default()`,
+    /// which drifts with the linked `rmcp`) when the client asks for one it doesn't know,
+    /// or asks for none at all. Spec: https://modelcontextprotocol.io/specification —
+    /// "Initialization".
+    #[test]
+    fn initialize_negotiates_protocol_version() {
+        let (cfg, dir) = tmp("mcp-negotiate");
+        let server = Server::new(&cfg).unwrap();
+        let req = |params: Value| {
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":params}).to_string()
+        };
+        let client = json!({"capabilities": {}, "clientInfo": {"name":"t","version":"1"}});
+        let mut supported = client.clone();
+        supported["protocolVersion"] = json!("2024-11-05");
+        let v: Value = serde_json::from_str(&server.handle_line(&req(supported)).unwrap()).unwrap();
+        assert_eq!(v["result"]["protocolVersion"], "2024-11-05", "{v}");
+        let mut unknown = client.clone();
+        unknown["protocolVersion"] = json!("1999-01-01");
+        let v: Value = serde_json::from_str(&server.handle_line(&req(unknown)).unwrap()).unwrap();
+        assert_eq!(v["result"]["protocolVersion"], "2025-06-18", "{v}");
+        let v: Value = serde_json::from_str(&server.handle_line(&req(client)).unwrap()).unwrap();
+        assert_eq!(v["result"]["protocolVersion"], "2025-06-18", "{v}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Check (T213): `mem_save` with only `{"title":"t"}` is rejected before it ever
+    /// touches the store — `body` is `required` on the schema, but the handler used to
+    /// `unwrap_or("")` a missing one, silently saving a broken note.
+    #[cfg(feature = "memory")]
+    #[test]
+    fn mem_save_missing_body_rejected_before_store_write() {
+        let (cfg, dir) = tmp("mcp-mem-save-missing");
+        let server = Server::new(&cfg).unwrap();
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"mem_save","arguments":{"title":"t"}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], true, "{v}");
+        assert_eq!(
+            v["result"]["content"][0]["text"], "invalid params: missing `body`",
+            "{v}"
+        );
+        assert!(
+            server.cx.store.note_bodies().unwrap().is_empty(),
+            "notes table must stay empty"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }

@@ -296,10 +296,9 @@ fn stats_page_matches_price_and_cache_on_the_fixture_store() {
     let cache = rtok(&["stats", "--cache"], &h);
 
     // `load_from` pins the config *file* to `h`, but a default like `~/.claude/projects`
-    // still expands against the real `$HOME` (T74's leak) — pin it here the way
-    // `crate::tui::app::tests::hermetic` does, so this reads the fixture, not this
-    // machine's real transcripts.
-    let mut cfg = rtok::config::Config::load_from(&h).expect("config");
+    // still expands against the real `$HOME` (T74's leak) — `config_file_in` moves every
+    // snapshot probe under `h`, then the transcripts point at the fixture (T252).
+    let mut cfg = rtok::testutil::config_file_in(&h);
     cfg.stats.transcripts_dir = h.join(".claude/projects");
     cfg.stats.codex_dir = h.join(".codex/sessions");
     let page = rtok::web::model::snapshot(&cfg)

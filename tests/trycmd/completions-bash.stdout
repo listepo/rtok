@@ -1274,7 +1274,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__config__subcmd__get)
-            opts="-h --config --help"
+            opts="-h --json --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

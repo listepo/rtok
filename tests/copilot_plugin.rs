@@ -30,7 +30,7 @@ fn manifest_is_rtok_with_the_two_component_paths() {
 /// The tree's hooks file is exactly what `~/.copilot/hooks/rtok.json` writes — one shape,
 /// two surfaces (D21), never a drifted copy.
 #[test]
-fn hooks_are_the_installers_doc_with_the_bare_rtok_command() {
+fn hooks_are_the_installers_doc_with_the_rtok_resolver() {
     assert_eq!(
         read("hooks/hooks.json"),
         rtok::agents::copilot::hooks_doc("rtok", 5)
@@ -103,4 +103,104 @@ fn the_plugin_installs_through_the_copilot_cli_and_remove_uninstalls() {
     assert!(removed.contains("- plugin rtok"), "{removed}");
     assert!(!marker.exists());
     let _ = fs::remove_dir_all(&home);
+}
+
+/// Every hook's `field` line fails open; only `sessionStart`'s fallback carries the note.
+fn assert_hooks_fail_open(doc: &Value, field: &str, run: &dyn Fn(&str) -> (bool, String)) {
+    for (event, hook) in doc["hooks"].as_object().unwrap() {
+        let (ok, stdout) = run(hook[0][field].as_str().unwrap());
+        assert!(ok, "{event}: not fail-open");
+        if event == "sessionStart" {
+            assert!(stdout.contains("additionalContext"), "{stdout}");
+            assert!(stdout.contains("ketch install listepo/rtok"), "{stdout}");
+        } else {
+            assert_eq!(stdout.trim(), "", "{event}");
+        }
+    }
+}
+
+/// T250.2: `bash` hooks resolve `rtok` from PATH, then `~/.ketch/bin/rtok`, else fail open.
+#[cfg(unix)]
+#[test]
+fn bash_hooks_resolve_rtok_then_ketch_then_fail_open_silently() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::{Command, Stdio};
+
+    let home = tmp("copilot-resolver-sh");
+    let empty_path = home.join("empty-path");
+    fs::create_dir_all(&empty_path).unwrap();
+    let run = |bash: &str| -> (bool, String) {
+        let out = Command::new("/bin/sh")
+            .args(["-c", bash])
+            .envs([("HOME", home.as_path()), ("PATH", empty_path.as_path())])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .unwrap();
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    };
+    let doc = read("hooks/hooks.json");
+    assert_hooks_fail_open(&doc, "bash", &run);
+    // sessionStart's fallback is Copilot's flat shape, never Claude's hookSpecificOutput.
+    let start = doc["hooks"]["sessionStart"][0]["bash"].as_str().unwrap();
+    let v: Value = serde_json::from_str(&run(start).1).unwrap();
+    assert!(v.get("hookSpecificOutput").is_none(), "{v}");
+    // With `~/.ketch/bin/rtok` present, the resolved fallback actually runs it.
+    let fake = home.join(".ketch/bin/rtok");
+    fs::create_dir_all(fake.parent().unwrap()).unwrap();
+    fs::write(&fake, "#!/bin/sh\nprintf 'ketch %s' \"$2\"\n").unwrap();
+    fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+    let (ok, stdout) = run(start);
+    assert!(ok);
+    assert_eq!(stdout, "ketch SessionStart");
+    let _ = fs::remove_dir_all(&home);
+}
+
+/// Windows twin for Copilot's `powershell` field; runs only in Windows CI.
+#[cfg(windows)]
+#[test]
+fn powershell_hooks_resolve_rtok_then_ketch_then_fail_open_silently() {
+    use std::process::{Command, Stdio};
+
+    let home = tmp("copilot-resolver-ps");
+    let rtok_home = tmp("copilot-resolver-ps-rtok-home");
+    let empty_path = home.join("empty-path");
+    fs::create_dir_all(&empty_path).unwrap();
+    let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+    let powershell = PathBuf::from(root).join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
+    let run = |ps: &str| -> (bool, String) {
+        let out = Command::new(&powershell)
+            .args(["-NoProfile", "-NonInteractive", "-Command", ps])
+            .envs([
+                ("USERPROFILE", home.as_path()),
+                ("PATH", empty_path.as_path()),
+                ("RTOK_HOME", rtok_home.as_path()),
+            ])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .unwrap();
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    };
+    let doc = read("hooks/hooks.json");
+    assert_hooks_fail_open(&doc, "powershell", &run);
+    // Copy the real rtok.exe into %USERPROFILE%\.ketch\bin and confirm it actually runs.
+    let ketch_bin = home.join(".ketch").join("bin");
+    fs::create_dir_all(&ketch_bin).unwrap();
+    fs::copy(env!("CARGO_BIN_EXE_rtok"), ketch_bin.join("rtok.exe")).unwrap();
+    let field = &doc["hooks"]["sessionStart"][0]["powershell"];
+    let (ok, stdout) = run(field.as_str().unwrap());
+    assert!(ok);
+    assert!(
+        !stdout.contains("rtok is not installed"),
+        "the real rtok should have run: {stdout}"
+    );
+    let _ = fs::remove_dir_all(&home);
+    let _ = fs::remove_dir_all(&rtok_home);
 }

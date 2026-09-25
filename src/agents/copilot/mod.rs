@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use rtok_agent_sdk::{Apply, KETCH_INSTALL, NO_CHANGES, edit_json};
+use rtok_agent_sdk::{Apply, NO_CHANGES, edit_json};
 use serde_json::{Value, json};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -26,6 +26,7 @@ pub const EVENTS: &[(&str, &str)] = &[
     ("sessionStart", "SessionStart"),
     ("sessionEnd", "SessionEnd"),
     ("preCompact", "PreCompact"),
+    ("subagentStart", "SubagentStart"),
 ];
 
 /// The CLI and the desktop app read the same `~/.copilot` files.
@@ -121,26 +122,28 @@ impl Agent for Copilot {
     }
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
-        let remove = mode == Mode::Remove;
-        let head = plugin(cfg, remove)?;
-        if remove || plugin_installed(cfg) {
-            // D21: the plugin is the unit — its hooks and `rtok mcp` serve already, so
-            // rtok's own hooks/rtok.json and mcp-config.json entry go instead of coming
-            // (kimi's `plugin_detected` rule), on the same run that installs it too.
-            return Ok(vec![
-                head,
-                run(cfg, true)?,
-                unregister_mcp(cfg)?,
-                super::skill::sync("copilot", cfg, remove)?,
-            ]);
-        }
-        let mut lines = vec![head, run(cfg, false)?];
-        if cfg.setup.mcp {
-            lines.push(register_mcp(cfg)?);
-        }
-        lines.push(super::skill::sync("copilot", cfg, false)?);
-        Ok(lines)
+        // D21: the plugin is the unit — its hooks and `rtok mcp` serve already, so rtok's
+        // own hooks/rtok.json and mcp-config.json entry go instead of coming (kimi's
+        // `plugin_detected` rule), on the same run that installs it too.
+        super::d21_plugin_apply(
+            cfg,
+            mode,
+            super::D21Plugin {
+                offer: plugin,
+                plugin_installed,
+                run,
+                register_mcp,
+                unregister_mcp,
+            },
+            skill_sync,
+        )
     }
+}
+
+/// The [`super::d21_plugin_apply`] `extra` for Copilot: `skill::sync` runs on every apply,
+/// install or remove alike (T234).
+fn skill_sync(cfg: &Config, remove: bool) -> Result<Option<String>> {
+    Ok(Some(super::skill::sync("copilot", cfg, remove)?))
 }
 
 /// Write, dry-run, or delete `hooks/rtok.json`. The file is rtok's, so apply means "make it
@@ -160,19 +163,49 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     })
 }
 
+/// Copilot's flat `additionalContext` fallback note, shown once on `sessionStart` when `rtok` resolves nowhere.
+const MISSING_RTOK_NOTE: &str = r#"{"additionalContext":"rtok is not installed; run ketch install listepo/rtok to enable it."}"#;
+
 /// `{version: 1, hooks: {<event>: [{type: "command", bash, powershell, timeoutSec}]}}`.
 /// The plugin tree's `hooks/hooks.json` is this document with `bin = "rtok"`, pinned by
 /// `tests/copilot_plugin.rs` — one shape, two surfaces (D21).
+/// `bin = "rtok"` resolves `bash`/`powershell` at run time ([`super::hook_resolver`] /
+/// [`hook_resolver_ps`], `sessionStart` adds [`MISSING_RTOK_NOTE`]); other `bin` stays plain.
 pub fn hooks_doc(bin: &str, timeout: u64) -> Value {
     let mut hooks = serde_json::Map::new();
     for &(copilot, claude) in EVENTS {
-        let cmd = format!("{bin} hook {claude} --host copilot");
+        let args = format!("hook {claude} --host copilot");
+        let note = (copilot == "sessionStart").then_some(MISSING_RTOK_NOTE);
+        let (bash, powershell) = if bin == "rtok" {
+            (
+                super::hook_resolver(&args, note),
+                hook_resolver_ps(&args, note),
+            )
+        } else {
+            let cmd = format!("{bin} {args}");
+            (cmd.clone(), cmd)
+        };
         hooks.insert(
             copilot.into(),
-            json!([{"type": "command", "bash": cmd, "powershell": cmd, "timeoutSec": timeout}]),
+            json!([{"type": "command", "bash": bash, "powershell": powershell, "timeoutSec": timeout}]),
         );
     }
     json!({"version": 1, "hooks": hooks})
+}
+
+/// PowerShell twin of [`super::hook_resolver`] (Copilot's only `powershell` field); `& $r` with
+/// no pipeline keeps stdin; `note`, if given, is single-quoted; `json` must not contain `'`.
+fn hook_resolver_ps(args: &str, note: Option<&str>) -> String {
+    let tail = match note {
+        Some(json) => {
+            debug_assert!(!json.contains('\''), "{json}");
+            format!("'{json}'; exit 0")
+        }
+        None => "exit 0".to_string(),
+    };
+    format!(
+        "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) {{ $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) {{ $r = $k }} }}; if ($r) {{ & $r {args}; exit $LASTEXITCODE }}; {tail}"
+    )
 }
 
 /// Delete a file rtok owns: backed up like any edit, reported as `- <path>`; absent is no change.
@@ -183,7 +216,7 @@ fn remove_file(apply: &Apply, path: &Path) -> Result<String> {
     let report = format!("- {}", path.display());
     if apply.writes(&report) {
         if apply.backup {
-            rtok_agent_sdk::backup(path)?;
+            rtok_agent_sdk::backup(path, apply.backup_files)?;
         }
         fs::remove_file(path).with_context(|| path.display().to_string())?;
     }
@@ -229,12 +262,7 @@ pub fn plugin_installed(cfg: &Config) -> bool {
             .into_iter()
             .flatten()
             .flatten()
-            .any(|e| {
-                fs::read_to_string(e.path().join("plugin.json"))
-                    .ok()
-                    .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-                    .is_some_and(|v| v.get("name").and_then(Value::as_str) == Some(NAME))
-            })
+            .any(|e| super::manifest_names(&e.path(), "plugin.json", NAME))
     })
 }
 
@@ -253,44 +281,22 @@ fn copilot_cli(cfg: &Config, args: &[&str]) -> std::result::Result<(), String> {
 /// `installed-plugins/`, that store is Copilot's, so the flag never turns the printed line
 /// into state (`installed()` reads the marker alone). A failing or missing `copilot` keeps
 /// the offer open instead of failing the install: the settings-file hooks still go in.
+/// Shares its skeleton with `gemini::plugin` through `super::offer_plugin` (D21).
 fn plugin(cfg: &Config, remove: bool) -> Result<String> {
-    let a = apply(cfg);
     let installed = plugin_installed(cfg);
-    if remove {
-        if !installed {
-            return Ok(NO_CHANGES.into());
-        }
-    } else if installed || !a.yes {
-        return Ok(NO_CHANGES.into());
-    }
-    let src = super::plugin_src(PLUGIN_SRC);
-    let shown = if remove {
-        format!("copilot plugin uninstall {NAME}")
-    } else {
-        format!("copilot plugin install {}", src.display())
-    };
-    if a.dry_run {
-        return Ok(if remove {
-            format!("- plugin {NAME} ({shown})")
-        } else {
-            format!("offer {PLUGIN_SRC} → {shown} {KETCH_INSTALL}")
-        });
-    }
-    let args: Vec<&str> = if remove {
-        vec!["plugin", "uninstall", NAME]
-    } else {
-        vec!["plugin", "install", src.to_str().unwrap_or_default()]
-    };
-    match copilot_cli(cfg, &args) {
-        Ok(()) => Ok(if remove {
-            format!("- plugin {NAME}")
-        } else {
-            format!("+ plugin {PLUGIN_SRC} → {NAME}")
-        }),
-        Err(e) => Ok(format!(
-            "offer {PLUGIN_SRC} → {shown} (copilot failed: {e})"
-        )),
-    }
+    super::offer_plugin(
+        cfg,
+        remove,
+        installed,
+        super::PluginOffer {
+            bin: "copilot",
+            name: NAME,
+            src_rel: PLUGIN_SRC,
+            install_verb: &["plugin", "install"],
+            uninstall_verb: &["plugin", "uninstall"],
+        },
+        |args| copilot_cli(cfg, args),
+    )
 }
 
 #[cfg(test)]
@@ -313,7 +319,7 @@ mod tests {
         let (c, dir) = cfg("dry", true);
         let out = run(&c, false).unwrap();
         assert!(
-            out.starts_with("+ ") && out.ends_with("(6 events)"),
+            out.starts_with("+ ") && out.ends_with("(7 events)"),
             "{out}"
         );
         assert!(!hooks_path(&c).exists());
@@ -322,24 +328,27 @@ mod tests {
     }
 
     #[test]
-    fn apply_writes_six_events_is_idempotent_and_remove_deletes() {
+    fn apply_writes_seven_events_is_idempotent_and_remove_deletes() {
         let (c, dir) = cfg("apply", false);
         assert!(run(&c, false).unwrap().starts_with("+ "));
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let doc: Value =
             serde_json::from_str(&fs::read_to_string(hooks_path(&c)).unwrap()).unwrap();
         assert_eq!(doc["version"], 1);
-        assert_eq!(doc["hooks"].as_object().unwrap().len(), 6);
+        assert_eq!(doc["hooks"].as_object().unwrap().len(), 7);
         assert!(doc["hooks"].get("preCompact").is_some());
         let pre = &doc["hooks"]["preToolUse"][0];
         assert_eq!(pre["type"], "command");
         assert_eq!(pre["timeoutSec"], 5);
         let bash = pre["bash"].as_str().unwrap();
         assert!(
-            bash.ends_with("rtok hook PreToolUse --host copilot"),
+            bash.contains("exec rtok hook PreToolUse --host copilot"),
             "{bash}"
         );
-        assert_eq!(pre["powershell"], pre["bash"]);
+        assert!(bash.ends_with("; exit 0"), "{bash}");
+        let ps = pre["powershell"].as_str().unwrap();
+        assert!(ps.contains("hook PreToolUse --host copilot"), "{ps}");
+        assert!(ps.ends_with("; exit 0"), "{ps}");
         assert!(
             doc["hooks"]["userPromptSubmitted"][0]["bash"]
                 .as_str()

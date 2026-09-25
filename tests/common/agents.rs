@@ -9,6 +9,13 @@ pub fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_rtok")
 }
 
+/// `s` with every `\` as `/`. [`write_cfg`] hands rtok `/`-joined paths and rtok joins what it
+/// derives with the OS separator, so Windows output mixes both; compare both sides through this
+/// (T83.4).
+pub fn slash(s: impl AsRef<str>) -> String {
+    s.as_ref().replace('\\', "/")
+}
+
 /// A fresh empty directory, unique per test and process.
 pub fn tmp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -82,6 +89,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".config/opencode",
         ".config/kilo",
         ".pi/agent",
+        ".omp/agent",
         ".zcode/cli",
         ".kimi-code",
         ".grok",
@@ -90,9 +98,13 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".copilot/hooks",
         ".codeium/windsurf",
         ".config/zed",
+        "Documents/Cline/Hooks",
+        ".cline/data/settings",
         ".gemini",
         ".codewhale",
         ".config/mimocode",
+        ".gemini/config/plugins",
+        ".gemini/antigravity-cli/plugins",
     ] {
         fs::create_dir_all(home.join(sub)).unwrap();
     }
@@ -108,6 +120,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.opencode]\nconfig_path = \"{h}/.config/opencode/opencode.json\"\n\
              [setup.kilo]\nconfig_path = \"{h}/.config/kilo/kilo.json\"\n\
              [setup.pi]\nextensions_path = \"{h}/.pi/agent/extensions\"\n\
+             [setup.omp]\nextensions_path = \"{h}/.omp/agent/extensions\"\n\
+             mcp_path = \"{h}/.omp/agent/mcp.json\"\n\
              [setup.zcode]\nconfig_path = \"{h}/.zcode/cli/config.json\"\n\
              [setup.kimi]\nconfig_path = \"{h}/.kimi-code/config.toml\"\n\
              [setup.grok]\nconfig_path = \"{h}/.grok/config.toml\"\n\
@@ -117,9 +131,13 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.aider]\nconfig_path = \"{h}/.aider.conf.yml\"\n\
               [setup.windsurf]\nconfig_path = \"{h}/.codeium/windsurf/mcp_config.json\"\n\
               [setup.zed]\nconfig_path = \"{h}/.config/zed/settings.json\"\n\
+             [setup.cline]\nhooks_path = \"{h}/Documents/Cline/Hooks\"\n\
+             mcp_path = \"{h}/.cline/data/settings/cline_mcp_settings.json\"\n\
               [setup.gemini]\ndir = \"{h}/.gemini\"\n\
               [setup.codewhale]\ndir = \"{h}/.codewhale\"\n\
-              [setup.mimo]\nconfig_path = \"{h}/.config/mimocode/mimocode.json\"\n"
+              [setup.mimo]\nconfig_path = \"{h}/.config/mimocode/mimocode.json\"\n\
+              [setup.antigravity]\nplugins_path = \"{h}/.gemini/config/plugins\"\n\
+              cli_plugins_path = \"{h}/.gemini/antigravity-cli/plugins\"\n"
         ),
     )
     .unwrap();
@@ -173,7 +191,8 @@ fn raw_with_path(args: &[&str], cfg: &Path, home: &Path, path: std::ffi::OsStrin
 /// `${CODEX_HOME:-$HOME/.codex}/config.toml`'s `[marketplaces.rtok]` / `[plugins."rtok@rtok"]`
 /// tables the way `codex plugin marketplace add|remove` / `plugin add|remove` do, including the
 /// real CLI's "already added from a different source" error on a second `marketplace add` with
-/// a different source. A shell script on Unix; on Windows a `.cmd` shim (the same shape npm
+/// a different source; `marketplace upgrade rtok` rewrites the installed cache's `.mcp.json`
+/// (fails while `<home>/fake-codex-fail-upgrade` exists, T242.4). A shell script on Unix; on Windows a `.cmd` shim (the same shape npm
 /// installs the real CLI as), which `agents::run_cli`'s `cmd /C` wrapper (T139 windows fix)
 /// resolves the way it resolves the real thing.
 /// A fake `copilot` beside the fake `claude`, so `rtok()`'s PATH picks it up: logs every
@@ -234,6 +253,62 @@ if "%ALLARGS%"=="plugin uninstall rtok" rmdir /s /q "%PLUGINS%\_direct\x" 2>nul
     }
 }
 
+/// A fake `gemini` (T118.3): `--version` answers deterministically, every other call logs to
+/// `$HOME/gemini.log`, and `extensions link <path>`/`extensions uninstall rtok` mirror the
+/// real CLI's `~/.gemini/extensions/<name>/gemini-extension.json` marker — a fixed manifest
+/// naming `rtok`, not an actual copy of `<path>`, the same shortcut `fake_copilot` takes for
+/// `plugin install`, since `plugin_installed` only reads the manifest's `name`.
+pub fn fake_gemini(home: &Path) {
+    let dir = home.join(".fake-bin");
+    fs::create_dir_all(&dir).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = dir.join("gemini");
+        if !bin.exists() {
+            fs::write(
+                &bin,
+                r#"#!/bin/sh
+[ "$1" = --version ] && { echo "0.1.0 (fake gemini)"; exit 0; }
+echo "$*" >> "$HOME/gemini.log"
+ext="${GEMINI_CLI_HOME:-$HOME/.gemini}/extensions"
+case "$*" in
+  "extensions link "*) mkdir -p "$ext/rtok"
+    printf '{"name":"rtok","version":"0.0.1"}' > "$ext/rtok/gemini-extension.json" ;;
+  "extensions uninstall rtok") rm -rf "$ext/rtok" ;;
+esac
+"#,
+            )
+            .unwrap();
+            fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+    #[cfg(windows)]
+    {
+        let bin = dir.join("gemini.cmd");
+        if !bin.exists() {
+            fs::write(
+                &bin,
+                r#"@echo off
+if "%~1"=="--version" (
+  echo 0.1.0 ^(fake gemini^)
+  exit /b 0
+)
+set "ALLARGS=%*"
+echo %ALLARGS%>>"%HOME%\gemini.log"
+if defined GEMINI_CLI_HOME (set "EXT=%GEMINI_CLI_HOME%\extensions") else (set "EXT=%HOME%\.gemini\extensions")
+echo %ALLARGS%| findstr /b /c:"extensions link " >nul && (
+  mkdir "%EXT%\rtok" 2>nul
+  >"%EXT%\rtok\gemini-extension.json" echo {"name":"rtok","version":"0.0.1"}
+)
+if "%ALLARGS%"=="extensions uninstall rtok" rmdir /s /q "%EXT%\rtok" 2>nul
+"#,
+            )
+            .unwrap();
+        }
+    }
+}
+
 pub fn fake_claude_path(home: &Path) -> std::ffi::OsString {
     // T168: the copilot shim lives beside claude/codex so every `raw`/`rtok` probe is
     // hermetic — without it `app_version` reached the real npm wrapper, whose
@@ -247,24 +322,30 @@ pub fn fake_claude_path(home: &Path) -> std::ffi::OsString {
         fs::create_dir_all(&dir).unwrap();
         let claude = dir.join("claude");
         if !claude.exists() {
-            fs::write(
-                &claude,
-                r#"#!/bin/sh
+            // T132: a real `claude plugin install` copies the plugin tree into its cache
+            // (`plugins/claude/README.md`), `agents/` included — mirror that here with the
+            // repo's actual shipped file, so an install/removal e2e can assert on it without
+            // hardcoding the agent's contents twice.
+            let scout_src =
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/claude/agents/rtok-scout.md");
+            let script = r#"#!/bin/sh
 [ "$1" = --version ] && { echo "2.0.0 (Claude Code)"; exit 0; }
 echo "$*" >> "$HOME/claude.log"
 plugins="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins"
 case "$*" in
-  "plugin install rtok@rtok") mkdir -p "$plugins"
+  "plugin install rtok@rtok") mkdir -p "$plugins/cache/rtok/agents"
+    cp "__SCOUT_SRC__" "$plugins/cache/rtok/agents/rtok-scout.md"
     printf '{"version":2,"plugins":{"rtok@rtok":[{"scope":"user"}]}}' > "$plugins/installed_plugins.json" ;;
-  "plugin uninstall rtok@rtok") rm -f "$plugins/installed_plugins.json" ;;
+  "plugin uninstall rtok@rtok") rm -f "$plugins/installed_plugins.json"
+    rm -rf "$plugins/cache/rtok" ;;
   "plugin update rtok@rtok")
     [ -f "$HOME/fake-claude-fail-update" ] && { echo "update failed" >&2; exit 1; }
     mkdir -p "$plugins"
     printf '{"version":2,"plugins":{"rtok@rtok":[{"scope":"user","version":"latest"}]}}' > "$plugins/installed_plugins.json" ;;
 esac
-"#,
-            )
-            .unwrap();
+"#
+            .replace("__SCOUT_SRC__", &scout_src.display().to_string());
+            fs::write(&claude, script).unwrap();
             fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
         }
         let codex = dir.join("codex");
@@ -355,6 +436,11 @@ case "$*" in
   "plugin add rtok@rtok")
     grep -q '^\[plugins\."rtok@rtok"\]$' "$cfg" 2>/dev/null || printf '\n[plugins."rtok@rtok"]\nenabled = true\n' >> "$cfg"
     ;;
+  "plugin marketplace upgrade rtok")
+    [ -e "$HOME/fake-codex-fail-upgrade" ] && { echo "rtok: upgrade failed" >&2; exit 1; }
+    d="$(dirname "$cfg")/plugins/cache/rtok/rtok/0.0.1"
+    mkdir -p "$d" && echo upgraded > "$d/.mcp.json"
+    ;;
   "plugin remove rtok@rtok")
     awk '/^\[plugins\."rtok@rtok"\]$/{skip=1;next} /^\[/{skip=0} !skip' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
     ;;
@@ -389,6 +475,17 @@ if "%ALLARGS%"=="plugin add rtok@rtok" (
   findstr /c:"[plugins.\"rtok@rtok\"]" "%CFG%" >nul 2>&1 || (
     >>"%CFG%" echo([plugins."rtok@rtok"]
     >>"%CFG%" echo enabled = true
+  )
+)
+if "%ALLARGS%"=="plugin marketplace upgrade rtok" (
+  rem `exit`, not `exit /b`: cmd /C loses a nested `exit /b` code and reports 0.
+  if exist "%HOME%\fake-codex-fail-upgrade" (
+    echo rtok: upgrade failed 1>&2
+    exit 1
+  )
+  for %%F in ("%CFG%") do (
+    if not exist "%%~dpFplugins\cache\rtok\rtok\0.0.1" mkdir "%%~dpFplugins\cache\rtok\rtok\0.0.1"
+    >"%%~dpFplugins\cache\rtok\rtok\0.0.1\.mcp.json" echo upgraded
   )
 )
 if "%ALLARGS%"=="plugin remove rtok@rtok" (

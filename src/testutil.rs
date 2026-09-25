@@ -32,6 +32,26 @@ pub fn config_in(dir: &Path) -> Config {
     c
 }
 
+/// [`Config::load_from`] `dir`, for a test that needs `dir/config.toml` itself — a TUI or web
+/// `set` rewrites and reloads it. Every absolute path of [`config_in`] is written into the file
+/// first (T252, T254): a reload would otherwise point each `~/x` back at this machine's real
+/// `~/.claude*`, `~/.codex` and agent configs, and a snapshot would parse its session history.
+pub fn config_file_in(dir: &Path) -> Config {
+    let mut rebased = config_in(dir);
+    let pairs: Vec<(String, String)> = rebased
+        .path_fields_mut()
+        .into_iter()
+        .filter(|(_, path)| path.is_absolute())
+        .map(|(key, path)| (key.into_owned(), path.to_string_lossy().into_owned()))
+        .collect();
+    let pairs: Vec<_> = pairs
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    crate::config::validate::set_all_with(dir, None, &pairs, false).expect("config set");
+    Config::load_from(dir).expect("config")
+}
+
 /// A [`Runtime`] over [`config`]; `tag` doubles as the session id.
 pub fn runtime(tag: &str) -> (Runtime, PathBuf) {
     let (c, dir) = config(tag);
@@ -242,6 +262,36 @@ mod tests {
         assert!(a.is_dir() && b.is_dir());
         let (c, dir) = super::config("paths");
         assert!(c.core.db_path.starts_with(&dir) && c.log.path.starts_with(&dir));
+    }
+
+    /// T254: no path of either helper leaves `dir` (relative ones name project files), so a
+    /// new `~` field nobody redirected fails here instead of reading this machine's home.
+    #[test]
+    fn every_config_path_stays_in_dir() {
+        let dir = super::tmp_dir("paths-in-dir");
+        for mut c in [super::config_in(&dir), super::config_file_in(&dir)] {
+            for (key, path) in c.path_fields_mut() {
+                let shown = path.display();
+                assert!(
+                    path.is_relative() || path.starts_with(&dir),
+                    "{key} = {shown}"
+                );
+            }
+        }
+    }
+
+    /// T255: nextest's `test-home` setup script moves `HOME` under `target/`, so a path that
+    /// slips past `Config` lands there instead of in this machine's real home. A plain
+    /// `cargo test` runs no setup script and is not checked.
+    #[test]
+    fn nextest_runs_under_the_test_home() {
+        if std::env::var_os("NEXTEST").is_none() {
+            return;
+        }
+        let home = std::path::PathBuf::from(std::env::var_os("HOME").expect("HOME"));
+        assert!(home.ends_with("target/test-home"), "{}", home.display());
+        #[cfg(windows)]
+        assert_eq!(std::env::var_os("USERPROFILE"), Some(home.into_os_string()));
     }
 
     #[test]

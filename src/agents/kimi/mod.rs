@@ -17,11 +17,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use rtok_agent_sdk::{KETCH_INSTALL, NO_CHANGES};
+use rtok_agent_sdk::NO_CHANGES;
 use serde_json::{Value, json};
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, value};
 
-use super::claude::{ENTRIES, is_ours};
+use super::claude::{ENTRIES, is_ours, show};
 use super::{Agent, Kind, Mode, Support, Variant, apply};
 use crate::config::Config;
 
@@ -171,38 +171,20 @@ pub fn plugin_detected(cfg: &Config) -> bool {
     plugin_marker(cfg).is_file()
 }
 
-/// The `/plugins install <resolved plugins/kimi path>` line (T86): printed behind
-/// `--yes` only, on dry-run and apply alike; rtok never writes `plugins/managed/`
-/// or `installed.json` — that format is Kimi's and undocumented.
-/// On remove the managed copy is left alone with its own remove line.
-/// Gating on the flag matches `Support::Offer("--yes")`; the flag never turns
-/// the printed line into state (`installed()` reads the marker alone).
+/// The `/plugins install <resolved plugins/kimi path>` line (T86, [`super::print_offer`]):
+/// rtok never writes `plugins/managed/` or `installed.json` — that format is Kimi's and
+/// undocumented.
 pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
-    let a = apply(cfg);
-    if a.dry_run {
-        if !a.yes {
-            return Ok(NO_CHANGES.into());
-        }
-        return Ok(format!(
-            "offer plugins/kimi → /plugins install {} {KETCH_INSTALL}",
+    Ok(super::print_offer(
+        cfg,
+        remove,
+        plugin_detected(cfg),
+        "plugins/kimi",
+        &format!(
+            "/plugins install {}",
             super::plugin_src("plugins/kimi").display()
-        ));
-    }
-    if remove {
-        if plugin_detected(cfg) {
-            return Ok(
-                "keep plugins/managed/rtok (owned by Kimi; remove with `/plugins remove rtok`)"
-                    .into(),
-            );
-        }
-        return Ok(NO_CHANGES.into());
-    }
-    if !a.yes {
-        return Ok(NO_CHANGES.into());
-    }
-    Ok(format!(
-        "offer plugins/kimi → /plugins install {} {KETCH_INSTALL}",
-        super::plugin_src("plugins/kimi").display()
+        ),
+        "keep plugins/managed/rtok (owned by Kimi; remove with `/plugins remove rtok`)",
     ))
 }
 
@@ -211,7 +193,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     let path = &cfg.setup.kimi.config_path;
     let mut doc = load(path)?;
     let report = if remove {
-        strip_ours(&mut doc)
+        strip_ours(&apply(cfg), path, &mut doc, cfg.setup.hook_timeout_s)
     } else {
         insert_ours(&mut doc, cfg.setup.hook_timeout_s)?
     };
@@ -344,26 +326,42 @@ fn insert_ours(doc: &mut DocumentMut, timeout: u64) -> Result<String> {
     Ok(format!("{}\n{counts}", lines.join("\n")))
 }
 
-fn strip_ours(doc: &mut DocumentMut) -> String {
+/// Remove rtok's `[[hooks]]` tables (T246.6). One still as [`insert_ours`] writes it — on a
+/// pair `ENTRIES` lists, exactly `event`, `matcher` (when set), `command` and `timeout` — goes;
+/// one the user changed goes only as [`rtok_agent_sdk::keep_edited`] decides.
+fn strip_ours(
+    apply: &rtok_agent_sdk::Apply,
+    path: &Path,
+    doc: &mut DocumentMut,
+    timeout: u64,
+) -> String {
     let Some(hooks) = doc.get_mut("hooks").and_then(Item::as_array_of_tables_mut) else {
         return NO_CHANGES.into();
     };
-    let before = hooks.len();
+    let (mut removed, mut kept) = (0usize, Vec::new());
     hooks.retain(|t| {
         let event = t.get("event").and_then(Item::as_str).unwrap_or("");
-        !t.get("command")
+        if !t
+            .get("command")
             .and_then(Item::as_str)
             .is_some_and(|c| is_ours(c, event))
+        {
+            return true;
+        }
+        let matcher = t.get("matcher").and_then(Item::as_str).unwrap_or("");
+        let keys = if t.contains_key("matcher") { 4 } else { 3 };
+        let unchanged = ENTRIES.contains(&(event, matcher))
+            && t.len() == keys
+            && t.get("timeout").and_then(Item::as_integer) == Some(timeout as i64);
+        let at = || format!("[[hooks]] {event}{} in {}", show(matcher), path.display());
+        let take = super::takes_hook(apply, unchanged, at, &mut kept);
+        removed += usize::from(take);
+        !take
     });
-    let removed = before - hooks.len();
     if hooks.is_empty() {
         doc.remove("hooks");
     }
-    if removed == 0 {
-        NO_CHANGES.into()
-    } else {
-        format!("{removed} removed")
-    }
+    super::with_kept(kept, super::removed_report(removed))
 }
 
 #[cfg(test)]
@@ -444,7 +442,12 @@ mod tests {
         let raw = vfs.read_str(path).unwrap_or("");
         let mut doc: DocumentMut = raw.parse().unwrap_or_default();
         let report = if remove {
-            strip_ours(&mut doc)
+            strip_ours(
+                &rtok_agent_sdk::Apply::default(),
+                Path::new(path),
+                &mut doc,
+                timeout,
+            )
         } else {
             insert_ours(&mut doc, timeout).unwrap()
         };

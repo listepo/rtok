@@ -9,7 +9,7 @@
 
 mod common;
 
-use common::agents::{backups, claude_desktop_config, json, raw, rtok, tmp, write_cfg};
+use common::agents::{backups, claude_desktop_config, json, raw, rtok, slash, tmp, write_cfg};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -39,6 +39,9 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             Some(home.join(".config/kilo/kilo.json")),
         ),
         ("pi", vec!["--yes"], None),
+        // omp (a pi fork) keeps `default_install: false` (T164 left it asking): `--yes`
+        // is required, not just kept for symmetry, or the plugin offer never links.
+        ("omp", vec!["--yes"], Some(home.join(".omp/agent/mcp.json"))),
         (
             "zcode",
             vec!["--yes"],
@@ -50,6 +53,11 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             Some(home.join(".kimi-code/config.toml")),
         ),
         ("grok", vec!["--yes"], Some(home.join(".grok/config.toml"))),
+        (
+            "cline",
+            vec!["--yes"],
+            Some(home.join(".cline/data/settings/cline_mcp_settings.json")),
+        ),
         (
             "copilot",
             vec![],
@@ -82,6 +90,8 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             vec![],
             Some(home.join(".config/mimocode/mimocode.json")),
         ),
+        // Desktop links the plugin on `--yes` (no `default_install`); nothing file-backed.
+        ("antigravity", vec!["--yes"], None),
     ]
 }
 
@@ -121,7 +131,7 @@ fn setup_twice_takes_one_backup_and_says_already_installed() {
             );
             assert!(first.contains("backup "), "{host}: {first}");
             assert!(
-                second.contains(&f.display().to_string()),
+                slash(&second).contains(&slash(f.display().to_string())),
                 "{host}: {second}"
             );
         }
@@ -199,6 +209,7 @@ fn remove_twice_says_no_changes_and_the_second_takes_no_backup() {
 /// The `agents list` blocks (header line to the next blank line) whose header is `needle` or
 /// whose `config` line names it; the module rows are the two-space `✓` / `✗` / `−` lines.
 fn installed_modules(list: &str, needle: &str) -> Vec<String> {
+    let list = slash(list);
     let blocks: Vec<&str> = list
         .split("\n\n")
         .filter(|b| {
@@ -223,7 +234,7 @@ fn list_reports_installed_modules_per_host() {
     for (host, flags, file) in hosts(&home) {
         let needle = file.map_or_else(
             || "CLI: pi".to_string(), // pi edits no config file
-            |f| f.display().to_string(),
+            |f| slash(f.display().to_string()),
         );
         assert!(installed_modules(&before, &needle).is_empty(), "{host}");
         rtok(&setup_args(host, &flags), &cfg, &home);
@@ -429,4 +440,33 @@ fn a_missing_rtok_on_path_is_a_warning_at_the_top() {
         !String::from_utf8_lossy(&with.stdout).contains("not on PATH"),
         "remove never warns"
     );
+}
+
+/// T249: `[setup] backup_files` caps the copies per file, and only a run that changed
+/// something prunes — a no-change run deletes its own copy and must not cost an older one.
+#[test]
+fn backup_files_caps_copies_and_a_no_change_run_prunes_nothing() {
+    let home = tmp("backup-cap");
+    let cfg = write_cfg(&home);
+    let mut toml = fs::read_to_string(&cfg).unwrap();
+    toml.push_str("[setup]\nbackup_files = 1\n");
+    fs::write(&cfg, toml).unwrap();
+    let file = home.join(".codex/config.toml");
+    fs::write(&file, "# mine\n").unwrap();
+    rtok(&setup_args("codex", &[]), &cfg, &home);
+    let first = backups(&file);
+    assert_eq!(first.len(), 1);
+    // Edited since, still installed: the up-front copy is taken, then dropped.
+    let mut body = fs::read_to_string(&file).unwrap();
+    body.push_str("# edited\n");
+    fs::write(&file, &body).unwrap();
+    let again = rtok(&setup_args("codex", &[]), &cfg, &home);
+    assert!(again.contains("already installed"), "{again}");
+    assert_eq!(backups(&file), first, "no change, nothing pruned");
+    // A run that changes the file keeps its copy and prunes down to the cap.
+    rtok(&["agents", "remove", "codex"], &cfg, &home);
+    let after = backups(&file);
+    assert_eq!(after.len(), 1, "{after:?}");
+    assert!(fs::read_to_string(&after[0]).unwrap().contains("# edited"));
+    let _ = fs::remove_dir_all(home);
 }

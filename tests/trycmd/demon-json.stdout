@@ -7,7 +7,7 @@
     "child": null,
     "uptime_secs": null,
     "restarts": null,
-    "log": "[..]/demon/proxy.log"
+    "log": "[..]demon[..]proxy.log"
   },
   {
     "service": "mcp",
@@ -17,7 +17,7 @@
     "child": null,
     "uptime_secs": null,
     "restarts": null,
-    "log": "[..]/demon/mcp.log"
+    "log": "[..]demon[..]mcp.log"
   },
   {
     "service": "web",
@@ -27,7 +27,7 @@
     "child": null,
     "uptime_secs": null,
     "restarts": null,
-    "log": "[..]/demon/web.log"
+    "log": "[..]demon[..]web.log"
   },
   {
     "service": "hook",
@@ -37,6 +37,6 @@
     "child": null,
     "uptime_secs": null,
     "restarts": null,
-    "log": ".rtok/demon/hook.log"
+    "log": "[..]demon[..]hook.log"
   }
 ]

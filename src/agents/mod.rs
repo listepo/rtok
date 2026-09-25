@@ -9,7 +9,9 @@
 //! `rtok agents list` and `rtok doctor` read the same files back through the same contract.
 
 pub mod aider;
+pub mod antigravity;
 pub mod claude;
+pub mod cline;
 pub mod codewhale;
 pub mod codex;
 pub mod copilot;
@@ -59,9 +61,11 @@ pub const HOSTS: &[&str] = &[
     "aider",
     "windsurf",
     "zed",
+    "cline",
     "gemini",
     "codewhale",
     "mimo",
+    "antigravity",
 ];
 
 /// Every module an rtok install can carry, in print order.
@@ -85,9 +89,11 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "windsurf" => Some(&windsurf::Windsurf),
         "aider" => Some(&aider::Aider),
         "zed" => Some(&zed::Zed),
+        "cline" => Some(&cline::Cline),
         "gemini" => Some(&gemini::Gemini),
         "codewhale" => Some(&codewhale::Codewhale),
         "mimo" => Some(&mimo::Mimo),
+        "antigravity" => Some(&antigravity::Antigravity),
         _ => None,
     }
 }
@@ -703,7 +709,7 @@ pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
                     if seen.contains(&path) {
                         continue;
                     }
-                    if let Some(bak) = rtok_agent_sdk::backup(&path)? {
+                    if let Some(bak) = rtok_agent_sdk::backup(&path, 0)? {
                         taken.push(bak);
                     }
                     seen.push(path);
@@ -714,7 +720,9 @@ pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
     }
     let (blocks, changed) = apply_all(cfg, req, &agents, want)?;
     if changed {
+        // Pruned only now: a no-change run deletes its copies, which would cost a generation.
         for bak in &taken {
+            rtok_agent_sdk::prune_backups(bak, cfg.setup.backup_files as usize);
             out.push_str(&format!("backup {}\n", bak.display()));
         }
     } else {
@@ -872,6 +880,7 @@ pub(crate) fn apply(cfg: &crate::config::Config) -> rtok_agent_sdk::Apply {
     rtok_agent_sdk::Apply {
         dry_run: cfg.setup.dry_run,
         backup: cfg.setup.backup,
+        backup_files: cfg.setup.backup_files as usize,
         yes: cfg.setup.yes,
     }
 }
@@ -886,6 +895,48 @@ pub(crate) fn unregister_ours(
     ours: &serde_json::Value,
 ) -> Result<String> {
     rtok_agent_sdk::unregister_owned(&apply(cfg), path, key, name, ours, is_rtok_bin)
+}
+
+/// Whether a host's `strip_ours` takes an rtok hook it found (T246.3, T246.6): one still as
+/// the installer writes it (`unchanged`) goes; one the user changed goes only as
+/// [`rtok_agent_sdk::keep_edited`] decides, its `leave`/`?` line (naming `at`) joining `kept`.
+pub(crate) fn takes_hook(
+    apply: &rtok_agent_sdk::Apply,
+    unchanged: bool,
+    at: impl FnOnce() -> String,
+    kept: &mut Vec<String>,
+) -> bool {
+    if unchanged {
+        return true;
+    }
+    match rtok_agent_sdk::keep_edited(apply, &at()) {
+        Some(line) => {
+            kept.push(line);
+            false
+        }
+        None => true,
+    }
+}
+
+/// `{n} removed`, or [`NO_CHANGES`] for none — the tail of a `strip_ours` report.
+pub(crate) fn removed_report(removed: usize) -> String {
+    if removed == 0 {
+        NO_CHANGES.into()
+    } else {
+        format!("{removed} removed")
+    }
+}
+
+/// A `strip_ours` report: the `kept` lines, then `report` unless it is [`NO_CHANGES`].
+pub(crate) fn with_kept(mut kept: Vec<String>, report: String) -> String {
+    if report != NO_CHANGES {
+        kept.push(report);
+    }
+    if kept.is_empty() {
+        NO_CHANGES.into()
+    } else {
+        kept.join("\n")
+    }
 }
 
 /// [`unregister_ours`] for the `mcpServers` entry [`rtok_agent_sdk::register_mcp`] writes.
@@ -990,6 +1041,168 @@ pub(crate) fn support_mcp_only(
         "proxy" => Support::No(proxy_reason),
         _ => Support::No(plugin_reason),
     }
+}
+
+/// True when some file at `dir/<manifest>` parses as JSON naming `name` in a top-level
+/// `"name"` field — the plugin-store marker every local-path plugin host (Copilot, Gemini,
+/// …) reads back with, never rtok's own to write (D21: `installed()` trusts the host's own
+/// record, not a file this module created).
+pub(crate) fn manifest_names(dir: &Path, manifest: &str, name: &str) -> bool {
+    std::fs::read_to_string(dir.join(manifest))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .is_some_and(|v| v.get("name").and_then(serde_json::Value::as_str) == Some(name))
+}
+
+/// A host's local-path plugin verbs for [`offer_plugin`] — Copilot's `plugin install
+/// <path>`/`plugin uninstall <name>`, Gemini's `extensions link <path>`/`extensions
+/// uninstall <name>`, and any future host shaped the same way.
+pub(crate) struct PluginOffer<'a> {
+    pub bin: &'a str,
+    pub name: &'a str,
+    pub src_rel: &'a str,
+    pub install_verb: &'a [&'a str],
+    pub uninstall_verb: &'a [&'a str],
+}
+
+/// Offer, install, or uninstall the plugin tree at `plugin_src(offer.src_rel)` through a host
+/// CLI's local-path install/uninstall verbs (D21, `Support::Flag("--yes")`). `installed` is
+/// the caller's own marker read (never written here — that store is the host's). Dry-run
+/// names the resolved line and writes nothing; `call` spawns the host binary, and a
+/// spawn/non-zero failure folds into "offer … (`<bin>` failed: …)" instead of failing the
+/// caller's whole `apply`.
+pub(crate) fn offer_plugin(
+    cfg: &Config,
+    remove: bool,
+    installed: bool,
+    offer: PluginOffer,
+    call: impl FnOnce(&[&str]) -> std::result::Result<(), String>,
+) -> Result<String> {
+    let PluginOffer {
+        bin,
+        name,
+        src_rel,
+        install_verb,
+        uninstall_verb,
+    } = offer;
+    let a = apply(cfg);
+    if remove {
+        if !installed {
+            return Ok(NO_CHANGES.into());
+        }
+    } else if installed || !a.yes {
+        return Ok(NO_CHANGES.into());
+    }
+    let src = plugin_src(src_rel);
+    let shown = if remove {
+        format!("{bin} {} {name}", uninstall_verb.join(" "))
+    } else {
+        format!("{bin} {} {}", install_verb.join(" "), src.display())
+    };
+    if a.dry_run {
+        return Ok(if remove {
+            format!("- plugin {name} ({shown})")
+        } else {
+            format!(
+                "offer {src_rel} → {shown} {}",
+                rtok_agent_sdk::KETCH_INSTALL
+            )
+        });
+    }
+    let src_str = src.to_str().unwrap_or_default();
+    let args: Vec<&str> = if remove {
+        uninstall_verb.iter().copied().chain([name]).collect()
+    } else {
+        install_verb.iter().copied().chain([src_str]).collect()
+    };
+    match call(&args) {
+        Ok(()) => Ok(if remove {
+            format!("- plugin {name}")
+        } else {
+            format!("+ plugin {src_rel} → {name}")
+        }),
+        Err(e) => Ok(format!("offer {src_rel} → {shown} ({bin} failed: {e})")),
+    }
+}
+
+/// A plugin whose store only the host writes (T86, `Support::Offer("--yes")`: Kimi's
+/// `/plugins install`, Antigravity CLI's `agy plugin install`). rtok prints `install` behind
+/// `--yes` — dry-run and apply alike — and never runs it; the flag never turns the line into
+/// state (`installed` is the caller's own marker read). Remove leaves a staged copy alone and
+/// says so with `keep`.
+pub(crate) fn print_offer(
+    cfg: &Config,
+    remove: bool,
+    installed: bool,
+    src_rel: &str,
+    install: &str,
+    keep: &str,
+) -> String {
+    let a = apply(cfg);
+    if remove && !a.dry_run {
+        return if installed { keep } else { NO_CHANGES }.into();
+    }
+    if !a.yes {
+        return NO_CHANGES.into();
+    }
+    format!(
+        "offer {src_rel} → {install} {}",
+        rtok_agent_sdk::KETCH_INSTALL
+    )
+}
+
+/// The per-host fn items [`d21_plugin_apply`] threads through: Copilot's and Gemini's own
+/// `plugin`, `plugin_installed`, `run`, `register_mcp`, `unregister_mcp` already match these
+/// signatures exactly, so a host passes them in by name.
+pub(crate) struct D21Plugin {
+    pub offer: fn(&Config, bool) -> Result<String>,
+    pub plugin_installed: fn(&Config) -> bool,
+    pub run: fn(&Config, bool) -> Result<String>,
+    pub register_mcp: fn(&Config) -> Result<String>,
+    pub unregister_mcp: fn(&Config) -> Result<String>,
+}
+
+/// `apply()` skeleton for a host whose local-path plugin (via [`offer_plugin`]) is a D21
+/// singleton over hooks + MCP: while it is installed, or on removal, `run`'s own hook
+/// document and `mcpServers.rtok` are taken back instead of written — on the very call that
+/// installs the plugin too — else the plain hook document goes in, then `mcpServers.rtok`
+/// behind `[setup] mcp`. `extra` appends a per-host tail line to both branches ([`no_extra`]
+/// for none, Copilot's skill sync for one); shared by Copilot and Gemini (D21).
+pub(crate) fn d21_plugin_apply(
+    cfg: &Config,
+    mode: Mode,
+    ops: D21Plugin,
+    extra: fn(&Config, bool) -> Result<Option<String>>,
+) -> Result<Vec<String>> {
+    let D21Plugin {
+        offer,
+        plugin_installed,
+        run,
+        register_mcp,
+        unregister_mcp,
+    } = ops;
+    let remove = mode == Mode::Remove;
+    let head = offer(cfg, remove)?;
+    if remove || plugin_installed(cfg) {
+        let mut lines = vec![head, run(cfg, true)?, unregister_mcp(cfg)?];
+        if let Some(e) = extra(cfg, remove)? {
+            lines.push(e);
+        }
+        return Ok(lines);
+    }
+    let mut lines = vec![head, run(cfg, false)?];
+    if cfg.setup.mcp {
+        lines.push(register_mcp(cfg)?);
+    }
+    if let Some(e) = extra(cfg, false)? {
+        lines.push(e);
+    }
+    Ok(lines)
+}
+
+/// The `extra` no-op for [`d21_plugin_apply`] on a host with no per-host tail line (Gemini).
+pub(crate) fn no_extra(_cfg: &Config, _remove: bool) -> Result<Option<String>> {
+    Ok(None)
 }
 
 /// The `ANTHROPIC_BASE_URL` `agent setup claude --proxy` writes, and the one it reads back.
@@ -1097,6 +1310,21 @@ pub(crate) fn shell_quote_bin(bin: &str) -> String {
 /// Binary token for hook command lines (quoted when needed).
 pub(crate) fn rtok_hook_bin() -> String {
     shell_quote_bin(&rtok_command())
+}
+
+/// T174/T250.2 POSIX hook line for a bare `rtok`: a shell without `~/.ketch/bin` on PATH hit
+/// exit 127 every event; tries PATH, ketch's layout, then fails open, printing `note` (the
+/// host's session-start JSON, no `'`) if given. Claude and Copilot share these bytes.
+pub(crate) fn hook_resolver(args: &str, note: Option<&str>) -> String {
+    let note = note.map_or(String::new(), |json| {
+        debug_assert!(!json.contains('\''), "{json}");
+        format!(" && printf '%s' '{json}'")
+    });
+    format!(
+        "command -v rtok >/dev/null 2>&1 && exec rtok {args}; \
+         [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" {args}; \
+         true{note}; exit 0"
+    )
 }
 
 /// Strip one layer of surrounding quotes from a hook binary token.

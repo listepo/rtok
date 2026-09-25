@@ -75,6 +75,7 @@ db_path     = "~/.rtok/rtok.db"       # one SQLite file, WAL (decision D8)
 archive_dir = "~/.rtok/archive"       # raw payloads for `rtok expand <id>` (decision D4)
 session_env = "CLAUDE_SESSION_ID"     # env var consulted for the session id when stdin has none
 call_io_inline_bytes = 65536          # MCP/API bodies larger than this go to archive (hooks never archive)
+hook_max_input_bytes = 8388608        # rtok hook <event> stdin cap (8 MiB); over it, exits 0 unmodified, no archiving or hashing (T201)
 retain_calls_days    = 30             # 0 = keep `calls` forever
 
 [log]                                 # rtok's own log (D26); `rtok logs` reads it
@@ -86,7 +87,7 @@ level     = "info"                    # error | warn | info | debug
 to_db     = true                      # also write a `logs` row for `rtok otel`
 tspin     = "auto"                    # `rtok logs` through tailspin: auto = terminal and tspin on PATH | always | off (T225.1)
 
-[estimator]                           # chars per token per class, ±15 %; `rtok stats --calibrate` rewrites
+[estimator]                           # chars per token per class, a heuristic (no accuracy figure measured yet); `rtok stats --calibrate` rewrites
 code  = 3.5
 prose = 4.2
 json  = 3.0
@@ -95,7 +96,7 @@ cjk   = 1.0
 # ── surfaces ────────────────────────────────────────────────────────────────
 
 [hook]                                # rtok hook <event>
-host      = "claude"                  # claude | cursor | copilot | devin — payload field mapping (T10.1, T46.3, T87)
+host      = "claude"                  # claude | cursor | copilot | devin | cline — payload field mapping (T10.1, T46.3, T87, T94)
 max_ms    = 10                        # soft budget; over it, the event is logged as slow
 fail_open = true                      # any error → `{}` and exit 0; false only for debugging
 
@@ -215,6 +216,7 @@ instructions    = false               # run the instruction audit by default (--
 dry_run      = false
 yes          = false                  # required by --replace
 backup       = true                   # <name>.bak-<ts> beside each file, before setup and remove touch it
+backup_files = 5                      # .bak-* generations kept per file; older ones are deleted (0 = keep all)
 hook_timeout_s = 5                    # timeout written into each hook entry
 modes        = []                     # e.g. ["terse", "yagni"]   (--mode)
 mcp          = true                   # also register the MCP server   (--mcp)
@@ -247,12 +249,18 @@ config_path   = "~/.aider.conf.yml"         # openai-api-base → rtok proxy (--
 config_path   = "~/.codeium/windsurf/mcp_config.json"
 [setup.zed]
 config_path   = "~/.config/zed/settings.json"
+[setup.cline]
+hooks_path = "~/Documents/Cline/Hooks"
+mcp_path = "~/.cline/data/settings/cline_mcp_settings.json" # CLI; the extension uses the VS Code globalStorage settings file
 [setup.gemini]
-dir           = "~/.gemini"                  # settings.json (hooks, mcpServers)
+dir = "~/.gemini" # settings.json (hooks, mcpServers)
 [setup.codewhale]
-dir           = "~/.codewhale"               # config.toml ([[hooks.hooks]]), mcp.json (mcpServers)
+dir = "~/.codewhale" # config.toml ([[hooks.hooks]]), mcp.json (mcpServers)
 [setup.mimo]
 config_path   = "~/.config/mimocode/mimocode.json" # mcp (OpenCode-fork shape)
+[setup.antigravity]
+plugins_path     = "~/.gemini/config/plugins"          # Antigravity 2.0 / IDE: plugins/antigravity linked here
+cli_plugins_path = "~/.gemini/antigravity-cli/plugins" # agy plugin install stages here; read only
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)

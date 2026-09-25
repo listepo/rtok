@@ -4,48 +4,56 @@
     "preToolUse": [
       {
         "type": "command",
-        "bash": "rtok hook PreToolUse --host copilot",
-        "powershell": "rtok hook PreToolUse --host copilot",
+        "bash": "command -v rtok >/dev/null 2>&1 && exec rtok hook PreToolUse --host copilot; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PreToolUse --host copilot; true; exit 0",
+        "powershell": "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) { $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) { $r = $k } }; if ($r) { & $r hook PreToolUse --host copilot; exit $LASTEXITCODE }; exit 0",
         "timeoutSec": 5
       }
     ],
     "postToolUse": [
       {
         "type": "command",
-        "bash": "rtok hook PostToolUse --host copilot",
-        "powershell": "rtok hook PostToolUse --host copilot",
+        "bash": "command -v rtok >/dev/null 2>&1 && exec rtok hook PostToolUse --host copilot; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PostToolUse --host copilot; true; exit 0",
+        "powershell": "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) { $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) { $r = $k } }; if ($r) { & $r hook PostToolUse --host copilot; exit $LASTEXITCODE }; exit 0",
         "timeoutSec": 5
       }
     ],
     "userPromptSubmitted": [
       {
         "type": "command",
-        "bash": "rtok hook UserPromptSubmit --host copilot",
-        "powershell": "rtok hook UserPromptSubmit --host copilot",
+        "bash": "command -v rtok >/dev/null 2>&1 && exec rtok hook UserPromptSubmit --host copilot; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook UserPromptSubmit --host copilot; true; exit 0",
+        "powershell": "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) { $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) { $r = $k } }; if ($r) { & $r hook UserPromptSubmit --host copilot; exit $LASTEXITCODE }; exit 0",
         "timeoutSec": 5
       }
     ],
     "sessionStart": [
       {
         "type": "command",
-        "bash": "rtok hook SessionStart --host copilot",
-        "powershell": "rtok hook SessionStart --host copilot",
+        "bash": "command -v rtok >/dev/null 2>&1 && exec rtok hook SessionStart --host copilot; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook SessionStart --host copilot; true && printf '%s' '{\"additionalContext\":\"rtok is not installed; run ketch install listepo/rtok to enable it.\"}'; exit 0",
+        "powershell": "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) { $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) { $r = $k } }; if ($r) { & $r hook SessionStart --host copilot; exit $LASTEXITCODE }; '{\"additionalContext\":\"rtok is not installed; run ketch install listepo/rtok to enable it.\"}'; exit 0",
         "timeoutSec": 5
       }
     ],
     "sessionEnd": [
       {
         "type": "command",
-        "bash": "rtok hook SessionEnd --host copilot",
-        "powershell": "rtok hook SessionEnd --host copilot",
+        "bash": "command -v rtok >/dev/null 2>&1 && exec rtok hook SessionEnd --host copilot; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook SessionEnd --host copilot; true; exit 0",
+        "powershell": "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) { $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) { $r = $k } }; if ($r) { & $r hook SessionEnd --host copilot; exit $LASTEXITCODE }; exit 0",
         "timeoutSec": 5
       }
     ],
     "preCompact": [
       {
         "type": "command",
-        "bash": "rtok hook PreCompact --host copilot",
-        "powershell": "rtok hook PreCompact --host copilot",
+        "bash": "command -v rtok >/dev/null 2>&1 && exec rtok hook PreCompact --host copilot; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PreCompact --host copilot; true; exit 0",
+        "powershell": "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) { $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) { $r = $k } }; if ($r) { & $r hook PreCompact --host copilot; exit $LASTEXITCODE }; exit 0",
+        "timeoutSec": 5
+      }
+    ],
+    "subagentStart": [
+      {
+        "type": "command",
+        "bash": "command -v rtok >/dev/null 2>&1 && exec rtok hook SubagentStart --host copilot; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook SubagentStart --host copilot; true; exit 0",
+        "powershell": "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) { $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) { $r = $k } }; if ($r) { & $r hook SubagentStart --host copilot; exit $LASTEXITCODE }; exit 0",
         "timeoutSec": 5
       }
     ]

@@ -177,6 +177,9 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
         "stats" => frame.render_widget(stats(app), area),
         "graph" => frame.render_widget(graph_page(app), area),
         "hosts" => frame.render_widget(hosts_page(app), area),
+        "config" => frame.render_widget(config_page(app), area),
+        "services" => frame.render_widget(services_page(app), area),
+        "worktrees" => frame.render_widget(worktrees_page(app), area),
         page => unreachable!("page `{page}` has no TUI body — surface_parity holds the list"),
     }
 }
@@ -431,6 +434,46 @@ fn graph_page(app: &App) -> Paragraph<'static> {
 /// snapshot already carries (D27), never a second spawn per tick.
 fn hosts_page(app: &App) -> Paragraph<'static> {
     Paragraph::new(app.snapshot().hosts.clone())
+}
+
+/// The model's Config page (T228), from the snapshot (D27). `/` filters through
+/// [`crate::expand::filter_lines`], the Calls expand pane's filter (T60.4).
+fn config_page(app: &App) -> Paragraph<'static> {
+    let Some(text) = app.snapshot().config.as_ref() else {
+        return empty("config did not answer this tick — `rtok config show` has the details");
+    };
+    let (filtering, filter) = app.config_filter();
+    if !filtering && filter.is_empty() {
+        return Paragraph::new(text.clone());
+    }
+    let filtered = crate::expand::filter_lines(text, None, Some(filter), 0)
+        .ok()
+        .map(|v| v.join("\n"))
+        .unwrap_or_else(|| text.clone());
+    Paragraph::new(format!("/{filter}\n{filtered}"))
+}
+
+/// The model's Services page (T229), from the snapshot (D27): `demon status`'s
+/// per-service rows plus `otel status`'s exporter health, verbatim like [`graph_page`]
+/// — no filter, since the page is a handful of rows rather than a scrollable log.
+fn services_page(app: &App) -> Paragraph<'static> {
+    let Some(text) = app.snapshot().services.as_ref() else {
+        return empty(
+            "services did not answer this tick — `rtok demon status`/`rtok otel status` \
+             have the details",
+        );
+    };
+    Paragraph::new(text.clone())
+}
+
+/// The model's Worktrees page (T232): `worktree list`'s table, verbatim, like
+/// [`graph_page`] — path, branch, owner, state, age and `target/` size; `gc`/`clean`
+/// stay CLI-only. `None` only when the current directory could not be read.
+fn worktrees_page(app: &App) -> Paragraph<'static> {
+    let Some(text) = app.snapshot().worktrees.as_ref() else {
+        return empty("worktrees did not answer this tick — `rtok worktree list` has the details");
+    };
+    Paragraph::new(text.clone())
 }
 
 /// The model's Calls page (T15.5): the ledger's recent rows, newest first — surface,
@@ -901,7 +944,9 @@ mod tests {
     /// failed on this file, not on a rendering bug — a little headroom for the next
     /// page too.
     fn screen(app: &App) -> String {
-        let mut terminal = ratatui::Terminal::new(TestBackend::new(98, 24)).unwrap();
+        // T228 widened the tab bar to 11 tabs, T229/T232 to 13 — narrower widths clip the
+        // last one off the pane's border before its text ever hits the buffer.
+        let mut terminal = ratatui::Terminal::new(TestBackend::new(128, 24)).unwrap();
         terminal.draw(|frame| draw(frame, app)).unwrap();
         terminal
             .backend()
@@ -1046,7 +1091,7 @@ mod tests {
     fn plugins_toggle_shows_in_the_row_and_the_status_line() {
         let dir = std::env::temp_dir().join(format!("rtok-tui-plugins-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let cfg = Config::load_from(&dir).expect("config");
+        let cfg = crate::testutil::config_file_in(&dir);
         let mut app = crate::tui::app::tests::cursor_on_plugin(&cfg, "toon");
         app.key(KeyCode::Char(' '), KeyModifiers::NONE);
         assert!(
@@ -1072,7 +1117,7 @@ mod tests {
             DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let _ = std::fs::remove_dir_all(&dir);
-        let cfg = crate::tui::app::tests::hermetic(Config::load_from(&dir).expect("config"), &dir);
+        let cfg = crate::testutil::config_file_in(&dir);
         let store = crate::store::Store::open(&cfg.core.db_path).expect("seed store");
         (cfg, store)
     }
@@ -1205,7 +1250,7 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("rtok-tui-logs-{lines}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let mut cfg = Config::load_from(&dir).expect("config");
+        let mut cfg = crate::testutil::config_file_in(&dir);
         cfg.log.lines = lines;
         std::fs::create_dir_all(cfg.log.path.parent().expect("log dir")).unwrap();
         let body = markers
@@ -1214,8 +1259,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         std::fs::write(&cfg.log.path, format!("{body}\n")).unwrap();
-        // Hermetic probes — App::new ticks the snapshot (T15.6).
-        crate::tui::app::tests::hermetic(cfg, &dir)
+        cfg
     }
 
     /// T15.5: the Calls tab lists the ledger's rows newest first — surface, kind,
@@ -1688,10 +1732,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-tui-store-err-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut cfg = Config::load_from(&dir).expect("config");
+        let mut cfg = crate::testutil::config_file_in(&dir);
         cfg.core.db_path = dir.join("not-a-db");
         std::fs::create_dir_all(&cfg.core.db_path).unwrap();
-        let cfg = crate::tui::app::tests::hermetic(cfg, &dir);
         let app = App::new(&cfg);
         assert!(app.snapshot().error.is_some(), "{:?}", app.snapshot().error);
         let screen = screen(&app);

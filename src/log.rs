@@ -336,7 +336,16 @@ pub fn watch_loop<W: Write>(
     mut step: impl FnMut() -> Option<WatchTick>,
 ) -> std::io::Result<()> {
     let mut prev = 0usize; // rows the TTY is holding above the cursor
+    // T235.3: a watch left behind by a terminal or agent that went away (SIGHUP ignored,
+    // stdout on a file that never errors) would poll forever. Being reparented ends it — to
+    // a subreaper (the pid changes) or to init, which also covers a parent gone before we
+    // read it.
+    let parent = rtok_sys::parent_pid();
     while let Some(tick) = step() {
+        let now = rtok_sys::parent_pid();
+        if now != parent || now == Some(1) {
+            break;
+        }
         if !tick.fresh.is_empty() || tick.screen.len() != prev {
             if tty {
                 repaint(out, prev, &tick.screen)?;

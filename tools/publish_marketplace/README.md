@@ -22,8 +22,10 @@ against each host's current docs 2026-09-23; re-verify before flipping a host to
 | claude | yes | git-hosted catalog (`.claude-plugin/marketplace.json`) | [docs.claude.com](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces) |
 | codex | yes | git-hosted catalog (`.agents/plugins/marketplace.json`) | [developers.openai.com](https://developers.openai.com/codex/plugins) |
 | antigravity | no | bundled/local install only, no marketplace | [antigravity.google](https://antigravity.google/docs/plugins/) |
+| cline | no | no marketplace: `cline plugin install <source>` installs straight from a git repo or local path (SDK/CLI/Kanban only, not the VS Code extension), no catalog file to publish | [docs.cline.bot](https://docs.cline.bot/customization/plugins.md) |
 | copilot | no | git-hosted catalog possible, not wired in this repo yet | [docs.github.com](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference) |
 | cursor | no | manual review via cursor.com/marketplace/publish | [cursor.com](https://cursor.com/docs/plugins) |
+| gemini | no | no marketplace: `gemini extensions install <source>` links a git repo or local path directly, no catalog file to publish | [geminicli.com](https://geminicli.com/docs/extensions/reference/) |
 | grok | no | catalog is the externally-owned `xai-org/plugin-marketplace` repo | [docs.x.ai](https://docs.x.ai/build/features/skills-plugins-marketplaces) |
 | kimi | no | git-hosted catalog possible, not wired in this repo yet | [kimi.com](https://www.kimi.com/code/docs/en/kimi-code-cli/customization/plugins.html) |
 | opencode | no | no marketplace: npm + community ecosystem page | [opencode.ai](https://opencode.ai/docs/plugins/) |

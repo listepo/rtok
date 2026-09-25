@@ -11,7 +11,7 @@ and the app as one shared host, as it does for Cursor.
 
 | Module | Support | Why |
 | --- | --- | --- |
-| hooks | yes | `hooks/rtok.json` runs `rtok hook <Event> --host copilot` (`bash` and `powershell`, `timeoutSec`) on preToolUse, postToolUse, userPromptSubmitted, sessionStart, sessionEnd, preCompact |
+| hooks | yes | `hooks/rtok.json` runs `hook <Event> --host copilot` (`bash` and `powershell`, `timeoutSec`) on preToolUse, postToolUse, userPromptSubmitted, sessionStart, sessionEnd, preCompact, subagentStart (spawn brief as `additionalContext`); each line resolves `rtok` from PATH then `~/.ketch/bin/rtok`, else fails open |
 | mcp | yes | `mcpServers.rtok` → `rtok mcp` in `mcp-config.json` as `{type: "local", command, args, tools: ["*"]}` (off with `[setup] mcp = false`) |
 | proxy | no | Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy |
 | plugin (cli) | `--yes` | install runs `copilot plugin install <resolved plugins/copilot>` behind the flag — rtok never writes `installed-plugins/`, that store is Copilot's. While the plugin is installed (a cached copy under `installed-plugins/` names `rtok`), setup takes back `hooks/rtok.json` and `mcpServers.rtok` instead of adding them (D21: the plugin is the hooks and the MCP as one unit) |
@@ -25,6 +25,9 @@ see Claude's `Bash` and `Read` and answer in Copilot's shape. Copilot reads a no
 preToolUse as deny; `rtok hook` keeps exiting 0 with `{}` on any error, so fail open holds.
 Not verified on a live install: Copilot's tool ids (the rename to `Bash`/`Read` goes by
 substring), the app bundle paths, and whether the app runs hooks at all.
+
+The table row's resolver: `agents::hook_resolver` (bash), `agents::copilot::hook_resolver_ps`
+(powershell, T250.2) — Copilot's only host with a `powershell` field, hence its own twin.
 
 ## rtok plugins this host reaches
 

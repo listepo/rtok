@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use rtok_agent_sdk::{KETCH_INSTALL, PluginLink};
+use rtok_agent_sdk::{CopyFix, KETCH_INSTALL, PluginLink, keep_bytes};
 
 use super::{apply, plugin_src};
 use crate::config::Config;
@@ -55,24 +55,33 @@ impl HostPlugin {
     /// at all (T164), and never lets a write error abort the rest of `agents install` —
     /// it fails open, like a missing host CLI already does (T139).
     pub fn offer(&self, cfg: &Config, remove: bool) -> Result<String> {
+        self.offer_with(cfg, remove, keep_bytes)
+    }
+
+    /// [`Self::offer`] whose owned copy (the non-Unix install) passes each file through `fix`
+    /// ([`PluginLink::run_with`], T250.3).
+    pub fn offer_with(&self, cfg: &Config, remove: bool, fix: CopyFix) -> Result<String> {
         let mut apply = apply(cfg);
         if self.default_install && !remove {
             apply.yes = true;
         }
-        Ok(self.link(cfg).run(&apply, remove).unwrap_or_else(|e| {
-            if remove {
-                format!("{} plugin failed: {e}", self.host)
-            } else {
-                let desc = self
-                    .label
-                    .map(str::to_string)
-                    .unwrap_or_else(|| self.path(cfg).display().to_string());
-                format!(
-                    "offer {} → {desc} ({} failed: {e}) {KETCH_INSTALL}",
-                    self.src_rel, self.host
-                )
-            }
-        }))
+        Ok(self
+            .link(cfg)
+            .run_with(&apply, remove, fix)
+            .unwrap_or_else(|e| {
+                if remove {
+                    format!("{} plugin failed: {e}", self.host)
+                } else {
+                    let desc = self
+                        .label
+                        .map(str::to_string)
+                        .unwrap_or_else(|| self.path(cfg).display().to_string());
+                    format!(
+                        "offer {} → {desc} ({} failed: {e}) {KETCH_INSTALL}",
+                        self.src_rel, self.host
+                    )
+                }
+            }))
     }
 
     fn link(&self, cfg: &Config) -> PluginLink<'static> {
@@ -92,7 +101,7 @@ mod tests {
 
     /// Every declared `HostPlugin`, for tests that must cover the whole set rather than
     /// pick a few by hand (T164).
-    fn all_host_plugins() -> [&'static HostPlugin; 6] {
+    fn all_host_plugins() -> [&'static HostPlugin; 7] {
         [
             &super::super::cursor::PLUGIN,
             &super::super::opencode::PLUGIN,
@@ -100,6 +109,7 @@ mod tests {
             &super::super::kilo::PLUGIN,
             &super::super::zcode::PLUGIN,
             &super::super::omp::PLUGIN,
+            &super::super::antigravity::PLUGIN,
         ]
     }
 
@@ -135,6 +145,7 @@ mod tests {
             ("Kilo Code", true),
             ("ZCode", true),
             ("oh my pi", false),
+            ("Antigravity", false),
         ];
         for p in all_host_plugins() {
             let want = expected

@@ -1,39 +1,15 @@
-- T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
-- T83.4. `agents_install` / `cursor_plugin` / `pi_plugin` / `opencode_plugin` symlink and path expectations fail on Windows
-- T83.5. `agents::claude::tests::desktop_writes_absolute_rtok_into_claude_desktop_config` fails on Windows
-- T83.6. `agents_doc::agents_doc_table_matches_the_host_code` fails on Windows
-- T83.7. `cli_trycmd::cli` fails on Windows
-- T83.8. `commands_e2e::run_long_output_then_expand_round_trips` fails on Windows
-- T83.9. `otel::hooks_stay_fast_with_an_unreachable_endpoint` times out on Windows (131 s)
-- T83.10. `plugins::cmd::formatters::tests::ten_families_and_aws_key_unredacted` fails on Windows
-- T83.11. `plugins::cmd::run::tests::identical_output_from_different_commands_dedups` fails on Windows (dedup count 1 ≠ 0)
-- T83.12. `plugins::read::cache::tests::vfs_small_change_is_hunks_large_is_full_missing_archive_is_full` fails on Windows
-- T83.13. `agent_remove::uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy` fails on Windows (os error 4390)
-- T83.14. `plugins_e2e::graph_session_start_map_off_by_default_and_on_when_capped` fails on Windows (empty `{}`)
 - T87. `rtok hook <event> --host devin` reads Devin's payload
 - T88. Devin plugin tree (`plugins/devin/`)
 - T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton
-- T91. `rtok agents install antigravity` — CLI and desktop, the plugin is the only unit
-- T94. `rtok hook <event> --host cline` speaks Cline's file-hook JSON both ways
-- T95. Cline plugin tree (`plugins/cline/`)
-- T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
-- T118.3. Gemini CLI extension tree: manifest, hooks.json, MCP, install
-- T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
 
-- T122. A dedup pointer reaches a context that never saw the body
 - T124. Realized `tools_rewrite` saving as a dated `research.md` row
-- T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
 
-- T125. `rtok stats`: thinking-block share — the gate for I-86
-- T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
-- T130.2. Spawn brief: wire the `SubagentStart` hook into the Claude installer, bless docs, add outline ranges
 - T131. Measure the spawn brief: cost row and on/off re-read share
 - T132. Ship a Haiku scout agent definition with the Claude Code plugin
 - T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?
 
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
-- T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T163. Replace raw SQL in `src/store/` with Diesel's query builder
 - T163.2. `src/store/otel.rs` and `src/store/embed.rs` without raw SQL
@@ -41,33 +17,13 @@
 - T163.4. Migrations through `diesel_migrations`
 - T163.8. Retention without raw SQL; close T163
 - T163.9. Window and CTE queries through the shared extension module
-- T171. Claude Code sees the rtok MCP server twice
-- T172. MCP tool failures always set `is_error`
-- T174. Plugin hooks fail open when `rtok` is not on `PATH`
 - T178. Hook wall-clock time as Claude Code sees it
-- T184. rtok never resolves its home to a relative `.rtok`
-- T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
-- T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
-- T201. Hook path does unbounded reads and hashes bodies it never archives
-- T204. A panicking plugin is dropped silently — the error never reaches the log
-- T210. `measurements (session, ts)` has no index on never-pruned tables
-- T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
-- T212. Semantic-cache key omits sampling params and tool schemas
-- T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
-- T215. Host test matrices skip `omp` and five real-config hosts; pi loader probe skips on Windows
-- T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
-- T218. `docs/*.md` pages missing from the site nav; a hand-copied getting-started twin
-- T220. Schema-drift guard compares column names only; seven tables escape it
-- T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
-- T223. `windows-sys` linked in three versions
-- T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
-- T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
-- T242.4. Codex plugin: `marketplace upgrade`, reinstall on failure
-- T226. Web Sessions page: live-only filter and a help overlay
-- T228. Config page: `config show` / `config get` on `tui` and `web`
-- T229. Services page: `demon status` and `otel status` on `tui` and `web`
-- T232. Worktrees page: `worktree list` on `tui` and `web`
-- T241. Replay bench: saving over a fixed session corpus
-- T246.3. Hook entries
-- T246.4. Shipped skills
-- T246.5. zed and grok MCP entries
+- T262.3. Codex: spawn brief on `SubagentStart`
+- T266. Heavy store queries through sea-query on the Diesel connection
+- T267. Every rtok TOML file has a schema; config logic lives in one encapsulated engine
+- T267.1. `rtok-config` engine crate
+- T267.2. Main config on the engine
+- T267.3. Command rules on the engine
+- T267.4. Bench files on the engine
+- T267.5. Host configs through `HostToml`
+- T267.6. Editor and CI wiring

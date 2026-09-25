@@ -157,6 +157,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0022.sql",
         include_str!("../../migrations/0022_call_io_raw_bodies/up.sql"),
     ),
+    (
+        "0023.sql",
+        include_str!("../../migrations/0023_measurements_session_ts/up.sql"),
+    ),
 ];
 
 pub struct Store {
@@ -541,6 +545,20 @@ impl Store {
             .unwrap_or((None, None)))
     }
 
+    /// T201: the sha256 columns beside [`Self::call_io_archives`] — `NULL` for a body
+    /// `spill` never archived (over `inline_cap` with `archive_dir = None`, the hook path),
+    /// so a caller can tell "never hashed" from "hashed and inlined".
+    #[cfg(test)]
+    pub fn call_io_shas(&self, call_id: i32) -> Result<(Option<String>, Option<String>)> {
+        let mut conn = self.lock()?;
+        Ok(call_io::table
+            .filter(call_io::call_id.eq(call_id))
+            .select((call_io::request_sha256, call_io::response_sha256))
+            .first::<(Option<String>, Option<String>)>(&mut *conn)
+            .optional()?
+            .unwrap_or((None, None)))
+    }
+
     /// Archive ids a Calls row can expand (T60.4): spilled `call_io` body first,
     /// else a `measurements.ref_id` on that call. One pair of queries for the
     /// page, so the snapshot does not N+1 on a tick.
@@ -777,22 +795,25 @@ impl Store {
             let (text, sha, raw) = inline_body(body);
             return Ok((Some(text), None, n, Some(sha), None, false, raw));
         }
-        // Over cap: metadata always. Archive only when a directory is supplied (never on hook).
-        // The archive file already holds the exact bytes, so no `raw` column is needed here.
+        // Over cap: metadata always. Archive only when a directory is supplied (never on
+        // hook) — T201: without one, the sha is never written or expanded from anywhere,
+        // so the hash itself is skipped too rather than paying a full pass over a body the
+        // hook path can only ever throw away. The archive file already holds the exact
+        // bytes, so no `raw` column is needed here.
+        let Some(dir) = archive_dir else {
+            return Ok((None, None, n, None, None, false, None));
+        };
         let sha = hex_sha256(body);
-        if let Some(dir) = archive_dir {
-            let (path, created) = write_archive_file(dir, &sha, body)?;
-            return Ok((
-                None,
-                Some(sha.clone()),
-                n,
-                Some(sha),
-                Some(path),
-                created,
-                None,
-            ));
-        }
-        Ok((None, None, n, Some(sha), None, false, None))
+        let (path, created) = write_archive_file(dir, &sha, body)?;
+        Ok((
+            None,
+            Some(sha.clone()),
+            n,
+            Some(sha),
+            Some(path),
+            created,
+            None,
+        ))
     }
 
     /// Write `body` to `dir/<sha256>` and upsert the `archive` row. Returns the id.
@@ -2127,6 +2148,20 @@ impl Store {
             ))
             .execute(&mut *conn)?;
         Ok(())
+    }
+
+    /// T204 test helper: how many `logs` rows match this `level`/`name` (the funnel's plugin-id
+    /// column, see `insert_log`'s callers). Not for production code — a caller that needs this
+    /// for real belongs on the `rtok logs`/`doctor` read path instead.
+    #[cfg(test)]
+    pub fn count_logs(&self, level: &str, name: &str) -> Result<i64> {
+        let mut conn = self.lock()?;
+        logs::table
+            .filter(logs::level.eq(level))
+            .filter(logs::name.eq(name))
+            .count()
+            .get_result(&mut *conn)
+            .map_err(Into::into)
     }
 
     /// Drop `calls` older than `days` with the rows that only describe them (`logs`, `tokens`,
@@ -3688,6 +3723,103 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// T210: `measurements` is never pruned (`purge_calls_older_than` keeps it forever), and
+    /// `archive_in_session`'s correlated subquery scans it by `(session, ts)` on every dedup
+    /// hit. `EXPLAIN QUERY PLAN` on the query's real shape (mirroring the Diesel-generated
+    /// SQL: `archive` filtered by `id`/`session`/`agent_id`, joined to the correlated
+    /// `COUNT(*) FROM measurements WHERE session = archive.session AND ts > archive.ts`)
+    /// must show the subquery using `measurements_session_ts`, never a full table scan.
+    #[test]
+    fn archive_in_session_query_plan_uses_the_session_ts_index() {
+        let store = Store::open_in_memory().unwrap();
+        #[derive(QueryableByName)]
+        struct PlanRow {
+            #[diesel(sql_type = Text)]
+            detail: String,
+        }
+        let mut conn = store.lock().unwrap();
+        // Raw SQL: Diesel has no `EXPLAIN QUERY PLAN`, so the query is restated by hand.
+        let rows: Vec<PlanRow> = sql_query(
+            "EXPLAIN QUERY PLAN SELECT archive.id, \
+             (SELECT COUNT(*) FROM measurements \
+              WHERE measurements.session = archive.session AND measurements.ts > archive.ts) \
+             FROM archive \
+             WHERE archive.id = 'x' AND archive.session = 's' AND archive.agent_id IS NULL",
+        )
+        .load(&mut *conn)
+        .unwrap();
+        let plan = rows
+            .iter()
+            .map(|r| r.detail.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            plan.contains("USING COVERING INDEX measurements_session_ts")
+                || plan.contains("USING INDEX measurements_session_ts"),
+            "expected the (session, ts) index on measurements, got: {plan}"
+        );
+        assert!(
+            !plan.contains("SCAN measurements"),
+            "measurements scanned: {plan}"
+        );
+    }
+
+    /// T210: with 100k unrelated `measurements` rows ahead of it, one `archive_in_session`
+    /// lookup must stay a `(session, ts)` index search, not a linear scan — the query-plan
+    /// test above is the hard check; this is a generous, non-flaky wall-clock guard against
+    /// a regression that keeps the plan right but still degrades in practice.
+    #[test]
+    fn archive_in_session_stays_fast_with_100k_measurements() {
+        let store = Store::open_in_memory().unwrap();
+        let dir = std::env::temp_dir().join(format!("rtok-t210-perf-{}", std::process::id()));
+        let sha = store.put_archive("s-target", b"needle", &dir).unwrap();
+
+        {
+            let mut conn = store.lock().unwrap();
+            conn.transaction::<_, anyhow::Error, _>(|conn| {
+                // 1000 rows × 8 binds per statement stays under SQLite's 32766-variable cap.
+                for chunk in (0..100_000i64).collect::<Vec<_>>().chunks(1000) {
+                    let rows: Vec<_> = chunk
+                        .iter()
+                        .map(|&i| {
+                            // Mostly other sessions, so a scan would pay for rows the index skips.
+                            let session = if i % 7 == 0 { "s-target" } else { "s-other" };
+                            (
+                                measurements::ts.eq(i),
+                                measurements::session.eq(session),
+                                measurements::plugin.eq("cmd"),
+                                measurements::kind.eq("rule"),
+                                measurements::before_bytes.eq(1i64),
+                                measurements::after_bytes.eq(1i64),
+                                measurements::est_before.eq(1),
+                                measurements::est_after.eq(1),
+                            )
+                        })
+                        .collect();
+                    diesel::insert_into(measurements::table)
+                        .values(&rows)
+                        .execute(conn)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        }
+
+        let start = std::time::Instant::now();
+        let hit = store
+            .archive_in_session("s-target", &sha, None)
+            .unwrap()
+            .expect("writer session still hits its own row");
+        let elapsed = start.elapsed();
+        assert_eq!(hit.0, sha);
+        assert!(
+            elapsed.as_millis() < 200,
+            "archive_in_session took {elapsed:?} against 100k measurements rows \
+             (index-backed lookup expected)"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     /// T55.11: the expander's session is never the writer's, so one `expand` freezes
     /// every session's decision pointing at that archive id; a second expand is a no-op.
     #[test]
@@ -3827,6 +3959,45 @@ mod tests {
             .unwrap();
         assert_eq!(session, "sess-a");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// T201: the hook path (`archive_dir = None`) never writes or expands a spilled body,
+    /// so `spill` must not pay a sha256 pass over it either — both sha columns land NULL,
+    /// same as `request_archive`/`response_archive`.
+    #[rstest]
+    fn spill_over_cap_without_archive_dir_skips_hashing() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_session("s", Some(1), None, None, None)
+            .unwrap();
+        let call_id = store
+            .insert_call("s", "hook", "hook", Some(1), None, None, None, None)
+            .unwrap();
+        let big = vec![b'x'; 70 * 1024];
+        store
+            .insert_call_io(call_id, Some(&big), Some(&big), 64 * 1024, None)
+            .unwrap();
+        let mut conn = store.lock().unwrap();
+        let row: (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ) = call_io::table
+            .filter(call_io::call_id.eq(call_id))
+            .select((
+                call_io::request_sha256,
+                call_io::response_sha256,
+                call_io::request_archive,
+                call_io::response_archive,
+            ))
+            .first(&mut *conn)
+            .unwrap();
+        assert_eq!(
+            row,
+            (None, None, None, None),
+            "over cap + no archive_dir must skip hashing, not just archiving"
+        );
     }
 
     #[test]
@@ -4071,9 +4242,28 @@ mod tests {
         assert_eq!(listed, dir_versions, "MIGRATIONS drifted from migrations/");
     }
 
-    /// `(table, columns)` for every `diesel::table!` in `schema.rs`, with `#[sql_name]`
-    /// resolved — the SQL column name, not the Rust one.
-    fn schema_tables() -> Vec<(String, std::collections::BTreeSet<String>)> {
+    // T220: schema-drift guard — per-column type/NOT NULL/PK, the full table set, and (since
+    // `table!` models neither) defaults/indexes/triggers via a golden `sqlite_master` dump.
+    /// A migrated table with no `table!` macro, and why.
+    const RAW_SQL_TABLES: &[&str] = &[
+        "note_embeddings",   // 0012: brute-force cosine KNN beside FTS5, sql_query only
+        "notes_fts",         // 0001: FTS5 virtual table, sql_query only (T13.1)
+        "notes_fts_data",    // FTS5 shadow table for notes_fts
+        "notes_fts_idx",     // FTS5 shadow table for notes_fts
+        "notes_fts_docsize", // FTS5 shadow table for notes_fts
+        "notes_fts_config",  // FTS5 shadow table for notes_fts
+        "schema_migrations", // written by Store::migrate itself, not a migrations/*.sql file
+    ];
+
+    /// One `diesel::table!`: its name, declared PK columns, and (SQL name, Diesel type) pairs.
+    struct SchemaTable {
+        name: String,
+        pk: Vec<String>,
+        cols: Vec<(String, String)>,
+    }
+
+    /// Every `diesel::table!` in `schema.rs`, parsed from source.
+    fn schema_tables() -> Vec<SchemaTable> {
         let src = include_str!("schema.rs");
         let mut out = Vec::new();
         let mut lines = src.lines().map(str::trim);
@@ -4083,7 +4273,12 @@ mod tests {
             }
             let head = lines.next().unwrap();
             let name = head.split_whitespace().next().unwrap().to_string();
-            let mut cols = std::collections::BTreeSet::new();
+            // No PK column carries `#[sql_name]` today, so the head's names are SQL names too.
+            let pk = head[head.find('(').unwrap() + 1..head.find(')').unwrap()]
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            let mut cols = Vec::new();
             let mut rename = None;
             for l in lines.by_ref() {
                 if l == "}" {
@@ -4094,36 +4289,192 @@ mod tests {
                     .and_then(|r| r.strip_suffix("\"]"))
                 {
                     rename = Some(n.to_string());
-                } else if let Some((col, _)) = l.split_once(" -> ") {
-                    cols.insert(rename.take().unwrap_or_else(|| col.to_string()));
+                } else if let Some((col, ty)) = l.split_once(" -> ") {
+                    let name = rename.take().unwrap_or_else(|| col.to_string());
+                    cols.push((name, ty.trim_end_matches(',').to_string()));
                 }
             }
-            out.push((name, cols));
+            out.push(SchemaTable { name, pk, cols });
         }
         out
     }
 
-    /// After every migration each `table!` column set equals `PRAGMA table_info`.
-    #[test]
-    fn schema_rs_matches_the_migrated_tables() {
+    /// SQLite's column-type-affinity rule, collapsed to the 3 affinities `schema.rs` uses:
+    /// `table_xinfo` returns the declared type verbatim (`BIGINT`, not `INTEGER`).
+    fn sqlite_affinity(declared: &str) -> &'static str {
+        let d = declared.to_uppercase();
+        if d.contains("INT") {
+            "INTEGER"
+        } else if d.contains("CHAR") || d.contains("CLOB") || d.contains("TEXT") {
+            "TEXT"
+        } else if d.contains("REAL") || d.contains("FLOA") || d.contains("DOUB") {
+            "REAL"
+        } else {
+            "OTHER"
+        }
+    }
+
+    /// The affinity a `table!` Diesel type expects — only the types `schema.rs` uses today.
+    fn diesel_affinity(ty: &str) -> Option<&'static str> {
+        match ty {
+            "Integer" | "BigInt" => Some("INTEGER"),
+            "Text" => Some("TEXT"),
+            "Double" => Some("REAL"),
+            _ => None,
+        }
+    }
+
+    /// `sqlite_master` normalized for a golden diff: tables/indexes/triggers, sorted, `sql`
+    /// collapsed to single-spaced so reindenting a migration is not itself drift.
+    fn live_schema_snapshot(conn: &mut SqliteConnection) -> String {
         #[derive(QueryableByName)]
-        struct Col {
+        struct Row {
+            #[diesel(sql_type = Text)]
+            kind: String,
             #[diesel(sql_type = Text)]
             name: String,
+            #[diesel(sql_type = Text)]
+            tbl_name: String,
+            #[diesel(sql_type = Nullable<Text>)]
+            sql: Option<String>,
         }
+        let mut rows: Vec<Row> = sql_query(
+            "SELECT type AS kind, name, tbl_name, sql FROM sqlite_master \
+             WHERE type IN ('table', 'index', 'trigger')",
+        )
+        .load(conn)
+        .unwrap();
+        rows.sort_by(|a, b| (&a.kind, &a.name).cmp(&(&b.kind, &b.name)));
+        rows.into_iter()
+            .map(|r| {
+                let sql = r.sql.unwrap_or_default();
+                let sql = sql.split_whitespace().collect::<Vec<_>>().join(" ");
+                format!("{}|{}|{}|{}\n", r.kind, r.name, r.tbl_name, sql)
+            })
+            .collect()
+    }
+
+    /// Every mismatch between `schema.rs`/`schema_snapshot.txt` and a live, migrated
+    /// connection, one string each. Takes the connection so a test can run it on a broken DB.
+    fn schema_drift(conn: &mut SqliteConnection) -> Vec<String> {
+        let mut out = Vec::new();
+        let live_snapshot = live_schema_snapshot(conn);
+        let live_tables: std::collections::BTreeSet<&str> = live_snapshot
+            .lines()
+            .filter_map(|l| l.strip_prefix("table|"))
+            .map(|l| l.split('|').next().unwrap())
+            .collect();
         let tables = schema_tables();
         assert!(tables.len() >= 16, "parsed {} table! macros", tables.len());
+        let mut expected: std::collections::BTreeSet<&str> =
+            tables.iter().map(|t| t.name.as_str()).collect();
+        expected.extend(RAW_SQL_TABLES);
+        if expected != live_tables {
+            out.push(format!(
+                "migrated tables {live_tables:?} vs table! \u{222a} RAW_SQL_TABLES {expected:?}"
+            ));
+        }
+
+        #[derive(QueryableByName)]
+        struct XCol {
+            #[diesel(sql_type = Text)]
+            name: String,
+            #[diesel(sql_type = Text)]
+            ty: String,
+            #[diesel(sql_type = Integer)]
+            notnull: i32,
+            #[diesel(sql_type = Integer)]
+            pk: i32,
+        }
+        for t in &tables {
+            // `notnull` is a SQLite keyword; the pragma's own column of that name needs quoting.
+            let live: Vec<XCol> = sql_query(format!(
+                "SELECT name, type AS ty, \"notnull\", pk FROM pragma_table_xinfo('{}')",
+                t.name
+            ))
+            .load(conn)
+            .unwrap();
+            let live_names: std::collections::BTreeSet<&str> =
+                live.iter().map(|c| c.name.as_str()).collect();
+            let want_names: std::collections::BTreeSet<&str> =
+                t.cols.iter().map(|c| c.0.as_str()).collect();
+            if live_names != want_names {
+                out.push(format!(
+                    "{}: schema.rs columns {want_names:?} vs live {live_names:?}",
+                    t.name
+                ));
+                continue;
+            }
+            for (name, ty) in &t.cols {
+                let live = live.iter().find(|c| &c.name == name).unwrap();
+                let (base, nullable) = ty
+                    .strip_prefix("Nullable<")
+                    .map_or((ty.as_str(), false), |i| (i.trim_end_matches('>'), true));
+                let want_pk = t.pk.iter().any(|p| p == name);
+                let ty_ok = diesel_affinity(base).is_none_or(|w| sqlite_affinity(&live.ty) == w);
+                let pk_ok = want_pk == (live.pk > 0);
+                // A bare SQLite `PRIMARY KEY` does not itself imply `NOT NULL` (unlike standard
+                // SQL, and several migrations rely on it), so a PK column's live `notnull` is
+                // never compared against `table!`'s always-non-`Nullable` Rust type.
+                let notnull_ok = want_pk || nullable != (live.notnull != 0);
+                if !(ty_ok && pk_ok && notnull_ok) {
+                    out.push(format!(
+                        "{}.{name}: schema.rs `{ty}` pk={want_pk} vs live `{}` notnull={} pk={}",
+                        t.name, live.ty, live.notnull, live.pk
+                    ));
+                }
+            }
+        }
+
+        let want_snapshot = include_str!("schema_snapshot.txt");
+        if live_snapshot != want_snapshot {
+            out.push(format!("sqlite_master drifted from schema_snapshot.txt (defaults, indexes or triggers) — regenerate with `RTOK_BLESS=1 mise exec -- cargo test --lib schema_matches_the_migrated_tables_and_snapshot`\n--- want\n{want_snapshot}--- live\n{live_snapshot}"));
+        }
+        out
+    }
+
+    /// After every migration, `schema.rs` and `schema_snapshot.txt` match a fresh DB exactly.
+    #[test]
+    fn schema_matches_the_migrated_tables_and_snapshot() {
         let store = Store::open_in_memory().unwrap();
         let mut conn = store.lock().unwrap();
-        for (table, cols) in tables {
-            let live: std::collections::BTreeSet<String> =
-                sql_query(format!("SELECT name FROM pragma_table_info('{table}')"))
-                    .load::<Col>(&mut *conn)
-                    .unwrap()
-                    .into_iter()
-                    .map(|c| c.name)
-                    .collect();
-            assert_eq!(cols, live, "schema.rs `{table}` vs the migrated table");
+        if std::env::var_os("RTOK_BLESS").is_some() {
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/store/schema_snapshot.txt");
+            std::fs::write(path, live_schema_snapshot(&mut conn)).unwrap();
         }
+        let mismatches = schema_drift(&mut conn);
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    /// Runs `sql` on a fresh migrated in-memory DB, then the guard — for the mutation tests.
+    fn drift_after(sql: &str) -> Vec<String> {
+        let store = Store::open_in_memory().unwrap();
+        let mut conn = store.lock().unwrap();
+        conn.batch_execute(sql).unwrap();
+        schema_drift(&mut conn)
+    }
+
+    // A changed default and a dropped index are invisible to `table!`; only the snapshot
+    // catches them. A column dropped from a live table still fails, as it always has.
+    #[test]
+    fn schema_drift_catches_a_changed_default() {
+        let m = drift_after(
+            "DROP TABLE otel_export; CREATE TABLE otel_export (stream TEXT PRIMARY KEY, mark BIGINT NOT NULL DEFAULT 1)",
+        );
+        assert!(m.iter().any(|s| s.contains("schema_snapshot.txt")), "{m:?}");
+    }
+
+    #[test]
+    fn schema_drift_catches_a_dropped_index() {
+        let m = drift_after("DROP INDEX usage_call"); // 0013
+        assert!(m.iter().any(|s| s.contains("schema_snapshot.txt")), "{m:?}");
+    }
+
+    #[test]
+    fn schema_drift_catches_a_column_removed_from_the_live_table() {
+        let m = drift_after(
+            "DROP TABLE otel_export; CREATE TABLE otel_export (stream TEXT PRIMARY KEY)",
+        );
+        assert!(m.iter().any(|s| s.starts_with("otel_export:")), "{m:?}");
     }
 }

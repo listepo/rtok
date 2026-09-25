@@ -12,8 +12,12 @@ Install:
   in `~/.grok/config.toml`; plugins are off until enabled.
 - Remove: `grok plugin uninstall rtok`.
 
-`rtok` must be on `PATH`. If it is missing, every hook fails open (Grok only blocks on exit 2 or
-an explicit `deny`) and the MCP server does not start; install it with ketch:
+macOS/Linux only: each hook shells out with `command -v rtok`, falling back to
+`~/.ketch/bin/rtok`, and exits 0 silently if neither exists (fail open; no note anywhere, not
+even `SessionStart`). Grok runs the same command through PowerShell on Windows, where that
+one-liner does not work — Windows users should run `rtok agents install claude` instead (Grok
+imports Claude's hooks, see below); `rtok agents install grok` skips the plugin offer there. The
+MCP server still needs `rtok` on `PATH` and does not start without it; install it with ketch:
 `ketch install listepo/rtok`.
 
 Use the plugin **or** rtok's Claude install, not both. Grok imports hooks from
@@ -32,9 +36,10 @@ mcps = false
 Files:
 
 - `.grok-plugin/plugin.json` — manifest (name, version, metadata).
-- `hooks/hooks.json` — `rtok hook <event> --host grok` on PreToolUse (Bash), PostToolUse,
-  UserPromptSubmit, SessionStart, PreCompact, PostCompact, SessionEnd, each with `timeout: 5`
-  (Grok's PostToolUse default is 600 s). Checked by `tests/grok_plugin.rs`.
+- `hooks/hooks.json` — `rtok hook <event> --host grok` (PATH, then `~/.ketch/bin/rtok`, else
+  exit 0) on PreToolUse (Bash), PostToolUse, UserPromptSubmit, SessionStart, PreCompact,
+  PostCompact, SessionEnd, each with `timeout: 5` (Grok's PostToolUse default is 600 s).
+  Checked by `tests/grok_plugin.rs`.
 - `.mcp.json` — `mcpServers.rtok` → `rtok mcp`.
 
 Known limits:

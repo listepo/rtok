@@ -5,11 +5,16 @@
 
 pub mod migrate;
 
-use std::path::PathBuf;
+use std::fmt;
+use std::marker::PhantomData;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use crate::config::Config;
 use anyhow::Result;
-use rtok_agent_sdk::{KETCH_INSTALL, NO_CHANGES, array_at, edit_json, object_at};
+use rtok_agent_sdk::{Apply, KETCH_INSTALL, NO_CHANGES, array_at, edit_json, object_at};
+use serde::Deserialize;
+use serde::de::{Deserializer, MapAccess, Visitor};
 use serde_json::{Value, json};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -29,31 +34,109 @@ pub(super) const ENTRIES: &[(&str, &str)] = &[
     ("SessionEnd", ""),
 ];
 
-fn command(bin: &str, event: &str) -> String {
-    format!("{bin} hook {event}")
+/// Claude's own list, read from the plugin's `hooks/hooks.json` in file order — the one place
+/// it is written (T262.1), so the GitHub plugin install and the settings-file install cannot
+/// drift. It is [`ENTRIES`] plus `SubagentStart`, the spawn brief's event (T130.2); Kimi takes
+/// `ENTRIES` wholesale and discards a `SubagentStart` hook's output, so it stays out of there.
+fn claude_entries() -> &'static [(&'static str, &'static str)] {
+    static LIST: LazyLock<Vec<(&str, &str)>> = LazyLock::new(|| {
+        serde_json::from_str::<PluginHooks>(include_str!(
+            "../../../plugins/claude/hooks/hooks.json"
+        ))
+        .expect("plugins/claude/hooks/hooks.json parses (plugin_tree_matches_the_installer)")
+        .hooks
+        .0
+    });
+    &LIST
 }
 
-/// Exactly `<rtok-bin> hook <event>`. Matching tokens anywhere claimed a user's
-/// chain (`notify-send hi && rtok hook Stop`). Suffix match keeps absolute paths
-/// with spaces (quoted) as ours on Windows.
+#[derive(Deserialize)]
+struct PluginHooks<'a> {
+    #[serde(borrow)]
+    hooks: Events<'a>,
+}
+
+#[derive(Deserialize)]
+struct Matcher<'a> {
+    #[serde(borrow)]
+    matcher: Option<&'a str>,
+}
+
+/// `(event, matcher)` pairs of a `hooks` object in file order; a `Value` would sort the events
+/// (no `preserve_order` here) and reorder every install report.
+struct Events<'a>(Vec<(&'a str, &'a str)>);
+
+impl<'de: 'a, 'a> Deserialize<'de> for Events<'a> {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Visit<'a>(PhantomData<&'a ()>);
+        impl<'de: 'a, 'a> Visitor<'de> for Visit<'a> {
+            type Value = Events<'a>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a map of hook events")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Events<'a>, A::Error> {
+                let mut out = Vec::new();
+                while let Some((event, list)) = map.next_entry::<&'a str, Vec<Matcher<'a>>>()? {
+                    out.extend(list.into_iter().map(|m| (event, m.matcher.unwrap_or(""))));
+                }
+                Ok(Events(out))
+            }
+        }
+        d.deserialize_map(Visit(PhantomData))
+    }
+}
+
+/// T174: `rtok_command()` deliberately keeps the bare name on non-Windows even when PATH
+/// lookup fails (an absolute path is the Windows spawn edge, not a Unix one) — so a settings
+/// file written on a machine whose install shell had `~/.ketch/bin` on PATH still names bare
+/// `rtok`, and a *later* hook-running shell without it hit `/bin/sh: rtok: command not found`
+/// (exit 127) on every tool call, 380 times/week in the field. Resolve at hook-run time
+/// instead: PATH, then `~/.ketch/bin/rtok` (ketch's own layout), then fail open — silent for
+/// every event but SessionStart, which gets one note naming the install command, in Claude's
+/// own `hookSpecificOutput` shape, so the miss is visible without repeating on every call.
+/// An absolute `bin` (Windows, or any bin already resolved) needs none of this — it already
+/// names one exact file or nothing does.
+fn command(bin: &str, event: &str) -> String {
+    if cfg!(windows) || bin != "rtok" {
+        return format!("{bin} hook {event}");
+    }
+    let note = (event == "SessionStart").then_some(
+        r#"{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok is not installed; run ketch install listepo/rtok to enable it."}}"#,
+    );
+    super::hook_resolver(&format!("hook {event}"), note)
+}
+
+/// Exactly `<rtok-bin> hook <event>` (an older or Windows install), or the T174
+/// PATH-resolving form whose `exec rtok hook <event>;` marker only a real rtok settings
+/// entry would carry. Matching tokens anywhere claimed a user's chain (`notify-send hi &&
+/// rtok hook Stop`); the suffix/marker checks keep that command foreign.
 pub(super) fn is_ours(cmd: &str, event: &str) -> bool {
     let suffix = format!(" hook {event}");
-    let Some(bin) = cmd.strip_suffix(&suffix) else {
-        return false;
-    };
-    super::is_rtok_bin(super::unquote_bin(bin))
+    if let Some(bin) = cmd.strip_suffix(&suffix) {
+        return super::is_rtok_bin(super::unquote_bin(bin));
+    }
+    cmd.contains(&format!("exec rtok hook {event};"))
 }
 
 /// Apply, dry-run, or remove rtok hook entries.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
-    edit_json(&apply(cfg), &cfg.setup.claude.settings_path, |root| {
+    let (a, path) = (apply(cfg), &cfg.setup.claude.settings_path);
+    edit_json(&a, path, |root| {
         if remove {
-            strip_ours(root.get_mut("hooks"))
+            let timeout = cfg.setup.hook_timeout_s;
+            strip_ours(
+                &a,
+                path,
+                root.get_mut("hooks"),
+                claude_entries(),
+                "timeout",
+                timeout,
+            )
         } else {
             let bin = super::rtok_hook_bin();
             insert_ours(
                 object_at(root, "hooks"),
-                ENTRIES,
+                claude_entries(),
                 &bin,
                 "timeout",
                 cfg.setup.hook_timeout_s,
@@ -133,7 +216,7 @@ pub(super) fn insert_ours(
 }
 
 /// ` <matcher>` for a report line; nothing for an empty matcher.
-fn show(matcher: &str) -> String {
+pub(super) fn show(matcher: &str) -> String {
     if matcher.is_empty() {
         String::new()
     } else {
@@ -185,27 +268,42 @@ fn prune_ours(hooks: &mut Value, entries: &[(&str, &str)]) -> Vec<String> {
     removed
 }
 
-/// Remove every `<rtok> hook <event>` entry under the given `hooks` object; empty arrays go.
-pub(super) fn strip_ours(hooks: Option<&mut Value>) -> String {
+/// Remove the `<rtok> hook <event>` hooks under `hooks` (T246.3); empty arrays go. One still as
+/// [`insert_ours`] writes it — on a pair `entries` lists, exactly `{type, command,
+/// <timeout_key>: timeout}` — goes; one the user changed goes only as
+/// [`rtok_agent_sdk::keep_edited`] decides, else a `leave …` line keeps it.
+pub(super) fn strip_ours(
+    apply: &Apply,
+    path: &Path,
+    hooks: Option<&mut Value>,
+    entries: &[(&str, &str)],
+    timeout_key: &str,
+    timeout: u64,
+) -> String {
     let Some(hooks) = hooks.and_then(Value::as_object_mut) else {
         return NO_CHANGES.into();
     };
-    let mut removed = 0usize;
-    for (event, entries) in hooks.iter_mut() {
-        let Some(arr) = entries.as_array_mut() else {
+    let (mut removed, mut kept) = (0usize, Vec::new());
+    for (event, arr) in hooks.iter_mut() {
+        let Some(arr) = arr.as_array_mut() else {
             continue;
         };
         for entry in arr.iter_mut() {
+            let matcher = entry["matcher"].as_str().unwrap_or("").to_string();
+            let listed = entries.contains(&(event.as_str(), matcher.as_str()));
             let Some(inner) = entry.get_mut("hooks").and_then(Value::as_array_mut) else {
                 continue;
             };
-            let n = inner.len();
             inner.retain(|h| {
-                !h.get("command")
-                    .and_then(Value::as_str)
-                    .is_some_and(|c| is_ours(c, event))
+                let Some(cmd) = h["command"].as_str().filter(|c| is_ours(c, event)) else {
+                    return true;
+                };
+                let want = json!({"type": "command", "command": cmd, timeout_key: timeout});
+                let at = || format!("hooks.{event}{} in {}", show(&matcher), path.display());
+                let take = super::takes_hook(apply, listed && *h == want, at, &mut kept);
+                removed += usize::from(take);
+                !take
             });
-            removed += n - inner.len();
         }
         arr.retain(|e| {
             e.get("hooks")
@@ -214,11 +312,7 @@ pub(super) fn strip_ours(hooks: Option<&mut Value>) -> String {
         });
     }
     hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
-    if removed == 0 {
-        NO_CHANGES.into()
-    } else {
-        format!("{removed} removed")
-    }
+    super::with_kept(kept, super::removed_report(removed))
 }
 
 /// Add `rtok mcp` to `mcpServers` in `~/.claude.json` (T4.7).
@@ -658,15 +752,78 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_empty_is_nine_additions() {
+    fn dry_run_empty_is_ten_additions() {
         let path = tmp("setup-dry");
         let report = run(&cfg(path.clone(), true), false).unwrap();
-        assert!(report.contains("9 additions"), "{report}");
+        assert!(report.contains("10 additions"), "{report}");
         assert!(
-            report.contains("+ SessionEnd rtok hook SessionEnd"),
+            report.contains(&format!("+ SessionEnd {}", command("rtok", "SessionEnd"))),
+            "{report}"
+        );
+        // T130.2: the spawn brief's event is installed for Claude (and only Claude).
+        assert!(
+            report.contains(&format!(
+                "+ SubagentStart {}",
+                command("rtok", "SubagentStart")
+            )),
             "{report}"
         );
         assert!(!path.exists());
+    }
+
+    /// T174 check: the settings-file command this module writes for a bare `rtok` bin — run
+    /// as Claude Code itself would run it, `/bin/sh -c <command>` — resolves PATH, then
+    /// `~/.ketch/bin/rtok`, then fails open: exit 0, empty stdout on PreToolUse/PostToolUse,
+    /// and exactly one `hookSpecificOutput` note on SessionStart naming the ketch install.
+    #[cfg(unix)]
+    #[test]
+    fn command_resolves_rtok_at_run_time_and_fails_open_silently() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::process::{Command as Proc, Stdio};
+
+        let home = tmp("t174-settings-command").parent().unwrap().to_path_buf();
+        let empty_path = home.join("empty-path");
+        fs::create_dir_all(&empty_path).unwrap();
+        let run = |event: &str, home: &std::path::Path, path: &std::path::Path| {
+            let mut child = Proc::new("/bin/sh")
+                .args(["-c", &command("rtok", event)])
+                .env("HOME", home)
+                .env("PATH", path)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            drop(child.stdin.take());
+            let out = child.wait_with_output().unwrap();
+            assert!(out.status.success(), "{event}: {out:?}");
+            String::from_utf8(out.stdout).unwrap()
+        };
+
+        // No `rtok` anywhere: silent on a regular event, one note on SessionStart.
+        assert_eq!(run("PreToolUse", &home, &empty_path), "");
+        assert_eq!(run("PostToolUse", &home, &empty_path), "");
+        let note = run("SessionStart", &home, &empty_path);
+        let v: Value = serde_json::from_str(&note).unwrap_or_else(|e| panic!("{note}: {e}"));
+        assert_eq!(v["hookSpecificOutput"]["hookEventName"], "SessionStart");
+        assert!(
+            v["hookSpecificOutput"]["additionalContext"]
+                .as_str()
+                .unwrap()
+                .contains("ketch install listepo/rtok"),
+            "{note}"
+        );
+
+        // `~/.ketch/bin/rtok` exists: it gets exec'd instead of the fail-open note.
+        let ketch = home.join(".ketch/bin/rtok");
+        fs::create_dir_all(ketch.parent().unwrap()).unwrap();
+        fs::write(&ketch, "#!/bin/sh\nprintf 'ketch %s' \"$2\"\n").unwrap();
+        fs::set_permissions(&ketch, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            run("SessionStart", &home, &empty_path),
+            "ketch SessionStart"
+        );
+        let _ = fs::remove_dir_all(&home);
     }
 
     #[test]
@@ -695,7 +852,7 @@ mod tests {
         let path = tmp("setup-apply");
         fs::write(&path, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo other"}]}]}}"#).unwrap();
         let first = run(&cfg(path.clone(), false), false).unwrap();
-        assert!(first.contains("9 additions"), "{first}");
+        assert!(first.contains("10 additions"), "{first}");
         assert_eq!(run(&cfg(path.clone(), false), false).unwrap(), NO_CHANGES);
         let rm = run(&cfg(path.clone(), false), true).unwrap();
         assert!(rm.contains("removed"), "{rm}");
@@ -746,8 +903,14 @@ mod tests {
         let path = tmp("desktop-mcp");
         let a = apply(&cfg(path.clone(), false));
         rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"]).unwrap();
+        // Compare the parsed value: a Windows path's `\` is `\\` in the raw JSON (T83.5).
         let raw = fs::read_to_string(&path).unwrap();
-        assert!(raw.contains(&desktop_command()), "{raw}");
+        let written: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            written["mcpServers"]["rtok"]["command"],
+            json!(desktop_command()),
+            "{raw}"
+        );
         assert_ne!(
             rtok_agent_sdk::unregister_mcp(&a, &path, "rtok").unwrap(),
             NO_CHANGES
@@ -775,9 +938,27 @@ mod tests {
         let mut root: Value =
             serde_json::from_str(if raw.is_empty() { "{}" } else { raw }).unwrap();
         let report = if remove {
-            strip_ours(root.get_mut("hooks"))
+            let yes = Apply {
+                yes: true,
+                ..Apply::default()
+            };
+            let at = std::path::Path::new(path);
+            strip_ours(
+                &yes,
+                at,
+                root.get_mut("hooks"),
+                claude_entries(),
+                "timeout",
+                5,
+            )
         } else {
-            insert_ours(object_at(&mut root, "hooks"), ENTRIES, "rtok", "timeout", 5)
+            insert_ours(
+                object_at(&mut root, "hooks"),
+                claude_entries(),
+                "rtok",
+                "timeout",
+                5,
+            )
         };
         vfs.write(path, serde_json::to_string_pretty(&root).unwrap());
         report
@@ -792,7 +973,7 @@ mod tests {
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo other"}]}]}}"#,
         );
         let first = hooks_roundtrip_vfs(&mut vfs, path, false);
-        assert!(first.contains("9 additions"), "{first}");
+        assert!(first.contains("10 additions"), "{first}");
         assert_eq!(hooks_roundtrip_vfs(&mut vfs, path, false), NO_CHANGES);
         let rm = hooks_roundtrip_vfs(&mut vfs, path, true);
         assert!(rm.contains("removed"), "{rm}");
@@ -831,21 +1012,21 @@ mod tests {
             let path = "settings.json";
             vfs.write(path, body);
             let report = hooks_roundtrip_vfs(&mut vfs, path, false);
-            assert!(report.contains("9 additions"), "{body} → {report}");
+            assert!(report.contains("10 additions"), "{body} → {report}");
             let root: Value = serde_json::from_str(vfs.read_str(path).unwrap()).unwrap();
             assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
         }
     }
 
     #[test]
-    fn dry_run_empty_is_nine_additions_from_vfs() {
+    fn dry_run_empty_is_ten_additions_from_vfs() {
         let mut vfs = crate::testutil::Vfs::new();
         // Absent file → empty object; dry-run style: mutate report only, do not require prior write.
         let path = "Users/Ivan Tuhai/.claude/settings.json";
         let report = hooks_roundtrip_vfs(&mut vfs, path, false);
-        assert!(report.contains("9 additions"), "{report}");
+        assert!(report.contains("10 additions"), "{report}");
         assert!(
-            report.contains("+ SessionEnd rtok hook SessionEnd"),
+            report.contains(&format!("+ SessionEnd {}", command("rtok", "SessionEnd"))),
             "{report}"
         );
         // Vfs now holds the written body (unlike disk dry_run); assert shape instead of absence.
@@ -865,7 +1046,7 @@ mod tests {
             let path = tmp(&format!("setup-shape-{}", body.len()));
             fs::write(&path, body).unwrap();
             let report = run(&cfg(path.clone(), false), false).unwrap();
-            assert!(report.contains("9 additions"), "{body} → {report}");
+            assert!(report.contains("10 additions"), "{body} → {report}");
             let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
             assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
         }
@@ -879,14 +1060,16 @@ mod tests {
             {"type":"command","command":"echo mine"},
             {"type":"command","command":"/old/store/rtok/v0.1.0/rtok hook PreToolUse","timeout":3}
         ]}]});
+        let want = command("rtok", "PreToolUse");
         let report = insert_ours(&mut hooks, &ENTRIES[..1], "rtok", "timeout", 7);
         assert_eq!(
-            report, "~ PreToolUse Bash rtok hook PreToolUse\n1 updates",
+            report,
+            format!("~ PreToolUse Bash {want}\n1 updates"),
             "{report}"
         );
         let inner = &hooks["PreToolUse"][0]["hooks"];
         assert_eq!(inner[0]["command"], "echo mine");
-        assert_eq!(inner[1]["command"], "rtok hook PreToolUse");
+        assert_eq!(inner[1]["command"], want);
         assert_eq!(inner[1]["timeout"], 7);
         assert_eq!(hooks["PreToolUse"].as_array().unwrap().len(), 1);
         let before = hooks.clone();
@@ -945,8 +1128,11 @@ mod tests {
         let parse = |s: &str| serde_json::from_str::<Value>(s).unwrap();
         let hooks = parse(include_str!("../../../plugins/claude/hooks/hooks.json"));
         let timeout = Config::default().setup.hook_timeout_s;
+        // T262.1: the file is the list; the shared `ENTRIES` other hosts take must lead it.
+        assert_eq!(claude_entries()[..ENTRIES.len()], *ENTRIES);
+        assert!(claude_entries().contains(&("SubagentStart", "")));
         let mut want = json!({});
-        for &(event, matcher) in ENTRIES {
+        for &(event, matcher) in claude_entries() {
             // T178: `rtok` on PATH is exec'd from Claude Code's own shell; `hook.sh` (a second
             // shell, ~6 ms) only runs when PATH has no `rtok` (desktop app, fail-open hint).
             let cmd = format!(
@@ -973,6 +1159,27 @@ mod tests {
         ));
         assert_eq!(market["plugins"][0]["name"], manifest["name"]);
         assert_eq!(market["plugins"][0]["source"], "./");
+    }
+
+    /// T132: the shipped scout stays cheap (`model: haiku`) and scoped to the plugin-scoped
+    /// rtok MCP tool names Claude Code resolves for a plugin's own server
+    /// (`mcp__plugin_<plugin>_<server>__<tool>`, per the plugins reference doc) — a bare or
+    /// unscoped name would silently never fire.
+    #[test]
+    fn scout_agent_ships_with_the_cheap_scoped_frontmatter() {
+        let text = include_str!("../../../plugins/claude/agents/rtok-scout.md");
+        let front = text
+            .strip_prefix("---\n")
+            .and_then(|s| s.split_once("\n---\n"))
+            .expect("frontmatter fenced by `---`")
+            .0;
+        assert!(front.contains("name: rtok-scout"), "{front}");
+        assert!(front.contains("model: haiku"), "{front}");
+        for tool in ["read", "search", "outline", "explore", "expand"] {
+            let want = format!("mcp__plugin_rtok_rtok__{tool}");
+            assert!(front.contains(&want), "{front}: missing {want}");
+        }
+        assert!(!front.contains("mcp__rtok__"), "{front}: unscoped MCP name");
     }
 
     // --- T139: `plugin()` decision logic — installed/known-marketplace/fresh, no real `claude` ---

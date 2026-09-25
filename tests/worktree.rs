@@ -246,6 +246,51 @@ fn list_names_the_session_the_hooks_saw_in_an_unlocked_worktree() {
     assert!(table.contains(ME), "{table}");
 }
 
+/// T232: the Worktrees page renders the same table `rtok worktree list` prints — a
+/// locked worktree's owner shows up on the page. The Worktrees page has no
+/// config-driven root (like `worktree list` itself, T151): it reads the current
+/// directory, so this pins it the way `tests/graph_model.rs` pins the Graph page —
+/// via cwd. nextest runs each test in its own process, so this does not leak into
+/// another test's relative paths; a plain multi-threaded `cargo test` run of this
+/// file would race here.
+///
+/// The walk behind the page is a background read like `hosts_page_text` (T231),
+/// never the tick itself (T206) — this real repository's own `target/` takes tens
+/// of seconds to walk, which is exactly why a tick must never block on it. So the
+/// first read of a fresh process answers "reading worktrees…" and this polls, the
+/// same shape `tests/hosts_model.rs` uses for "probing hosts…".
+#[test]
+fn worktrees_page_shows_a_locked_worktree_s_owner() {
+    let tmp = rtok::testutil::tmp_dir("worktree-page");
+    run(&tmp, &["init", "-q", "work"]);
+    let work = tmp.join("work");
+    commit(&work, "a.txt");
+    add(&work, "locked", Some(&format!("{ME} | t1 | 2026-09-22")));
+
+    let cfg = rtok::testutil::config_file_in(&tmp);
+    let prev = std::env::current_dir().unwrap();
+    std::env::set_current_dir(&work).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let page = loop {
+        let page = rtok::web::model::snapshot(&cfg)
+            .worktrees
+            .expect("the current directory reads fine");
+        if page != "reading worktrees…\n" {
+            break page;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the worktrees read never landed"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    std::env::set_current_dir(prev).unwrap();
+
+    assert!(page.contains(ME), "{page}");
+    assert!(page.contains("t-locked"), "{page}");
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 const ME: &str = "Claude Code / sonnet";
 
 fn add(work: &Path, name: &str, lock: Option<&str>) {

@@ -144,7 +144,7 @@ impl Runtime {
         })
     }
 
-    /// Estimated token count for `text` (±15 %, no tokenizer, no network).
+    /// Estimated token count for `text` (uncalibrated chars-per-token heuristic, no tokenizer, no network).
     pub fn estimate(&self, text: &str, class: Class) -> u32 {
         tokens::estimate(text, class, &self.config.estimator)
     }
@@ -519,6 +519,10 @@ impl Symbols for Runtime {
 
     fn symbol_defs(&self, root: &str, name: &str) -> Result<Vec<(String, String, i32, i32)>> {
         self.store.symbol_defs(root, name)
+    }
+
+    fn symbol_file_defs(&self, root: &str, path: &str) -> Result<Vec<(String, String, i32, i32)>> {
+        self.store.symbol_file_defs(root, path)
     }
 
     fn symbol_ref_groups(&self, root: &str, name: &str) -> Result<Vec<(String, String, i64, i32)>> {

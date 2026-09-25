@@ -7,7 +7,9 @@
 
 mod common;
 
-use common::agents::{backups, claude_log, json, rtok, rtok_without_claude, tmp, write_cfg};
+use common::agents::{
+    backups, claude_log, codex_log, json, rtok, rtok_without_claude, tmp, write_cfg,
+};
 use std::fs;
 
 /// What an older install left in `~/.claude/settings.json`: a hook on a versioned store path
@@ -33,13 +35,17 @@ fn install_rewrites_stale_claude_hooks_and_a_rerun_changes_nothing() {
 
     let root = json(&settings);
     let hooks = &root["hooks"];
-    // The binary a fresh hook got — bare `rtok`, or the absolute `rtok.exe` on Windows.
+    // Every fresh hook shares one command shape (bare `rtok`, the T174 PATH-resolving form,
+    // or the absolute `rtok.exe` on Windows) — only the event name inside it differs.
     let fresh = hooks["SessionEnd"][0]["hooks"][0]["command"]
         .as_str()
         .unwrap();
-    let bin = fresh.strip_suffix(" hook SessionEnd").unwrap();
     let pre = &hooks["PreToolUse"][0]["hooks"][0];
-    assert_eq!(pre["command"], format!("{bin} hook PreToolUse"), "{after}");
+    assert_eq!(
+        pre["command"],
+        fresh.replace("SessionEnd", "PreToolUse"),
+        "{after}"
+    );
     // The timeout every freshly added hook got is the one the stale hook now carries.
     assert_eq!(
         pre["timeout"],
@@ -264,4 +270,79 @@ fn install_leaves_an_installed_claude_plugin_alone() {
     rtok(&["agents", "install", "claude", "--cli"], &cfg, &home);
     assert_eq!(claude_log(&home), "");
     assert_eq!(fs::read_to_string(&record).unwrap(), OLD_PLUGIN_RECORD);
+}
+
+/// Codex's own record of `rtok@rtok` enabled from the GitHub marketplace, beside a foreign
+/// table that must survive (T242.4).
+const CODEX_WITH_PLUGIN: &str = "model = \"o3\"\n\n[marketplaces.rtok]\nsource_type = \"git\"\n\
+source = \"https://github.com/listepo/rtok.git\"\n\n[plugins.\"rtok@rtok\"]\nenabled = true\n";
+
+fn seed_codex_plugin(home: &std::path::Path) -> std::path::PathBuf {
+    let path = home.join(".codex/config.toml");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, CODEX_WITH_PLUGIN).unwrap();
+    path
+}
+
+/// T242.4: Codex has no `plugin update`, so an enabled plugin is upgraded in place through
+/// `marketplace upgrade` — never removed; the installed cache changes once, and a second
+/// update finds nothing new and says `already current`. `config.toml` keeps every table.
+#[test]
+fn update_upgrades_the_codex_marketplace_in_place() {
+    let home = tmp("update-codex-plugin");
+    let cfg = write_cfg(&home);
+    let config = seed_codex_plugin(&home);
+
+    let out = rtok(&["agents", "update", "codex"], &cfg, &home);
+    assert!(out.contains("~ plugin rtok@rtok updated"), "{out}");
+    assert_eq!(codex_log(&home), "plugin marketplace upgrade rtok\n");
+    let cache = home.join(".codex/plugins/cache/rtok/rtok/0.0.1/.mcp.json");
+    assert_eq!(fs::read_to_string(&cache).unwrap().trim(), "upgraded");
+
+    let again = rtok(&["agents", "update", "codex"], &cfg, &home);
+    assert!(again.contains("Codex — already current"), "{again}");
+    assert!(!codex_log(&home).contains("remove"));
+    let doc = fs::read_to_string(&config).unwrap();
+    for table in [
+        "model = \"o3\"",
+        "[marketplaces.rtok]",
+        "[plugins.\"rtok@rtok\"]",
+    ] {
+        assert!(doc.contains(table), "{table} lost: {doc}");
+    }
+}
+
+/// T242.4: a failed upgrade means a broken snapshot, so update reinstalls the whole chain —
+/// plugin and marketplace out, then back in from GitHub — and says why.
+#[test]
+fn update_reinstalls_the_codex_plugin_when_upgrade_fails() {
+    let home = tmp("update-codex-fail");
+    let cfg = write_cfg(&home);
+    let config = seed_codex_plugin(&home);
+    fs::write(home.join("fake-codex-fail-upgrade"), "").unwrap();
+
+    let out = rtok(&["agents", "update", "codex"], &cfg, &home);
+    assert!(
+        out.contains("~ plugin rtok@rtok reinstalled (update failed"),
+        "{out}"
+    );
+    assert_eq!(
+        codex_log(&home),
+        "plugin marketplace upgrade rtok\nplugin remove rtok@rtok\n\
+         plugin marketplace remove rtok\nplugin marketplace add listepo/rtok\n\
+         plugin add rtok@rtok\n"
+    );
+    let doc = fs::read_to_string(&config).unwrap();
+    assert!(doc.contains("[marketplaces.rtok]"), "{doc}");
+    assert!(doc.contains("[plugins.\"rtok@rtok\"]"), "{doc}");
+}
+
+/// T242.4: plain `install` over an enabled Codex plugin stays a no-op.
+#[test]
+fn install_leaves_an_enabled_codex_plugin_alone() {
+    let home = tmp("install-codex-noop");
+    let cfg = write_cfg(&home);
+    seed_codex_plugin(&home);
+    rtok(&["agents", "install", "codex"], &cfg, &home);
+    assert_eq!(codex_log(&home), "");
 }

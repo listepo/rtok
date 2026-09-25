@@ -26,18 +26,39 @@ const LOCK_WAIT: crate::store::LockWait = crate::store::LockWait {
 /// Fail-open hook entry: always writes JSON and does not return `Err`.
 /// With `[hook] fail_open = false` (debugging only) errors surface as a panic
 /// instead of `{}` — the default `true` keeps the fail-open rule (D1).
+///
+/// T201: stdin used to be an unbounded `read_to_end`, so a multi-MB payload paid a JSON
+/// parse plus downstream hashing that grew linearly with its size — the ≤ 10 ms budget (D1)
+/// broke deterministically per MB. `core.hook_max_input_bytes` bounds the read via `Take`
+/// (one byte over the cap, so a body exactly at the limit is not mistaken for oversized);
+/// a body over it is discarded before it ever reaches the JSON parser and the hook fails
+/// open to `{}` unmodified, with one stderr line.
 pub fn run(event: &str, mut stdin: impl Read, mut stdout: impl Write, cfg: &Config) {
+    let max = u64::from(cfg.core.hook_max_input_bytes);
     if cfg.hook.fail_open {
         let mut buf = Vec::new();
-        let _ = stdin.read_to_end(&mut buf);
+        let _ = stdin.by_ref().take(max + 1).read_to_end(&mut buf);
+        if buf.len() as u64 > max {
+            eprintln!(
+                "rtok: hook {event} stdin over core.hook_max_input_bytes ({max} bytes); failing open"
+            );
+            let _ = stdout.write_all(b"{}");
+            return;
+        }
         let out = panic::catch_unwind(AssertUnwindSafe(|| dispatch_owned(&buf, event, cfg)))
             .unwrap_or_else(|_| b"{}".to_vec());
         let _ = stdout.write_all(&out);
     } else {
         let mut buf = Vec::new();
         stdin
+            .by_ref()
+            .take(max + 1)
             .read_to_end(&mut buf)
             .expect("rtok hook: stdin unreadable (fail_open = false)");
+        assert!(
+            buf.len() as u64 <= max,
+            "rtok hook: stdin over core.hook_max_input_bytes ({max} bytes, debugging only)"
+        );
         let out = dispatch_owned_strict(&buf, event, cfg).expect("rtok hook");
         let _ = stdout.write_all(&out);
     }
@@ -87,6 +108,27 @@ fn note_slow(cx: &Runtime, event: &str, ms: f64) {
     }
 }
 
+/// T204: a panicking plugin used to be indistinguishable from one returning `None` — the
+/// `catch_unwind` `Err` was dropped with `.ok()`/`let _`, so `rtok doctor` / `rtok logs` never
+/// saw it. One funnel for the four per-plugin loops below: extract the payload and log it at
+/// `error` before the caller drops the plugin's output and moves on (fail open, D1). Runs only
+/// on the panic path, so the budget stays untouched the rest of the time.
+fn log_panic(cx: &Runtime, plugin: &str, event: &str, err: Box<dyn std::any::Any + Send>) {
+    let payload = err
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| err.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "non-string panic payload".into());
+    // `source = "plugin"`, `name = <plugin id>` matches the funnel's existing convention
+    // (see `insert_log`'s callers) — a `rtok logs`/`doctor` reader can filter on the plugin.
+    cx.log(
+        "error",
+        "plugin",
+        plugin,
+        &format!("{event} panicked: {payload}"),
+    );
+}
+
 fn dispatch_owned(stdin: &[u8], event: &str, cfg: &Config) -> Vec<u8> {
     match panic::catch_unwind(AssertUnwindSafe(|| {
         dispatch_owned_strict(stdin, event, cfg)
@@ -106,6 +148,7 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     let cursor = !grok && cfg.hook.host == "cursor";
     let gemini = !grok && cfg.hook.host == "gemini";
     let codewhale = !grok && cfg.hook.host == "codewhale";
+    let cline = !grok && cfg.hook.host == "cline";
     if grok {
         input.adapt_grok(event);
     } else if cursor {
@@ -116,16 +159,37 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
         input.adapt_gemini(event);
     } else if codewhale {
         input.adapt_codewhale(event);
+    } else if cline {
+        input.adapt_cline(event);
     } else if cfg.hook.host == "devin" {
         input.adapt_devin(event, std::env::var("DEVIN_PROJECT_DIR").ok());
     } else if input.hook_event_name.is_empty() {
         input.hook_event_name = event.to_string();
     }
+    // The call row keeps what plugins read back later (the spawn-brief ledger, the read
+    // window): an adapted host's input in Claude's field names, not its raw camelCase (T262.5).
+    // Claude's own stdin is already that shape and stays byte-identical.
+    let adapted =
+        grok || copilot || cursor || gemini || codewhale || cline || cfg.hook.host == "devin";
+    let stored = adapted.then(|| serde_json::to_vec(&input).ok()).flatten();
+    let stdin = stored.as_deref().unwrap_or(stdin);
     let session = resolve_session(&input.session_id, &cfg.core.session_env, |k| {
         std::env::var(k).ok()
     });
-    let mut cx = Runtime::open_with(cfg.clone(), session, LOCK_WAIT)
-        .map_err(|e| format!("hook {event}: store open: {e}"))?;
+    let wait = if std::env::var_os(DEFERRED_ENV).is_some() {
+        crate::store::LockWait::STEADY
+    } else {
+        LOCK_WAIT
+    };
+    let mut cx = match Runtime::open_with(cfg.clone(), session, wait) {
+        Ok(cx) => cx,
+        Err(e) => {
+            if crate::store::is_locked(&e) {
+                defer_session_end(cfg, &input.hook_event_name, stdin);
+            }
+            return Err(format!("hook {event}: store open: {e}"));
+        }
+    };
     // SessionStart carries `cwd` like every other event, so the session row is attributed
     // from the first hook of the run rather than whichever call happens to arrive first.
     cx.cwd = input.cwd.clone();
@@ -148,6 +212,10 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     if codewhale {
         let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
         return Ok(codewhale_output(&parsed, input.prompt.as_deref()));
+    }
+    if cline {
+        let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
+        return Ok(cline_output(&parsed));
     }
     Ok(out)
 }
@@ -236,6 +304,50 @@ pub fn copilot_output(out: &HookOutput) -> Vec<u8> {
     serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
 }
 
+/// Cline file hooks read a flat object: `overrideInput` replaces the tool input (PreToolUse
+/// only), `context` is injected into the next turn, `cancel: true` + `errorMessage` blocks.
+/// `{}` means do nothing — and stays `{}` here. A Claude `decision: block` becomes `cancel`.
+pub fn cline_output(out: &HookOutput) -> Vec<u8> {
+    let mut o = serde_json::Map::new();
+    let deny = out.decision.as_deref() == Some("block")
+        || out
+            .hook_specific_output
+            .as_ref()
+            .and_then(|h| h.permission_decision.as_deref())
+            == Some("deny");
+    if let Some(h) = &out.hook_specific_output {
+        if let Some(u) = &h.updated_input
+            && let Some(cmd) = u.get("command").and_then(|c| c.as_str())
+        {
+            o.insert(
+                "overrideInput".into(),
+                serde_json::json!({"commands": [cmd]}),
+            );
+        }
+        if let Some(c) = &h.additional_context {
+            o.insert("context".into(), c.as_str().into());
+        }
+        if deny && h.permission_decision_reason.is_some() {
+            o.insert(
+                "errorMessage".into(),
+                h.permission_decision_reason
+                    .as_deref()
+                    .unwrap_or_default()
+                    .into(),
+            );
+        }
+    }
+    if deny {
+        o.insert("cancel".into(), true.into());
+        if !o.contains_key("errorMessage")
+            && let Some(r) = &out.reason
+        {
+            o.insert("errorMessage".into(), r.as_str().into());
+        }
+    }
+    serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
+}
+
 pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     let start = Instant::now();
     let registry = Registry::new(&cx.config);
@@ -245,6 +357,7 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         // wait again, so pass the input through unchanged and record nothing.
         Err(e) if crate::store::is_locked(&e) => {
             eprintln!("rtok: hook {} skipped: store locked", input.hook_event_name);
+            defer_session_end(&cx.config, &input.hook_event_name, stdin);
             return b"{}".to_vec();
         }
         Err(_) => None,
@@ -259,8 +372,11 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         "PreCompact" => {
             if let Some(ev) = input.pre_compact() {
                 for p in registry.enabled() {
-                    let _ =
-                        panic::catch_unwind(AssertUnwindSafe(|| p.pre_compact(&ev, &Ctx::new(cx))));
+                    if let Err(e) =
+                        panic::catch_unwind(AssertUnwindSafe(|| p.pre_compact(&ev, &Ctx::new(cx))))
+                    {
+                        log_panic(cx, p.manifest().id, "PreCompact", e);
+                    }
                 }
             }
             HookOutput::default()
@@ -277,7 +393,13 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
-            let _ = cx.store.end_session(&cx.session, now);
+            if cx
+                .store
+                .end_session(&cx.session, now)
+                .is_err_and(|e| crate::store::is_locked(&e))
+            {
+                defer_session_end(&cx.config, "SessionEnd", stdin);
+            }
             HookOutput::default()
         }
         _ => HookOutput::default(),
@@ -298,6 +420,41 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     bytes
 }
 
+/// Set on the child [`defer_session_end`] spawns: wait like any command, never defer again.
+const DEFERRED_ENV: &str = "RTOK_HOOK_DEFERRED";
+
+/// T83.15: `SessionEnd`'s write is the one nothing repeats — lost to another writer's lock
+/// (the flush child `Stop` spawned, still writing its watermarks) the session never gets
+/// `ended_at` and its OTel root span never ships. Rather than wait past the hook's 10 ms, hand
+/// the event to a detached `rtok hook SessionEnd` that waits `LockWait::STEADY` — the same
+/// hand-off `Stop` uses for the flush. `stdin` is Claude-shaped (adapted hosts included), so
+/// the child needs no `--host`. Any other event, or the deferred child itself: nothing.
+fn defer_session_end(cfg: &Config, event: &str, stdin: &[u8]) {
+    if event != "SessionEnd" || std::env::var_os(DEFERRED_ENV).is_some() {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["hook", "SessionEnd"])
+        .env(DEFERRED_ENV, "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if !cfg.home.as_os_str().is_empty() {
+        cmd.env("RTOK_HOME", &cfg.home);
+    }
+    // As in `otel::export::spawn_child`: the child must not hold the agent's pipes open.
+    rtok_sys::stop_inheriting_own_stdio();
+    if let Ok(mut child) = cmd.spawn()
+        && let Some(mut pipe) = child.stdin.take()
+    {
+        // A SessionEnd payload is a few hundred bytes, well under a pipe buffer: no block.
+        let _ = pipe.write_all(stdin);
+    }
+}
+
 /// Cursor's `afterMCPExecution` docs (https://cursor.com/docs/agent/hooks, fetched 2026-09-24)
 /// list no output shape for this event — it is audit-only. `postToolUse`'s
 /// `updated_mcp_tool_output` is the documented replacement key (T70.4), and `post_tool`'s
@@ -314,11 +471,15 @@ fn pre_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput 
     };
     let mut rewrite: Option<PreToolDecision> = None;
     for p in registry.enabled() {
-        let got = panic::catch_unwind(AssertUnwindSafe(|| {
+        let got = match panic::catch_unwind(AssertUnwindSafe(|| {
             p.pre_tool(&ev, &Ctx::with_agent(cx, input.agent_id.as_deref()))
-        }))
-        .ok()
-        .flatten();
+        })) {
+            Ok(v) => v,
+            Err(e) => {
+                log_panic(cx, p.manifest().id, "PreToolUse", e);
+                None
+            }
+        };
         match got {
             Some(PreToolDecision::Deny { reason }) => {
                 return HookOutput {
@@ -355,10 +516,12 @@ fn post_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput
     };
     let mut parts = Vec::new();
     for p in registry.enabled() {
-        if let Ok(Some(s)) = panic::catch_unwind(AssertUnwindSafe(|| {
+        match panic::catch_unwind(AssertUnwindSafe(|| {
             p.post_tool(&ev, &Ctx::with_agent(cx, input.agent_id.as_deref()))
         })) {
-            parts.push(s);
+            Ok(Some(s)) => parts.push(s),
+            Ok(None) => {}
+            Err(e) => log_panic(cx, p.manifest().id, "PostToolUse", e),
         }
     }
     let text = cap_budget(cx, &parts.join("\n"));
@@ -467,7 +630,7 @@ fn cursor_mcp_output(input: &HookInput, cx: &Runtime) -> Option<serde_json::Valu
 fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput {
     let mut inj = Vec::new();
     for p in registry.enabled() {
-        let one = panic::catch_unwind(AssertUnwindSafe(|| {
+        let one = match panic::catch_unwind(AssertUnwindSafe(|| {
             if let Some(ev) = input.session_start() {
                 p.session_start(&ev, &Ctx::new(cx))
             } else if let Some(ev) = input.prompt_submit() {
@@ -480,9 +643,13 @@ fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOut
             } else {
                 None
             }
-        }))
-        .ok()
-        .flatten();
+        })) {
+            Ok(v) => v,
+            Err(e) => {
+                log_panic(cx, p.manifest().id, &input.hook_event_name, e);
+                None
+            }
+        };
         if let Some(i) = one {
             inj.push(i);
         }
@@ -574,6 +741,7 @@ fn cap_budget(cx: &Runtime, text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::{DashboardPage, Manifest, Plugin, PostToolUse, Surface};
     use types::{post_out, pre_out};
 
     /// Shared by every per-host `_output` test below: hook stdout bytes back to `Value`.
@@ -694,6 +862,11 @@ mod tests {
         let (req, res) = cx.store.call_io_archives(ids[0]).unwrap();
         assert!(req.is_none(), "{req:?}");
         assert!(res.is_none(), "{res:?}");
+        // T201: never archived (`archive_dir = None` on every hook call) must mean never
+        // hashed either — `spill` skips the sha256 pass rather than computing one nothing
+        // can ever expand.
+        let (req_sha, _res_sha) = cx.store.call_io_shas(ids[0]).unwrap();
+        assert!(req_sha.is_none(), "{req_sha:?}");
     }
 
     #[test]
@@ -702,6 +875,91 @@ mod tests {
         let mut out = Vec::new();
         run("PreToolUse", b"not-json".as_slice(), &mut out, &cfg);
         assert_eq!(out, b"{}");
+    }
+
+    #[test]
+    fn cline_output_shapes_override_context_block_and_empty() {
+        let json = |b: Vec<u8>| serde_json::from_slice::<serde_json::Value>(&b).unwrap();
+        assert_eq!(
+            json(cline_output(&HookOutput::default())),
+            serde_json::json!({})
+        );
+        let pre = HookOutput {
+            hook_specific_output: Some(HookSpecificOutput {
+                hook_event_name: "PreToolUse".into(),
+                updated_input: Some(serde_json::json!({"command": "rtok run -- 'git status'"})),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            json(cline_output(&pre)),
+            serde_json::json!({
+                "overrideInput": {"commands": ["rtok run -- 'git status'"]}
+            })
+        );
+        let post = HookOutput {
+            hook_specific_output: Some(HookSpecificOutput {
+                hook_event_name: "PostToolUse".into(),
+                additional_context: Some("ctx".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            json(cline_output(&post)),
+            serde_json::json!({"context": "ctx"})
+        );
+        let block = HookOutput {
+            decision: Some("block".into()),
+            reason: Some("guard".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            json(cline_output(&block)),
+            serde_json::json!({"cancel": true, "errorMessage": "guard"})
+        );
+    }
+
+    fn cline_cfg(dir: &std::path::Path) -> Config {
+        let mut cfg = Config::default();
+        cfg.hook.host = "cline".into();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.core.archive_dir = dir.join("archive");
+        cfg
+    }
+
+    #[test]
+    fn cline_pre_tool_use_rewrites_single_command_and_fails_open() {
+        let dir = std::env::temp_dir().join(format!(
+            "rtok-hook-cline-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = cline_cfg(&dir);
+        let stdin = serde_json::to_vec(&serde_json::json!({
+            "hookName": "tool_call",
+            "taskId": "cline-1",
+            "workspaceRoots": ["/tmp"],
+            "tool_call": {"id": "tc-1", "name": "run_commands", "input": {"commands": ["git status"]}}
+        }))
+        .unwrap();
+        let out = dispatch_owned_strict(&stdin, "PreToolUse", &cfg).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let cmd = v["overrideInput"]["commands"][0].as_str().unwrap();
+        assert!(cmd.starts_with("rtok run"), "{v}");
+
+        for bad in [b"not-json".as_slice(), b"".as_slice()] {
+            let mut out = Vec::new();
+            run("PreToolUse", bad, &mut out, &cfg);
+            assert_eq!(out, b"{}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// T45.4: `core.session_env` resolves the session when stdin has none.
@@ -1155,5 +1413,78 @@ mod tests {
             "AfterMCPExecution alone must not record a Measurement"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    struct PanicsOnPostTool;
+    impl Plugin for PanicsOnPostTool {
+        fn manifest(&self) -> Manifest {
+            Manifest {
+                id: "t204-panics",
+                surfaces: &[Surface::Hook],
+                default_on: true,
+            }
+        }
+        fn dashboard_page(&self) -> DashboardPage {
+            DashboardPage::new("t204-panics", "T204 test fixture.", true)
+        }
+        fn post_tool(&self, _ev: &PostToolUse, _cx: &Ctx) -> Option<String> {
+            panic!("boom");
+        }
+    }
+
+    struct SurvivesPostTool;
+    impl Plugin for SurvivesPostTool {
+        fn manifest(&self) -> Manifest {
+            Manifest {
+                id: "t204-survives",
+                surfaces: &[Surface::Hook],
+                default_on: true,
+            }
+        }
+        fn dashboard_page(&self) -> DashboardPage {
+            DashboardPage::new("t204-survives", "T204 test fixture.", true)
+        }
+        fn post_tool(&self, _ev: &PostToolUse, _cx: &Ctx) -> Option<String> {
+            Some("good context".into())
+        }
+    }
+
+    /// T204: a plugin that panics in `post_tool` must not take the rest of the dispatch down
+    /// with it — the surviving plugin's context still reaches stdout — and its panic must land
+    /// as one `level = "error"` row in the `logs` table naming the plugin, not vanish silently.
+    #[test]
+    fn a_panicking_plugin_is_logged_and_the_rest_survives() {
+        let cx = Runtime::in_memory("t204-panic").unwrap();
+        let registry = Registry::from_plugins(
+            vec![Box::new(PanicsOnPostTool), Box::new(SurvivesPostTool)],
+            &cx.config,
+        );
+        let input: HookInput =
+            serde_json::from_str(include_str!("../../tests/fixtures/hooks/post_tool.json"))
+                .unwrap();
+
+        let out = post_tool(&input, &cx, &registry);
+
+        let ctx = out
+            .hook_specific_output
+            .as_ref()
+            .and_then(|h| h.additional_context.as_deref())
+            .unwrap_or("");
+        assert_eq!(ctx, "good context", "the surviving plugin's output {out:?}");
+        assert!(
+            !ctx.contains("boom"),
+            "the panic payload must not leak into stdout"
+        );
+
+        assert_eq!(
+            cx.store.count_logs("error", "t204-panics").unwrap(),
+            1,
+            "the panic must be logged exactly once, naming the plugin"
+        );
+        assert_eq!(
+            cx.store.count_logs("error", "t204-survives").unwrap(),
+            0,
+            "the plugin that did not panic must not be logged"
+        );
     }
 }

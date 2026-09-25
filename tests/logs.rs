@@ -257,3 +257,33 @@ fn tspin_auto_and_off_keep_the_builtin_rendering_on_a_pipe() {
         assert_eq!(out.lines().next(), Some("1 live-4"), "{mode}: {out}");
     }
 }
+
+/// T235.3: a `logs watch` whose parent exits stops on its own. `sh` backgrounds the watch
+/// (stdout to `/dev/null`, so no failing write can end it) and exits at once; the watch,
+/// reparented, must be gone within a few polls.
+#[cfg(unix)]
+#[test]
+fn watch_exits_once_its_parent_is_gone() {
+    let home = home("orphan");
+    let out = Command::new("sh")
+        .args([
+            "-c",
+            "\"$0\" logs watch >/dev/null 2>&1 </dev/null & echo $!",
+            bin(),
+        ])
+        .env("RTOK_HOME", &home)
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    let pid: i32 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while rtok_sys::process_alive(pid) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let alive = rtok_sys::process_alive(pid);
+    if alive {
+        rtok_sys::process_kill(pid);
+    }
+    assert!(!alive, "logs watch {pid} outlived its parent");
+    let _ = fs::remove_dir_all(&home);
+}

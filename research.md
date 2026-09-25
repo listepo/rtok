@@ -31,6 +31,7 @@ Estimator: 4 chars/token (heuristic). Usage counters are real API numbers.
 | Cache | read 1,367 M, creation 26.7 M, uncached input 42 K → 98.1 % hit rate |
 | Median final context | 167 K tokens per session |
 | rtk-wrapped commands visible in transcripts | 3 of 3,658 (the PreToolUse rewrite happens after the transcript records the call, so this under-counts) |
+| Replay bench: saving over a session mix (T241, 2026-09-24, `cargo test --test replay_bench -- --nocapture`) | `tests/fixtures/replay/session.jsonl`: 30 hand-written events (23 Bash cargo/git/grep/ls/npm/pytest-style + 5 MCP `read` + 2 `search`), tool-mix shares from `rtok stats --since 7d --json` on this machine (129 sessions, 21,046 tool_use calls: Bash 64.7 %, Read 7.3 %; MCP share raised to cover `read`'s `stripped`/`dedup` paths — see the fixture's header comment). Replayed through the real hook/run/mcp surfaces: `cmd` 23 calls, 23,075 → 3,648 est. tokens (**84.2 %**), `read` 5 calls, 2,482 → 1,183 (**52.3 %**), total 25,557 → 4,831 (**81.1 %**) — `tests/replay_bench.rs`'s floor is 76 %. `search` records no row (`src/plugins/read/search.rs` never calls `cx.record`). Caveat: `emit_filtered`'s `[rtok <id> · N lines · expand …]` trailer (`src/plugins/cmd/run.rs`) is not counted in `after_bytes`/`est_after`, so `cmd`'s (and the total's) share is an upper bound until that bug is fixed. Mutation check: disabling `[plugins.cmd]` drops the total to `read`-only 52.3 %, below the floor, confirming the floor is load-bearing. Rerun 2026-09-25 on main (0bb62f4f): `cmd` 23,075 → 3,994 (**82.7 %**), `read` unchanged, total 25,557 → 5,177 (**79.7 %**) — still above the floor. |
 
 ### `guard` read-only stems (T57.1, 2026-09-18)
 
@@ -703,6 +704,50 @@ compared; the gate is **do not enable**. `nudges` stays **off** by default
 fixture contest and stays inside the inject budget — the same honesty bar as the offline
 T9.2 A/B zeros.
 
+#### T134: does `updatedToolOutput` replace native tool output in the CLI? (2026-09-25)
+
+Gate for I-91 (§17.2). Claude Code 2.1.267 (`/opt/homebrew/bin/claude`). Docs disagree:
+`code.claude.com/docs/en/hooks` (CLI shell-command hook reference, fetched today) still
+lists only `additionalContext`, `systemMessage`, `terminalSequence` for `PostToolUse`
+`hookSpecificOutput` — no `updatedToolOutput`. `code.claude.com/docs/en/agent-sdk/hooks`
+(Agent SDK — hosts built on the Python/TypeScript SDK) says: "For `PostToolUse` hooks, you
+can set `additionalContext` to append information to the tool result. To replace the
+tool's output before Claude sees it, set `updatedToolOutput`, which works for any tool in
+both SDKs. The older `updatedMCPToolOutput` field replaces MCP tool output only and is
+deprecated." `anthropics/claude-code#32105` asked for exactly this on built-in tools
+("Extend `updatedMCPToolOutput` to work for all tools … or add a parallel
+`updatedToolOutput` field") and is now closed with no resolution comment visible from a
+page fetch of the issue.
+
+Planned probe: a scratch `PostToolUse` command hook (matcher `Read|Bash|mcp__.*`,
+`/private/tmp/.../scratchpad/t134/hook.sh`) returning
+`{"hookSpecificOutput":{"hookEventName":"PostToolUse","updatedToolOutput":"PROBE-REPLACED-<tool>"}}`,
+run under `claude -p … --settings <scratch>/settings.json --setting-sources ""
+--mcp-config <scratch>/mcp.json --strict-mcp-config` against a Bash `echo`, a `Read` of a
+scratch file, and the `rtok mcp` server's `tree` tool. Blocked before any transcript:
+
+```
+claude -p "say hi" --model haiku --output-format json
+# is_error true; result: "Failed to authenticate: OAuth session expired and could not be
+# refreshed" (usage all zeros, total_cost_usd 0)
+```
+
+Reproduced with zero custom flags (no hook, no `--settings`, no `--mcp-config`), so it is
+not this probe's setup — a `claude -p` child process gets no live model turn from inside
+the agent's sandboxed shell, the same failure already on record for the T53.1 live
+A/B (line ~691 above, 2026-09-18). A `--permission-mode bypassPermissions` variant was
+separately refused by the auto-mode classifier ("Create Unsafe Agents") before the auth
+call was even reached — nested `claude` invocations are not available from inside a CCD
+session, by design or not.
+
+**No transcript, so I-91 does not close today.** The only evidence is the doc split above:
+the CLI's own `PostToolUse` JSON schema omits `updatedToolOutput` while the Agent SDK page
+documents it as an Agent-SDK-level construct ("in both SDKs" reads as Python/TypeScript
+Agent SDK, not the `claude` CLI's command-hook schema). That is consistent with the
+standing rtok rule (line 593) but does not prove it for the CLI surface. Re-run needs a
+`claude -p` invocation outside this sandbox — a real terminal or CI runner with its own
+OAuth session — to get an actual Bash/Read/MCP transcript.
+
 ## 4. Comparison matrix
 
 Stars/language/license from the GitHub API on 2026-09-01. "Claimed" is the vendor's number; "Measured" is yours or an independent source.
@@ -1127,7 +1172,7 @@ numbers are the useful ones. rtok's own plant-and-recall numbers are the T69.3 t
 | Consolidation: summarise + decay + prune + extract (Ollama; OpenAI / Anthropic / keyword fallback) | no LLM (P28 is Later) | the mechanical half only | T69.1 / T69.2; I-73 |
 | Embedding chain Ollama → OpenAI → Voyage → keyword | hash-embed local or `openai` (P29) | — | I-75 |
 | `export --format obsidian` | JSONL import (T6.3); JSONL export is the memory card "`rtok memory export`" | markdown | I-74 |
-| MCP wiring: Claude Code, Cursor, Codex, OpenCode, Antigravity, Windsurf, VS Code Copilot | 12 hosts in `src/agents/`; VS Code is T48.8; Windsurf / Antigravity on request | — | — |
+| MCP wiring: Claude Code, Cursor, Codex, OpenCode, Antigravity, Windsurf, VS Code Copilot | 12 hosts in `src/agents/`; VS Code is T48.8; Antigravity is T91 (plugin MCP and skills); Windsurf on request | — | — |
 | Security: loopback + bearer on network surfaces; recalled facts fenced, never in the system prompt | `rtok mcp` is stdio; recall is `id title` lines in the hook's `additionalContext`, bodies only via `mem_get` | — | — |
 | Go library in three lines | `rtok-plugin-sdk` (D25) | — | — |
 
@@ -1395,7 +1440,7 @@ Caveats: path-level match (no range or sha), parent reads counted over the whole
 | `fork` sub-agent inherits conversation, model and prompt cache | https://code.claude.com/docs/en/sub-agents , https://code.claude.com/docs/en/prompt-caching | documented — runs on the parent's model, so it is not a cheap-Haiku path |
 | Agent frontmatter: `model`, `tools`, `skills`, `memory`, `hooks`, `mcpServers`, `initialPrompt` | https://code.claude.com/docs/en/sub-agents | documented |
 | Haiku 4.5: cache read 0.1× input, minimum cacheable prefix 4,096 tokens, TTL 5 min / 1 h | https://platform.claude.com/docs/en/build-with-claude/prompt-caching | documented |
-| `PostToolUse` `updatedToolOutput` replaces any tool's output | Agent SDK hooks page | **unverified for CLI command hooks**; contradicts a standing rtok rule → I-91 |
+| `PostToolUse` `updatedToolOutput` replaces any tool's output | Agent SDK hooks page | **unverified for CLI command hooks**; contradicts a standing rtok rule → I-91 (T134, 2026-09-25: doc split confirmed — field absent from the CLI hooks page; live probe blocked by sandbox auth, see §3) |
 
 ### 17.3 What follows for rtok
 
@@ -1422,6 +1467,21 @@ Creator question: worktrees pile up, nobody knows whose they are, names are rand
 
 Admin data is `$GIT_DIR/worktrees/<id>/` (`gitdir`, `HEAD`, `index`, `locked`); the worktree holds a `.git` *file*. No owner, description, TTL or size exists. Ignored files are never shared or cleaned. Free-text metadata fits in `git worktree lock --reason` (shown by `list --porcelain`; non-ASCII is C-quoted there, so keep it ASCII) or `git config --worktree` (needs `extensions.worktreeConfig`). `rm -rf` leaves the admin entry until `gc.worktreePruneExpire` (3 months) — and forever when the worktree was locked: checked 2026-09-22 with git 2.54, a locked worktree whose directory was deleted is not even reported `prunable`. Meanwhile its branch counts as checked out. `git worktree remove <path>` on the missing directory (after `unlock`) drops that single record → T153. `worktree.useRelativePaths` (git ≥ 2.48) would have kept `graph-perf` linked, but sets `extensions.relativeWorktrees`, which older git and possibly libgit2/gix-based tools refuse → T157.
 
+#### Relative worktree links probe (2026-09-24, T157)
+
+Scratch repositories only. `git config worktree.useRelativePaths true` followed by `git worktree add ../wt` writes `gitdir: ../repo/.git/worktrees/wt` in `wt/.git` and a relative back-link. It also sets `extensions.relativeWorktrees = true` and raises `core.repositoryformatversion` to 1.
+
+| Reader | Version | Opens the worktree | How checked |
+| --- | --- | --- | --- |
+| git CLI | 2.54.0 | yes | `git status`, `git worktree list` |
+| cargo (VCS dirty check) | 1.97.1 | yes | `cargo package --list` inside the worktree reports the one uncommitted file |
+| gh | 2.101.0 | yes | `gh repo view --json name` inside the worktree resolves `listepo/rtok` |
+| lazygit, delta, editors (VS Code, Zed, Cursor) | — | not tested | interactive; lazygit shells out to the git CLI, delta never opens a repository |
+
+Move test: the parent directory holding `repo/` and `wt/` was moved with `mv a b`. With relative links, `git -C b/wt status` and `git -C b/repo worktree list` work unchanged, and `git worktree repair` is not needed. The absolute-link control breaks on the same move: `fatal: not a git repository: (null)`, and the worktree is listed as `prunable`. Renaming only one side (the repository or the worktree) breaks the relative link too, as expected.
+
+Conclusion: every non-interactive reader on this machine opens a relative-link worktree. The editors are untested. The setting stays opt-in until they are checked: the T157 Check asks for "every reader passes" before the setting is added to the `worktrees` skill and AGENTS.md.
+
 ### 18.3 Hosts (vendor docs, fetched 2026-09-21, not re-verified by running each host)
 
 | Host | Location | Naming | Automatic cleanup |
@@ -1440,6 +1500,24 @@ No host accounts for build output. Claude Code exposes `WorktreeCreate`/`Worktre
 - Squash-aware "merged" needs no GitHub call: `git merge-tree --write-tree <base> <branch>` equals `<base>^{tree}` when merging the branch would change nothing.
 - A shared `CARGO_TARGET_DIR` is rejected: ~5 parallel agents would serialize on the build lock. `sccache` does not cache incremental builds. Reflink seeding (`reflink-copy`) only lowers the cost at creation; cleaning idle caches removes it → measure before adopting (T156).
 - First data point for T156 (2026-09-22, APFS, `cp -c -R <other-worktree>/target <new-worktree>/target`, disk delta from `df -k`, not `du`): an 8.1 GB `target/` cloned in 8.8 s for 17 MiB of physical disk; the first `cargo nextest run --lib --test worktree` in the seeded worktree (T150) rebuilt only the four workspace crates, 24 s, with no dependency recompiled. A cold build was not run for comparison — the disk had under 8 GiB free, which is why the clone was tried at all.
+- Second data point for T156 (2026-09-25, part 2 of the card): two fresh worktrees of `origin/main`, `target/` removed in both; the seeded one got `cp -c -R ../rtok-t246.5b/target target && rm -rf target/tmp` (a 14.8 GB `target/` left by two `just check` runs). Then every recipe of `just check` ran in order, timed one by one, continuing past a failure. Disk: used blocks of `df -k /System/Volumes/Data` — `/` is the sealed system snapshot and never moves (a first run measured `/` and read 0 for both). Mac15,9, 16 CPUs, load average 16–19 throughout from other agents' builds, so seconds are rough. Scratch script, not committed.
+
+  | | cold | seeded |
+  | --- | ---: | ---: |
+  | clone (`cp -c -R`) | — | 15 s, +34 MiB |
+  | `fmt-check` | 1 s | 1 s |
+  | `lint` (two clippy runs) | 29 s | 22 s |
+  | `test`: build (`Finished test` profile) | 43 s | 27 s |
+  | `test`: run (nextest `Summary`, 1,782 tests) | 81 s | 81 s |
+  | `test`: `dunnage run target` (T236), recipe time minus build and run | ≈ 6 s | ≈ 215 s |
+  | `build-min` | 24 s | 23 s |
+  | `dup`, `js`, `python` | 1 s | 1 s |
+  | **`just check` total** | **185 s** | **371 s** (+15 s clone) |
+  | `Compiling`/`Checking` lines | 818 | 12 (the six workspace crates) |
+  | data-volume used, delta over the run | +6.28 GiB | +3.35 GiB |
+  | `target/` logical size at the end | 6.4 GiB | 10.9 GiB |
+
+  Seeding worked as the first data point said — no dependency rebuilt — but saved only ≈ 23 s of compile here: on 16 cores the dependency graph builds fast, and the workspace crates rebuild at a new path either way. The loss came from T236's `dunnage` pass after `test`: in the seeded tree it compressed 13,539 files (8.1 GB planned, 5.36 GB applied) and deduplicated 15,503 (433 MB), against 76 files in the cold tree. Rewriting a cloned file un-shares it from the source, which is the likely source of the seeded tree's +3.35 GiB against +34 MiB right after the clone. As `just check` stands, seeding is slower (371 s against 185 s) and saves under half the disk. Seeding without that pass was not measured, so no number is claimed for it. No `reflink-copy` from these numbers; the conflict is parked as I-99 in `ideas.md`.
 
 ### 18.5 What follows for rtok
 
@@ -1620,3 +1698,27 @@ Never junk, on any host: settings/config files, credentials and auth tokens, ses
 | gemini | not documented — `~/.gemini/tmp/<hash>/` exists but holds checkpoints/shell history, which is session history, not junk | not documented | not documented | documented: https://geminicli.com/docs/cli/settings/, https://geminicli.com/docs/resources/troubleshooting/ | 2026-09-24 |
 | codewhale | not documented | not documented — `audit.log` is tied to session reconciliation, not a pure rotating log | `~/.codewhale/update-check.json` (single file; caches the update-check result, reused for `check_interval_hours`) | source: https://github.com/Hmbown/Codewhale/blob/main/docs/CONFIGURATION.md | 2026-09-24 |
 
+## 23. Subagent-start context injection per host (T262.2) (2026-09-24)
+
+Question: which hosts let a hook add context to a sub-agent before it runs, the way Claude Code's `SubagentStart` returns `hookSpecificOutput.additionalContext` (the T130 spawn brief)? Checked from each host's hook docs or source; the two yes rows re-read first-hand.
+
+| Host | Verdict | Event, output | Source |
+| --- | --- | --- | --- |
+| Claude Code | yes | `SubagentStart`, `additionalContext` | wired in T130.2 |
+| VS Code Copilot Chat | yes | runs `plugins/claude` hooks as-is | `src/agents/vscode/mod.rs` |
+| Codex | yes | `SubagentStart`; plain stdout or hook-specific context becomes developer context for the subagent | https://learn.chatgpt.com/docs/hooks |
+| Copilot CLI | yes | `subagentStart` (matcher on agent name), `additionalContext` prepended to the subagent's prompt; the built-in general-purpose agent emits no event | https://docs.github.com/en/copilot/reference/hooks-reference |
+| Kimi | event-only | `SubagentStart` fires; the result of `runner.trigger` is discarded | MoonshotAI/kimi-code `packages/agent-core-v2/src/features/externalHooks/session/sessionExternalHooksService.ts` |
+| Cursor | event-only | `subagentStart` output has only `permission` / `user_message` | https://cursor.com/docs/hooks |
+| Grok | event-only (weak) | `SubagentStart` / `SubagentStop` fire; no output schema documented | https://docs.x.ai/build/features/hooks |
+| CodeWhale | event-only | `subagent_spawn` is an observer event; result discarded | `src/agents/codewhale/README.md` |
+| Gemini CLI | no | no subagent event (`BeforeAgent` / `AfterAgent` are the parent turn) | https://geminicli.com/docs/hooks/reference/ |
+| ZCode | no | no subagent event | https://zcode.z.ai/en/docs/hooks |
+| OpenCode, Kilo | no | plugin events have no subagent spawn | https://opencode.ai/docs/plugins |
+| Pi, omp | no | no hookable spawn; subagents are an extension of their own | badlogic/pi-mono `docs/extensions.md` |
+| Windsurf | no | no subagent event among the documented hooks | https://docs.devin.ai/desktop/cascade/hooks |
+| Cline | no | `new_task` hands off in the same conversation, no child agent | https://docs.cline.bot/customization/hooks |
+| Antigravity | no (weak) | no hook on `invoke_subagent` | https://antigravity.google/docs/hooks/ |
+| MiMo | no | no hook system | mimo docs |
+
+Follow-ups: T262.3 (Codex) and T262.4 (Copilot CLI). Grok and Antigravity rest on missing docs, so a docs change there is worth a recheck. Found on the way: Copilot CLI `subagentStop` accepts `modifiedResponse`, which replaces the subagent's answer to the parent (idea I-98).

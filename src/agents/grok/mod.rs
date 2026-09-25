@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use rtok_agent_sdk::{KETCH_INSTALL, NO_CHANGES};
+use serde_json::{Value, json};
 use toml_edit::{DocumentMut, Table, value};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply, rtok_command};
@@ -191,10 +192,22 @@ pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
     if !apply(cfg).yes {
         return Ok(NO_CHANGES.into());
     }
+    if let Some(note) = plugin_offer_windows_note(cfg!(windows)) {
+        return Ok(note.into());
+    }
     Ok(format!(
         "offer plugins/grok → grok plugin install {} --trust {KETCH_INSTALL}",
         super::plugin_src("plugins/grok").display()
     ))
+}
+
+/// T250.4: the plugin's hooks are a POSIX shell one-liner; Grok runs hooks through PowerShell
+/// on Windows, where that does not run, so install skips the offer there instead of printing
+/// a command for a plugin whose hooks would never fire.
+fn plugin_offer_windows_note(windows: bool) -> Option<&'static str> {
+    windows.then_some(
+        "skip plugins/grok (macOS/Linux only: its hooks are POSIX shell; Grok imports rtok's Claude hooks — rtok agents install claude)",
+    )
 }
 
 /// `[mcp_servers.rtok]` in `config.toml` — Grok's documented MCP shape. Written only while
@@ -229,10 +242,37 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
     Ok(report)
 }
 
-/// Take back the `rtok` slot; a missing slot is already the goal.
+/// The `[mcp_servers.rtok]` table [`register_mcp`] writes, as JSON: the shape
+/// [`rtok_agent_sdk::judge_owned`] compares a live table against (T246.5). `cmd` only stands in
+/// for the comparison — `judge_owned` treats every rtok binary string as the same one, so the
+/// literal command never matters.
+fn mcp_entry(cmd: &str) -> Value {
+    json!({"command": cmd, "args": ["mcp"]})
+}
+
+/// Take back the `rtok` slot only as far as rtok wrote it: [`rtok_agent_sdk::judge_owned`]
+/// (T246, T246.5) leaves a slot that does not run the rtok binary, or one the user changed
+/// from [`mcp_entry`] unless `--yes` says remove. A missing slot is already the goal.
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     let path = &cfg.setup.grok.config_path;
     let mut doc = load(path)?;
+    let have = doc
+        .get("mcp_servers")
+        .and_then(|s| s.get("rtok"))
+        .map(toml_item_to_json);
+    let Some(have) = have else {
+        return Ok(NO_CHANGES.into());
+    };
+    let at = format!("mcp_servers.rtok in {}", path.display());
+    if let Some(leave) = rtok_agent_sdk::judge_owned(
+        &apply(cfg),
+        &at,
+        &have,
+        &mcp_entry("rtok"),
+        super::is_rtok_bin,
+    ) {
+        return Ok(leave);
+    }
     let Some(servers) = doc.get_mut("mcp_servers").and_then(|s| s.as_table_mut()) else {
         return Ok(NO_CHANGES.into());
     };
@@ -241,6 +281,38 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     }
     rtok_agent_sdk::write(&apply(cfg), path, &doc.to_string(), "- mcp_servers.rtok")?;
     Ok("- mcp_servers.rtok".into())
+}
+
+/// `item` as a [`serde_json::Value`], so a TOML entry can run through
+/// [`rtok_agent_sdk::judge_owned`] the same way the JSON hosts' entries do (T246.5). Covers the
+/// shapes an `[mcp_servers.rtok]` table can hold.
+fn toml_item_to_json(item: &toml_edit::Item) -> Value {
+    match item {
+        toml_edit::Item::None => Value::Null,
+        toml_edit::Item::Value(v) => toml_value_to_json(v),
+        toml_edit::Item::Table(t) => t
+            .iter()
+            .map(|(k, v)| (k.to_string(), toml_item_to_json(v)))
+            .collect(),
+        toml_edit::Item::ArrayOfTables(_) => Value::Null,
+    }
+}
+
+fn toml_value_to_json(v: &toml_edit::Value) -> Value {
+    match v {
+        toml_edit::Value::String(s) => Value::String(s.value().clone()),
+        toml_edit::Value::Integer(i) => Value::Number((*i.value()).into()),
+        toml_edit::Value::Float(f) => {
+            serde_json::Number::from_f64(*f.value()).map_or(Value::Null, Value::Number)
+        }
+        toml_edit::Value::Boolean(b) => Value::Bool(*b.value()),
+        toml_edit::Value::Datetime(d) => Value::String(d.value().to_string()),
+        toml_edit::Value::Array(a) => a.iter().map(toml_value_to_json).collect(),
+        toml_edit::Value::InlineTable(t) => t
+            .iter()
+            .map(|(k, v)| (k.to_string(), toml_value_to_json(v)))
+            .collect(),
+    }
 }
 
 fn load(path: &Path) -> Result<DocumentMut> {
@@ -271,6 +343,17 @@ mod tests {
         c
     }
 
+    /// T250.4: the decision is pure so both OSes are covered without a real Windows box.
+    #[test]
+    fn plugin_offer_windows_note_skips_only_on_windows() {
+        assert_eq!(plugin_offer_windows_note(false), None);
+        let note = plugin_offer_windows_note(true).unwrap();
+        assert!(note.contains("macOS/Linux only"), "{note}");
+        assert!(note.contains("rtok agents install claude"), "{note}");
+    }
+
+    // Windows skips the offer (T250.4); `plugin_offer_windows_note_skips_only_on_windows` covers it.
+    #[cfg(not(windows))]
     #[test]
     fn dry_run_offer_names_the_grok_plugin_command() {
         let dir = tmp("offer");

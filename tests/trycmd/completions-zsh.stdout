@@ -31,7 +31,7 @@ _rtok() {
         case $line[1] in
             (hook)
 _arguments "${_arguments_options[@]}" : /
-'--host=[Overlay /`/[hook/] host/` (/`claude/` | /`cursor/` | /`copilot/` | /`devin/`)]:HOST:_default' /
+'--host=[Overlay /`/[hook/] host/` (/`claude/` | /`cursor/` | /`copilot/` | /`devin/` | /`cline/`)]:HOST:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '(--host)--serve[Run the resident hook process /`rtok-hook/` talks to (T178, D32)]' /
 '-h[Print help]' /
@@ -799,7 +799,7 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 '--cmd=[Command family hint (/`git status/`, /`cargo test/`, …)]:CMD:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
-'--stdin[Read the payload from stdin (OpenCode /`tool.execute.after/`)]' /
+'--stdin[Read the payload from stdin (OpenCode /`tool[..]cute.after/`)]' /
 '--archive[Archive stdin and print the expand trailer (same path as /`run/`)]' /
 '-h[Print help]' /
 '--help[Print help]' /
@@ -933,6 +933,7 @@ _arguments "${_arguments_options[@]}" : /
 (get)
 _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON /`{key,value,source}/` instead of the bare value (T228)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 ':key:_default' /

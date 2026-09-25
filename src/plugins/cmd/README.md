@@ -13,9 +13,9 @@ Every Bash output archived raw, filtered for the model, measured.
 1. The PreToolUse hook rewrites `command` to `rtok run -- <command>` unless the command
    first word is in `never_wrap` (default `rtok`, `sudo`), or it contains a heredoc, `&`
    background, or `-i`/`--interactive`.
-2. `rtok run` executes via `$SHELL -lc`, keeps the exit code, and — when the shortening
-   dropped something — writes the raw output to `~/.rtok/archive/<id>` and an
-   `archive` row.
+2. `rtok run` executes via `$SHELL -c` (no login shell: the host already ran its profile),
+   keeps the exit code, and — when the shortening dropped something — writes the raw
+   output to `~/.rtok/archive/<id>` and an `archive` row.
 3. A per-family formatter (`cargo`, `git`, test runners, `ls`/`find`; measurement kind
    `formatter`) summarises the output. Other families go through the TOML rules in
    `rules/default.toml` (kind `rule`): head/tail/dedupe/drop, always keeping

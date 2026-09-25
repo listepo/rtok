@@ -171,6 +171,12 @@ pub fn user_home_from(home: Option<OsString>, userprofile: Option<OsString>) -> 
 /// `$RTOK_HOME`, else `<user home>/.rtok`. A `~` in `RTOK_HOME` (set from a JSON `env` block,
 /// where no shell expands it) is expanded: left literal, every store path hung off it resolved
 /// against the cwd as `./~/.rtok/…` (T169).
+///
+/// May return a path relative to the (unknown, to this function) cwd when `rtok_home` is itself
+/// relative, or when neither it nor `user_home` is given at all — [`home`] relies on exactly
+/// this to know when a resident would depend on the caller's cwd. `Config::home_dir` (T184) is
+/// the one that must never hand back a relative path; it post-processes this result instead of
+/// changing what this function returns.
 pub fn home_dir_from(rtok_home: Option<OsString>, user_home: Option<PathBuf>) -> PathBuf {
     let default = user_home.clone().unwrap_or_default().join(".rtok");
     match rtok_home {

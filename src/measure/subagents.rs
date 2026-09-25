@@ -56,12 +56,42 @@ pub struct Subagents {
     pub usage_output: u64,
     /// Split by `agentType` and `model` from the meta files (`unknown` / `-` when absent).
     pub by_type: Vec<SubagentRow>,
+    /// T131: the same read/re-read/share/input-token split, by whether this sub-agent's
+    /// first user message carried the `SubagentStart` spawn brief (`has_spawn_brief`).
+    pub with_brief: BriefSplitRow,
+    pub without_brief: BriefSplitRow,
 }
 
 impl Subagents {
     fn is_empty(&self) -> bool {
         self.count == 0
     }
+}
+
+/// T131: one "spawned with/without a brief" split — read/re-read bytes, the re-read share,
+/// and raw input tokens, so a `SubagentStart` spawn brief's on/off difference in re-read
+/// share shows up next to T130's cost `Measurement` row (a saving is not real without one).
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BriefSplitRow {
+    pub count: u64,
+    pub read_bytes: u64,
+    pub reread_bytes: u64,
+    pub share_read: f64,
+    pub usage_input: u64,
+}
+
+/// T131: substring of `memory::handoff::INSTRUCTIONS` that marks a `SubagentStart` spawn
+/// brief. `measure` and `memory` live in the same crate (`web::model` already uses
+/// `measure::stats` unconditionally, so `measure` is always compiled), so this is a real
+/// constant, not a mirrored literal — but it still must stay a substring of `INSTRUCTIONS`;
+/// `handoff.rs`'s own test pins that so a reworded brief fails loud instead of silently
+/// zeroing the "with brief" split.
+pub const SPAWN_BRIEF_MARKER: &str = "Get the archived body with rtok expand";
+
+/// T131: does this sub-agent's first user-role message (`jsonl::Parsed::first_user_text`)
+/// carry the spawn brief's fixed instructions ([`SPAWN_BRIEF_MARKER`])?
+pub(crate) fn has_spawn_brief(first_user_text: &str) -> bool {
+    first_user_text.contains(SPAWN_BRIEF_MARKER)
 }
 
 /// What the walk needs from one parent transcript: its sidecar directory (the transcript
@@ -142,6 +172,13 @@ pub(crate) fn collect(parents: &[Parent], cutoff: SystemTime) -> Option<Subagent
                 continue;
             };
             out.count += 1;
+            let with_brief = parsed
+                .first_user_text
+                .as_deref()
+                .is_some_and(has_spawn_brief);
+            let mut agent_read_bytes = 0u64;
+            let mut agent_reread_bytes = 0u64;
+            let mut agent_usage_input = 0u64;
             let mut read_paths: Vec<String> = Vec::new();
             let mut id_name: BTreeMap<&str, &str> = BTreeMap::new();
             let mut id_path: BTreeMap<&str, &str> = BTreeMap::new();
@@ -165,6 +202,7 @@ pub(crate) fn collect(parents: &[Parent], cutoff: SystemTime) -> Option<Subagent
                 }
                 out.read_bytes += bytes;
                 row.read_bytes += bytes;
+                agent_read_bytes += bytes;
                 let Some(path) = id_path.get(r.tool_use_id.as_str()) else {
                     continue;
                 };
@@ -174,11 +212,13 @@ pub(crate) fn collect(parents: &[Parent], cutoff: SystemTime) -> Option<Subagent
                     out.reread_bytes += bytes;
                     out.reread_calls += 1;
                     row.reread_bytes += bytes;
+                    agent_reread_bytes += bytes;
                 } else if sibling_paths.iter().any(|p| same_path(p, path)) {
                     out.read_sibling += bytes;
                     out.reread_bytes += bytes;
                     out.reread_calls += 1;
                     row.reread_bytes += bytes;
+                    agent_reread_bytes += bytes;
                 }
             }
             for u in &parsed.usages {
@@ -186,7 +226,17 @@ pub(crate) fn collect(parents: &[Parent], cutoff: SystemTime) -> Option<Subagent
                 out.usage_cache_read += u64::from(u.cache_read_input_tokens);
                 out.usage_cache_write += u64::from(u.cache_creation_input_tokens);
                 out.usage_output += u64::from(u.output_tokens);
+                agent_usage_input += u64::from(u.input_tokens);
             }
+            let split = if with_brief {
+                &mut out.with_brief
+            } else {
+                &mut out.without_brief
+            };
+            split.count += 1;
+            split.read_bytes += agent_read_bytes;
+            split.reread_bytes += agent_reread_bytes;
+            split.usage_input += agent_usage_input;
             sibling_paths.extend(read_paths);
         }
     }
@@ -196,6 +246,9 @@ pub(crate) fn collect(parents: &[Parent], cutoff: SystemTime) -> Option<Subagent
     out.share_read = pct(out.reread_bytes, out.read_bytes);
     out.share_results = pct(out.reread_bytes, out.result_bytes);
     out.share_tree = pct(out.reread_bytes, out.result_bytes + out.parent_result_bytes);
+    out.with_brief.share_read = pct(out.with_brief.reread_bytes, out.with_brief.read_bytes);
+    out.without_brief.share_read =
+        pct(out.without_brief.reread_bytes, out.without_brief.read_bytes);
     out.by_type = by_type
         .into_iter()
         .map(|((agent_type, model), mut row)| {
@@ -379,6 +432,112 @@ mod tests {
 
         assert!(is_subagent(&subs.join("agent-1.jsonl")));
         assert!(!is_subagent(&dir.join("sess.jsonl")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T131: one sub-agent spawned with a `SubagentStart` brief (its first user message
+    /// carries `memory::handoff`'s fixed instructions), one spawned plain — the split must
+    /// keep each agent's read/re-read bytes, share, and input tokens in its own bucket.
+    #[test]
+    fn briefed_and_plain_subagents_split_the_reread_share() {
+        let dir = crate::testutil::tmp_dir("t131-brief-split");
+        let subs = dir.join("sess").join("subagents");
+        std::fs::create_dir_all(&subs).unwrap();
+        // Parent reads p.rs, then spawns t1 (briefed) and t2 (plain).
+        let parent: Vec<Value> = vec![
+            json!({"type":"user","message":{"role":"user","content":"go"}}),
+            json!({"type":"assistant","message":{"role":"assistant","content":[
+                {"type":"tool_use","id":"t0","name":"Read","input":{"file_path":"p.rs"}},
+                {"type":"tool_use","id":"t1","name":"Agent","input":{"prompt":"one"}},
+                {"type":"tool_use","id":"t2","name":"Agent","input":{"prompt":"two"}}]}}),
+            json!({"type":"user","message":{"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"t0","content":"AAAA"},
+                {"type":"tool_result","tool_use_id":"t1","content":""},
+                {"type":"tool_result","tool_use_id":"t2","content":""}]}}),
+        ];
+        std::fs::write(
+            dir.join("sess.jsonl"),
+            parent
+                .iter()
+                .map(|v| line(v.clone()))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        // Briefed (t1): first user message carries the spawn brief's fixed instructions,
+        // re-reads p.rs (4 B, parent overlap) and reads a fresh q.rs (6 B).
+        let briefed: Vec<Value> = vec![
+            json!({"type":"user","message":{"role":"user","content":
+                format!("p.rs — rtok expand abc123\n{SPAWN_BRIEF_MARKER} <id>; answer with path:line citations.")}}),
+            json!({"type":"assistant","message":{"role":"assistant","content":[
+                {"type":"tool_use","id":"u1","name":"Read","input":{"file_path":"p.rs"}},
+                {"type":"tool_use","id":"u2","name":"Read","input":{"file_path":"q.rs"}}],
+                "usage":{"input_tokens":5}}}),
+            json!({"type":"user","message":{"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"u1","content":"AAAA"},
+                {"type":"tool_result","tool_use_id":"u2","content":"QQQQQQ"}]}}),
+        ];
+        // Plain (t2): an ordinary first user message, reads a fresh r.rs (3 B) — no overlap.
+        let plain: Vec<Value> = vec![
+            json!({"type":"user","message":{"role":"user","content":"go"}}),
+            json!({"type":"assistant","message":{"role":"assistant","content":[
+                {"type":"tool_use","id":"u1","name":"Read","input":{"file_path":"r.rs"}}],
+                "usage":{"input_tokens":2}}}),
+            json!({"type":"user","message":{"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"u1","content":"RRR"}]}}),
+        ];
+        for (name, lines) in [("agent-1", &briefed), ("agent-2", &plain)] {
+            std::fs::write(
+                subs.join(format!("{name}.jsonl")),
+                lines
+                    .iter()
+                    .map(|v| line(v.clone()))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            subs.join("agent-1.meta.json"),
+            r#"{"agentType":"general-purpose","toolUseId":"t1"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            subs.join("agent-2.meta.json"),
+            r#"{"agentType":"general-purpose","toolUseId":"t2"}"#,
+        )
+        .unwrap();
+
+        let parsed = jsonl::parse_path(&dir.join("sess.jsonl")).unwrap();
+        let parents = [Parent::new(&dir.join("sess.jsonl"), &parsed)];
+        let out = collect(&parents, SystemTime::UNIX_EPOCH).unwrap();
+
+        assert_eq!(
+            (
+                out.with_brief.count,
+                out.with_brief.read_bytes,
+                out.with_brief.reread_bytes
+            ),
+            (1, 10, 4),
+            "{:?}",
+            out.with_brief
+        );
+        assert_eq!(out.with_brief.share_read, 100.0 * 4.0 / 10.0);
+        assert_eq!(out.with_brief.usage_input, 5);
+
+        assert_eq!(
+            (
+                out.without_brief.count,
+                out.without_brief.read_bytes,
+                out.without_brief.reread_bytes
+            ),
+            (1, 3, 0),
+            "{:?}",
+            out.without_brief
+        );
+        assert_eq!(out.without_brief.share_read, 0.0);
+        assert_eq!(out.without_brief.usage_input, 2);
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

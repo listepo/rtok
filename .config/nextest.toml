@@ -1,3 +1,41 @@
+# T255: every test runs with `HOME` (and `USERPROFILE` on Windows) under `target/test-home`, so
+# a path that slips past `Config` lands there instead of in this machine's `~/.claude` or
+# `~/.codex`. A setup script, not cargo's `[env]`, which would reach `cargo run` too. The tool
+# homes keep their real values so `rustup`, `rust-analyzer` and `mise where` still find the
+# toolchain; tests that commit pass their own git `user.*`. Each run starts from an empty home.
+experimental = ["setup-scripts"]
+
+[scripts.setup.test-home-unix]
+command = ['sh', '-c', '''
+h="$PWD/target/test-home" && rm -rf "$h" && mkdir -p "$h" && {
+  echo "HOME=$h"
+  echo "CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}"
+  echo "RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}"
+  echo "MISE_DATA_DIR=${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"
+  echo "MISE_CONFIG_DIR=${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}"
+  echo "MISE_STATE_DIR=${MISE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/mise}"
+} >> "$NEXTEST_ENV"
+''']
+
+# LF-only lines: `Add-Content` would end each with CRLF and the `\r` would stay in the value.
+[scripts.setup.test-home-windows]
+command = ['powershell', '-NoProfile', '-NonInteractive', '-Command', '''
+$h = Join-Path (Get-Location) "target\test-home"
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path $h
+New-Item -ItemType Directory -Force -Path $h | Out-Null
+$c = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
+$r = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $env:USERPROFILE ".rustup" }
+[IO.File]::AppendAllText($env:NEXTEST_ENV, "HOME=$h`nUSERPROFILE=$h`nCARGO_HOME=$c`nRUSTUP_HOME=$r`n")
+''']
+
+[[profile.default.scripts]]
+platform = { host = "cfg(unix)" }
+setup = "test-home-unix"
+
+[[profile.default.scripts]]
+platform = { host = "cfg(windows)" }
+setup = "test-home-windows"
+
 # Windows CI previously hung forever in `cargo nextest` after the wasm LNK stubs
 # landed (run 35225713659 job windows: nextest still in_progress after >2h;
 # earlier Windows jobs failed at link in ~5m and never reached the suite).
@@ -51,32 +89,3 @@ threads-required = "num-test-threads"
 [[profile.default.overrides]]
 filter = 'binary(cli_trycmd)'
 threads-required = "num-test-threads"
-
-# T82: tests that fail on `windows-latest`, skipped there by name so the CI `windows` job is
-# green and any other failure is a regression. Sources: ci run 35244082778 (2026-09-17, 22
-# failed / 3 timed out) and run 35576438155 (2026-09-21, the last 4 lines, after T93's stack
-# fix). Windows only — Linux and macOS select every test as before.
-# T83 fixes them family by family: delete a line when its tests pass, delete the override
-# when the list is empty. `--ignore-default-filter` runs them anyway.
-[[profile.default.overrides]]
-platform = 'cfg(windows)'
-default-filter = '''
-not (
-    (binary(otel) & test(=hooks_stay_fast_with_an_unreachable_endpoint))
-  | (binary(commands_e2e) & test(=run_long_output_then_expand_round_trips))
-  | (binary(agents_install) & test(/^(list_reports_installed_modules_per_host|setup_twice_takes_one_backup_and_says_already_installed)$/))
-  | (binary(agents_doc) & test(=agents_doc_table_matches_the_host_code))
-  | (binary(cli_trycmd) & test(=cli))
-  | (binary(opencode_plugin) & test(=dry_run_offers_the_plugin_and_writes_nothing))
-  | (binary(cursor_plugin) & test(/^(setup_cursor_dry_run_offers_plugin|setup_cursor_yes_links_plugin_without_mcp_json|setup_cursor_clears_leftover_mcp_when_plugin_already_linked)$/))
-  | (binary(pi_plugin) & test(/^(setup_pi_dry_run_offers_plugin|setup_pi_yes_links_remove_unlinks|pi_extension_unit_test_with_fake_rtok)$/))
-  | (binary(filter) & test(=opencode_plugin_unit_test_with_api_mock))
-  | test(/^plugins::cmd::run::tests::(one_arg_compound_command_runs_as_one_script|exit_3_is_preserved|printf_two_lines_exit_0_no_trailer|three_runs_stats_plugin_cmd_json_has_rows)$/)
-  | test(=plugins::cmd::formatters::tests::ten_families_and_aws_key_unredacted)
-  | test(=agents::claude::tests::desktop_writes_absolute_rtok_into_claude_desktop_config)
-  | test(=plugins::cmd::run::tests::identical_output_from_different_commands_dedups)
-  | test(=plugins::read::cache::tests::vfs_small_change_is_hunks_large_is_full_missing_archive_is_full)
-  | (binary(agent_remove) & test(=uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy))
-  | (binary(plugins_e2e) & test(=graph_session_start_map_off_by_default_and_on_when_capped))
-)
-'''

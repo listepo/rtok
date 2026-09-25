@@ -55,8 +55,10 @@ SUPPORTED: dict[str, GitCatalogHost] = {
 # host -> (reason, doc_url, date checked). The full table is in README.md.
 UNSUPPORTED: dict[str, tuple[str, str, str]] = {
     "antigravity": ("no marketplace: bundled/local install only", "https://antigravity.google/docs/plugins/", "2026-09-23"),
+    "cline": ("no marketplace: `cline plugin install <source>` installs straight from a git repo or local path (SDK/CLI/Kanban only, not the VS Code extension), no catalog file to publish", "https://docs.cline.bot/customization/plugins.md", "2026-09-24"),
     "copilot": ("git-hosted catalog possible, not wired in this repo yet", "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference", "2026-09-23"),
     "cursor": ("manual review via cursor.com/marketplace/publish", "https://cursor.com/docs/plugins", "2026-09-23"),
+    "gemini": ("no marketplace: `gemini extensions install <source>` links a git repo or local path directly, no catalog file to publish", "https://geminicli.com/docs/extensions/reference/", "2026-09-24"),
     "grok": ("catalog is the externally-owned xai-org/plugin-marketplace repo", "https://docs.x.ai/build/features/skills-plugins-marketplaces", "2026-09-23"),
     "kimi": ("git-hosted catalog possible, not wired in this repo yet", "https://www.kimi.com/code/docs/en/kimi-code-cli/customization/plugins.html", "2026-09-23"),
     "opencode": ("no marketplace: npm + community ecosystem page", "https://opencode.ai/docs/plugins/", "2026-09-23"),

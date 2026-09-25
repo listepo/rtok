@@ -8,6 +8,13 @@ use serde_json::Value;
 
 mod skill;
 
+/// T201: above this, `post_tool`'s sha256 + synchronous disk write (inside [`Ctx::put_archive`])
+/// would blow the hook's ≤ 10 ms budget on a large tool result — the `tests/latency.rs` 5 MB
+/// PostToolUse gate. Skipping the archive for a body this size just leaves the key uncached,
+/// so `pre_tool` can never deny with a pointer to an archive nothing wrote (lossless by
+/// omission, never by truncation).
+const ARCHIVE_CAP_BYTES: usize = 256 * 1024;
+
 pub struct Guard;
 
 impl Plugin for Guard {
@@ -72,8 +79,13 @@ impl Plugin for Guard {
         match cache_key(ev.tool_name, ev.tool_input, cx.agent_id()) {
             Some(key) => {
                 let body = payload(ev.tool_response);
-                let id = cx.put_archive(&body).ok()?;
-                let _ = cx.put_read_cache(&key, &id, Some(&id));
+                if body.len() <= ARCHIVE_CAP_BYTES {
+                    let id = cx.put_archive(&body).ok()?;
+                    let _ = cx.put_read_cache(&key, &id, Some(&id));
+                } else {
+                    // An earlier, smaller result under this key must not answer the repeat.
+                    let _ = cx.clear_read_cache(&key);
+                }
             }
             // A mutating Bash, Edit or Write can change what any earlier command printed
             // or any earlier Read returned. The guard owns its keys (T55.8): a mutating
@@ -572,6 +584,44 @@ mod tests {
         assert!(cx.store.measurement_count("guard").unwrap() >= 1);
         let rows = cx.store.list_measurements("guard").unwrap();
         assert!(rows.iter().any(|r| r.before_bytes > 0), "{rows:?}");
+    }
+
+    /// T201: a body over `ARCHIVE_CAP_BYTES` is never archived, so the key stays uncached —
+    /// the repeat must be allowed, not denied with a pointer nothing wrote.
+    #[test]
+    fn post_tool_over_cap_skips_archive_and_the_repeat_is_allowed() {
+        let cx = setup();
+        let g = Guard;
+        let path = json!({"file_path": "/Users/dev/proj/src/big.rs"});
+        let read = PreToolUse {
+            tool_name: "Read",
+            tool_input: &path,
+        };
+        assert!(g.pre_tool(&read, &Ctx::new(&cx)).is_none());
+        // A small first result is cached; the file then grows past the cap.
+        let small = json!({"content": "fn main() {}"});
+        let post_small = PostToolUse {
+            tool_name: "Read",
+            tool_input: &path,
+            tool_response: &small,
+        };
+        assert!(g.post_tool(&post_small, &Ctx::new(&cx)).is_none());
+        assert!(
+            g.pre_tool(&read, &Ctx::new(&cx)).is_some(),
+            "small body cached"
+        );
+        let big = "x".repeat(ARCHIVE_CAP_BYTES + 1);
+        let resp = json!({"content": big});
+        let post = PostToolUse {
+            tool_name: "Read",
+            tool_input: &path,
+            tool_response: &resp,
+        };
+        assert!(g.post_tool(&post, &Ctx::new(&cx)).is_none());
+        // Neither the big body nor the stale small one answers the repeat.
+        assert!(g.pre_tool(&read, &Ctx::new(&cx)).is_none());
+        // Only the small body's deny was measured.
+        assert_eq!(cx.store.measurement_count("guard").unwrap(), 1);
     }
 
     #[test]
