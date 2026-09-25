@@ -613,19 +613,22 @@ fn duration_boundary(rest: &str, n: usize) -> bool {
         .is_none_or(|c| !c.is_ascii_alphanumeric())
 }
 
+/// Byte length of the `d:d:d` clock form (`1:2:3`).
+const CLOCK_LEN: usize = 5;
+
 fn duration_at(rest: &str) -> Option<(usize, ())> {
     let b = rest.as_bytes();
     // `d:d:d` (`1:2:3`). The old scan stopped at `:` and then required five
     // digits, so this form never matched.
-    if b.len() >= 5
+    if b.len() >= CLOCK_LEN
         && b[0].is_ascii_digit()
         && b[1] == b':'
         && b[2].is_ascii_digit()
         && b[3] == b':'
         && b[4].is_ascii_digit()
-        && duration_boundary(rest, 5)
+        && duration_boundary(rest, CLOCK_LEN)
     {
-        return Some((5, ()));
+        return Some((CLOCK_LEN, ()));
     }
     let mut i = 0usize;
     while i < b.len() && (b[i].is_ascii_digit() || b[i] == b'.') {
