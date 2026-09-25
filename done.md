@@ -34,6 +34,17 @@ Check: `cargo nextest run --lib` on `tui::`, `web::model`, `doctor::` and `testu
 
 Result: `path_fields_mut` returns `(key, &mut PathBuf)` pairs built by a local macro from the field path itself, and `validate::set_all_with` batches `config set` into one write. `config_file_in` now writes every absolute path of `config_in`; the guard test `testutil::every_config_path_stays_in_dir` fails on the old helper with `setup.claude.settings_path = /Users/<you>/.claude/settings.json`. `hermetic` is gone, and the six `doctor.rs` tests and three `web::model` tests (including `session_detail_filters_snapshot_calls_by_id`, whose snapshot ran on a bare `Config::default()`) use the shared helpers. Correction to the finding: `Config::default()` leaves `~/x` literal, so those tests read nonexistent `./~/…` paths under the crate root, not the real home; the real leaks were the `load_from` configs (TUI) and the partial `config_file_in`. The 156 `tui::`, `web::model`, `doctor::`, `testutil` and `config::` unit tests run in 0.78 s; `just check` green (1729 tests).
 
+### T265. rtok's own MCP entry without `type: "stdio"` still counts as rtok's
+
+Found 2026-09-25: the Claude plugin serves rtok's MCP, yet `claude_desktop_config.json` still holds `mcpServers.rtok`, so the desktop Code tab lists every rtok tool twice (`mcp__rtok__*` and `mcp__plugin_rtok_rtok__*`). `doctor` reports the duplicate (T171) and `rtok agents install claude` should strip it (T244), but the dry run printed `? mcpServers.rtok … (changed by you; remove asks)`: rtok writes `{"type":"stdio","command":…,"args":["mcp"]}`, and the file holds the entry without `type` (Claude.app rewrites the file). `rtok_agent_sdk::unregister_owned` compared the two literally, so without `--yes` or a terminal the duplicate stayed.
+
+Check: the new test passes; `rtok agents install claude --desktop --dry-run --no-restart` on this machine prints a removal instead of `? … changed by you`; `just check`.
+
+Result: `without_default_type` in `crates/rtok-agent-sdk/src/lib.rs` drops a top-level `"type": "stdio"` before the ownership comparison in `unregister_owned` and the no-change check in `register_server` (the same literal comparison: a re-install over a type-less entry now reports no change instead of rewriting it). Test `unregister_owned_matches_an_entry_missing_the_default_type`: a type-less entry is removed, one with changed `args` is still kept. The dry run on the real config now prints `- mcpServers.rtok`. `rtok-agent-sdk` 35/35, `agents_install` / `agent_remove` / `singleton` 32/32, workspace clippy clean.
+
+Status: done 2026-09-25
+Model: Claude Code / claude-opus-5-5 (code by claude-sonnet-5, reviewed)
+
 ### T263. `rtok mcp` takes its root from MCP roots and never walks `/` or `$HOME`
 
 Found 2026-09-24: Claude.app starts the `rtok mcp` from `claude_desktop_config.json` with cwd `/`. The graph tools use `current_dir()` as the index root, so under `auto_index` every `symbol` / `callers` / `impact` / `explore` walks the whole disk and times out (the store holds no `symbols` rows for `/`). `read` resolves relative paths against `/`, and `search` / `tree` without a path walk the disk too. Claude Code and Claude.app both advertise the MCP `roots` capability; rtok never asks for roots.

@@ -408,7 +408,7 @@ pub fn register_server(
 ) -> Result<String> {
     edit_json(apply, path, |root| {
         let servers = key.split('.').fold(root, |o, k| object_at(o, k));
-        if servers.get(name) == Some(&entry) {
+        if servers.get(name).map(without_default_type) == Some(without_default_type(&entry)) {
             return NO_CHANGES.into();
         }
         servers[name] = entry;
@@ -473,7 +473,8 @@ pub fn unregister_owned(
     if !runs_bin(&have, is_bin) {
         return Ok(format!("leave {at} (not rtok's; remove by hand)"));
     }
-    if rtok_as_one(&have, is_bin) != rtok_as_one(ours, is_bin)
+    if rtok_as_one(&without_default_type(&have), is_bin)
+        != rtok_as_one(&without_default_type(ours), is_bin)
         && let Some(leave) = keep_edited(apply, &at)
     {
         return Ok(leave);
@@ -497,6 +498,19 @@ fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
         Value::Array(a) => a.iter().any(|x| runs_bin(x, is_bin)),
         Value::Object(m) => m.values().any(|x| runs_bin(x, is_bin)),
         _ => false,
+    }
+}
+
+/// `v` without a top-level `"type": "stdio"`, the MCP default [`mcp_entry`] spells out:
+/// Claude.app drops it when it re-saves its config (T265). Anything else is unchanged.
+fn without_default_type(v: &Value) -> Value {
+    match v {
+        Value::Object(m) if m.get("type").and_then(Value::as_str) == Some("stdio") => {
+            let mut m = m.clone();
+            m.remove("type");
+            Value::Object(m)
+        }
+        _ => v.clone(),
     }
 }
 
@@ -1103,6 +1117,39 @@ mod tests {
         seed(json!({"command": "/usr/bin/node", "args": ["server.js"]}));
         let foreign = go(&YES).unwrap();
         assert!(foreign.contains("not rtok's"), "{foreign}");
+        assert!(read_json(&path).unwrap()["mcpServers"]["rtok"].is_object());
+    }
+
+    /// T265: an entry Claude.app re-saved without `type` is still rtok's; a changed `args`
+    /// is still the user's.
+    #[test]
+    fn unregister_owned_matches_an_entry_missing_the_default_type() {
+        let path = tmp("owned-no-type").join("claude_desktop_config.json");
+        let ours = mcp_entry("rtok", &["mcp"]);
+        let go = |a: &Apply| unregister_owned(a, &path, "mcpServers", "rtok", &ours, rtok_stem);
+        let seed = |entry: Value| {
+            let body = json!({"mcpServers": {"rtok": entry}});
+            fs::write(&path, body.to_string()).unwrap();
+        };
+
+        seed(json!({"command": "/Users/x/.ketch/bin/rtok", "args": ["mcp"]}));
+        assert_eq!(
+            go(&apply()).unwrap(),
+            "- mcpServers.rtok",
+            "a missing type must not read as changed by the user"
+        );
+        assert!(
+            read_json(&path).unwrap()["mcpServers"]
+                .get("rtok")
+                .is_none()
+        );
+
+        seed(json!({"command": "/Users/x/.ketch/bin/rtok", "args": ["mcp", "--x"]}));
+        let kept = go(&apply()).unwrap();
+        assert!(
+            kept.starts_with("leave mcpServers.rtok") && kept.contains("changed by you"),
+            "a real edit must still be kept: {kept}"
+        );
         assert!(read_json(&path).unwrap()["mcpServers"]["rtok"].is_object());
     }
 
