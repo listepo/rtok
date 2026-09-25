@@ -24,8 +24,38 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # T261: no DWARF for workspace code in CI (dependencies have none already, Cargo.toml).
+  # Smaller test binaries, less for the linker to move. A panic message still names
+  # file:line (`Location` is compiled in); backtrace frames lose it. Local builds keep
+  # `line-tables-only`.
+  CARGO_PROFILE_DEV_DEBUG: "0"
 
 jobs:
+  # T261: everything that is not the test suite, once, on ubuntu, in parallel with `check`.
+  # fmt, jscpd, oxlint and pytest do not depend on the OS; clippy here does not see
+  # macOS-only `cfg` code, which the macOS test build still compiles.
+  lint:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # The webui crate is outside the workspace, with its own target dir (T81); without
+          # it here every run compiled its 183 crates from scratch (T261).
+          workspaces: |
+            . -> target
+            crates/rtok-webui -> target
+          # T261 experiment: also save on the branch's manual runs to measure a warm cache.
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+      - run: just fmt-check lint build-min dup js python
+      # The webui crate is out of the workspace and builds for wasm only; nothing
+      # above compiles it (T81).
+      - run: just webui-check
+      # T23.6: `rtok-plugin-sdk` is published on release; a broken manifest fails here.
+      - run: just publish-dry
+
   check:
     # Draft PRs still emit synchronize; skip until ready_for_review.
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
@@ -41,14 +71,10 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # Skip slow cache upload on PRs; restore still works from main keys.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: just check
-      # The webui crate is out of the workspace and builds for wasm only; nothing
-      # above compiles it (T81).
-      - run: just webui-check
+          # T261 experiment: also save on the branch's manual runs to measure a warm cache.
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+      - run: just test
       - run: just example
-      # T23.6: `rtok-plugin-sdk` is published on release; a broken manifest fails here.
-      - run: just publish-dry
 
   # T44.4: the agent installers write Windows paths and `%APPDATA%` files; run the suite there.
   # T83.4: a gate like `check` — a Windows-only failure fails the run and reverts main.
@@ -67,7 +93,7 @@ jobs:
 
   revert-on-failure:
     name: revert-on-failure
-    needs: [check, windows]
+    needs: [lint, check, windows]
     if: >-
       always()
       && github.event_name == 'push'

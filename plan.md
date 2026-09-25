@@ -24,6 +24,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T262.3 | todo | P2 | 2 | 0% | |
+| T261 | in progress | P2 | 3 | 80% | Claude Code / claude-opus-5-5 |
 
 
 ### T87. `rtok hook <event> --host devin` reads Devin's payload
@@ -193,6 +194,21 @@ Progress (research.md §19): the plugin launcher (a second `/bin/sh` per call) w
 Blocked (found 2026-09-24 while claiming): the brief is built from `PreToolUse` rows whose `tool_name` is `Read|Edit|Write` (`ledger()` in `src/plugins/memory/handoff.rs`), and rtok installs no `PreToolUse` hook for Codex (only `PreCompact`/`PostCompact`), so a Codex brief would always be empty. Needs Codex `PreToolUse` wiring first (idea I-88), which the creator has not approved.
 
 Check: a Codex `SubagentStart` payload through `rtok hook` returns the brief in Codex's shape (test); `just check` green.
+
+### T261. CI takes ~9.5 min on macOS; the webui check recompiles 183 crates every run
+
+Creator request 2026-09-24: find what makes CI and the tests slow, try fixes in a draft PR, do not merge. Measured on #326:
+- `check (macos-latest)` is the critical path. Of its ~9.5 min: mise 53 s, cache restore 65 s, fmt 3 s, clippy 46 s, nextest's test-profile build 1 min 47 s, 1733 tests 79 s, then about 39 s of `build-min`, jscpd, oxlint and pytest.
+- `just webui-check` takes 2 min 6 s on macOS and 1 min 33 s on ubuntu. `crates/rtok-webui` is excluded from the workspace, so its `target/` is not in `rust-cache`, and 183 crates compile from scratch on every run.
+- 78 `tests/*.rs` files mean 78 test binaries to link.
+
+Plan (a draft PR; each change measured with `workflow_dispatch` runs on the branch, warm cache):
+1. `rust-cache` also caches `crates/rtok-webui/target`.
+2. A `lint` job on ubuntu takes fmt, clippy, `build-min`, jscpd, JS, Python and `webui-check`. The `check` matrix keeps its name and runs only the tests and examples, so macOS stops paying for lint. Trade-off to report: clippy no longer runs on macOS-only `cfg` code.
+3. `CARGO_PROFILE_DEV_DEBUG=0` in CI only (smaller test binaries, less linking).
+4. Estimate folding `tests/*.rs` into one integration binary (78 links become 1); report it, do not do it here.
+
+Check: warm-cache `workflow_dispatch` runs on the draft PR are green, and a PR comment gives before/after timings per job.
 
 ## Reference
 

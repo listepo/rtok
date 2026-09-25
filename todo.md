@@ -19,3 +19,4 @@
 - T163.9. Window and CTE queries through the shared extension module
 - T178. Hook wall-clock time as Claude Code sees it
 - T262.3. Codex: spawn brief on `SubagentStart`
+- T261. CI takes ~9.5 min on macOS; the webui check recompiles 183 crates every run
