@@ -1,0 +1,79 @@
+name: sonarcloud
+
+# Main-branch analysis only. No pull_request trigger — Sonar runs after merge (and on
+# workflow_dispatch). Draft/PR noise stays on the regular `ci` workflow.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Empty on forks / when the secret is unset — scan step soft-skips.
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+jobs:
+  sonarcloud:
+    runs-on: ubuntu-latest
+    # A hung test is killed by nextest's `terminate-after`; this caps everything else.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Same pin as ci.yml — Rust/just from mise.toml.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Match Justfile recipes: fail the job on fmt or clippy issues before coverage/scan.
+      - name: Format check
+        run: just fmt-check
+
+      - name: Clippy
+        run: just lint
+
+      - name: Install llvm-tools-preview
+        run: rustup component add llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Generate LCOV coverage
+        run: |
+          mkdir -p coverage
+          # rtok-webui is already outside the workspace; llvm-cov --workspace covers the rest.
+          # Follow-ups (narrower filters, exclude slow integration tests) live in
+          # docs/sonarcloud-setup.md — do not block the first OSS landing on perfect coverage.
+          # nextest (from mise.toml), like `just test`: one process per test and the
+          # target/test-home setup script. Plain `cargo test` shares one process, where the
+          # proxy tests exhaust httpmock's server pool and hang.
+          mise exec -- cargo llvm-cov nextest --workspace --lcov --output-path coverage/lcov.info
+
+      - name: SonarCloud Scan
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@2f77a1ec69fb1d595b06f35ab27e97605bdef703 # v5.3.2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip SonarCloud (no token)
+        if: env.SONAR_TOKEN == ''
+        run: |
+          echo "::notice::SONAR_TOKEN is not set; skipping SonarCloud scan."
+          echo "Expected for forks and PRs without the repository secret."
+          echo "See docs/sonarcloud-setup.md to add the secret on the canonical repo."
