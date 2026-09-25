@@ -23,6 +23,8 @@ env:
 jobs:
   sonarcloud:
     runs-on: ubuntu-latest
+    # A hung test is killed by nextest's `terminate-after`; this caps everything else.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
@@ -56,7 +58,10 @@ jobs:
           # rtok-webui is already outside the workspace; llvm-cov --workspace covers the rest.
           # Follow-ups (narrower filters, exclude slow integration tests) live in
           # docs/sonarcloud-setup.md — do not block the first OSS landing on perfect coverage.
-          cargo llvm-cov --workspace --lcov --output-path coverage/lcov.info
+          # nextest (from mise.toml), like `just test`: one process per test and the
+          # target/test-home setup script. Plain `cargo test` shares one process, where the
+          # proxy tests exhaust httpmock's server pool and hang.
+          mise exec -- cargo llvm-cov nextest --workspace --lcov --output-path coverage/lcov.info
 
       - name: SonarCloud Scan
         if: env.SONAR_TOKEN != ''
