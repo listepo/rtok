@@ -1,0 +1,50 @@
+# PyPI packaging of the rtok binary (the ruff/uv layout): maturin with `bindings = "bin"` puts
+# the native `rtok` and `rtok-hook` in each platform wheel, so `pip install rtok-cli` or
+# `uvx --from rtok-cli rtok` runs the Rust binary with no Python code in between. `rtok` on
+# PyPI belongs to an unrelated project, hence `rtok-cli`; the command is still `rtok`.
+# Build with tools/pypi-build.sh, publish by hand with tools/pypi-publish.sh (docs/release.md).
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "rtok-cli"
+description = "Token-reduction CLI for AI coding agents: hooks, MCP server and API proxy with pluggable methods"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "GPL-3.0-only OR LicenseRef-Royalty-Free OR LicenseRef-Commercial"
+license-files = ["LICENSE", "LICENSE-ROYALTY-FREE.md", "PRICING.md"]
+keywords = ["rtok", "llm", "tokens", "mcp", "agents", "cli"]
+classifiers = [
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Rust",
+  "Topic :: Software Development",
+]
+# The version is the `rtok` package's in Cargo.toml; maturin reads it from there.
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://listepo.github.io/rtok/"
+Repository = "https://github.com/listepo/rtok"
+Changelog = "https://github.com/listepo/rtok/blob/main/CHANGELOG.md"
+
+[tool.maturin]
+bindings = "bin"
+manifest-path = "Cargo.toml"
+locked = true
+strip = true
+# plugins/ and skills/ install to <prefix>/share/rtok/, where the binary looks when it runs
+# from <prefix>/bin (a wheel cannot put directories beside a script). tools/pypi-build.sh
+# stages the copies here before every build.
+data = "target/pypi/rtok_cli.data"
+# The sdist is cargo's package list (the whole crate); carry the staged plugins/skills so a
+# wheel built from it still has them, and drop the docs site's images.
+include = [{ path = "target/pypi/rtok_cli.data/**/*", format = "sdist" }]
+exclude = [
+  { path = "site/**/*", format = "sdist" },
+  { path = "docs/assets/**/*", format = "sdist" },
+]
