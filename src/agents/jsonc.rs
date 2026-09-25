@@ -53,12 +53,12 @@ pub fn strip_comments(raw: &str) -> String {
                 i = end;
             }
             None => {
-                if raw[i..].starts_with("//") {
+                if bytes[i..].starts_with(b"//") {
                     while i < bytes.len() && bytes[i] != b'\n' {
                         i += 1;
                     }
-                } else if raw[i..].starts_with("/*") {
-                    while i < bytes.len() && !raw[i..].starts_with("*/") {
+                } else if bytes[i..].starts_with(b"/*") {
+                    while i < bytes.len() && !bytes[i..].starts_with(b"*/") {
                         i += 1;
                     }
                     i = (i + 2).min(bytes.len());
@@ -96,12 +96,12 @@ fn skip_trivia(text: &str, mut i: usize) -> usize {
         while i < bytes.len() && bytes[i].is_ascii_whitespace() {
             i += 1;
         }
-        if text[i..].starts_with("//") {
+        if bytes[i..].starts_with(b"//") {
             while i < bytes.len() && bytes[i] != b'\n' {
                 i += 1;
             }
-        } else if text[i..].starts_with("/*") {
-            while i < bytes.len() && !text[i..].starts_with("*/") {
+        } else if bytes[i..].starts_with(b"/*") {
+            while i < bytes.len() && !bytes[i..].starts_with(b"*/") {
                 i += 1;
             }
             i = (i + 2).min(bytes.len());
@@ -140,7 +140,7 @@ fn match_pair(text: &str, i: usize, open: u8, close: u8) -> Option<usize> {
             j = end;
             continue;
         }
-        if text[j..].starts_with("//") || text[j..].starts_with("/*") {
+        if bytes[j..].starts_with(b"//") || bytes[j..].starts_with(b"/*") {
             j = skip_trivia(text, j);
             continue;
         }
@@ -425,6 +425,22 @@ mod tests {
 
     fn entry() -> Value {
         json!({"command": "rtok", "args": ["mcp"]})
+    }
+
+    /// A block comment holding non-ASCII text (`/* café */`) used to panic: the comment
+    /// scanners stepped one byte at a time and sliced `text[i..]` inside a multi-byte char.
+    #[test]
+    fn block_comment_with_non_ascii_text_does_not_panic() {
+        let raw = "{\n  /* café — ünïcode */\n  \"theme\": \"dark\"\n}\n";
+        let (body, edit) =
+            upsert_member(raw, Path::new("t"), "context_servers", "rtok", &entry()).unwrap();
+        assert_eq!(edit, Upsert::Added, "{body}");
+        assert!(body.contains("/* café — ünïcode */"), "{body}");
+        assert_eq!(parse(&body).unwrap()["context_servers"]["rtok"], entry());
+        let (back, removed) =
+            remove_member(&body, Path::new("t"), "context_servers", "rtok").unwrap();
+        assert!(removed, "{back}");
+        assert_eq!(strip_comments(raw), "{\n  \n  \"theme\": \"dark\"\n}\n");
     }
 
     /// White-box: the scanner finds keys through strings, comments and nesting, and an
