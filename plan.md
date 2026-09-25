@@ -16,7 +16,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
-| T163.8 | in progress | P2 | 3 | 70% | Cursor / grok 4.7 |
+| T163.8 | in progress | P2 | 3 | 80% | Cursor / grok 4.7 |
 | T178 | in progress | P1 | 4 | 95% | Cursor / grok 4.7 |
 | T262.3 | todo | P2 | 2 | 0% | |
 | T261 | in progress | P2 | 3 | 80% | Claude Code / claude-opus-5-5 |
@@ -118,7 +118,9 @@ Execution plan: (1) rewrite with `diesel::delete(...).filter(...)` and typed upd
 
 Check: T163's Check.
 
-Progress: `purge_related`, `delete_old_calls` and `purge_archive` are `diesel::delete` / `diesel::update`. `doomed_archives` is `sql_ext::DoomedArchives` (UNION of two archive columns plus three `NOT EXISTS` — no typed form). `sql_ext` no longer calls `sql_query`. Store tests (59) and clippy `-D warnings` on `--lib --tests` passed. Still open: T163's grep. Hits left are `migrate()` (T163.4), schema-drift and migration tests, the concurrency tests' `BEGIN IMMEDIATE`, `EXPLAIN QUERY PLAN`, `into_sql::<Bool>()`, and `PRAGMA` via `batch_execute` (a prepared execute leaves `journal_mode` at `delete`).
+Progress: `purge_related`, `delete_old_calls` and `purge_archive` are `diesel::delete` / `diesel::update`. `doomed_archives` is `sql_ext::DoomedArchives` (UNION of two archive columns plus three `NOT EXISTS` — no typed form). `sql_ext` no longer calls `sql_query`. Store tests (59) and clippy `-D warnings` on `--lib --tests` passed.
+
+Progress (2026-09-26, Cursor / grok 4.7): removed `batch_execute` / `sql_query` from `purge_waits_out_a_concurrent_writer` and `archive_in_session_query_plan_uses_the_session_ts_index`. Those two use `sql_ext::BeginImmediate` / `Commit` / `ExplainArchiveInSessionPlan` (`QueryFragment`; Diesel has no statement form for `BEGIN IMMEDIATE` or `EXPLAIN QUERY PLAN`) plus the existing `busy_timeout` / `pragma_journal_wal`. Still open: T163's grep. Hits left are `migrate()` (T163.4), `db_before_migration` / migration / schema-drift tests, `into_sql::<Bool>()`, and `exec_pragma`'s WAL `batch_execute` (a prepared execute leaves `journal_mode` at `delete`). Do not close T163.8 until the parent grep is clean.
 
 ### T178. Hook wall-clock time as Claude Code sees it
 

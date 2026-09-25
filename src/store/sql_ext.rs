@@ -179,6 +179,67 @@ impl Query for JournalMode {
 #[cfg(test)]
 impl RunQueryDsl<SqliteConnection> for JournalMode {}
 
+/// `BEGIN IMMEDIATE` — Diesel 2.3 has `immediate_transaction` but no statement form for a
+/// second connection that holds the write lock across a sleep (concurrency test).
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct BeginImmediate;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for BeginImmediate {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql("BEGIN IMMEDIATE");
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for BeginImmediate {}
+
+/// `COMMIT` — pair for [`BeginImmediate`] when the lock is released by hand.
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct Commit;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for Commit {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql("COMMIT");
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for Commit {}
+
+/// `EXPLAIN QUERY PLAN` — no form in Diesel 2.3's typed DSL. Restates `archive_in_session`'s
+/// correlated subquery so the plan can assert `measurements_session_ts`.
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct ExplainArchiveInSessionPlan;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for ExplainArchiveInSessionPlan {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(
+            "EXPLAIN QUERY PLAN SELECT archive.id, \
+             (SELECT COUNT(*) FROM measurements \
+              WHERE measurements.session = archive.session AND measurements.ts > archive.ts) \
+             FROM archive \
+             WHERE archive.id = 'x' AND archive.session = 's' AND archive.agent_id IS NULL",
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl Query for ExplainArchiveInSessionPlan {
+    type SqlType = (Integer, Integer, Integer, Text);
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for ExplainArchiveInSessionPlan {}
+
 /// Expression conflict target `COALESCE(project, '')` — Diesel's `on_conflict` names columns only.
 #[derive(QueryId)]
 pub(crate) struct UpsertNote {
