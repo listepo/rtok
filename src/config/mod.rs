@@ -382,6 +382,7 @@ section! {
         codewhale: SetupCodewhale = SetupCodewhale::default(),
         mimo: SetupMimo = SetupMimo::default(),
         antigravity: SetupAntigravity = SetupAntigravity::default(),
+        devin: SetupDevin = SetupDevin::default(),
     }
 }
 
@@ -498,6 +499,13 @@ section! {
     /// `[setup.mimo]` — MiMo Code's `mimocode.json` (`mcp`), the OpenCode-fork config file
     /// (T186, `MIMOCODE_HOME`/`MIMOCODE_CONFIG` move it).
     SetupMimo { config_path: PathBuf = p("~/.config/mimocode/mimocode.json") }
+}
+
+section! {
+    /// `[setup.devin]` — Devin CLI and Desktop. Hooks live in `config.json`; MCP in the
+    /// sibling `mcp_config.json`. On Windows the installer redirects the shipped default
+    /// to `%APPDATA%\devin\config.json` (T89).
+    SetupDevin { config_path: PathBuf = p("~/.config/devin/config.json") }
 }
 
 section! {
@@ -1031,6 +1039,7 @@ impl Config {
             setup.mimo.config_path,
             setup.antigravity.plugins_path,
             setup.antigravity.cli_plugins_path,
+            setup.devin.config_path,
             plugins.cmd.rules,
             plugins.cmd.rules_dir,
             plugins.inject.modes_dir,

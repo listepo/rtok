@@ -41,6 +41,8 @@ Check what is installed on this machine with `rtok agents list`; `rtok doctor` r
 | [`mimo`](https://github.com/listepo/rtok/blob/main/src/agents/mimo/README.md) | MiMo Code | CLI | — | yes | — | — | read, archive, memory, graph, toon |
 | [`antigravity`](https://github.com/listepo/rtok/blob/main/src/agents/antigravity/README.md) | Antigravity CLI | CLI | — | — | — | `--yes` | read, archive, memory, graph, toon |
 | [`antigravity`](https://github.com/listepo/rtok/blob/main/src/agents/antigravity/README.md) | Antigravity | Desktop | — | — | — | `--yes` | read, archive, memory, graph, toon |
+| [`devin`](https://github.com/listepo/rtok/blob/main/src/agents/devin/README.md) | Devin CLI | CLI | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon |
+| [`devin`](https://github.com/listepo/rtok/blob/main/src/agents/devin/README.md) | Devin | Desktop | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon |
 <!-- agents-table:end -->
 
 The table is generated from the host code (`src/agents/<host>/mod.rs` and the plugin catalogue) by `tests/agents_doc.rs`, which fails when it is stale. After changing a host, adding one, or changing a plugin's surfaces, regenerate it:
