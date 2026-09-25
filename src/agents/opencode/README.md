@@ -19,10 +19,10 @@ config files, so each selected app installs on its own:
 
 Plugin link (D21): OpenCode loads every `*.ts` in `<config dir>/plugins/`, so the link is one
 file, no manifest. The plugin and the MCP entry are two capabilities, not two paths to one:
-`tool.execute.after` filters bash output through `rtok filter`, the MCP serves
-`read`/`search`/`memory`/`graph`. OpenCode plugins run in-process and cannot register an
-MCP server, so no singleton clear applies. A missing `rtok` fails open (output unchanged) and
-prints the ketch install line once.
+`tool.execute.before` rewrites bash to `rtok run -- '…'` (and skills still go through
+`rtok filter`), the MCP serves `read`/`search`/`memory`/`graph`. OpenCode plugins run
+in-process and cannot register an MCP server, so no singleton clear applies. A missing
+`rtok` fails open (output unchanged) and prints the ketch install line once.
 
 ## rtok plugins this host reaches
 
