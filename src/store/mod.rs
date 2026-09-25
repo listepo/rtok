@@ -2436,12 +2436,12 @@ mod tests {
         let url = db.to_str().unwrap().to_string();
         let holder = std::thread::spawn(move || {
             let mut conn = SqliteConnection::establish(&url).unwrap();
-            conn.batch_execute("PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL;")
-                .unwrap();
-            conn.batch_execute("BEGIN IMMEDIATE;").unwrap();
+            sql_ext::busy_timeout(&mut conn, 1000).unwrap();
+            sql_ext::pragma_journal_wal(&mut conn).unwrap();
+            sql_ext::BeginImmediate.execute(&mut conn).unwrap();
             held.send(()).unwrap();
             std::thread::sleep(std::time::Duration::from_millis(1200));
-            conn.batch_execute("COMMIT;").unwrap();
+            sql_ext::Commit.execute(&mut conn).unwrap();
         });
         held_ack.recv().unwrap();
         let store = Store::open(&db).unwrap();
@@ -3441,25 +3441,13 @@ mod tests {
     #[test]
     fn archive_in_session_query_plan_uses_the_session_ts_index() {
         let store = Store::open_in_memory().unwrap();
-        #[derive(QueryableByName)]
-        struct PlanRow {
-            #[diesel(sql_type = Text)]
-            detail: String,
-        }
         let mut conn = store.lock().unwrap();
-        // Raw SQL: Diesel has no `EXPLAIN QUERY PLAN`, so the query is restated by hand.
-        let rows: Vec<PlanRow> = sql_query(
-            "EXPLAIN QUERY PLAN SELECT archive.id, \
-             (SELECT COUNT(*) FROM measurements \
-              WHERE measurements.session = archive.session AND measurements.ts > archive.ts) \
-             FROM archive \
-             WHERE archive.id = 'x' AND archive.session = 's' AND archive.agent_id IS NULL",
-        )
-        .load(&mut *conn)
-        .unwrap();
+        let rows: Vec<(i32, i32, i32, String)> = sql_ext::ExplainArchiveInSessionPlan
+            .load(&mut *conn)
+            .unwrap();
         let plan = rows
             .iter()
-            .map(|r| r.detail.as_str())
+            .map(|r| r.3.as_str())
             .collect::<Vec<_>>()
             .join(" | ");
         assert!(
