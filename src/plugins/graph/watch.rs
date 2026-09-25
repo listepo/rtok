@@ -26,7 +26,9 @@ where
 {
     if cx.plugin_config::<crate::config::Graph>("graph").watch == "watchman" {
         if let Err(err) = try_watchman(cx, root, stop, runs) {
-            eprintln!("watchman: {err} falling back to notify");
+            let msg = format!("watchman: {err} falling back to notify");
+            eprintln!("{msg}");
+            cx.log("warn", "graph", "watch", &msg);
             notify_loop(cx, root, stop, runs, events);
         }
         return;
@@ -185,12 +187,16 @@ where
     let mut watcher = match notify::recommended_watcher(tx) {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("watch: {e}");
+            let msg = format!("notify watcher: {e}");
+            eprintln!("watch: {msg}");
+            cx.log("error", "graph", "watch", &msg);
             return;
         }
     };
     if let Err(e) = watcher.watch(root, RecursiveMode::Recursive) {
-        eprintln!("watch: {e}");
+        let msg = format!("watch {}: {e}", root.display());
+        eprintln!("watch: {msg}");
+        cx.log("error", "graph", "watch", &msg);
         return;
     }
     pump(cx, root, stop, runs, &rx, events);

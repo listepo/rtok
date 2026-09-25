@@ -394,6 +394,50 @@ need an account or an API key.
 | --- | --- |
 | Before (`ls -l crates/rtok-webui/pkg/rtok_webui_bg.wasm`, 2026-09-17) | 10,560,601 B, default `wasm-pack --release`, no `wasm-opt` |
 | After (`wasm-pack --release` + wasm-opt -Oz, 2026-09-18) | 4,130,017 B |
+| After the T227–T232 pages (release.yml build-local-artifacts, run 36165796413, 2026-09-25) | 4,522,155 B, over the 4,500,000 B gate; gate raised to 5,000,000 B |
+| Same commit, wasm-pack `wasm-opt = ["-Oz", "--converge"]`, no binaryen on PATH (as on the release runners), macOS arm64, 2026-09-25 | 4,351,421 B (−170,734 B, −3.8 %) |
+| Same, with Homebrew binaryen 132 on PATH | 4,344,475 B |
+
+**Why the release build was bigger than every local measurement (2026-09-25).** wasm-pack runs
+wasm-opt with `-O` unless `[package.metadata.wasm-pack.profile.release]` says otherwise.
+`tools/webui-bundle.sh` then ran a second `wasm-opt -Oz`, but only when binaryen was on PATH.
+It was on PATH locally and not on the release runners, so local builds got `-Oz` and the
+runners got `-O`. Replaying the same module through binaryen 132: `-O` 4,510,120 B, `-Oz`
+4,351,672 B, `-Oz --converge` 4,344,475 B. The fix moves the flags into the webui
+`Cargo.toml` and drops the host-only pass, so every machine runs the same wasm-opt the same way.
+
+Other options measured and not taken:
+
+| Option | Result |
+| --- | --- |
+| `opt-level = "s"` instead of `"z"` (then `-Oz --converge`) | 4,738,453 B, worse |
+| `-O4 -Oz` | 4,430,802 B, worse |
+| `-Oz -Oz`, `-Oz --gufa -Oz` | 4,344,535 B and 4,344,604 B, no gain over `--converge` |
+| `--strip-producers --strip-target-features` | −265 B, noise |
+| `--low-memory-unused` | −8.5 KB, but only safe if nothing uses addresses below 1024; not worth the risk |
+
+**What the module is made of** (4,351,421 B shipped build; `twiggy top` on the pre-wasm-opt
+`target/wasm32-unknown-unknown/release/rtok_webui.wasm`, which keeps its name section):
+
+| Part | Size | Notes |
+| --- | --- | --- |
+| Code section | ~2.65 MB | Before wasm-opt: `rtok_webui` 772 KB (742 KB of that is Slint-generated `InnerComponent_*` for the conditional pages, which is what the T227–T232 pages added), `i_slint_core` 543 KB, `read_fonts` 408 KB, `core` 330 KB, `skrifa` 243 KB, `harfrust` 204 KB, `alloc` 167 KB, `zeno` 111 KB, `winit` 105 KB |
+| Data section | ~1.65 MB | IBM Plex Mono Regular/SemiBold/Bold (522,756 B, `ui/fonts`), Slint's Inter fallback font that `i-slint-common` always embeds on wasm (503,796 B), shaping and Unicode tables, strings |
+| Custom sections | 260 B | `producers` and `target_features` only; no `name` or DWARF |
+
+The three Plex weights (all used: `font-weight: 600` and `700` appear in the UI) could be
+subset to the scripts the UI needs. That would change which glyphs render in Plex and which
+fall back to Inter, and femtovg hints glyph outlines, so dropping hinting tables would change
+rendering too. Not done here; it is the next lever if the gate is hit again.
+
+**Regression checks** (`tests/web_wasm.rs`). The artifact checks skip when the bundle is not built:
+the gate itself, separate code (3,100,000 B) and data (1,800,000 B) budgets, and an allowlist of
+custom sections (a `name` section means wasm-opt did not run). Each size failure prints the
+section sizes, the largest data segments and the largest function bodies, with names when the
+module still has them. The source checks always run: the webui release profile (`opt-level = "z"`,
+`lto = true`, `codegen-units = 1`, `panic = "abort"`, no debug info), `-Oz` in the wasm-pack
+wasm-opt flags, no `--no-opt`/`--dev`/`--profiling` in the script's `wasm-pack build`, an
+allowlist of Slint features, a 540,000 B budget for `ui/fonts`, and every font file imported.
 
 ### Build size (T17.1, Gate P17, 2026-09-04)
 

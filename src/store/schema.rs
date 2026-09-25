@@ -1,5 +1,5 @@
 //! Diesel `table!` macros for the six 0001 tables (plan T13.1).
-//! `notes_fts` is a VIRTUAL TABLE — queried with `sql_query`, not modelled here.
+//! `notes_fts` is a VIRTUAL TABLE — FTS5 `MATCH` / `bm25` have no Diesel DSL form (T163.3).
 
 #![allow(unused)]
 
@@ -68,6 +68,17 @@ diesel::table! {
         sha256 -> Text,
         ts -> BigInt,
         archive_id -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    note_embeddings (note_id) {
+        note_id -> Integer,
+        model -> Text,
+        dims -> Integer,
+        text_hash -> Text,
+        embedded_at -> BigInt,
+        vector -> Binary,
     }
 }
 
@@ -272,6 +283,7 @@ diesel::joinable!(tokens -> calls (call_id));
 diesel::joinable!(logs -> calls (call_id));
 diesel::joinable!(measurements -> calls (call_id));
 diesel::joinable!(usage -> calls (call_id));
+diesel::joinable!(note_embeddings -> notes (note_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     events,
@@ -280,6 +292,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     archive_decisions,
     read_cache,
     notes,
+    note_embeddings,
     usage,
     hosts,
     providers,

@@ -1,5 +1,5 @@
 {
-  "pattern": "{src/**/*.rs,crates/rtok-plugin-sdk/src/**/*.rs,crates/rtok-agent-sdk/src/**/*.rs,crates/rtok-webui/src/**/*.rs,tests/config_coverage.rs,tests/surface_parity.rs}",
+  "pattern": "{src/**/*.rs,crates/rtok-plugin-sdk/src/**/*.rs,crates/rtok-agent-sdk/src/**/*.rs,crates/rtok-log/src/**/*.rs,crates/rtok-webui/src/**/*.rs,tests/config_coverage.rs,tests/surface_parity.rs}",
   "format": ["rust"],
   "minTokens": 50,
   "threshold": 2,

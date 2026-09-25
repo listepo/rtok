@@ -18,6 +18,38 @@ Header lines were read with `read_line`. One invalid UTF-8 byte returned `Err`, 
 
 Check: `invalid_utf8_in_a_header_is_forwarded_not_eof`; the existing framing tests stay green.
 
+### T270. The rotating text log lives in `rtok-log`
+
+The file writer (line format, level floor, rotation, the rename lock) was inside `src/log.rs` and took rtok's `Config`. Another project could not use it without the binary. It is now `crates/rtok-log`: a `FileLog` of path, `max_bytes`, `files` and level, with no database and no stderr viewer. rtok still mirrors each line to the `log` facade and, when `[log] to_db` is on, inserts the same text into the `logs` table. `rtok logs`, tailspin and `logs watch` stay in the binary.
+
+An `error` line is also copied, same bytes, to `errors.log` beside the live file (`append_split` / `error_path`). `warn`, `info` and `debug` stay in the general log only. rtok always passes that sibling path, so every existing `error` record lands in both files. Warnings that used to be stderr-only (lenient config, a bad `.env`, a legacy key, MCP and proxy retention, graph watchman fallback, agent restart, a missing web bundle, deprecated commands, the MCP-under-demon note) are now `warn` lines in the general log. Failures that used to be stderr-only (hook stdin, hook panic, a locked store, an MCP tool error, graph notify, a wasm plugin that will not load, a wasm guest `rtok_log`, `config validate`, a CLI `run` error) are `error` lines, so they also reach `errors.log`. The message keeps the full `{:#}` cause.
+
+Check: `cargo test -p rtok-log` (date, level floor, rotation, newline, a line below the floor, the stale-size lock, error copied and warn left in the main file); `cargo test -p rtok --lib log::` still green.
+
+### T163.9. Window and CTE queries through the shared extension module
+
+Left over from T163.7: `usage_ctt` (`COUNT() OVER`, `ROW_NUMBER() OVER`), `session_totals`/`recent_session_totals` (four CTEs, `UNION ALL`, per-group `MAX(id)` subqueries) and `recent_calls` (correlated `MAX(id)` subquery in a `LEFT JOIN`) have no form in Diesel 2.3.13's typed DSL. They move into T163.1's `src/store/sql_ext.rs` as typed `QueryFragment`s with bound parameters, each with a comment naming the construct the DSL lacks (the rulebook's exception for statements the ORM cannot express).
+
+Check: no `sql_query` left in the three functions; tests unchanged and green; `just check`.
+
+Result: `UsageCtt`, `UsageCttTail`, `RecentSessionTotals` and `RecentCalls` are `QueryFragment`s in `sql_ext`. `usage_ctt`, `session_totals`, `recent_session_totals` and `recent_calls` contain no `sql_query`. `SessionTotals` and `CallRow` also derive `Queryable` so the positional load matches the previous column order. `cargo test -p rtok --lib store::` (59), `overview_matches_the_per_session_loop`, and clippy `-D warnings` on `--lib --tests` passed.
+
+### T163.3. PRAGMA, `unixepoch()` and FTS5 through the shared extension module
+
+`mod.rs` sites the typed DSL cannot express: the PRAGMAs in `set_busy`, `connect`, `init`, `set_query_only` and `purge_calls_older_than`; `sql::<>("unixepoch()")` in `upsert_note` and `retire_note`; FTS5 `MATCH`/`bm25()` in `search_notes`; tests `open_on_disk_uses_wal`, `fts5_match_finds_inserted_note`. They become typed helpers in T163.1's `src/store/sql_ext.rs` (`define_sql_function!` for `unixepoch`, a `QueryFragment` per PRAGMA and for the FTS5 match), the only home for non-DSL SQL; `schema.rs`'s `notes_fts` comment is updated. The typed SQL functions declared in `mod.rs` move there too: `coalesce` (T163.5), `length` and `sum_bigint` (T163.7), `substr` (T163.6).
+
+Check: no `sql_query|sql::<|batch_execute` left in the listed functions and tests; `note_search_treats_query_text_literally` and the WAL test green; `just check`.
+
+Result: `set_busy`, `connect`, `init` and `set_query_only` call `sql_ext` helpers. `PRAGMA` writes go through `batch_execute` because a prepared `execute` leaves `journal_mode` at `delete`. `unixepoch()` is `define_sql_function!` (`Nullable<BigInt>`, matching `notes.retired`). `upsert_note`'s expression-index `ON CONFLICT` and `search_notes`' FTS5 `MATCH`/`bm25` are `QueryFragment`s. `coalesce`, `length`, `sum_bigint` and `substr` moved into `sql_ext` and are re-exported. The ten listed functions contain none of `sql_query`, `sql::<` or `batch_execute`. `cargo test -p rtok --lib store::` (59) and clippy `-D warnings` on `--lib --tests` passed.
+
+### T163.2. `src/store/otel.rs` and `src/store/embed.rs` without raw SQL
+
+Second slice of T163: the 6 sites in `otel.rs` and 4 in `embed.rs` move to the Diesel DSL over `schema.rs` (aggregates via `diesel::dsl::{min, count}` and `group_by`). Anything the DSL cannot express goes through the shared extension module from T163.1 — whichever slice lands first creates it.
+
+Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/otel.rs src/store/embed.rs` finds nothing; tests unchanged and green; `just check`.
+
+Result: aggregates (`otel_token_totals`, `otel_call_totals`, `otel_first_ts`, the stale-embedding join, the cosine candidate select) are typed DSL, and `note_embeddings` is a `table!`. Two statements have no form in Diesel 2.3: `sessions_pending_export`'s `ROW_NUMBER() OVER`, and the embedding upsert's `ON CONFLICT DO UPDATE … WHERE` (`DoUpdate` has no WHERE). Both live in `src/store/sql_ext.rs` as `QueryFragment`s, each with a comment naming the missing construct. The grep over the two files is empty. `cargo test -p rtok --lib store::` (59), `sessions_pending` (2) and `--test p29_memory` (2) passed; clippy `-D warnings` on `--lib --tests` passed.
+
 ### T255. Tests run under a fake `HOME`
 
 Creator request 2026-09-24. T254 closes the leaks through `Config`, but code that resolves home itself (`agents::home_dir`, `Config::home_dir`, `env_user_home`) still sees the real `HOME` in any test that does not set it. Give every test process a throwaway `HOME` (and `USERPROFILE`) under `target/` so a missed path lands in a sandbox, never in `~/.claude` or `~/.codex`. The obvious place is cargo's `[env]` in `.cargo/config.toml` with `force = true`, provided nextest honours it and build scripts are not affected; if either fails, use a nextest setup script instead. Tests that need git settings from the home (commits in fixtures) get an explicit `user.name`/`user.email` instead.
@@ -5328,6 +5360,28 @@ Deviations: (1) the offer prints behind `--yes` and only alongside a run that ch
 
 Status: done 2026-09-22
 Model: Command Code / claude-fable-5
+
+### T88. Devin plugin tree (`plugins/devin/`)
+
+After T87. Devin's plugin format is a directory: manifest `.devin-plugin/plugin.json` (only `name` is required), `hooks.json` and `.mcp.json` at the plugin root, optional `skills/<name>/SKILL.md`. One tree loads in the CLI and in Devin Desktop (hooks load "in local Devin agents only — the CLI and Devin Desktop"), so it is D21's one unit for both surfaces. Local install is `devin plugins install --local <dir>`. Evidence: https://docs.devin.ai/cli/extensibility/plugins/overview.
+
+Plan:
+1. `plugins/devin/.devin-plugin/plugin.json` — `name: "rtok"`, version, description, homepage; `plugins/devin/.mcp.json` — `mcpServers.rtok` → `rtok mcp` directly (I-37: launcher scripts never run; the ketch hint lives in the README).
+2. `plugins/devin/hooks.json` — `PreToolUse` (`^exec$`, `^read$`), `PostToolUse` (all), `UserPromptSubmit`, `SessionStart`, `PostCompaction`, `SessionEnd`, each `rtok hook <event> --host devin`, timeout 5.
+3. `plugins/devin/README.md` — install by hand, files, `## Docs` (plugins, hooks, MCP, skills, Desktop pages).
+4. `agents::devin::tests::plugin_manifest_matches_the_installer` lands with T89; here a `tests/` check that the three JSON files parse, every hook command passes `is_ours`, and `mcpServers` is exactly `rtok`.
+Verify first: whether a plugin's `hooks.json` puts event names at the top level (like `.devin/hooks.v1.json`) or under a `"hooks"` key — the overview page does not show the file.
+
+Execution plan (2026-09-25, creator: go without the live capture): verified — Cognition's own templates (`CognitionAI/plugin-template` `plugins/kitchen-sink/hooks.json`, `CognitionAI/team-marketplace-template` `plugins/security-guardrails/hooks.json`) put event names at the top level, no `"hooks"` wrapper. T87's `adapt_devin` is already on `main`, so `--host devin` works today. Hook commands use the shared POSIX resolver form (`exec rtok hook <event> --host devin;` marker, PATH then `~/.ketch/bin/rtok`, else exit 0) like `plugins/grok`, so a missing `rtok` is a silent no-op, never exit 127 on every call (T174). Files: the three JSON files, `README.md` + `AGENTS.md` (mandatory per `plugins/AGENTS.md`), `tests/devin_plugin.rs`, a `DOC_DOMAINS` row in `tests/host_docs.rs`, a row in `plugins/README.md`. Verify: `cargo nextest run --test devin_plugin --test host_docs`, then `just check`.
+
+Check: `host_docs` and the new manifest test green; `just check`.
+
+Result: `plugins/devin/` ships `.devin-plugin/plugin.json` (`name: "rtok"`), a root `hooks.json` with event names at the top level (the layout of Cognition's own `CognitionAI/plugin-template` and `team-marketplace-template`; the docs page does not show the file), and `.mcp.json` (`mcpServers.rtok` → `rtok mcp`). Hooks: `PreToolUse` on `^exec$` and `^read$`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `PostCompaction`, `SessionEnd`, timeout 5 s, each through the shared POSIX resolver (`agents::hook_resolver` form, no note): PATH, then `~/.ketch/bin/rtok`, else exit 0 — a missing binary is a silent no-op instead of exit 127 on every call (T174). The `exec rtok hook <event> --host devin;` marker is what T89's `is_ours` can key on (the Cursor pattern). T87's `adapt_devin` was already on `main`, so `--host devin` maps the payload today. `README.md` names install (`devin plugins install --local`), removal, the Claude-import double fire and its switch (`read_config_from.claude = false` in `~/.config/devin/config.json`), the unverified points (plugin load on a live session, `read`'s path key, stdin `cwd`) and macOS/Linux only; `AGENTS.md` per `plugins/AGENTS.md`; a row in `plugins/README.md`; `plugins/devin` → `docs.devin.ai` in `tests/host_docs.rs`. No live capture, by the creator's call (2026-09-25).
+
+Check result: `tests/devin_plugin.rs` — `manifest_is_rtok`, `mcp_is_exactly_rtok`, `hooks_are_the_claude_set_in_devin_names` (exact groups, no `"hooks"` wrapper), `hooks_resolve_rtok_from_path_then_ketch_else_exit_0_silently` (empty PATH, temp HOME: exit 0 and silence; a fake `~/.ketch/bin/rtok` receives `<event> --host devin`) — green with `host_docs`, `plugin_scripts`, `skill` and `singleton` (16/16); `just check` green.
+
+Status: done 2026-09-25
+Model: Claude Code / claude-opus-5-5
 
 ### T83.3. `tests/demon.rs` process-tree start/stop hangs on Windows (180 s timeouts)
 
