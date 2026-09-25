@@ -10,6 +10,7 @@ hugo := env("HUGO", "mise exec -- hugo --source site")
 jscpd := env("JSCPD", "mise exec -- jscpd")
 oxlint := env("OXLINT", "mise exec -- oxlint")
 oxfmt := env("OXFMT", "mise exec -- oxfmt")
+node := env("NODE", "mise exec -- node")
 pytest := env("PYTEST", "mise exec -- pytest")
 tspin := env("TSPIN", "mise exec -- tspin")
 
@@ -89,6 +90,27 @@ example:
 # When publishing again: restore `publish = true` in the crate + release-plz, and this target.
 publish-dry:
     @echo "rtok-plugin-sdk crates.io publish paused; skipping dry-run"
+
+# Host build by default; `--release vX.Y.Z` packs every platform from the dist Release archives.
+# npm: `rtok` launcher + one package per platform, tarballs in target/npm/dist (docs/release.md).
+npm-build *flags:
+    {{node}} tools/npm/build.mjs {{flags}}
+
+# Manual npm publish of target/npm/dist, platform packages first; `--dry-run` uploads nothing.
+npm-publish *flags:
+    {{node}} tools/npm/publish.mjs {{flags}}
+
+# Manual crates.io publish in dependency order; crates with `publish = false` never go out.
+cargo-publish *flags:
+    tools/cargo-publish.sh {{flags}}
+
+# PyPI (`rtok-cli`, maturin `bindings = "bin"`): host wheel (+ `--sdist`) in target/pypi/dist.
+pypi-build *flags:
+    tools/pypi-build.sh {{flags}}
+
+# Manual PyPI upload of target/pypi/dist; `--dry-run` checks only, `--testpypi` goes to TestPyPI.
+pypi-publish *flags:
+    tools/pypi-publish.sh {{flags}}
 
 # T9.5: execute every README bash fence marked `# check`.
 readme-check:
