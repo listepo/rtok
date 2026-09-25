@@ -136,15 +136,17 @@ pub fn join_upstream(base: &str, path: &str, query: Option<&str>) -> Result<Stri
         anyhow::bail!("proxy.upstream is empty");
     }
     let mut url = Url::parse(base).context("proxy upstream URL")?;
-    {
-        let mut segments = url
-            .path_segments_mut()
-            .map_err(|_| anyhow::anyhow!("proxy upstream URL cannot be a base"))?;
-        segments.pop_if_empty();
-        for segment in path.split('/').filter(|s| !s.is_empty()) {
-            segments.push(segment);
-        }
+    if url.cannot_be_a_base() {
+        anyhow::bail!("proxy upstream URL cannot be a base");
     }
+    // `path` is the client's already percent-encoded `Uri::path`. `set_path` keeps existing
+    // `%XX` escapes; `path_segments_mut().push` would encode each `%` again.
+    let mut joined = url.path().trim_end_matches('/').to_string();
+    for segment in path.split('/').filter(|s| !s.is_empty()) {
+        joined.push('/');
+        joined.push_str(segment);
+    }
+    url.set_path(&joined);
     if let Some(q) = query {
         url.set_query(Some(q));
     }
@@ -408,6 +410,21 @@ mod tests {
             assert_eq!(wire.provider(), provider, "{path}");
             assert_eq!(api_of(wire), api, "{path}");
         }
+    }
+
+    /// The client path arrives already percent-encoded (`Uri::path`); joining it must not
+    /// encode the `%` again (`%20` → `%2520`), or upstream receives a different path.
+    #[test]
+    fn join_upstream_keeps_percent_encoded_path_verbatim() {
+        assert_eq!(
+            join_upstream(
+                "http://127.0.0.1/prefix",
+                "/v1/models/a%20b%2Fc:generate",
+                None
+            )
+            .expect("join"),
+            "http://127.0.0.1/prefix/v1/models/a%20b%2Fc:generate"
+        );
     }
 
     #[test]
