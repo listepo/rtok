@@ -17,7 +17,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use rtok_agent_sdk::{NO_CHANGES, array_at, edit_json, object_at};
+use rtok_agent_sdk::{NO_CHANGES, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -223,108 +223,24 @@ pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
     ))
 }
 
+/// Devin's spelling of the hook command; the insert/strip walk is Claude's (same layout).
+const FORM: super::claude::HookForm = super::claude::HookForm { command, is_ours };
+
+/// Apply, dry-run, or remove rtok's hooks under `hooks` in `config.json`. Foreign hooks on
+/// the same events stay; one of ours the user edited goes only as [`super::takes_hook`] says.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
-    let path = config_path(cfg);
-    edit_json(&apply(cfg), &path, |root| {
-        let hooks = object_at(root, "hooks");
+    let (a, path) = (apply(cfg), config_path(cfg));
+    let timeout = cfg.setup.hook_timeout_s;
+    edit_json(&a, &path, |root| {
         if remove {
-            strip_ours(&apply(cfg), &path, hooks, cfg.setup.hook_timeout_s)
+            let hooks = root.get_mut("hooks");
+            super::claude::strip_ours_as(&FORM, &a, &path, hooks, ENTRIES, "timeout", timeout)
         } else {
-            insert_ours(hooks, &super::rtok_hook_bin(), cfg.setup.hook_timeout_s)
+            let hooks = object_at(root, "hooks");
+            let bin = super::rtok_hook_bin();
+            super::claude::insert_ours_as(&FORM, hooks, ENTRIES, &bin, "timeout", timeout)
         }
     })
-}
-
-fn matcher_of(entry: &Value) -> &str {
-    entry.get("matcher").and_then(Value::as_str).unwrap_or("")
-}
-
-fn insert_ours(hooks: &mut Value, bin: &str, timeout: u64) -> String {
-    let mut changed = Vec::new();
-    for &(event, matcher) in ENTRIES {
-        let want = command(bin, event);
-        let mut found = false;
-        for entry in array_at(hooks, event).iter_mut() {
-            if matcher_of(entry) != matcher {
-                continue;
-            }
-            let Some(inner) = entry.get_mut("hooks").and_then(Value::as_array_mut) else {
-                continue;
-            };
-            for h in inner {
-                if !h["command"].as_str().is_some_and(|c| is_ours(c, event)) {
-                    continue;
-                }
-                found = true;
-                if h["command"] != json!(want) || h["timeout"] != json!(timeout) {
-                    h["command"] = json!(want);
-                    h["timeout"] = json!(timeout);
-                    changed.push(format!("~ {event} {matcher}"));
-                }
-            }
-        }
-        if found {
-            continue;
-        }
-        let mut group = json!({
-            "hooks": [{"type": "command", "command": want, "timeout": timeout}]
-        });
-        if !matcher.is_empty() {
-            group["matcher"] = json!(matcher);
-        }
-        array_at(hooks, event).push(group);
-        changed.push(format!("+ {event} {matcher}"));
-    }
-    if changed.is_empty() {
-        NO_CHANGES.into()
-    } else {
-        changed.join("\n")
-    }
-}
-
-/// Drop hooks whose command is ours. A hook still shaped as we write it goes;
-/// one the user edited stays unless [`super::takes_hook`] says otherwise.
-/// Foreign commands on the same event stay.
-fn strip_ours(
-    apply: &rtok_agent_sdk::Apply,
-    path: &Path,
-    hooks: &mut Value,
-    timeout: u64,
-) -> String {
-    let Some(obj) = hooks.as_object_mut() else {
-        return NO_CHANGES.into();
-    };
-    let (mut removed, mut kept) = (0usize, Vec::new());
-    for arr in obj.values_mut().filter_map(Value::as_array_mut) {
-        for entry in arr.iter_mut() {
-            let bare = entry
-                .as_object()
-                .is_some_and(|o| o.len() == 1 || (o.len() == 2 && o.contains_key("matcher")));
-            let Some(inner) = entry.get_mut("hooks").and_then(Value::as_array_mut) else {
-                continue;
-            };
-            inner.retain(|h| {
-                let Some(cmd) = h["command"].as_str() else {
-                    return true;
-                };
-                let Some(event) = ENTRIES.iter().map(|(e, _)| *e).find(|e| is_ours(cmd, e)) else {
-                    return true;
-                };
-                let want = json!({"type": "command", "command": cmd, "timeout": timeout});
-                let at = || format!("hooks.{event} in {}", path.display());
-                let take = super::takes_hook(apply, bare && *h == want, at, &mut kept);
-                removed += usize::from(take);
-                !take
-            });
-        }
-        arr.retain(|e| {
-            e.get("hooks")
-                .and_then(Value::as_array)
-                .is_none_or(|a| !a.is_empty())
-        });
-    }
-    obj.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
-    super::with_kept(kept, super::removed_report(removed))
 }
 
 fn mcp_entry(cmd: &str) -> Value {
