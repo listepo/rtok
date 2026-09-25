@@ -1341,15 +1341,25 @@ pub(crate) fn unquote_bin(bin: &str) -> &str {
     b
 }
 
+/// Where a Python wheel installs `plugins/` and `skills/`, under the install prefix: a wheel
+/// cannot put directories beside a script (uv rejects them), so they go to `<prefix>/share/rtok`.
+const PREFIX_SHARE_DIR: &str = "share/rtok";
+/// An install prefix's executable directory: `bin` on Unix, `Scripts` in a Windows venv.
+const PREFIX_BIN_DIRS: [&str; 2] = ["bin", "Scripts"];
+
 /// The tree this repo ships a host plugin from (D21 (6)).
 ///
 /// Resolution order:
-/// 1. `rel` next to the running binary (release archives ship `plugins/` beside `rtok`);
-/// 2. ketch layout: when the exe lives in `<root>/bin/`, prefer
+/// 1. `rel` next to the running binary (release archives ship `plugins/` beside `rtok`),
+///    then next to the binary a symlink points at: `npm i -g`, Homebrew and `uv tool` put a
+///    link on `PATH`, and macOS reports the link, not its target, as `current_exe`;
+/// 2. prefix layout (PyPI wheels): when the exe, or the file it links to, lives in
+///    `<prefix>/bin/` (`Scripts\` on Windows), `<prefix>/share/rtok/rel`;
+/// 3. ketch layout: when the exe lives in `<root>/bin/`, prefer
 ///    `<root>/store/rtok/v{version}/` matching `CARGO_PKG_VERSION`, else the
 ///    newest `store/rtok/*/` that contains `rel`;
-/// 3. `CARGO_MANIFEST_DIR/rel` for `cargo test` / dev;
-/// 4. beside-exe path for a clear error when nothing exists.
+/// 4. `CARGO_MANIFEST_DIR/rel` for `cargo test` / dev;
+/// 5. beside-exe path for a clear error when nothing exists.
 pub(crate) fn plugin_src(rel: &str) -> std::path::PathBuf {
     resolve_plugin_src(
         rel,
@@ -1388,6 +1398,25 @@ pub(crate) fn resolve_plugin_src(
         return p.clone();
     }
 
+    let real = exe.and_then(|e| dunce::canonicalize(e).ok());
+    if let Some(p) = real
+        .as_deref()
+        .and_then(Path::parent)
+        .map(|dir| join_rel(dir, rel))
+        && p.exists()
+    {
+        return p;
+    }
+
+    for bin in exe.into_iter().chain(real.as_deref()) {
+        if let Some(prefix) = install_prefix(bin) {
+            let p = join_rel(&join_rel(prefix, PREFIX_SHARE_DIR), rel);
+            if p.exists() {
+                return p;
+            }
+        }
+    }
+
     if let Some(exe) = exe
         && let Some(bin_dir) = exe.parent()
         && bin_dir
@@ -1404,6 +1433,17 @@ pub(crate) fn resolve_plugin_src(
     }
 
     beside.unwrap_or(cargo)
+}
+
+/// `<prefix>` when `exe` is `<prefix>/bin/<exe>` (or `<prefix>/Scripts/<exe>`).
+fn install_prefix(exe: &Path) -> Option<&Path> {
+    let bin_dir = exe.parent()?;
+    let name = bin_dir.file_name()?;
+    PREFIX_BIN_DIRS
+        .iter()
+        .any(|d| name.eq_ignore_ascii_case(d))
+        .then(|| bin_dir.parent())
+        .flatten()
 }
 
 /// ketch installs the full package under `<root>/store/rtok/vX.Y.Z/` and only
@@ -1660,6 +1700,65 @@ mod tests {
         fs::write(&empty_exe, b"").unwrap();
         let got = resolve_plugin_src("plugins/cursor", Some(&empty_exe), &empty, "0.1.5");
         assert_eq!(got, empty.join("plugins").join("cursor"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// `npm i -g rtok` links `<prefix>/bin/rtok` to the package's binary, which has
+    /// `plugins/` beside it; the link's own directory has none.
+    #[cfg(unix)]
+    #[test]
+    fn plugin_src_follows_a_symlinked_exe() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("rtok-plugin-link-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let pkg_bin = root.join("lib").join("rtok").join("bin");
+        let plugins = pkg_bin.join("plugins").join("cursor");
+        write_plugin(&plugins);
+        let real_exe = pkg_bin.join("rtok");
+        fs::write(&real_exe, b"").unwrap();
+        let link_dir = root.join("prefix-bin");
+        fs::create_dir_all(&link_dir).unwrap();
+        let link = link_dir.join("rtok");
+        std::os::unix::fs::symlink(&real_exe, &link).unwrap();
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&link),
+            &root.join("no-such-manifest"),
+            "0.1.5",
+        );
+        assert_eq!(got, dunce::canonicalize(&plugins).unwrap());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A wheel installs `<venv>/bin/rtok` and `<venv>/share/rtok/plugins/`; `uv tool` then
+    /// links the binary from another bin directory.
+    #[cfg(unix)]
+    #[test]
+    fn plugin_src_finds_prefix_share_dir() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("rtok-plugin-share-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let venv = root.join("venv");
+        let plugins = venv
+            .join("share")
+            .join("rtok")
+            .join("plugins")
+            .join("cursor");
+        write_plugin(&plugins);
+        let exe = venv.join("bin").join("rtok");
+        fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        fs::write(&exe, b"").unwrap();
+        let missing = root.join("no-such-manifest");
+        let got = resolve_plugin_src("plugins/cursor", Some(&exe), &missing, "0.1.5");
+        assert_eq!(got, plugins);
+        let link = root.join("tool-bin").join("rtok");
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&exe, &link).unwrap();
+        let got = resolve_plugin_src("plugins/cursor", Some(&link), &missing, "0.1.5");
+        assert_eq!(
+            dunce::canonicalize(got).unwrap(),
+            dunce::canonicalize(&plugins).unwrap()
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
