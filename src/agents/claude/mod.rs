@@ -1133,10 +1133,11 @@ mod tests {
         assert!(claude_entries().contains(&("SubagentStart", "")));
         let mut want = json!({});
         for &(event, matcher) in claude_entries() {
-            // T178: `rtok` on PATH is exec'd from Claude Code's own shell; `hook.sh` (a second
-            // shell, ~6 ms) only runs when PATH has no `rtok` (desktop app, fail-open hint).
+            // T178: prefer the tiny `rtok-hook` client (resident), then `rtok hook`, then
+            // `hook.sh` when neither binary is on PATH (desktop app, fail-open hint).
             let cmd = format!(
-                "command -v rtok >/dev/null 2>&1 && exec rtok hook {event}; \
+                "command -v rtok-hook >/dev/null 2>&1 && exec rtok-hook {event}; \
+                 command -v rtok >/dev/null 2>&1 && exec rtok hook {event}; \
                  exec \"${{CLAUDE_PLUGIN_ROOT}}/scripts/hook.sh\" {event}"
             );
             let mut e = json!({"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]});

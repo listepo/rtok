@@ -18,7 +18,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T163.8 | in progress | P2 | 3 | 70% | Cursor / grok 4.7 |
-| T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
+| T178 | in progress | P1 | 4 | 95% | Cursor / grok 4.7 |
 | T262.3 | todo | P2 | 2 | 0% | |
 | T261 | in progress | P2 | 3 | 80% | Claude Code / claude-opus-5-5 |
 
@@ -147,6 +147,8 @@ Step 2 plan (D32): (a) `crates/rtok-hook`, the std-only wire format; (b) `rtok h
 Check: a dated `research.md` row with measured start time before/after; hook p50 as seen by Claude Code under 10 ms on this machine; `just test` green.
 
 Progress (research.md §19): the plugin launcher (a second `/bin/sh` per call) was the largest cost; `hooks.json` now execs `rtok` from PATH directly, p50 as Claude Code sees it 20.9 → 14.6 ms (PreToolUse) and 19.0 → 13.3 ms (PostToolUse). Remaining: the node + `/bin/sh` floor (5 ms) plus `rtok --version` (5.6 ms) already exceed 10 ms, so the Check needs a resident process with a small hook client — proposed as its own task. Locked store (§19.6): the hook now waits 5 ms on another writer, not 1 s per statement, and fails open with the input unchanged — 1.06–2.13 s → ~20 ms. Remaining: the resident process and hook client.
+
+Measured (Cursor / grok 4.7, 2026-09-26): shipped `hooks.json` order `rtok-hook` → `rtok` → `hook.sh`. §19.2 node harness (`spawn` `{shell: true}`, isolated `RTOK_HOME`, resident up, release `6e608af2`, 300 rounds, load 46.23 → 39.18): `true` floor p50 5.63 ms; PreToolUse p50 **12.28** / p95 25.18 ms; PostToolUse p50 **12.54** / p95 29.22 ms. Check **not met** (need p50 < 10 ms). Numbers in `research.md` §19.7. Card stays in progress.
 
 ### T262.3. Codex: spawn brief on `SubagentStart`
 
