@@ -19,3 +19,11 @@
 - T163.9. Window and CTE queries through the shared extension module
 - T178. Hook wall-clock time as Claude Code sees it
 - T262.3. Codex: spawn brief on `SubagentStart`
+- T266. Heavy store queries through sea-query on the Diesel connection
+- T267. Every rtok TOML file has a schema; config logic lives in one encapsulated engine
+- T267.1. `rtok-config` engine crate
+- T267.2. Main config on the engine
+- T267.3. Command rules on the engine
+- T267.4. Bench files on the engine
+- T267.5. Host configs through `HostToml`
+- T267.6. Editor and CI wiring

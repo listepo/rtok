@@ -24,6 +24,14 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T262.3 | todo | P2 | 2 | 0% | |
+| T266 | todo | P2 | 4 | 0% | |
+| T267 | todo | P2 | 5 | 0% | |
+| T267.1 | todo | P2 | 4 | 0% | |
+| T267.2 | todo | P2 | 4 | 0% | |
+| T267.3 | todo | P2 | 3 | 0% | |
+| T267.4 | todo | P3 | 2 | 0% | |
+| T267.5 | todo | P2 | 3 | 0% | |
+| T267.6 | todo | P3 | 2 | 0% | |
 
 
 ### T87. `rtok hook <event> --host devin` reads Devin's payload
@@ -193,6 +201,78 @@ Progress (research.md §19): the plugin launcher (a second `/bin/sh` per call) w
 Blocked (found 2026-09-24 while claiming): the brief is built from `PreToolUse` rows whose `tool_name` is `Read|Edit|Write` (`ledger()` in `src/plugins/memory/handoff.rs`), and rtok installs no `PreToolUse` hook for Codex (only `PreCompact`/`PostCompact`), so a Codex brief would always be empty. Needs Codex `PreToolUse` wiring first (idea I-88), which the creator has not approved.
 
 Check: a Codex `SubagentStart` payload through `rtok hook` returns the brief in Codex's shape (test); `just check` green.
+
+### T266. Heavy store queries through sea-query on the Diesel connection
+
+Restored 2026-09-25 from an uncommitted `plan.md` draft in the main checkout, where it was T237; that id went to another task on `main`.
+
+Creator request 2026-09-24: high-load queries use `sea-query` as the query builder, executed on the existing Diesel `SqliteConnection` through `sea-query-diesel` (same SeaQL repo; `sea-query` 1.0.x, `sea-query-diesel` 0.3.0 requires `diesel ^2.1.1`, compatible with our 2.3.13). Diesel stays the ORM, the only DB owner (D13) and the source of truth for `schema.rs`; sea-query only builds statements the typed DSL cannot express (window functions, CTEs, `UNION ALL`, correlated subqueries) with bound parameters — no SQL strings. Candidates: `usage_ctt`, `session_totals`/`recent_session_totals`, `recent_calls`, and the dashboard `snapshot()` queries that run every 2 s tick.
+
+Overlaps T163.9 (in progress, another agent), which plans hand-written `QueryFragment`s in `src/store/sql_ext.rs` for the same statements. Do not edit T163.9's card or branch: once T163.9 lands, this task swaps those fragments for sea-query builders; if its owner has not started, ask the creator whether T163.9 should switch to sea-query instead.
+
+Done when: those statements are built with sea-query and run via `sea-query-diesel`; signatures and row order unchanged; their tests unchanged and green; `rtok stats` and the dashboard identical on a DB clone; a before/after timing on a large DB clone recorded in the PR (no speed claim without it); hook path still ≤ 10 ms; `toolchain.md` and workspace `rust.md` rows for both crates; `just check`.
+
+Execution plan: (1) wait for T163.9 on `main`; (2) add both crates (`sqlite` backend features only) with one-line reasons; (3) port one statement per commit behind the existing `Store` methods; (4) time each on a DB clone before/after; (5) `just check`. Split per statement if the PR passes ≤200 LOC / ≤10 files.
+
+Check: no `sql_query` left in the three functions; tests unchanged and green; `just check`.
+
+### T267. Every rtok TOML file has a schema; config logic lives in one encapsulated engine
+
+Restored 2026-09-25 from an uncommitted `plan.md` draft in the main checkout, where it was T238 (subtasks T238.1–T238.6); that id went to another task on `main`.
+
+Creator request 2026-09-24: every TOML file rtok owns is described by a schema and validated against it, and the code that loads, validates and edits TOML is abstract and lives in one encapsulated module.
+
+Today each format is handled differently. The main config (`config/default.toml`, `~/.rtok/config.toml`, `.rtok/config.toml`) loads through figment, and `src/config/validate.rs` (632 lines) checks it by walking `Config::default()` by hand, with allow-lists such as `GRAPH_GRAMMARS` repeating what the types already say. Command rules (`rules/default.toml` plus drop-in files) use their own `toml_edit` parser in `src/plugins/cmd/rules.rs`, and a drop-in that fails to parse is skipped without a word (`if let Ok(..)`). `bench/tasks.toml` and `bench/graph.toml` are read by a second figment setup in `src/bench.rs`. Host configs (Codex, Grok, Kimi) are edited with `toml_edit` straight from `src/agents/*` and `src/doctor.rs`. Editors cannot autocomplete or check any of these files.
+
+"TOML schema" means JSON Schema applied to TOML: the Tombi and Taplo editors and linters read it from a `#:schema <url>` first line or a glob mapping. The Rust types are the only source of truth. `schemars` (already in `Cargo.lock`, approved in workspace `rust.md`) generates the schemas, which are committed under `schemas/`, and a drift test fails when they are stale.
+
+Design:
+- **Engine** (`crates/rtok-config`): generic over a `TomlConfig` trait (`DeserializeOwned + Serialize + JsonSchema + Default`, plus an id and layer paths). It knows no rtok types. It provides layered `load` with per-key provenance (figment, D14), `validate` (JSON Schema plus `toml_edit` spans → `file:line`), `set` (edit in place with comments kept, validate before an atomic write), `schema()` export, and a `HostToml` editor for configs rtok does not own. `figment` and `toml_edit` are imported only here; the crate boundary enforces that.
+- **Hot path unchanged:** the hook keeps plain serde deserialization, fails open and stays ≤ 10 ms. Schema validation runs only in cold commands (`config validate`, `config set`, `doctor`, `bench`).
+- **Constraints go in the types:** enums, `#[schemars(range(..))]` and `deny_unknown_fields`/`additionalProperties: false` replace the hand-written checks, so validation logic is not written twice.
+- **Stable schema URL:** `#:schema` points to the tagged release (`…/v<version>/schemas/<id>.schema.json`), so a user file always matches the binary that wrote it.
+
+Done when: every rtok-owned TOML format has a committed, drift-tested schema; `validate.rs`'s hand walk, `parse_strict` and the direct `toml_edit`/`figment` imports outside the engine are gone; `config validate`, `doctor` and trycmd output say the same things or differ in reviewed ways; the hook latency test is green; `toolchain.md` and workspace `rust.md` list every new crate.
+
+Split: T267.1 → T267.2 → (T267.3, T267.4, T267.5 in parallel) → T267.6.
+
+Check: T267.1–T267.6 are in `done.md`; searching `src/` for `toml_edit::` and `figment::` finds nothing; `just check` is green.
+
+### T267.1. `rtok-config` engine crate
+
+Build the generic engine described in T267 with no rtok types in it: the `TomlConfig` trait, `load` (figment layers + provenance), `validate` (JSON Schema → `file:line` through `toml_edit` spans), `set` (validate before an atomic write, comments kept), `schema()`, and `HostToml`. The validator is the `jsonschema` crate with default features off (no remote `$ref` fetching). It is maintained; if it would add a new transitive dependency to the `rtok hook` path, stop and ask the creator. Tests use a toy config type: an unknown key, a wrong type, an out-of-range value and a bad enum each report the right line; `set` refuses an invalid value and leaves the file untouched.
+
+Check: the crate's tests are green; the `rtok` binary does not change behavior yet; `just check`.
+
+### T267.2. Main config on the engine
+
+Derive `JsonSchema` on the whole `Config` tree and move constraints into attributes (graph grammars become an enum, numeric limits become ranges). Load, `config validate` and `config set` go through T267.1. Delete the hand walk in `src/config/validate.rs`. Add `rtok config schema` (print the schema) and `schemas/config.schema.json` with a drift test. Legacy-key rejection (T24.5) and `plugins.graph.extensions` keep failing, now through the schema. If this goes over ≤200 LOC / ≤10 files, split derive + schema from the validate swap.
+
+Check: the `config-validate` / `config-path` trycmd fixtures are unchanged or deliberately updated; the T24.5 test is green; the drift test fails after a field is added without regenerating; the hook latency test is green.
+
+### T267.3. Command rules on the engine
+
+Give `rules/*.toml` (default, user file, drop-ins) a typed struct, replacing `parse_strict` and the manual `toml_edit` walk in `src/plugins/cmd/rules.rs`. Merge order and fail-open loading stay. A broken drop-in is still skipped at load time, but `doctor` and `config validate` now report it with `file:line` (today it is silent). Add `schemas/rules.schema.json` with a drift test.
+
+Check: the cmd filter tests are unchanged and green; a malformed drop-in shows up in `doctor`; `just check`.
+
+### T267.4. Bench files on the engine
+
+`bench/tasks.toml` and `bench/graph.toml` load through T267.1 instead of the private figment setup in `src/bench.rs`. Add `schemas/bench-tasks.schema.json` and `schemas/bench-graph.schema.json` with drift tests.
+
+Check: the `bench-dry-run` / `bench-graph-dry-run` trycmd fixtures are unchanged; `just check`.
+
+### T267.5. Host configs through `HostToml`
+
+`src/agents/{codex,grok,kimi}` and the Codex probe in `src/doctor.rs` edit and read host files only through `HostToml`: comments are preserved, the write is atomic, a parse error names the file. rtok does not own these schemas and does not validate host keys; it only guarantees that its own entry (for example `mcp_servers.rtok`) has the right shape. Output of the setup and uninstall tests stays byte-identical.
+
+Check: the agents and doctor tests are unchanged and green; `src/agents/` and `src/doctor.rs` no longer import `toml_edit`; `just check`.
+
+### T267.6. Editor and CI wiring
+
+Put a `#:schema` line at the top of `config/default.toml`, `rules/default.toml`, `.rtok/config.toml` and the bench files, and have `rtok config init` / `config set` write it (a version-pinned URL) when a file is created. Add a `tombi.toml` that maps these globs to `schemas/`, so editors check the files even without the header. Add `tombi lint` over the repo's TOML to `just check` and CI, which also checks `Cargo.toml`, `cliff.toml`, `release-plz.toml` and `dist-workspace.toml` against their SchemaStore schemas. Add rows for `tombi` in `toolchain.md`.
+
+Check: `tombi lint` is green in CI; a deliberate typo in `config/default.toml` fails it; `just check`.
 
 ## Reference
 
