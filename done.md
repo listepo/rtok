@@ -5311,6 +5311,28 @@ Deviations: (1) the offer prints behind `--yes` and only alongside a run that ch
 Status: done 2026-09-22
 Model: Command Code / claude-fable-5
 
+### T88. Devin plugin tree (`plugins/devin/`)
+
+After T87. Devin's plugin format is a directory: manifest `.devin-plugin/plugin.json` (only `name` is required), `hooks.json` and `.mcp.json` at the plugin root, optional `skills/<name>/SKILL.md`. One tree loads in the CLI and in Devin Desktop (hooks load "in local Devin agents only — the CLI and Devin Desktop"), so it is D21's one unit for both surfaces. Local install is `devin plugins install --local <dir>`. Evidence: https://docs.devin.ai/cli/extensibility/plugins/overview.
+
+Plan:
+1. `plugins/devin/.devin-plugin/plugin.json` — `name: "rtok"`, version, description, homepage; `plugins/devin/.mcp.json` — `mcpServers.rtok` → `rtok mcp` directly (I-37: launcher scripts never run; the ketch hint lives in the README).
+2. `plugins/devin/hooks.json` — `PreToolUse` (`^exec$`, `^read$`), `PostToolUse` (all), `UserPromptSubmit`, `SessionStart`, `PostCompaction`, `SessionEnd`, each `rtok hook <event> --host devin`, timeout 5.
+3. `plugins/devin/README.md` — install by hand, files, `## Docs` (plugins, hooks, MCP, skills, Desktop pages).
+4. `agents::devin::tests::plugin_manifest_matches_the_installer` lands with T89; here a `tests/` check that the three JSON files parse, every hook command passes `is_ours`, and `mcpServers` is exactly `rtok`.
+Verify first: whether a plugin's `hooks.json` puts event names at the top level (like `.devin/hooks.v1.json`) or under a `"hooks"` key — the overview page does not show the file.
+
+Execution plan (2026-09-25, creator: go without the live capture): verified — Cognition's own templates (`CognitionAI/plugin-template` `plugins/kitchen-sink/hooks.json`, `CognitionAI/team-marketplace-template` `plugins/security-guardrails/hooks.json`) put event names at the top level, no `"hooks"` wrapper. T87's `adapt_devin` is already on `main`, so `--host devin` works today. Hook commands use the shared POSIX resolver form (`exec rtok hook <event> --host devin;` marker, PATH then `~/.ketch/bin/rtok`, else exit 0) like `plugins/grok`, so a missing `rtok` is a silent no-op, never exit 127 on every call (T174). Files: the three JSON files, `README.md` + `AGENTS.md` (mandatory per `plugins/AGENTS.md`), `tests/devin_plugin.rs`, a `DOC_DOMAINS` row in `tests/host_docs.rs`, a row in `plugins/README.md`. Verify: `cargo nextest run --test devin_plugin --test host_docs`, then `just check`.
+
+Check: `host_docs` and the new manifest test green; `just check`.
+
+Result: `plugins/devin/` ships `.devin-plugin/plugin.json` (`name: "rtok"`), a root `hooks.json` with event names at the top level (the layout of Cognition's own `CognitionAI/plugin-template` and `team-marketplace-template`; the docs page does not show the file), and `.mcp.json` (`mcpServers.rtok` → `rtok mcp`). Hooks: `PreToolUse` on `^exec$` and `^read$`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `PostCompaction`, `SessionEnd`, timeout 5 s, each through the shared POSIX resolver (`agents::hook_resolver` form, no note): PATH, then `~/.ketch/bin/rtok`, else exit 0 — a missing binary is a silent no-op instead of exit 127 on every call (T174). The `exec rtok hook <event> --host devin;` marker is what T89's `is_ours` can key on (the Cursor pattern). T87's `adapt_devin` was already on `main`, so `--host devin` maps the payload today. `README.md` names install (`devin plugins install --local`), removal, the Claude-import double fire and its switch (`read_config_from.claude = false` in `~/.config/devin/config.json`), the unverified points (plugin load on a live session, `read`'s path key, stdin `cwd`) and macOS/Linux only; `AGENTS.md` per `plugins/AGENTS.md`; a row in `plugins/README.md`; `plugins/devin` → `docs.devin.ai` in `tests/host_docs.rs`. No live capture, by the creator's call (2026-09-25).
+
+Check result: `tests/devin_plugin.rs` — `manifest_is_rtok`, `mcp_is_exactly_rtok`, `hooks_are_the_claude_set_in_devin_names` (exact groups, no `"hooks"` wrapper), `hooks_resolve_rtok_from_path_then_ketch_else_exit_0_silently` (empty PATH, temp HOME: exit 0 and silence; a fake `~/.ketch/bin/rtok` receives `<event> --host devin`) — green with `host_docs`, `plugin_scripts`, `skill` and `singleton` (16/16); `just check` green.
+
+Status: done 2026-09-25
+Model: Claude Code / claude-opus-5-5
+
 ### T83.3. `tests/demon.rs` process-tree start/stop hangs on Windows (180 s timeouts)
 
 Skips three tests: `a_service_that_exits_comes_back_and_stop_takes_the_whole_tree_down`, `status_asks_the_kernel_rather_than_believing_the_state_file`, `a_second_start_is_refused_and_status_names_every_service`. These were 180 s `terminate-after` timeouts, not fast failures — `demon.rs`'s process-tree model (session leader + `setsid`, `rtok_sys::process_alive`/`process_term`/`process_kill`) is Unix-shaped; Windows has no process groups the same way (job objects are the closest analog). One family split out of the original T83; see T83.2 for the closing criterion.

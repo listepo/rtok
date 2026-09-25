@@ -61,6 +61,7 @@ See [`src/agents/claude/README.md`](../src/agents/claude/README.md) and [`docs/a
 | [`codex/`](codex/) | Codex (CLI + app) | `.codex-plugin` manifest + hooks + MCP + local marketplace |
 | [`copilot/`](copilot/) | GitHub Copilot CLI | legacy `plugin.json` + camelCase hooks + MCP |
 | [`cursor/`](cursor/) | Cursor | hooks + MCP + launchers |
+| [`devin/`](devin/) | Devin (CLI + Desktop) | `.devin-plugin` manifest + root `hooks.json` + MCP |
 | [`gemini/`](gemini/) | Gemini CLI | `gemini-extension.json` (embedded MCP) + `hooks/hooks.json` |
 | [`grok/`](grok/) | Grok Build | Claude-layout plugin + MCP |
 | [`kimi/`](kimi/) | Kimi Code | single `kimi.plugin.json` |
