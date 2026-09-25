@@ -1500,6 +1500,24 @@ No host accounts for build output. Claude Code exposes `WorktreeCreate`/`Worktre
 - Squash-aware "merged" needs no GitHub call: `git merge-tree --write-tree <base> <branch>` equals `<base>^{tree}` when merging the branch would change nothing.
 - A shared `CARGO_TARGET_DIR` is rejected: ~5 parallel agents would serialize on the build lock. `sccache` does not cache incremental builds. Reflink seeding (`reflink-copy`) only lowers the cost at creation; cleaning idle caches removes it → measure before adopting (T156).
 - First data point for T156 (2026-09-22, APFS, `cp -c -R <other-worktree>/target <new-worktree>/target`, disk delta from `df -k`, not `du`): an 8.1 GB `target/` cloned in 8.8 s for 17 MiB of physical disk; the first `cargo nextest run --lib --test worktree` in the seeded worktree (T150) rebuilt only the four workspace crates, 24 s, with no dependency recompiled. A cold build was not run for comparison — the disk had under 8 GiB free, which is why the clone was tried at all.
+- Second data point for T156 (2026-09-25, part 2 of the card): two fresh worktrees of `origin/main`, `target/` removed in both; the seeded one got `cp -c -R ../rtok-t246.5b/target target && rm -rf target/tmp` (a 14.8 GB `target/` left by two `just check` runs). Then every recipe of `just check` ran in order, timed one by one, continuing past a failure. Disk: used blocks of `df -k /System/Volumes/Data` — `/` is the sealed system snapshot and never moves (a first run measured `/` and read 0 for both). Mac15,9, 16 CPUs, load average 16–19 throughout from other agents' builds, so seconds are rough. Scratch script, not committed.
+
+  | | cold | seeded |
+  | --- | ---: | ---: |
+  | clone (`cp -c -R`) | — | 15 s, +34 MiB |
+  | `fmt-check` | 1 s | 1 s |
+  | `lint` (two clippy runs) | 29 s | 22 s |
+  | `test`: build (`Finished test` profile) | 43 s | 27 s |
+  | `test`: run (nextest `Summary`, 1,782 tests) | 81 s | 81 s |
+  | `test`: `dunnage run target` (T236), recipe time minus build and run | ≈ 6 s | ≈ 215 s |
+  | `build-min` | 24 s | 23 s |
+  | `dup`, `js`, `python` | 1 s | 1 s |
+  | **`just check` total** | **185 s** | **371 s** (+15 s clone) |
+  | `Compiling`/`Checking` lines | 818 | 12 (the six workspace crates) |
+  | data-volume used, delta over the run | +6.28 GiB | +3.35 GiB |
+  | `target/` logical size at the end | 6.4 GiB | 10.9 GiB |
+
+  Seeding worked as the first data point said — no dependency rebuilt — but saved only ≈ 23 s of compile here: on 16 cores the dependency graph builds fast, and the workspace crates rebuild at a new path either way. The loss came from T236's `dunnage` pass after `test`: in the seeded tree it compressed 13,539 files (8.1 GB planned, 5.36 GB applied) and deduplicated 15,503 (433 MB), against 76 files in the cold tree. Rewriting a cloned file un-shares it from the source, which is the likely source of the seeded tree's +3.35 GiB against +34 MiB right after the clone. As `just check` stands, seeding is slower (371 s against 185 s) and saves under half the disk. Seeding without that pass was not measured, so no number is claimed for it. No `reflink-copy` from these numbers; the conflict is parked as I-99 in `ideas.md`.
 
 ### 18.5 What follows for rtok
 
