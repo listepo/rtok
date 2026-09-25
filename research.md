@@ -704,6 +704,50 @@ compared; the gate is **do not enable**. `nudges` stays **off** by default
 fixture contest and stays inside the inject budget — the same honesty bar as the offline
 T9.2 A/B zeros.
 
+#### T134: does `updatedToolOutput` replace native tool output in the CLI? (2026-09-25)
+
+Gate for I-91 (§17.2). Claude Code 2.1.267 (`/opt/homebrew/bin/claude`). Docs disagree:
+`code.claude.com/docs/en/hooks` (CLI shell-command hook reference, fetched today) still
+lists only `additionalContext`, `systemMessage`, `terminalSequence` for `PostToolUse`
+`hookSpecificOutput` — no `updatedToolOutput`. `code.claude.com/docs/en/agent-sdk/hooks`
+(Agent SDK — hosts built on the Python/TypeScript SDK) says: "For `PostToolUse` hooks, you
+can set `additionalContext` to append information to the tool result. To replace the
+tool's output before Claude sees it, set `updatedToolOutput`, which works for any tool in
+both SDKs. The older `updatedMCPToolOutput` field replaces MCP tool output only and is
+deprecated." `anthropics/claude-code#32105` asked for exactly this on built-in tools
+("Extend `updatedMCPToolOutput` to work for all tools … or add a parallel
+`updatedToolOutput` field") and is now closed with no resolution comment visible from a
+page fetch of the issue.
+
+Planned probe: a scratch `PostToolUse` command hook (matcher `Read|Bash|mcp__.*`,
+`/private/tmp/.../scratchpad/t134/hook.sh`) returning
+`{"hookSpecificOutput":{"hookEventName":"PostToolUse","updatedToolOutput":"PROBE-REPLACED-<tool>"}}`,
+run under `claude -p … --settings <scratch>/settings.json --setting-sources ""
+--mcp-config <scratch>/mcp.json --strict-mcp-config` against a Bash `echo`, a `Read` of a
+scratch file, and the `rtok mcp` server's `tree` tool. Blocked before any transcript:
+
+```
+claude -p "say hi" --model haiku --output-format json
+# is_error true; result: "Failed to authenticate: OAuth session expired and could not be
+# refreshed" (usage all zeros, total_cost_usd 0)
+```
+
+Reproduced with zero custom flags (no hook, no `--settings`, no `--mcp-config`), so it is
+not this probe's setup — a `claude -p` child process gets no live model turn from inside
+the agent's sandboxed shell, the same failure already on record for the T53.1 live
+A/B (line ~691 above, 2026-09-18). A `--permission-mode bypassPermissions` variant was
+separately refused by the auto-mode classifier ("Create Unsafe Agents") before the auth
+call was even reached — nested `claude` invocations are not available from inside a CCD
+session, by design or not.
+
+**No transcript, so I-91 does not close today.** The only evidence is the doc split above:
+the CLI's own `PostToolUse` JSON schema omits `updatedToolOutput` while the Agent SDK page
+documents it as an Agent-SDK-level construct ("in both SDKs" reads as Python/TypeScript
+Agent SDK, not the `claude` CLI's command-hook schema). That is consistent with the
+standing rtok rule (line 593) but does not prove it for the CLI surface. Re-run needs a
+`claude -p` invocation outside this sandbox — a real terminal or CI runner with its own
+OAuth session — to get an actual Bash/Read/MCP transcript.
+
 ## 4. Comparison matrix
 
 Stars/language/license from the GitHub API on 2026-09-01. "Claimed" is the vendor's number; "Measured" is yours or an independent source.
@@ -1396,7 +1440,7 @@ Caveats: path-level match (no range or sha), parent reads counted over the whole
 | `fork` sub-agent inherits conversation, model and prompt cache | https://code.claude.com/docs/en/sub-agents , https://code.claude.com/docs/en/prompt-caching | documented — runs on the parent's model, so it is not a cheap-Haiku path |
 | Agent frontmatter: `model`, `tools`, `skills`, `memory`, `hooks`, `mcpServers`, `initialPrompt` | https://code.claude.com/docs/en/sub-agents | documented |
 | Haiku 4.5: cache read 0.1× input, minimum cacheable prefix 4,096 tokens, TTL 5 min / 1 h | https://platform.claude.com/docs/en/build-with-claude/prompt-caching | documented |
-| `PostToolUse` `updatedToolOutput` replaces any tool's output | Agent SDK hooks page | **unverified for CLI command hooks**; contradicts a standing rtok rule → I-91 |
+| `PostToolUse` `updatedToolOutput` replaces any tool's output | Agent SDK hooks page | **unverified for CLI command hooks**; contradicts a standing rtok rule → I-91 (T134, 2026-09-25: doc split confirmed — field absent from the CLI hooks page; live probe blocked by sandbox auth, see §3) |
 
 ### 17.3 What follows for rtok
 
