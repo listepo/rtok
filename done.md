@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+### T87. `rtok hook <event> --host devin` reads Devin's payload
+
+Creator request 2026-09-21: a host plugin for Devin CLI + Devin Desktop. Devin's hooks are Claude-shaped on the way out (`hookSpecificOutput`, exit 2 blocks); the way in differs: tools `exec`/`read`/`edit`/`write`, `tool_response` `{success, output, error}`, compaction event `PostCompaction`, project root via `DEVIN_PROJECT_DIR`.
+
+Result: `HookInput::adapt_devin` maps `exec`→`Bash`, `PostCompaction`→`PostCompact`, lifts non-empty `output` to `stdout`, fills `cwd` from `DEVIN_PROJECT_DIR` when stdin has none. Live capture 2026-09-26 (`devin 3000.11.3`, temp `--config`, `--respect-workspace-trust false`, `--permission-mode accept-edits`): PreToolUse / PostToolUse / SessionStart stdin carry **no `cwd`**; `read` uses **`file_path`**. Captured `exec` PreToolUse yields the same `updatedInput` decision as Claude `Bash`; unknown tool → `{}`. Extra: empty failed `output` lifts no `stdout`; `PostCompaction --host devin` reaches PostCompact plugins (graph repo map).
+
+Check: `devin_maps_tool_names_result_project_dir_and_compaction`, `devin_failed_empty_output_lifts_no_stdout`, `devin_captured_exec_pre_tool_use_matches_claude_bash`, `graph_post_compaction_devin_reaches_post_compact_plugins`; fail-open matrix covers garbage/empty for `--host devin`.
+
 ### T267. Normalized dedupe treats `1src` as a duration and never matches `d:d:d`
 
 `duration_at` scanned only digits and `.`, then treated any following `s` as a duration. `copied 1src/a.rs` and `copied 2src/a.rs` collapsed to the same key. The `d:d:d` branch (`1:2:3`) required five digits after a scan that stops at `:`, so it never matched. `s` and `ms` now match only at a token boundary, and `d:d:d` is recognized before that scan.

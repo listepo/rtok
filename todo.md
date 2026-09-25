@@ -1,4 +1,3 @@
-- T87. `rtok hook <event> --host devin` reads Devin's payload
 - T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
 
