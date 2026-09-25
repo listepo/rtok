@@ -128,17 +128,33 @@ extern "SQL" {
 // SQLite `unixepoch()` — not a Diesel built-in.
 diesel::define_sql_function!(fn unixepoch() -> Nullable<BigInt>);
 
-/// `PRAGMA` does not accept a bound parameter, and `journal_mode` is ignored when Diesel
-/// runs it as a prepared statement (`execute` left the file in `delete` mode). `sqlite3_exec`
-/// is what applies it. The text is a literal this module builds.
-fn exec_pragma(conn: &mut SqliteConnection, sql: &str) -> QueryResult<()> {
-    use diesel::connection::SimpleConnection;
-    conn.batch_execute(sql)
+/// One `PRAGMA` as a `QueryFragment`. `HAS_STATIC_QUERY_ID = false` because
+/// `busy_timeout`'s text includes the millisecond value.
+struct PragmaStmt {
+    sql: String,
+}
+
+impl QueryId for PragmaStmt {
+    type QueryId = ();
+    const HAS_STATIC_QUERY_ID: bool = false;
+}
+
+impl QueryFragment<Sqlite> for PragmaStmt {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(&self.sql);
+        Ok(())
+    }
+}
+
+impl RunQueryDsl<SqliteConnection> for PragmaStmt {}
+
+fn exec_pragma(conn: &mut SqliteConnection, sql: impl Into<String>) -> QueryResult<()> {
+    PragmaStmt { sql: sql.into() }.execute(conn).map(|_| ())
 }
 
 /// Milliseconds are a duration we computed, written as digits.
 pub(crate) fn busy_timeout(conn: &mut SqliteConnection, ms: u128) -> QueryResult<()> {
-    exec_pragma(conn, &format!("PRAGMA busy_timeout = {ms}"))
+    exec_pragma(conn, format!("PRAGMA busy_timeout = {ms}"))
 }
 
 pub(crate) fn pragma_journal_wal(conn: &mut SqliteConnection) -> QueryResult<()> {
