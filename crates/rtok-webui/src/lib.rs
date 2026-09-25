@@ -266,6 +266,11 @@ pub mod snapshot {
             model = dash("model"),
             api = dash("api"),
             ok = c["ok"].as_i64().unwrap_or(0),
+            // Passed explicitly rather than captured: next to the other named arguments an
+            // implicit capture is easy to misread as unused (CodeQL `rust/unused-variable`).
+            name = name,
+            ms = ms,
+            tokens = tokens,
         )
     }
 

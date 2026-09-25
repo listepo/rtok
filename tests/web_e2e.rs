@@ -91,7 +91,12 @@ async fn web_serves_the_page_and_its_bundle() {
     let html = reqwest::get(format!("{base}/")).await.expect("index");
     assert_eq!(html.status(), 200);
     let html = html.text().await.expect("html");
-    assert!(html.contains("./pkg/rtok_webui.js"), "{html}");
+    // The page body is server-controlled input: keep it out of the assert message so a failure
+    // cannot inject forged lines into the test log.
+    assert!(
+        html.contains("./pkg/rtok_webui.js"),
+        "index page does not reference ./pkg/rtok_webui.js"
+    );
 
     let Some(wasm) = bundle("rtok_webui_bg.wasm") else {
         eprintln!("skip bundle checks: built without a bundle — run `just web-bundle`");

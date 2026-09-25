@@ -461,6 +461,10 @@ mod tests {
     /// Fixed rates (T238), matching `tests/mode_bench.rs` and `tokens::tests::RATES` — not
     /// `Estimator::default()`, so a config default change can't silently shift the goldens'
     /// floors.
+    /// AWS's documented example access key id, planted in the `cat.in` golden. It must reach the
+    /// output untouched: the formatters compress, they do not redact.
+    const AWS_EXAMPLE_KEY_ID: &str = "AKIAIOSFODNN7EXAMPLE";
+
     const SAVING_RATES: crate::config::Estimator = crate::config::Estimator {
         code: 3.5,
         prose: 4.2,
@@ -521,7 +525,7 @@ mod tests {
         }
         assert!(n >= 10, "need 10 families, got {n}");
         let secret = fs::read_to_string(dir.join("cat.in")).unwrap();
-        assert!(secret.contains("AKIAIOSFODNN7EXAMPLE"));
+        assert!(secret.contains(AWS_EXAMPLE_KEY_ID));
         let (got, _) = compress(
             &settings,
             &["cat".into(), "secrets.env".into()],
@@ -529,7 +533,12 @@ mod tests {
             0,
             "id",
         );
-        assert!(got.contains("AKIAIOSFODNN7EXAMPLE"), "{got}");
+        // Never echo `got` here: it carries the credential-shaped fixture, and a failing assert
+        // would print it to the test log.
+        assert!(
+            got.contains(AWS_EXAMPLE_KEY_ID),
+            "compressed `cat secrets.env` output dropped or altered the AWS key line"
+        );
     }
 
     #[test]
