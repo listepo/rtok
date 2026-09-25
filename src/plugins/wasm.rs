@@ -30,14 +30,16 @@ pub fn append(
         if path.extension().and_then(OsStr::to_str) != Some("wasm") {
             continue;
         }
-        match WasmPlugin::load(&path, &config.estimator) {
+        match WasmPlugin::load(&path, &config.estimator, &config.log) {
             Ok(p) => {
                 let m = p.manifest();
                 let on = config.plugin_enabled(m.id, m.default_on);
                 out.push((Box::new(p), on));
             }
             Err(e) => {
-                eprintln!("wasm plugin {}: {:#}", path.display(), e);
+                let msg = format!("{}: {e:#}", path.display());
+                eprintln!("wasm plugin {msg}");
+                crate::log::append(config, "error", "wasm", "load", &msg);
             }
         }
     }
@@ -48,6 +50,10 @@ struct WasmHost {
     plugin_id: String,
     staged: Vec<Measurement>,
     estimator: crate::config::Estimator,
+    log_path: std::path::PathBuf,
+    log_max_bytes: u64,
+    log_files: u32,
+    log_level: String,
 }
 
 struct WasmInner {
@@ -88,13 +94,18 @@ struct WasmToolDef {
 }
 
 impl WasmPlugin {
-    pub fn load(path: &Path, estimator: &crate::config::Estimator) -> Result<Self, Error> {
-        Self::load_with_fuel(path, estimator, FUEL)
+    pub fn load(
+        path: &Path,
+        estimator: &crate::config::Estimator,
+        log: &crate::config::Log,
+    ) -> Result<Self, Error> {
+        Self::load_with_fuel(path, estimator, log, FUEL)
     }
 
     fn load_with_fuel(
         path: &Path,
         estimator: &crate::config::Estimator,
+        log: &crate::config::Log,
         fuel: u64,
     ) -> Result<Self, Error> {
         let wasm = std::fs::read(path).map_err(|e| Error::new(e.to_string()))?;
@@ -108,6 +119,10 @@ impl WasmPlugin {
                 plugin_id: String::new(),
                 staged: Vec::new(),
                 estimator: estimator.clone(),
+                log_path: log.path.clone(),
+                log_max_bytes: log.max_bytes,
+                log_files: log.files,
+                log_level: log.level.clone(),
             },
         );
         let mut linker = Linker::new(&engine);
@@ -155,7 +170,25 @@ impl WasmPlugin {
                 let msg_bytes = mem_read(&caller, msg_ptr, msg_len)?;
                 let level = String::from_utf8_lossy(&level_bytes);
                 let msg = String::from_utf8_lossy(&msg_bytes);
-                eprintln!("wasm {} {}: {}", caller.data().plugin_id, level, msg);
+                let data = caller.data();
+                let path = data.log_path.clone();
+                let max_bytes = data.log_max_bytes;
+                let files = data.log_files;
+                let floor = data.log_level.clone();
+                let name = if data.plugin_id.is_empty() {
+                    "guest".to_string()
+                } else {
+                    data.plugin_id.clone()
+                };
+                let file = rtok_log::FileLog {
+                    path: &path,
+                    max_bytes,
+                    files,
+                    level: &floor,
+                };
+                let errors = rtok_log::error_path(&path);
+                rtok_log::append_split(&file, Some(&errors), &level, "wasm", &name, &msg);
+                eprintln!("wasm {name} {level}: {msg}");
                 Ok(())
             },
         )?;
@@ -386,7 +419,7 @@ mod tests {
         assert_eq!(enabled.len(), 1);
         assert_eq!(enabled[0].manifest().id, "wasm-demo");
 
-        let plugin = WasmPlugin::load(&wasm_dst, &cfg.estimator).unwrap();
+        let plugin = WasmPlugin::load(&wasm_dst, &cfg.estimator, &cfg.log).unwrap();
         let host = MemoryHost::new();
         let cx = Ctx::new(&host);
         let text = plugin
@@ -434,7 +467,7 @@ mod tests {
         )
         .unwrap();
         let cfg = crate::config::Config::default();
-        let err = WasmPlugin::load_with_fuel(&path, &cfg.estimator, 10_000).err();
+        let err = WasmPlugin::load_with_fuel(&path, &cfg.estimator, &cfg.log, 10_000).err();
         let _ = std::fs::remove_dir_all(&dir);
         assert!(err.is_some(), "an endless guest must not load");
     }

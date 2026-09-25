@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+### T270. The rotating text log lives in `rtok-log`
+
+The file writer (line format, level floor, rotation, the rename lock) was inside `src/log.rs` and took rtok's `Config`. Another project could not use it without the binary. It is now `crates/rtok-log`: a `FileLog` of path, `max_bytes`, `files` and level, with no database and no stderr viewer. rtok still mirrors each line to the `log` facade and, when `[log] to_db` is on, inserts the same text into the `logs` table. `rtok logs`, tailspin and `logs watch` stay in the binary.
+
+An `error` line is also copied, same bytes, to `errors.log` beside the live file (`append_split` / `error_path`). `warn`, `info` and `debug` stay in the general log only. rtok always passes that sibling path, so every existing `error` record lands in both files. Warnings that used to be stderr-only (lenient config, a bad `.env`, a legacy key, MCP and proxy retention, graph watchman fallback, agent restart, a missing web bundle, deprecated commands, the MCP-under-demon note) are now `warn` lines in the general log. Failures that used to be stderr-only (hook stdin, hook panic, a locked store, an MCP tool error, graph notify, a wasm plugin that will not load, a wasm guest `rtok_log`, `config validate`, a CLI `run` error) are `error` lines, so they also reach `errors.log`. The message keeps the full `{:#}` cause.
+
+Check: `cargo test -p rtok-log` (date, level floor, rotation, newline, a line below the floor, the stale-size lock, error copied and warn left in the main file); `cargo test -p rtok --lib log::` still green.
+
 ### T163.9. Window and CTE queries through the shared extension module
 
 Left over from T163.7: `usage_ctt` (`COUNT() OVER`, `ROW_NUMBER() OVER`), `session_totals`/`recent_session_totals` (four CTEs, `UNION ALL`, per-group `MAX(id)` subqueries) and `recent_calls` (correlated `MAX(id)` subquery in a `LEFT JOIN`) have no form in Diesel 2.3.13's typed DSL. They move into T163.1's `src/store/sql_ext.rs` as typed `QueryFragment`s with bound parameters, each with a comment naming the construct the DSL lacks (the rulebook's exception for statements the ORM cannot express).
