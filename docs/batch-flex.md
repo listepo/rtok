@@ -5,7 +5,7 @@ model router by default. **Batch**, **Flex**, and **model routing** are three
 different cost levers. This page records what the proxy does today, what is
 **planned**, and how each interacts with prompt caching.
 
-Source of intent: `next.md` (token-saving notes), `docs/prompt-cache.md`,
+Source of intent: `ideas.md` (I-100/I-101 token-saving notes), `docs/prompt-cache.md`,
 `research.md` (sticky routing / D9). Behaviour that is not wired in
 `src/proxy/` is marked **planned**.
 
@@ -106,7 +106,7 @@ outside the agent loop. It does **not** replace an agent's `ANTHROPIC_BASE_URL` 
 | `rtok batch status <id>` | poll batch status |
 | `rtok batch fetch <id> <out>` | download results to `<out>` |
 
-See also `next.md` (token-saving backlog). Promote into `plan.md` before coding.
+See also `ideas.md` (I-100/I-101 token-saving backlog). Promote into `plan.md` before coding.
 
 ## Flex API (sync, cheaper tier)
 
@@ -211,4 +211,4 @@ prompt-cache affinity, not model pick. Full design: [model-routing.md](model-rou
 - [comparison.md](comparison.md) — vs bifrost / Portkey / LiteLLM gateways
 - `architecture.md` §12 — where Batch/Flex sit in the proxy pipeline
 - [model-routing.md](model-routing.md) — D9 / §16.3 #3 (separate planned line from Batch/Flex)
-- `next.md` — Batch/Flex and model routing on the token-saving backlog
+- `ideas.md` I-100/I-101 — Batch/Flex and model routing on the token-saving backlog

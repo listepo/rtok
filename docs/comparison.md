@@ -266,7 +266,7 @@ and does **not** auto-convert sync agent turns into Batch jobs.
 Where rtok stays different: measurement into one SQLite ledger, cache-byte-stable compress,
 and hooks/MCP that never see the LLM HTTP path. Where it is behind: bifrost/Portkey/LiteLLM
 already ship production routers; rtok's Batch observe, Flex prepare, and D9 routing are
-still backlog (`next.md`).
+still backlog items in `ideas.md` (I-100/I-101).
 
 ## 6. Check any of it yourself
 

@@ -7,7 +7,7 @@ request is billed on the same (or async) surface; model routing changes
 *which* `model` string the sync chat wires forward.
 
 Source of intent: `plan.md` decision **D9**, `research.md` §16.3 option
-**#3** (and sticky-upstream #1 / I-84), `next.md` token-saving backlog.
+**#3** (and sticky-upstream #1 / I-84), `ideas.md` I-101 token-saving backlog.
 Behaviour that is not wired in `src/proxy/` is marked **planned**.
 
 ## What it is
@@ -93,5 +93,5 @@ S6 / T256), not part of Batch/Flex definition of done.
 - [config.md](config.md) — `[proxy.*]` reference (when fields land)
 - `plan.md` — D9; Batch/Flex roadmap S6 / T256 stub
 - `research.md` §16.3 — options #1 (sticky) and #3 (model / tier routing)
-- `next.md` — token-saving backlog card
+- `ideas.md` I-101 — token-saving backlog card
 - `ideas.md` I-84 — sticky upstream + prompt-cache affinity

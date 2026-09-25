@@ -5,8 +5,8 @@ Research and roadmap only — no new runtime behaviour in this document.
 Branch context: `docs/batch-flex-pass` (token-saving research alongside
 Batch/Flex and model routing).
 
-Sources of intent: `next.md` (“LLM soft compression (P28)”), `ideas.md`
-**I-21**, `plan.md` / `done.md` **P28** (T28.0–T28.2),
+Sources of intent: `ideas.md` (I-21, “LLM soft compression (P28)”),
+`plan.md` / `done.md` **P28** (T28.0–T28.2),
 `src/plugins/compress/PLAN.md` (D15 survey), `roadmap.md` Later,
 `docs/prompt-cache.md`, `docs/batch-flex.md`, `docs/model-routing.md`,
 `research.md` §2 / §6.9 / §9.2.
@@ -38,7 +38,7 @@ specialist compressor), **not**:
 | Live-zone / cache-preserving proxy rewrites | Old tool results shrink without churning system/tools/live edge (`docs/prompt-cache.md`) |
 | Output / prose compress modes | Extractive + caveman-style (`modes`, comparison benches) |
 
-`next.md` still lists **LLM soft compression (P28)** as **To add** because
+The item is still tracked in `ideas.md` (I-21) as **To add** because
 the **LLM lane** (LLMLingua-class or claude-mem-style observation extraction
 behind an explicit flag, Gate P28) is **not** the default extractive path.
 T28.2 landed the extractive implementation and deferred the memory
@@ -119,7 +119,7 @@ headroom (D6); default-on LLM; pruning without archive; rewriting prefix.
 
 ## 4. Roadmap (phases)
 
-Priority vs other `next.md` Later items: **below** Batch/Flex pass-through
+Priority vs other Later items in `ideas.md`: **below** Batch/Flex pass-through
 and **below or beside** model-routing measurement — soft compress spends
 tokens to save tokens; Batch/Flex and routing are often cheaper first
 dollars. Promote cards into `plan.md` before coding.
@@ -128,7 +128,7 @@ dollars. Promote cards into `plan.md` before coding.
 
 | | |
 |--|--|
-| **DoD** | T28.0 PLAN exists; I-21 → P28; Gate text in `roadmap.md`; extractive lane + flag in tree (T28.1/T28.2); this doc + `next.md` pointer |
+| **DoD** | T28.0 PLAN exists; I-21 → P28; Gate text in `roadmap.md`; extractive lane + flag in tree (T28.1/T28.2); this doc + `ideas.md` I-21 pointer |
 | **Deps** | — |
 | **Insert** | `src/plugins/compress/PLAN.md`, `done.md` P28 |
 
@@ -203,7 +203,7 @@ dollars. Promote cards into `plan.md` before coding.
 3. **Claimed saving without `Measurement`** → D1; saving does not exist.
 4. **Prompt-cache bust** from rewriting system/tools/live turns → regressions in `docs/prompt-cache.md` hit rates.
 5. **Code-shaped text** quality (research.md §6.9 / caveman lessons) → require golden “must keep” spans in Phase 1.
-6. **Confusing extractive (on) with LLM (Later)** in docs/marketing → this file and `next.md` naming.
+6. **Confusing extractive (on) with LLM (Later)** in docs/marketing → this file and `ideas.md` naming.
 
 ## 7. Priority (summary)
 
@@ -211,7 +211,7 @@ dollars. Promote cards into `plan.md` before coding.
 |----------|------|-----------|
 | P0 done | Lossless + extractive compress | Already measured path |
 | P1 research | Phase 1 measurement | Without it Gate is guesswork |
-| P2 Later | Phase 2 LLM summarize | Real I-21 / next.md item |
+| P2 Later | Phase 2 LLM summarize | Real I-21 / `ideas.md` item |
 | P3 Later | Phase 3 memory extractor | Same P28 umbrella; optional |
 | P4 optional | Phase 4 native ranker upgrade | Only if LLM loses Gate |
 | Parallel | Batch/Flex, model routing | Usually better $/effort first |
@@ -219,7 +219,6 @@ dollars. Promote cards into `plan.md` before coding.
 ## 8. Related docs
 
 - `src/plugins/compress/PLAN.md` — T28.0 survey and mechanism
-- `next.md` — backlog pointer
 - `docs/batch-flex.md` — sync vs Batch (no soft compress on Batch)
 - `docs/model-routing.md` — cheap model for mechanical jobs
 - `docs/prompt-cache.md` — prefix / live-edge rules

@@ -714,7 +714,7 @@ wires; Anthropic unchanged; prompt-cache docs still accurate.
 - Breakdown in `rtok report` / stats: sync vs Flex vs Batch.
 - Update `docs/batch-flex.md` “planned” → “today” for shipped pieces; keep
   routing as planned.
-- Optional: pointer from `next.md` / plan cards when promoting to `plan.md`.
+- Optional: pointer from `ideas.md` / plan cards when promoting to `plan.md`.
 
 **Exit:** operator can prove savings from rtok ledger without provider console.
 
@@ -792,7 +792,7 @@ S6 not required).
 - [`docs/prompt-cache.md`](docs/prompt-cache.md) — sticky vs Batch/Flex
 - [`architecture.md`](architecture.md) §12 — pipeline placement
 - [`src/plugins/proxy/AGENTS.md`](src/plugins/proxy/AGENTS.md) — agent notes
-- `next.md` (PR #266) — token-saving backlog card for Batch/Flex/routing
+- `ideas.md` (I-100/I-101) — token-saving backlog cards for Batch/Flex/routing
 
 ## Feature checklist — Batch / Flex (T250–T259)
 
@@ -1222,7 +1222,7 @@ Check: `rg 'service_tier' migrations/` empty (unless mini-PR); `just check`.
 **Files:** `docs/batch-flex.md` (planned→today for shipped S1/S2/S4/S5 pieces; keep
 routing planned), `docs/config.md` (remove “validate fails” for loaded keys),
 `architecture.md` §12 table, `src/plugins/proxy/AGENTS.md`, optional pointer from
-`next.md` when promoting.
+`ideas.md` when promoting.
 
 **Acceptance (MVP = T251+T252+T254+T255; T253 strongly recommended)**
 
