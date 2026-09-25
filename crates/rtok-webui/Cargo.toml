@@ -39,9 +39,16 @@ slint-build = "1.18"
 [dev-dependencies]
 i-slint-backend-testing = "=1.18.0"
 
-# T60.7: size-first release profile for the WASM operator UI.
+# T60.7: size-first release profile for the WASM operator UI. `tests/web_wasm.rs` holds
+# every line here; opt-level "s" measured 4,738,453 B against 4,344,475 B for "z".
 [profile.release]
 opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# wasm-pack runs wasm-opt with `-O` unless told otherwise, and that is the only pass the
+# release runners get (they have no binaryen on PATH): 4,522,155 B in run 36165796413.
+# `-Oz --converge` brings the same build to 4,344,475 B on every machine alike.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--converge"]

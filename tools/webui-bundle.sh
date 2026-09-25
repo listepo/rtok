@@ -38,13 +38,11 @@ skip() {
 
 command -v wasm-pack >/dev/null 2>&1 || skip "wasm-pack not on PATH"
 
+# wasm-pack runs wasm-opt itself (its own binaryen when none is on PATH) with the flags in
+# crates/rtok-webui/Cargo.toml [package.metadata.wasm-pack.profile.release]. There is no
+# second host-only pass: it made local builds smaller than the release runners' and hid
+# growth until a release failed (research.md, T60.7).
 wasm-pack build crates/rtok-webui --release --target web --out-dir pkg
-
-# wasm-pack runs wasm-opt itself when binaryen is reachable (measured 4,392,425 B);
-# an explicit -Oz shaves a little more (4,130,017 B) when binaryen is installed here.
-if command -v wasm-opt >/dev/null 2>&1; then
-  wasm-opt -Oz "$wasm" -o "$wasm"
-fi
 
 if [ "$compress" -eq 1 ]; then
   # `set -e` would take a bare `cmd -v x && x ...` as the script's verdict.
@@ -55,8 +53,9 @@ fi
 bytes=$(wc -c < "$wasm" | tr -d ' ')
 echo "webui-bundle: $wasm is $bytes bytes (gate $gate)"
 if [ "$bytes" -gt "$gate" ]; then
-  # Reached when wasm-opt ran nowhere: the unoptimised bundle is ~10.5 MB, and
-  # shipping that in every binary is not a thing to discover after a release.
+  # Reached when wasm-opt ran nowhere (the unoptimised bundle is ~10.5 MB) or when the UI
+  # really grew. `cargo nextest run --test web_wasm` prints the section/segment breakdown.
   echo "webui-bundle: over the T60.7 gate — is wasm-opt/binaryen reachable?" >&2
+  echo "webui-bundle: run \`cargo nextest run --test web_wasm\` for a breakdown of what grew" >&2
   exit 1
 fi
