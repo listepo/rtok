@@ -9,6 +9,13 @@ pub fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_rtok")
 }
 
+/// `s` with every `\` as `/`. [`write_cfg`] hands rtok `/`-joined paths and rtok joins what it
+/// derives with the OS separator, so Windows output mixes both; compare both sides through this
+/// (T83.4).
+pub fn slash(s: impl AsRef<str>) -> String {
+    s.as_ref().replace('\\', "/")
+}
+
 /// A fresh empty directory, unique per test and process.
 pub fn tmp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -91,6 +98,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".copilot/hooks",
         ".codeium/windsurf",
         ".config/zed",
+        "Documents/Cline/Hooks",
+        ".cline/data/settings",
         ".gemini",
         ".codewhale",
         ".config/mimocode",
@@ -122,6 +131,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.aider]\nconfig_path = \"{h}/.aider.conf.yml\"\n\
               [setup.windsurf]\nconfig_path = \"{h}/.codeium/windsurf/mcp_config.json\"\n\
               [setup.zed]\nconfig_path = \"{h}/.config/zed/settings.json\"\n\
+             [setup.cline]\nhooks_path = \"{h}/Documents/Cline/Hooks\"\n\
+             mcp_path = \"{h}/.cline/data/settings/cline_mcp_settings.json\"\n\
               [setup.gemini]\ndir = \"{h}/.gemini\"\n\
               [setup.codewhale]\ndir = \"{h}/.codewhale\"\n\
               [setup.mimo]\nconfig_path = \"{h}/.config/mimocode/mimocode.json\"\n\
@@ -311,24 +322,30 @@ pub fn fake_claude_path(home: &Path) -> std::ffi::OsString {
         fs::create_dir_all(&dir).unwrap();
         let claude = dir.join("claude");
         if !claude.exists() {
-            fs::write(
-                &claude,
-                r#"#!/bin/sh
+            // T132: a real `claude plugin install` copies the plugin tree into its cache
+            // (`plugins/claude/README.md`), `agents/` included — mirror that here with the
+            // repo's actual shipped file, so an install/removal e2e can assert on it without
+            // hardcoding the agent's contents twice.
+            let scout_src =
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/claude/agents/rtok-scout.md");
+            let script = r#"#!/bin/sh
 [ "$1" = --version ] && { echo "2.0.0 (Claude Code)"; exit 0; }
 echo "$*" >> "$HOME/claude.log"
 plugins="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins"
 case "$*" in
-  "plugin install rtok@rtok") mkdir -p "$plugins"
+  "plugin install rtok@rtok") mkdir -p "$plugins/cache/rtok/agents"
+    cp "__SCOUT_SRC__" "$plugins/cache/rtok/agents/rtok-scout.md"
     printf '{"version":2,"plugins":{"rtok@rtok":[{"scope":"user"}]}}' > "$plugins/installed_plugins.json" ;;
-  "plugin uninstall rtok@rtok") rm -f "$plugins/installed_plugins.json" ;;
+  "plugin uninstall rtok@rtok") rm -f "$plugins/installed_plugins.json"
+    rm -rf "$plugins/cache/rtok" ;;
   "plugin update rtok@rtok")
     [ -f "$HOME/fake-claude-fail-update" ] && { echo "update failed" >&2; exit 1; }
     mkdir -p "$plugins"
     printf '{"version":2,"plugins":{"rtok@rtok":[{"scope":"user","version":"latest"}]}}' > "$plugins/installed_plugins.json" ;;
 esac
-"#,
-            )
-            .unwrap();
+"#
+            .replace("__SCOUT_SRC__", &scout_src.display().to_string());
+            fs::write(&claude, script).unwrap();
             fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
         }
         let codex = dir.join("codex");

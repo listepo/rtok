@@ -3,7 +3,10 @@
 use crate::config::Config;
 use anyhow::{Result, bail};
 use rtok_plugin_sdk::{Archive, Class, Measurement};
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::{Duration, Instant};
 
 use super::{formatters, rules};
 
@@ -46,7 +49,7 @@ pub(crate) enum ShellKind {
 }
 
 /// Classify by the executable basename so an explicit `[plugins.cmd] shell`
-/// still picks the right flags (`-lc` vs `/C` vs `-Command`).
+/// still picks the right flags (`-c` vs `/C` vs `-Command`).
 pub(crate) fn shell_kind(shell: &str) -> ShellKind {
     match formatters::cmd_stem(shell).to_ascii_lowercase().as_str() {
         "cmd" => ShellKind::Cmd,
@@ -140,6 +143,22 @@ fn shell(cfg: &Config) -> String {
     )
 }
 
+/// `shell` running `body`. `script_for` already quoted a cmd.exe body for cmd.exe
+/// (`"…"`, `""`); `Command::arg` would quote it again with MSVC rules (`\"`), which
+/// cmd.exe does not parse, so on Windows the body goes onto the command line as is (T83.8).
+fn shell_command(shell: &str, body: &str) -> Command {
+    let mut cmd = Command::new(shell);
+    let args = shell_args(shell, body);
+    #[cfg(windows)]
+    if let (ShellKind::Cmd, Some((body, flags))) = (shell_kind(shell), args.split_last()) {
+        use std::os::windows::process::CommandExt;
+        cmd.args(flags).raw_arg(body);
+        return cmd;
+    }
+    cmd.args(args);
+    cmd
+}
+
 /// Flags + script body for `Command::new(shell)`.
 pub(crate) fn shell_args(shell: &str, body: &str) -> Vec<String> {
     match shell_kind(shell) {
@@ -150,7 +169,11 @@ pub(crate) fn shell_args(shell: &str, body: &str) -> Vec<String> {
             "-Command".into(),
             body.into(),
         ],
-        ShellKind::Posix => vec!["-lc".into(), body.into()],
+        // `-c`, not `-lc` (T235.2): the host already ran its login profile in the shell that
+        // runs `rtok run`, and the environment it passes down is the one the unwrapped command
+        // would have had. A second login shell cost ~0.15 s per call (hyperfine: `zsh -lc true`
+        // 152 ms vs `zsh -c true` 3 ms) and could reorder PATH (macOS `path_helper`).
+        ShellKind::Posix => vec!["-c".into(), body.into()],
     }
 }
 
@@ -274,14 +297,59 @@ pub fn run(cfg: &Config, args: &[String], agent: Option<&str>) -> Result<i32> {
     }
     let sh = shell(cfg);
     let sh_kind = shell_kind(&sh);
-    let out = Command::new(&sh)
-        .args(shell_args(&sh, &script_for(sh_kind, args)))
-        .output()?;
-    let mut body = out.stdout;
-    body.extend_from_slice(&out.stderr);
-    let code = out.status.code().unwrap_or(1);
+    let (body, code) = capture(shell_command(&sh, &script_for(sh_kind, args)))?;
     emit_filtered(cfg, args, &body, code, agent);
     Ok(code)
+}
+
+/// How long [`capture`] keeps reading once the wrapped process has exited. A descendant it
+/// left running (`git fsmonitor--daemon`, `gradle --daemon`, a backgrounded server) can hold
+/// the pipe's write end for good, so waiting for EOF would hang the agent's call (T235.1).
+const DRAIN_AFTER_EXIT: Duration = Duration::from_millis(200);
+
+/// `cmd`'s stdout then stderr, and its exit code. Waits for the process rather than for EOF
+/// (unlike `Command::output`): after it exits, what its pipes already hold is drained for up
+/// to [`DRAIN_AFTER_EXIT`], and a reader still blocked by a descendant is left behind.
+fn capture(mut cmd: Command) -> Result<(Vec<u8>, i32)> {
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let (tx, rx) = mpsc::channel();
+    let out = drain(child.stdout.take(), tx.clone());
+    let err = drain(child.stderr.take(), tx);
+    let code = child.wait()?.code().unwrap_or(1);
+    let deadline = Instant::now() + DRAIN_AFTER_EXIT;
+    for _ in 0..2 {
+        if rx
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .is_err()
+        {
+            break;
+        }
+    }
+    let mut body = std::mem::take(&mut *out.lock().unwrap_or_else(|e| e.into_inner()));
+    body.append(&mut err.lock().unwrap_or_else(|e| e.into_inner()));
+    Ok((body, code))
+}
+
+/// Read `pipe` to EOF on its own thread into the returned buffer; signal `done` at EOF.
+fn drain(pipe: Option<impl Read + Send + 'static>, done: mpsc::Sender<()>) -> Arc<Mutex<Vec<u8>>> {
+    let buf = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&buf);
+    std::thread::spawn(move || {
+        if let Some(mut pipe) = pipe {
+            let mut chunk = [0u8; 8192];
+            while let Ok(n @ 1..) = pipe.read(&mut chunk) {
+                sink.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .extend_from_slice(&chunk[..n]);
+            }
+        }
+        let _ = done.send(());
+    });
+    buf
 }
 
 /// Archive `body` when the shortening dropped something, print the filtered text plus
@@ -447,10 +515,25 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    fn on_cmd(c: &Config) -> bool {
+        shell_kind(&shell(c)) == ShellKind::Cmd
+    }
+
+    /// argv printing `text` through the host shell. cmd.exe has no `printf` and a newline
+    /// ends its command line, so there it `type`s a file holding `text` (T83.2).
+    fn print_argv(c: &Config, dir: &std::path::Path, text: &str) -> Vec<String> {
+        if !on_cmd(c) {
+            return vec!["printf".into(), text.into()];
+        }
+        let path = dir.join("print.txt");
+        fs::write(&path, text).unwrap();
+        vec!["type".into(), path.display().to_string()]
+    }
+
     #[test]
     fn printf_two_lines_exit_0_no_trailer() {
         let (c, dir) = cfg("printf");
-        let code = run(&c, &["printf".into(), "a\nb\n".into()], None).unwrap();
+        let code = run(&c, &print_argv(&c, &dir, "a\nb\n"), None).unwrap();
         assert_eq!(code, 0);
         // T160: the trailing newline is noise — no pointer, so no archive row either.
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
@@ -479,15 +562,16 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         );
-        assert_eq!(
-            run(&c, &["printf".into(), payload.clone()], None).unwrap(),
-            0
-        );
-        let inner = format!("printf '%s\n' '{}'", payload.trim_end_matches('\n'));
-        assert_eq!(
-            run(&c, &["sh".into(), "-c".into(), inner], None).unwrap(),
-            0
-        );
+        // Two argv lists, one output: the same bytes in two files, each printed by the host
+        // shell's own file printer — cmd.exe has no `printf` and a newline ends its command
+        // line (T83.11).
+        let print = if on_cmd(&c) { "type" } else { "cat" };
+        for name in ["a.txt", "b.txt"] {
+            let path = dir.join(name);
+            fs::write(&path, &payload).unwrap();
+            let argv = [print.into(), path.display().to_string()];
+            assert_eq!(run(&c, &argv, None).unwrap(), 0);
+        }
         let store = crate::store::Store::open(&c.core.db_path).unwrap();
         let rows = store.list_measurements("cmd").unwrap();
         let dedup = rows.iter().filter(|r| r.kind == "dedup").count();
@@ -563,19 +647,40 @@ mod tests {
     #[test]
     fn exit_3_is_preserved() {
         let (c, dir) = cfg("exit3");
-        let code = run(&c, &["sh".into(), "-c".into(), "exit 3".into()], None).unwrap();
+        // cmd.exe has no `sh`; its own `exit 3` ends it with that code (T83.2).
+        let argv: Vec<String> = if on_cmd(&c) {
+            vec!["exit 3".into()]
+        } else {
+            vec!["sh".into(), "-c".into(), "exit 3".into()]
+        };
+        let code = run(&c, &argv, None).unwrap();
         assert_eq!(code, 3);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// T235.1: a backgrounded grandchild keeps the capture pipe open after the shell exits.
+    /// `capture` returns on the shell's exit with its output and code, not at the pipe's EOF.
+    #[cfg(unix)]
+    #[test]
+    fn capture_returns_when_the_child_exits_though_a_grandchild_holds_the_pipe() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "echo hi; sleep 20 & exit 4"]);
+        let start = Instant::now();
+        let (body, code) = capture(cmd).unwrap();
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            start.elapsed()
+        );
+        assert_eq!((body.as_slice(), code), (&b"hi\n"[..], 4));
     }
 
     #[test]
     fn three_runs_stats_plugin_cmd_json_has_rows() {
         let (c, dir) = cfg("stats3");
+        let argv = print_argv(&c, &dir, "a\nb\n");
         for _ in 0..3 {
-            assert_eq!(
-                run(&c, &["printf".into(), "a\nb\n".into()], None).unwrap(),
-                0
-            );
+            assert_eq!(run(&c, &argv, None).unwrap(), 0);
         }
         let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
         let rows = v["rows"].as_array().unwrap();
@@ -604,7 +709,19 @@ mod tests {
     #[test]
     fn one_arg_compound_command_runs_as_one_script() {
         let (c, dir) = cfg("compound");
-        let code = run(&c, &["printf a; printf b".into()], None).unwrap();
+        // cmd.exe chains with `&` and prints the same bytes with `type` (T83.2).
+        let snippet = if on_cmd(&c) {
+            let mut parts = Vec::new();
+            for text in ["a", "b"] {
+                let path = dir.join(format!("{text}.txt"));
+                fs::write(&path, text).unwrap();
+                parts.push(format!("type {}", cmd_quote(&path.display().to_string())));
+            }
+            parts.join("& ")
+        } else {
+            "printf a; printf b".into()
+        };
+        let code = run(&c, &[snippet], None).unwrap();
         assert_eq!(code, 0);
         // "ab" lost nothing, so T160 stores no archive — but the run is still measured.
         let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
@@ -832,7 +949,7 @@ mod tests {
         assert_eq!(shell_kind("pwsh"), ShellKind::PowerShell);
         assert_eq!(
             shell_args("/bin/sh", "true"),
-            vec!["-lc".to_string(), "true".to_string()]
+            vec!["-c".to_string(), "true".to_string()]
         );
         assert_eq!(
             shell_args(r"C:\Windows\System32\cmd.exe", "echo hi"),
@@ -862,7 +979,19 @@ mod tests {
         assert_eq!(cmd_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
     }
 
-    /// Configured PowerShell must not get Posix `-lc` (CreateProcess would fail the flag).
+    /// T83.8: cmd.exe gets the body as `script_for` quoted it, not re-quoted with `\"`.
+    #[cfg(windows)]
+    #[test]
+    fn cmd_exe_gets_the_body_verbatim() {
+        let body = script_for(ShellKind::Cmd, &["echo".into(), "say \"hi\"".into()]);
+        let out = shell_command("cmd.exe", &body).output().unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim_end(),
+            "\"say \"\"hi\"\"\""
+        );
+    }
+
+    /// Configured PowerShell must not get Posix `-c` (CreateProcess would fail the flag).
     #[test]
     fn configured_powershell_uses_command_flag() {
         let (mut c, dir) = cfg("ps-shell");

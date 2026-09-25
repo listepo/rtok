@@ -432,6 +432,72 @@ fn zed_remove_keeps_comments_and_foreign_servers() {
     assert!(again.contains("no changes"), "second remove: {again}");
 }
 
+/// T246.5: zed's `unregister_mcp` now goes through the same ownership check as the JSON hosts
+/// (T246.1/T246.2) — an edited `context_servers.rtok` stays unless `--yes`, and a `rtok`-named
+/// entry that does not run rtok is never touched.
+#[test]
+fn zed_remove_asks_before_taking_an_edited_mcp_entry() {
+    let home = tmp("zed-edited-mcp");
+    let cfg = write_cfg(&home);
+    let path = home.join(".config/zed/settings.json");
+
+    rtok(&["agents", "install", "zed"], &cfg, &home);
+    let mut doc = json(&path);
+    doc["context_servers"]["rtok"]["env"] = serde_json::json!({"RTOK_LOG": "debug"});
+    fs::write(&path, doc.to_string()).unwrap();
+
+    let out = rtok(&["agents", "remove", "zed"], &cfg, &home);
+    assert!(out.contains("changed by you; remove by hand"), "{out}");
+    assert!(json(&path)["context_servers"]["rtok"]["env"].is_object());
+    rtok(&["agents", "remove", "zed", "--yes"], &cfg, &home);
+    assert!(json(&path)["context_servers"]["rtok"].is_null());
+
+    let mine = r#"{"context_servers":{"rtok":{"command":"node","args":["mine.js"]}}}"#;
+    fs::write(&path, mine).unwrap();
+    let out = rtok(&["agents", "remove", "zed", "--yes"], &cfg, &home);
+    assert!(out.contains("not rtok's"), "{out}");
+    assert!(json(&path)["context_servers"]["rtok"].is_object());
+}
+
+/// T246.5: grok's `unregister_mcp` converts its TOML `[mcp_servers.rtok]` table to JSON and
+/// runs it through the same `runs_bin`/`rtok_as_one` check the JSON hosts use, so the contract
+/// matches windsurf's and claude's exactly (T246.1/T246.2).
+#[test]
+fn grok_remove_asks_before_taking_an_edited_mcp_entry() {
+    let home = tmp("grok-edited-mcp");
+    let cfg = write_cfg(&home);
+    let path = home.join(".grok/config.toml");
+
+    rtok(&["agents", "install", "grok"], &cfg, &home);
+    let raw = fs::read_to_string(&path).unwrap();
+    assert!(raw.contains("[mcp_servers.rtok]"), "{raw}");
+    let edited = raw.replacen("args = [\"mcp\"]", "args = [\"mcp\"]\ntimeout = 30", 1);
+    assert_ne!(edited, raw, "the fixture must actually gain a field: {raw}");
+    fs::write(&path, edited).unwrap();
+
+    let out = rtok(&["agents", "remove", "grok"], &cfg, &home);
+    assert!(out.contains("changed by you; remove by hand"), "{out}");
+    let kept = fs::read_to_string(&path).unwrap();
+    assert!(kept.contains("timeout = 30"), "{kept}");
+    rtok(&["agents", "remove", "grok", "--yes"], &cfg, &home);
+    let after = fs::read_to_string(&path).unwrap();
+    assert!(!after.contains("[mcp_servers.rtok]"), "{after}");
+    assert!(!after.contains("timeout = 30"), "{after}");
+
+    fs::write(
+        &path,
+        "[mcp_servers.rtok]\ncommand = \"node\"\nargs = [\"mine.js\"]\n",
+    )
+    .unwrap();
+    let out = rtok(&["agents", "remove", "grok", "--yes"], &cfg, &home);
+    assert!(out.contains("not rtok's"), "{out}");
+    assert!(
+        fs::read_to_string(&path)
+            .unwrap()
+            .contains("[mcp_servers.rtok]")
+    );
+}
+
 /// T246.1: remove takes back the MCP entry as rtok wrote it, keeps one the user edited unless
 /// `--yes` says remove (no terminal here, so nobody answers the question), and never takes a
 /// server named `rtok` that runs something else.
@@ -547,6 +613,9 @@ fn dry_run_remove_writes_nothing() {
 /// stick: a host materializes our plugin symlink into a plain copy, so the dest holds
 /// our tree with no marker and no link; `installed()` counted any metadata there, so
 /// the mark stayed on while remove left the "foreign" directory in place.
+/// Unix only (T83.13): Windows installs a marked copy that `windows_copy` rewrites, not a
+/// link, so there is no symlink for a host to materialize.
+#[cfg(unix)]
 #[test]
 fn uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy() {
     let home = tmp("cursor-marks");
@@ -585,6 +654,7 @@ fn uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy() {
 }
 
 /// `fs::copy` has no directory form; the tree here is small and shallow enough.
+#[cfg(unix)]
 fn copy_tree(src: &std::path::Path, dest: &std::path::Path) {
     fs::create_dir_all(dest).unwrap();
     for entry in fs::read_dir(src).unwrap() {

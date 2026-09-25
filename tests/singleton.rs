@@ -16,11 +16,15 @@ use std::path::Path;
 
 /// The tree under `plugins/` a host links, and whether it ships an MCP server: the OpenCode
 /// plugin (shared by Kilo) filters bash output and carries none; OMP links Pi's extension,
-/// which leaves `registerTool` off there (the tools come from `mcp.json`).
+/// which leaves `registerTool` off there (the tools come from `mcp.json`). Cline's plugin
+/// (T95: the per-event hook links) is hooks only — unlike cursor/kimi, MCP there is never
+/// folded into the plugin, so both `mcpServers.rtok` files (CLI + VS Code extension, T96.1)
+/// are meant to carry it at once and neither is a duplicate of the plugin.
 fn plugin_tree(host: &str) -> (&str, bool) {
     match host {
         "opencode" | "kilo" => ("opencode", false),
         "omp" => ("pi", false),
+        "cline" => ("cline", false),
         _ => (host, true),
     }
 }

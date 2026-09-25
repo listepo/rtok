@@ -468,14 +468,23 @@ fn stop_hook_spawns_the_flush_and_stays_under_10ms() {
         "SessionEnd",
         r#"{"session_id":"s1","hook_event_name":"SessionEnd","reason":"clear"}"#,
     );
+    // T83.15: the flush child may still hold the store; then SessionEnd defers to a child of
+    // its own, so `ended_at` lands a moment later rather than before the hook returns.
     let cx = ctx(&dir, &server.base_url());
-    let ended = cx
-        .store
-        .sessions_ended_after(1)
-        .unwrap()
-        .into_iter()
-        .any(|s| s.id == "s1");
-    assert!(ended, "SessionEnd set ended_at");
+    let ended = || {
+        cx.store
+            .sessions_ended_after(1)
+            .unwrap()
+            .into_iter()
+            .any(|s| s.id == "s1")
+    };
+    for _ in 0..200 {
+        if ended() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(ended(), "SessionEnd set ended_at");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

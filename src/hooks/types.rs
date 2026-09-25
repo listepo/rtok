@@ -148,6 +148,17 @@ impl HookInput {
         {
             self.tool_response = Some(result);
         }
+        // `subagentStart` names the spawned agent `agentName` (T262.4).
+        if self.agent_type.is_none()
+            && let Some(name) = self.extra.remove("agentName").and_then(as_string)
+        {
+            self.agent_type = Some(name);
+        }
+        if self.task_description.is_none()
+            && let Some(what) = self.extra.remove("agentDescription").and_then(as_string)
+        {
+            self.task_description = Some(what);
+        }
         let name = if self.hook_event_name.is_empty() {
             event
         } else {
@@ -220,6 +231,108 @@ impl HookInput {
         if self.prompt.is_none() {
             self.prompt = self.extra.remove("text").and_then(as_string);
         }
+    }
+
+    pub fn adapt_cline(&mut self, event: &str) {
+        let hook_name = self
+            .extra
+            .remove("hookName")
+            .and_then(as_string)
+            .filter(|s| !s.is_empty());
+        if self.session_id.is_empty()
+            && let Some(id) = self.extra.remove("taskId").and_then(as_string)
+        {
+            self.session_id = id;
+        } else {
+            self.extra.remove("taskId");
+        }
+        if self.cwd.is_none()
+            && let Some(Value::Array(roots)) = self.extra.remove("workspaceRoots")
+            && let Some(first) = roots.iter().find_map(|r| r.as_str())
+        {
+            let first = first.trim();
+            if !first.is_empty() {
+                self.cwd = Some(first.to_string());
+            }
+        } else {
+            self.extra.remove("workspaceRoots");
+        }
+        if self.tool_name.is_none()
+            && let Some(Value::Object(mut call)) = self.extra.remove("tool_call")
+        {
+            let name = call.remove("name").and_then(as_string);
+            let mut input = call.remove("input").unwrap_or(Value::Null);
+            let use_id = call.remove("id").and_then(as_string);
+            if !call.is_empty() {
+                for (k, v) in call {
+                    self.extra.insert(k, v);
+                }
+            }
+            if let Some(name) = name {
+                self.tool_name = Some(cline_tool_name(&name));
+                if self.tool_name.as_deref() == Some("Bash") {
+                    single_command(&mut input);
+                }
+                self.tool_input = Some(input);
+            }
+            if self.tool_use_id.is_none() {
+                self.tool_use_id = use_id;
+            }
+        }
+        if self.tool_response.is_none()
+            && let Some(Value::Object(mut result)) = self.extra.remove("tool_result")
+        {
+            let name = result.remove("name").and_then(as_string);
+            let input = result.remove("input");
+            let output = result.remove("output");
+            let error = result.remove("error");
+            let use_id = result.remove("id").and_then(as_string);
+            if !result.is_empty() {
+                for (k, v) in result {
+                    self.extra.insert(k, v);
+                }
+            }
+            if self.tool_name.is_none()
+                && let Some(name) = name
+            {
+                self.tool_name = Some(cline_tool_name(&name));
+            }
+            if self.tool_input.is_none()
+                && let Some(input) = input
+            {
+                if self.tool_name.as_deref() == Some("Bash") {
+                    let mut owned = input;
+                    single_command(&mut owned);
+                    self.tool_input = Some(owned);
+                } else {
+                    self.tool_input = Some(input);
+                }
+            }
+            if self.tool_use_id.is_none() {
+                self.tool_use_id = use_id;
+            }
+            let response = match (output, error) {
+                (Some(Value::String(o)), Some(Value::String(e))) if !e.is_empty() => {
+                    serde_json::json!({"stdout": o, "stderr": e})
+                }
+                (Some(Value::String(o)), _) => Value::String(o),
+                (Some(o), _) => o,
+                (None, Some(e)) => e,
+                (None, None) => Value::String(String::new()),
+            };
+            self.tool_response = Some(response);
+        }
+        let name = hook_name.as_deref().unwrap_or("");
+        let name = if name.is_empty() {
+            if self.hook_event_name.is_empty() {
+                event
+            } else {
+                self.hook_event_name.as_str()
+            }
+        } else {
+            name
+        };
+        self.hook_event_name = cline_event(name).to_string();
     }
 
     pub fn pre_tool(&self) -> Option<PreToolUse<'_>> {
@@ -359,6 +472,7 @@ fn claude_event(name: &str) -> &str {
         "sessionEnd" => "SessionEnd",
         "userPromptSubmitted" => "UserPromptSubmit",
         "preCompact" => "PreCompact",
+        "subagentStart" => "SubagentStart",
         other => other,
     }
 }
@@ -379,6 +493,7 @@ fn gemini_event(name: &str) -> &str {
 pub(crate) fn canonical_tool_name(name: &str) -> String {
     let l = name.to_ascii_lowercase();
     if l == "exec"
+        || l == "run_commands"
         || ["bash", "shell", "terminal", "powershell"]
             .iter()
             .any(|k| l.contains(k))
@@ -399,6 +514,46 @@ pub(crate) fn canonical_tool_name(name: &str) -> String {
 /// plugins match on Claude's `Bash` and `Read`. Anything else keeps its name.
 fn copilot_tool_name(name: &str) -> String {
     canonical_tool_name(name)
+}
+
+/// Cline file hooks send camelCase keys (`hookName`, `taskId`, `workspaceRoots`) with the
+/// tool payload nested under `tool_call` / `tool_result` — never Claude's flat keys. The
+/// reply needs the same shape translated back (see `cline_output` in `hooks/mod.rs`):
+/// Cline never reads `hookSpecificOutput`.
+fn cline_tool_name(name: &str) -> String {
+    canonical_tool_name(name)
+}
+
+/// Cline's event names — both the `hookName` values file hooks send on stdin and the
+/// executable file names (`PreToolUse`, `PostToolUse`, `TaskStart`, …) — to Claude's.
+/// Tool calls become the tool events; lifecycle events become session/prompt starts and ends.
+/// `agent_error`, `agent_abort` and unknown names are no-ops: they reach no plugin.
+fn cline_event(name: &str) -> &str {
+    match name {
+        "tool_call" | "PreToolUse" => "PreToolUse",
+        "tool_result" | "PostToolUse" => "PostToolUse",
+        "agent_start" | "agent_resume" | "TaskStart" | "TaskResume" | "SessionStart" => {
+            "SessionStart"
+        }
+        "prompt_submit" | "UserPromptSubmit" => "UserPromptSubmit",
+        "agent_end" | "session_shutdown" | "TaskComplete" | "SessionShutdown" | "SessionEnd" => {
+            "SessionEnd"
+        }
+        _ => "Noop",
+    }
+}
+
+/// A one-entry Cline `commands: [cmd]` becomes `command: cmd` so the Bash plugins match.
+/// Multi-entry calls pass through untouched: rtok rewrites one command only.
+fn single_command(input: &mut Value) {
+    if let Value::Object(map) = input
+        && !map.contains_key("command")
+        && let Some(Value::Array(commands)) = map.get("commands")
+        && commands.len() == 1
+        && let Some(cmd) = commands.first().cloned()
+    {
+        map.insert("command".into(), cmd);
+    }
 }
 
 /// Hook stdout. `HookOutput::default()` serialises to `{}` (= no opinion, fail open).
@@ -601,6 +756,22 @@ mod tests {
         assert_eq!(input.tool_response.as_ref().unwrap(), "total 0\n");
         assert!(input.post_tool().is_some());
         assert!(input.pre_tool().is_none());
+    }
+
+    #[test]
+    fn copilot_subagent_start_maps_agent_name_and_description() {
+        let raw = serde_json::json!({
+            "sessionId": "cp-2",
+            "cwd": "/tmp",
+            "agentName": "explore",
+            "agentDescription": "look at /repo/a.rs"
+        });
+        let mut input: HookInput = serde_json::from_value(raw).unwrap();
+        input.adapt_copilot("subagentStart");
+        let start = input.subagent_start().expect("SubagentStart");
+        assert_eq!(start.agent_type, "explore");
+        assert_eq!(start.task_description, "look at /repo/a.rs");
+        assert!(input.extra.get("agentName").is_none(), "{:?}", input.extra);
     }
 
     #[test]
@@ -842,5 +1013,123 @@ mod tests {
         compress.adapt_gemini("PreCompress");
         assert_eq!(compress.hook_event_name, "PreCompact");
         assert!(compress.pre_compact().is_some());
+    }
+
+    /// Payloads as Cline's file-hook README gives them: `hookName` + `taskId` +
+    /// `workspaceRoots` with the tool nested under `tool_call` / `tool_result`.
+    #[test]
+    fn cline_maps_tool_call_result_and_lifecycle() {
+        let mut pre: HookInput = serde_json::from_value(serde_json::json!({
+            "hookName": "tool_call",
+            "taskId": "task-1",
+            "workspaceRoots": ["/work/app"],
+            "tool_call": {"id": "tc-1", "name": "run_commands", "input": {"commands": ["git status"]}}
+        }))
+        .unwrap();
+        pre.adapt_cline("PreToolUse");
+        assert_eq!(pre.hook_event_name, "PreToolUse");
+        assert_eq!(pre.session_id, "task-1");
+        assert_eq!(pre.cwd.as_deref(), Some("/work/app"));
+        assert_eq!(pre.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(pre.tool_input.as_ref().unwrap()["command"], "git status");
+        assert_eq!(
+            pre.tool_input.as_ref().unwrap()["commands"][0],
+            "git status"
+        );
+        assert_eq!(pre.tool_use_id.as_deref(), Some("tc-1"));
+        assert!(pre.pre_tool().is_some());
+        assert!(!pre.extra.contains_key("hookName"));
+        assert!(!pre.extra.contains_key("taskId"));
+
+        let mut multi: HookInput = serde_json::from_value(serde_json::json!({
+            "hookName": "tool_call",
+            "taskId": "task-1",
+            "workspaceRoots": ["/work/app"],
+            "tool_call": {"id": "tc-2", "name": "run_commands", "input": {"commands": ["a", "b"]}}
+        }))
+        .unwrap();
+        multi.adapt_cline("PreToolUse");
+        assert_eq!(multi.tool_name.as_deref(), Some("Bash"));
+        assert!(multi.tool_input.as_ref().unwrap().get("command").is_none());
+
+        let mut read: HookInput = serde_json::from_value(serde_json::json!({
+            "hookName": "tool_call",
+            "taskId": "task-1",
+            "tool_call": {"id": "tc-3", "name": "read_files", "input": {"paths": ["src/main.rs"]}}
+        }))
+        .unwrap();
+        read.adapt_cline("PreToolUse");
+        assert_eq!(read.tool_name.as_deref(), Some("Read"));
+
+        let mut foreign: HookInput = serde_json::from_value(serde_json::json!({
+            "hookName": "tool_call",
+            "taskId": "task-1",
+            "tool_call": {"id": "tc-4", "name": "mcp__linear__list", "input": {}}
+        }))
+        .unwrap();
+        foreign.adapt_cline("PreToolUse");
+        assert_eq!(foreign.tool_name.as_deref(), Some("mcp__linear__list"));
+
+        let mut post: HookInput = serde_json::from_value(serde_json::json!({
+            "hookName": "tool_result",
+            "taskId": "task-1",
+            "workspaceRoots": ["/work/app"],
+            "tool_result": {
+                "id": "tc-1",
+                "name": "run_commands",
+                "input": {"commands": ["git status"]},
+                "output": "clean\n",
+                "durationMs": 12
+            }
+        }))
+        .unwrap();
+        post.adapt_cline("PostToolUse");
+        assert_eq!(post.hook_event_name, "PostToolUse");
+        assert_eq!(post.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(post.tool_response.as_ref().unwrap(), "clean\n");
+        assert!(post.post_tool().is_some());
+
+        let mut err: HookInput = serde_json::from_value(serde_json::json!({
+            "hookName": "tool_result",
+            "taskId": "task-1",
+            "tool_result": {
+                "id": "tc-1",
+                "name": "run_commands",
+                "input": {"commands": ["git status"]},
+                "output": "out\n",
+                "error": "boom"
+            }
+        }))
+        .unwrap();
+        err.adapt_cline("PostToolUse");
+        assert_eq!(err.tool_response.as_ref().unwrap()["stdout"], "out\n");
+        assert_eq!(err.tool_response.as_ref().unwrap()["stderr"], "boom");
+
+        let mut start: HookInput = serde_json::from_value(serde_json::json!({
+            "hookName": "agent_start",
+            "taskId": "task-1",
+            "workspaceRoots": ["/work/app"]
+        }))
+        .unwrap();
+        start.adapt_cline("TaskStart");
+        assert_eq!(start.hook_event_name, "SessionStart");
+
+        let mut abort: HookInput = serde_json::from_value(serde_json::json!({
+            "hookName": "agent_abort",
+            "taskId": "task-1"
+        }))
+        .unwrap();
+        abort.adapt_cline("TaskCancel");
+        assert_eq!(abort.hook_event_name, "Noop");
+
+        // The executable file name works when `hookName` is absent (fail open never panics).
+        let mut bare: HookInput = serde_json::from_value(serde_json::json!({
+            "taskId": "task-9",
+            "tool_call": {"id": "tc-9", "name": "run_commands", "input": {"commands": ["ls"]}}
+        }))
+        .unwrap();
+        bare.adapt_cline("PreToolUse");
+        assert_eq!(bare.hook_event_name, "PreToolUse");
+        assert_eq!(bare.session_id, "task-9");
     }
 }

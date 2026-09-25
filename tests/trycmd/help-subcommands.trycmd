@@ -14,7 +14,7 @@ Arguments:
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
-      --host <HOST>    Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin`)
+      --host <HOST>    Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin` | `cline`)
   -h, --help           Print help
 
 $ rtok mcp --help
@@ -291,7 +291,7 @@ Usage: rtok filter [OPTIONS]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
-      --stdin          Read the payload from stdin (OpenCode `tool.execute.after`)
+      --stdin          Read the payload from stdin (OpenCode `tool[..]cute.after`)
       --cmd <CMD>      Command family hint (`git status`, `cargo test`, …)
       --archive        Archive stdin and print the expand trailer (same path as `run`)
   -h, --help           Print help
@@ -427,6 +427,7 @@ Arguments:
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON `{key,value,source}` instead of the bare value (T228)
   -h, --help           Print help
 
 $ rtok config validate --help

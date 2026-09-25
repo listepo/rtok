@@ -12,6 +12,10 @@ Antigravity IDE). The plugin is the only unit (D21, T90): `plugins/antigravity` 
   it — `agy` stages its own copy under `<cli_plugins_path>/rtok` (default
   `~/.gemini/antigravity-cli/plugins/rtok`), which rtok only reads (`plugin.json` naming `rtok`).
   `remove` keeps that copy and names `agy plugin uninstall rtok`.
+- **Skills:** every install copies the hub skills (`skills/rtok`, `skills/worktrees`) into the
+  variant's own global root — desktop `~/.gemini/config/skills/`, CLI
+  `~/.gemini/antigravity-cli/skills/` (beside `plugins_path` / `cli_plugins_path`); `remove`
+  takes back only rtok-marked copies (T91.2).
 
 ## Modules
 

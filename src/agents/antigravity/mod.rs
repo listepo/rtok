@@ -83,10 +83,17 @@ impl Agent for Antigravity {
 
     fn apply(&self, cfg: &Config, kind: Kind, mode: Mode) -> Result<Vec<String>> {
         let remove = mode == Mode::Remove;
-        Ok(vec![match kind {
-            Kind::Cli => offer_cli(cfg, remove),
-            Kind::Desktop => PLUGIN.offer(cfg, remove)?,
-        }])
+        // T91.2: the hub skills go to each variant's own global skill root.
+        Ok(match kind {
+            Kind::Cli => vec![
+                offer_cli(cfg, remove),
+                super::skill::sync("antigravity-cli", cfg, remove)?,
+            ],
+            Kind::Desktop => vec![
+                PLUGIN.offer(cfg, remove)?,
+                super::skill::sync("antigravity", cfg, remove)?,
+            ],
+        })
     }
 }
 
@@ -168,6 +175,26 @@ mod tests {
             assert!(s.contains("ketch install listepo/rtok"), "{s}");
         }
         assert!(fs::read_dir(&dir).unwrap().next().is_none());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T91.2: each variant copies the hub skills into its own global root and takes them back.
+    #[test]
+    fn each_variant_syncs_the_skills_into_its_own_root() {
+        let dir = tmp("skills");
+        let mut c = cfg(&dir, false, false);
+        c.setup.antigravity.plugins_path = dir.join("config/plugins");
+        c.setup.antigravity.cli_plugins_path = dir.join("antigravity-cli/plugins");
+        for (kind, root) in [
+            (Kind::Desktop, "config/skills"),
+            (Kind::Cli, "antigravity-cli/skills"),
+        ] {
+            let md = dir.join(root).join("rtok/SKILL.md");
+            let out = Antigravity.apply(&c, kind, Mode::Install).unwrap();
+            assert!(md.is_file(), "{kind:?}: {out:?}");
+            let out = Antigravity.apply(&c, kind, Mode::Remove).unwrap();
+            assert!(!md.exists(), "{kind:?}: {out:?}");
+        }
         let _ = fs::remove_dir_all(dir);
     }
 

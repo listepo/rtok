@@ -148,6 +148,7 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     let cursor = !grok && cfg.hook.host == "cursor";
     let gemini = !grok && cfg.hook.host == "gemini";
     let codewhale = !grok && cfg.hook.host == "codewhale";
+    let cline = !grok && cfg.hook.host == "cline";
     if grok {
         input.adapt_grok(event);
     } else if cursor {
@@ -158,16 +159,37 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
         input.adapt_gemini(event);
     } else if codewhale {
         input.adapt_codewhale(event);
+    } else if cline {
+        input.adapt_cline(event);
     } else if cfg.hook.host == "devin" {
         input.adapt_devin(event, std::env::var("DEVIN_PROJECT_DIR").ok());
     } else if input.hook_event_name.is_empty() {
         input.hook_event_name = event.to_string();
     }
+    // The call row keeps what plugins read back later (the spawn-brief ledger, the read
+    // window): an adapted host's input in Claude's field names, not its raw camelCase (T262.5).
+    // Claude's own stdin is already that shape and stays byte-identical.
+    let adapted =
+        grok || copilot || cursor || gemini || codewhale || cline || cfg.hook.host == "devin";
+    let stored = adapted.then(|| serde_json::to_vec(&input).ok()).flatten();
+    let stdin = stored.as_deref().unwrap_or(stdin);
     let session = resolve_session(&input.session_id, &cfg.core.session_env, |k| {
         std::env::var(k).ok()
     });
-    let mut cx = Runtime::open_with(cfg.clone(), session, LOCK_WAIT)
-        .map_err(|e| format!("hook {event}: store open: {e}"))?;
+    let wait = if std::env::var_os(DEFERRED_ENV).is_some() {
+        crate::store::LockWait::STEADY
+    } else {
+        LOCK_WAIT
+    };
+    let mut cx = match Runtime::open_with(cfg.clone(), session, wait) {
+        Ok(cx) => cx,
+        Err(e) => {
+            if crate::store::is_locked(&e) {
+                defer_session_end(cfg, &input.hook_event_name, stdin);
+            }
+            return Err(format!("hook {event}: store open: {e}"));
+        }
+    };
     // SessionStart carries `cwd` like every other event, so the session row is attributed
     // from the first hook of the run rather than whichever call happens to arrive first.
     cx.cwd = input.cwd.clone();
@@ -190,6 +212,10 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     if codewhale {
         let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
         return Ok(codewhale_output(&parsed, input.prompt.as_deref()));
+    }
+    if cline {
+        let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
+        return Ok(cline_output(&parsed));
     }
     Ok(out)
 }
@@ -278,6 +304,50 @@ pub fn copilot_output(out: &HookOutput) -> Vec<u8> {
     serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
 }
 
+/// Cline file hooks read a flat object: `overrideInput` replaces the tool input (PreToolUse
+/// only), `context` is injected into the next turn, `cancel: true` + `errorMessage` blocks.
+/// `{}` means do nothing — and stays `{}` here. A Claude `decision: block` becomes `cancel`.
+pub fn cline_output(out: &HookOutput) -> Vec<u8> {
+    let mut o = serde_json::Map::new();
+    let deny = out.decision.as_deref() == Some("block")
+        || out
+            .hook_specific_output
+            .as_ref()
+            .and_then(|h| h.permission_decision.as_deref())
+            == Some("deny");
+    if let Some(h) = &out.hook_specific_output {
+        if let Some(u) = &h.updated_input
+            && let Some(cmd) = u.get("command").and_then(|c| c.as_str())
+        {
+            o.insert(
+                "overrideInput".into(),
+                serde_json::json!({"commands": [cmd]}),
+            );
+        }
+        if let Some(c) = &h.additional_context {
+            o.insert("context".into(), c.as_str().into());
+        }
+        if deny && h.permission_decision_reason.is_some() {
+            o.insert(
+                "errorMessage".into(),
+                h.permission_decision_reason
+                    .as_deref()
+                    .unwrap_or_default()
+                    .into(),
+            );
+        }
+    }
+    if deny {
+        o.insert("cancel".into(), true.into());
+        if !o.contains_key("errorMessage")
+            && let Some(r) = &out.reason
+        {
+            o.insert("errorMessage".into(), r.as_str().into());
+        }
+    }
+    serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
+}
+
 pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     let start = Instant::now();
     let registry = Registry::new(&cx.config);
@@ -287,6 +357,7 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         // wait again, so pass the input through unchanged and record nothing.
         Err(e) if crate::store::is_locked(&e) => {
             eprintln!("rtok: hook {} skipped: store locked", input.hook_event_name);
+            defer_session_end(&cx.config, &input.hook_event_name, stdin);
             return b"{}".to_vec();
         }
         Err(_) => None,
@@ -322,7 +393,13 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
-            let _ = cx.store.end_session(&cx.session, now);
+            if cx
+                .store
+                .end_session(&cx.session, now)
+                .is_err_and(|e| crate::store::is_locked(&e))
+            {
+                defer_session_end(&cx.config, "SessionEnd", stdin);
+            }
             HookOutput::default()
         }
         _ => HookOutput::default(),
@@ -341,6 +418,41 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         crate::otel::export::spawn_child(cx);
     }
     bytes
+}
+
+/// Set on the child [`defer_session_end`] spawns: wait like any command, never defer again.
+const DEFERRED_ENV: &str = "RTOK_HOOK_DEFERRED";
+
+/// T83.15: `SessionEnd`'s write is the one nothing repeats — lost to another writer's lock
+/// (the flush child `Stop` spawned, still writing its watermarks) the session never gets
+/// `ended_at` and its OTel root span never ships. Rather than wait past the hook's 10 ms, hand
+/// the event to a detached `rtok hook SessionEnd` that waits `LockWait::STEADY` — the same
+/// hand-off `Stop` uses for the flush. `stdin` is Claude-shaped (adapted hosts included), so
+/// the child needs no `--host`. Any other event, or the deferred child itself: nothing.
+fn defer_session_end(cfg: &Config, event: &str, stdin: &[u8]) {
+    if event != "SessionEnd" || std::env::var_os(DEFERRED_ENV).is_some() {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["hook", "SessionEnd"])
+        .env(DEFERRED_ENV, "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if !cfg.home.as_os_str().is_empty() {
+        cmd.env("RTOK_HOME", &cfg.home);
+    }
+    // As in `otel::export::spawn_child`: the child must not hold the agent's pipes open.
+    rtok_sys::stop_inheriting_own_stdio();
+    if let Ok(mut child) = cmd.spawn()
+        && let Some(mut pipe) = child.stdin.take()
+    {
+        // A SessionEnd payload is a few hundred bytes, well under a pipe buffer: no block.
+        let _ = pipe.write_all(stdin);
+    }
 }
 
 /// Cursor's `afterMCPExecution` docs (https://cursor.com/docs/agent/hooks, fetched 2026-09-24)
@@ -763,6 +875,91 @@ mod tests {
         let mut out = Vec::new();
         run("PreToolUse", b"not-json".as_slice(), &mut out, &cfg);
         assert_eq!(out, b"{}");
+    }
+
+    #[test]
+    fn cline_output_shapes_override_context_block_and_empty() {
+        let json = |b: Vec<u8>| serde_json::from_slice::<serde_json::Value>(&b).unwrap();
+        assert_eq!(
+            json(cline_output(&HookOutput::default())),
+            serde_json::json!({})
+        );
+        let pre = HookOutput {
+            hook_specific_output: Some(HookSpecificOutput {
+                hook_event_name: "PreToolUse".into(),
+                updated_input: Some(serde_json::json!({"command": "rtok run -- 'git status'"})),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            json(cline_output(&pre)),
+            serde_json::json!({
+                "overrideInput": {"commands": ["rtok run -- 'git status'"]}
+            })
+        );
+        let post = HookOutput {
+            hook_specific_output: Some(HookSpecificOutput {
+                hook_event_name: "PostToolUse".into(),
+                additional_context: Some("ctx".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            json(cline_output(&post)),
+            serde_json::json!({"context": "ctx"})
+        );
+        let block = HookOutput {
+            decision: Some("block".into()),
+            reason: Some("guard".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            json(cline_output(&block)),
+            serde_json::json!({"cancel": true, "errorMessage": "guard"})
+        );
+    }
+
+    fn cline_cfg(dir: &std::path::Path) -> Config {
+        let mut cfg = Config::default();
+        cfg.hook.host = "cline".into();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.core.archive_dir = dir.join("archive");
+        cfg
+    }
+
+    #[test]
+    fn cline_pre_tool_use_rewrites_single_command_and_fails_open() {
+        let dir = std::env::temp_dir().join(format!(
+            "rtok-hook-cline-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = cline_cfg(&dir);
+        let stdin = serde_json::to_vec(&serde_json::json!({
+            "hookName": "tool_call",
+            "taskId": "cline-1",
+            "workspaceRoots": ["/tmp"],
+            "tool_call": {"id": "tc-1", "name": "run_commands", "input": {"commands": ["git status"]}}
+        }))
+        .unwrap();
+        let out = dispatch_owned_strict(&stdin, "PreToolUse", &cfg).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let cmd = v["overrideInput"]["commands"][0].as_str().unwrap();
+        assert!(cmd.starts_with("rtok run"), "{v}");
+
+        for bad in [b"not-json".as_slice(), b"".as_slice()] {
+            let mut out = Vec::new();
+            run("PreToolUse", bad, &mut out, &cfg);
+            assert_eq!(out, b"{}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// T45.4: `core.session_env` resolves the session when stdin has none.

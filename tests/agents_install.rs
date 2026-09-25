@@ -9,7 +9,7 @@
 
 mod common;
 
-use common::agents::{backups, claude_desktop_config, json, raw, rtok, tmp, write_cfg};
+use common::agents::{backups, claude_desktop_config, json, raw, rtok, slash, tmp, write_cfg};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -53,6 +53,11 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             Some(home.join(".kimi-code/config.toml")),
         ),
         ("grok", vec!["--yes"], Some(home.join(".grok/config.toml"))),
+        (
+            "cline",
+            vec!["--yes"],
+            Some(home.join(".cline/data/settings/cline_mcp_settings.json")),
+        ),
         (
             "copilot",
             vec![],
@@ -126,7 +131,7 @@ fn setup_twice_takes_one_backup_and_says_already_installed() {
             );
             assert!(first.contains("backup "), "{host}: {first}");
             assert!(
-                second.contains(&f.display().to_string()),
+                slash(&second).contains(&slash(f.display().to_string())),
                 "{host}: {second}"
             );
         }
@@ -204,6 +209,7 @@ fn remove_twice_says_no_changes_and_the_second_takes_no_backup() {
 /// The `agents list` blocks (header line to the next blank line) whose header is `needle` or
 /// whose `config` line names it; the module rows are the two-space `✓` / `✗` / `−` lines.
 fn installed_modules(list: &str, needle: &str) -> Vec<String> {
+    let list = slash(list);
     let blocks: Vec<&str> = list
         .split("\n\n")
         .filter(|b| {
@@ -228,7 +234,7 @@ fn list_reports_installed_modules_per_host() {
     for (host, flags, file) in hosts(&home) {
         let needle = file.map_or_else(
             || "CLI: pi".to_string(), // pi edits no config file
-            |f| f.display().to_string(),
+            |f| slash(f.display().to_string()),
         );
         assert!(installed_modules(&before, &needle).is_empty(), "{host}");
         rtok(&setup_args(host, &flags), &cfg, &home);

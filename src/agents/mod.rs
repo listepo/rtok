@@ -11,6 +11,7 @@
 pub mod aider;
 pub mod antigravity;
 pub mod claude;
+pub mod cline;
 pub mod codewhale;
 pub mod codex;
 pub mod copilot;
@@ -60,6 +61,7 @@ pub const HOSTS: &[&str] = &[
     "aider",
     "windsurf",
     "zed",
+    "cline",
     "gemini",
     "codewhale",
     "mimo",
@@ -87,6 +89,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "windsurf" => Some(&windsurf::Windsurf),
         "aider" => Some(&aider::Aider),
         "zed" => Some(&zed::Zed),
+        "cline" => Some(&cline::Cline),
         "gemini" => Some(&gemini::Gemini),
         "codewhale" => Some(&codewhale::Codewhale),
         "mimo" => Some(&mimo::Mimo),

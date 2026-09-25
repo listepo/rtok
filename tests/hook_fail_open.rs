@@ -121,3 +121,52 @@ fn a_locked_store_fails_the_hook_open_in_ms() {
     assert_eq!(rows(), before, "a skipped call writes no row");
     let _ = fs::remove_dir_all(&home);
 }
+
+/// T83.15: `SessionEnd` is the one write nothing repeats. Meeting a locked store it still
+/// returns at once, but hands itself to a detached child that sets `ended_at` once the lock
+/// is gone — so the session's OTel root span can ship.
+#[test]
+fn a_locked_session_end_is_deferred_not_lost() {
+    let home = tmp("locked-session-end");
+    let db = home.join("rtok.db");
+    let hook = |event: &str| {
+        let payload = serde_json::json!({
+            "hook_event_name": event,
+            "session_id": "t8315",
+            "cwd": home,
+            "reason": "clear"
+        });
+        let start = std::time::Instant::now();
+        AssertCmd::cargo_bin("rtok")
+            .unwrap()
+            .args(["hook", event])
+            .env("RTOK_HOME", &home)
+            .env("HOME", &home)
+            .env("RTOK_CORE_DB_PATH", &db)
+            .write_stdin(payload.to_string())
+            .assert()
+            .success();
+        start.elapsed()
+    };
+    hook("SessionStart");
+    let ended = || {
+        rtok::store::Store::open(&db)
+            .unwrap()
+            .sessions_ended_after(0)
+            .unwrap()
+            .iter()
+            .any(|s| s.id == "t8315")
+    };
+    assert!(!ended());
+    let holder = common::hold_store_writer(&db, std::time::Duration::from_millis(600));
+    let took = hook("SessionEnd");
+    assert!(took.as_millis() < 500, "the hook waited {took:?}");
+    assert!(!ended(), "the lock is still held");
+    holder.join().unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !ended() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(ended(), "the deferred child set ended_at");
+    let _ = fs::remove_dir_all(&home);
+}

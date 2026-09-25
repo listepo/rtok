@@ -40,7 +40,8 @@ fn write_cfg(home: &Path) -> PathBuf {
         &cfg,
         format!(
             "[setup.cursor]\nhooks_path = \"{}/hooks.json\"\n",
-            cursor.display()
+            // `/`: a `\` in a TOML basic string starts an escape (T83.4).
+            cursor.display().to_string().replace('\\', "/")
         ),
     )
     .unwrap();
@@ -263,4 +264,64 @@ fn post_tool_use_shortens_long_mcp_results_and_skips_small_and_rtok() {
     assert_eq!(hook("linear", "MCP:list_issues", "ok\n"), json!({}));
     assert_eq!(hook("rtok", "MCP:search", &long), json!({}));
     let _ = fs::remove_dir_all(&home);
+}
+
+/// T250.3 check: every plugin hook runs as Cursor runs it on Unix —
+/// `sh -c "<command> <<'CURSOR_HOOK_EOF' …"` — with an empty PATH and a temp HOME. With no
+/// rtok anywhere each exits 0 silently, sessionStart alone printing Cursor's flat note; a
+/// fake `~/.ketch/bin/rtok` then gets the event and the heredoc payload on its stdin.
+#[cfg(unix)]
+#[test]
+fn hooks_resolve_rtok_from_path_then_ketch_else_exit_0() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let hooks: Value =
+        serde_json::from_str(&fs::read_to_string(root().join("hooks/hooks.json")).unwrap())
+            .unwrap();
+    let hooks = hooks["hooks"].as_object().unwrap().clone();
+    assert_eq!(hooks.len(), 6, "{hooks:?}");
+    let home = tmp("t250-home");
+    let empty_path = tmp("t250-path");
+    let run = |command: &str| {
+        let script = format!("{command} <<'CURSOR_HOOK_EOF'\n{{\"n\":1}}\nCURSOR_HOOK_EOF");
+        let out = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(script)
+            .env("HOME", &home)
+            .env("PATH", &empty_path)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    };
+    let note = r#"{"additional_context":"rtok is not installed; run ketch install listepo/rtok to enable it."}"#;
+    for (event, entries) in &hooks {
+        let (code, stdout) = run(entries[0]["command"].as_str().unwrap());
+        assert_eq!(code, Some(0), "{event}");
+        let want = if event == "sessionStart" { note } else { "" };
+        assert_eq!(stdout, want, "{event}");
+    }
+
+    let ketch = home.join(".ketch/bin");
+    fs::create_dir_all(&ketch).unwrap();
+    // Builtins only: PATH is empty inside the hook.
+    let fake = "#!/bin/sh\nIFS= read -r line\nprintf '%s %s\\n' \"$2\" \"$line\"\n";
+    fs::write(ketch.join("rtok"), fake).unwrap();
+    fs::set_permissions(ketch.join("rtok"), fs::Permissions::from_mode(0o755)).unwrap();
+    for (event, entries) in &hooks {
+        let command = entries[0]["command"].as_str().unwrap();
+        let rtok_event = command
+            .split_once("exec rtok hook ")
+            .and_then(|(_, r)| r.split_once(' '))
+            .unwrap()
+            .0;
+        let (code, stdout) = run(command);
+        assert_eq!(code, Some(0), "{event}");
+        assert_eq!(stdout, format!("{rtok_event} {{\"n\":1}}\n"), "{event}");
+    }
+    let _ = fs::remove_dir_all(&home);
+    let _ = fs::remove_dir_all(&empty_path);
 }

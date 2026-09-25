@@ -423,6 +423,22 @@ impl Report {
                 "  usage input={} cache_read={} cache_write={} output={}\n",
                 sa.usage_input, sa.usage_cache_read, sa.usage_cache_write, sa.usage_output
             ));
+            if sa.with_brief.count > 0 || sa.without_brief.count > 0 {
+                s.push_str(&format!(
+                    "  brief: {} agents  re-read {} B ({:.1}% of reads)  input={}\n",
+                    sa.with_brief.count,
+                    sa.with_brief.reread_bytes,
+                    sa.with_brief.share_read,
+                    sa.with_brief.usage_input
+                ));
+                s.push_str(&format!(
+                    "  no brief: {} agents  re-read {} B ({:.1}% of reads)  input={}\n",
+                    sa.without_brief.count,
+                    sa.without_brief.reread_bytes,
+                    sa.without_brief.share_read,
+                    sa.without_brief.usage_input
+                ));
+            }
             for r in &sa.by_type {
                 s.push_str(&format!(
                     "  {} | {}  {} agents  results {} B  reads {} B  re-read {} B\n",

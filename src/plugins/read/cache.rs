@@ -261,7 +261,11 @@ mod tests {
         let (cx, mut vfs, dir3) = vfs_cx("delta-miss");
         vfs.write("ws/c.txt", b"keep\n");
         let _ = read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "c.txt", "full", None);
-        let key = key("ws/c.txt", "full", None);
+        // The key `read_with` builds: its resolved path, `ws\c.txt` on Windows (T83.12).
+        let abs =
+            crate::plugins::read::resolve_with(&vfs, Path::new("ws"), Path::new("c.txt"), &[])
+                .unwrap();
+        let key = key(abs.to_string_lossy().as_ref(), "full", None);
         Ctx::new(&cx)
             .put_read_cache(&key, "dead", Some("no-such-id"))
             .unwrap();

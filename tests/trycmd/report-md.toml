@@ -203,6 +203,8 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.backup | true | default |
 | setup.backup_files | 5 | default |
 | setup.claude.settings_path | ~/.claude/settings.json | default |
+| setup.cline.hooks_path | ~/Documents/Cline/Hooks | default |
+| setup.cline.mcp_path | ~/.cline/data/settings/cline_mcp_settings.json | default |
 | setup.codewhale.dir | ~/.codewhale | default |
 | setup.codex.config_path | ~/.codex/config.toml | default |
 | setup.copilot.dir | ~/.copilot | default |
@@ -258,7 +260,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-212 keys.
+214 keys.
 
 ## Doctor
 
@@ -267,7 +269,7 @@ Live probes (the `rtok doctor` page), not store rows.
 ```text
 hooks 0
 mcp
-  rtok (14 tools, ~257 desc tokens) [CWD]/target/debug/rtok
+  rtok (14 tools, ~257 desc tokens) [CWD]/target/debug/rtok[EXE]
 proxy 
 proxy openai 
 BASH_MAX_OUTPUT_LENGTH (unset)
@@ -389,6 +391,16 @@ agents
     mcp     not installed
     proxy   not supported: Zed serves hosted models or provider API keys; there is no documented base-URL setting to point at the proxy
     plugin  not supported: Zed extensions install from the marketplace; there is no local directory to link
+  cline (cli)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: the Anthropic base URL is extension state, not a file rtok may edit
+    plugin  not installed (--yes)
+  cline (desktop)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: the Anthropic base URL is extension state, not a file rtok may edit
+    plugin  not installed (--yes)
   gemini (cli)
     hooks   not installed
     mcp     not installed
@@ -400,7 +412,7 @@ agents
     proxy   not supported: CodeWhale providers are [providers.<name>] tables with their own base_url and keys (docs/CONFIGURATION.md); setup does not edit them
     plugin  not supported: CodeWhale's plugin-bundle system needs a reviewed remote source and exact environment-source references (docs/PLUGIN_BUNDLES.md); there is no local directory to link
   mimo (cli)
-    hooks   not supported: MiMo Code has no shell hook events; like OpenCode, tool.execute.before/after run in-process through a linked plugin, which this task does not ship
+    hooks   not supported: MiMo Code has no shell hook events; like OpenCode, tool[..]cute.before/after run in-process through a linked plugin, which this task does not ship
     mcp     not installed
     proxy   not supported: MiMo Code has no documented base-URL override; MIMOCODE_HOME/MIMOCODE_CONFIG relocate config, not the model endpoint
     plugin  not supported: MiMo's in-process plugin package (the @mimo-ai/plugin analogue of @opencode-ai/plugin) is undocumented; linking one here would be a guess, not a verified path
