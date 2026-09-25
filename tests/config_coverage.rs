@@ -7,6 +7,7 @@ use clap::{ArgAction, Command, CommandFactory};
 use rtok::cli::Cli;
 use rtok::config::layers;
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::path::Path;
 
 const ALLOW: &[&str] = &[
@@ -176,7 +177,7 @@ fn src_blob() -> String {
             let p = e.path();
             if p.is_dir() {
                 walk_rs(&p, out);
-            } else if p.extension().and_then(|s| s.to_str()) == Some("rs") {
+            } else if p.extension().and_then(OsStr::to_str) == Some("rs") {
                 out.push_str(&std::fs::read_to_string(&p).unwrap());
             }
         }

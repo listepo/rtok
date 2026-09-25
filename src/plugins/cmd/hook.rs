@@ -268,62 +268,63 @@ mod tests {
         assert!(decide("ffmpeg --interactive x").is_none());
     }
 
+    /// Append a POSIX single-quoted span to `word`, up to the closing `'`.
+    fn sh_single_quoted(chars: &mut std::str::Chars<'_>, word: &mut String) {
+        word.extend(chars.by_ref().take_while(|&q| q != '\''));
+    }
+
+    /// A minimal double-quote pass so the POSIX `'"'"'` embedding (an apostrophe inside
+    /// `"'"`) parses the way sh reads it: `\` escapes the next char, `"` closes.
+    fn sh_double_quoted(chars: &mut std::str::Chars<'_>, word: &mut String) {
+        while let Some(q) = chars.next() {
+            match q {
+                '"' => break,
+                '\\' => word.extend(chars.next()),
+                q => word.push(q),
+            }
+        }
+    }
+
+    /// Split `input` into words the way POSIX sh would (quotes only, no expansion).
+    fn sh_words(input: &str) -> Vec<String> {
+        let mut words = Vec::new();
+        let mut word = String::new();
+        let mut in_word = false;
+        let mut chars = input.chars();
+        while let Some(c) = chars.next() {
+            match c {
+                '\'' => {
+                    in_word = true;
+                    sh_single_quoted(&mut chars, &mut word);
+                }
+                '"' => {
+                    in_word = true;
+                    sh_double_quoted(&mut chars, &mut word);
+                }
+                c if c.is_whitespace() => {
+                    if in_word {
+                        words.push(std::mem::take(&mut word));
+                        in_word = false;
+                    }
+                }
+                c => {
+                    in_word = true;
+                    word.push(c);
+                }
+            }
+        }
+        if in_word {
+            words.push(word);
+        }
+        words
+    }
+
     /// Parse-simulation of the loss the fix removes: the PowerShell `''` form,
     /// split as POSIX sh words, concatenates the adjacent quotes into one word
     /// and the apostrophe is gone — the command that runs is not the command
     /// the model asked for.
     #[test]
     fn ps_quoting_does_not_round_trip_under_sh() {
-        fn sh_words(input: &str) -> Vec<String> {
-            let mut words = Vec::new();
-            let mut word = String::new();
-            let mut in_word = false;
-            let mut chars = input.chars();
-            while let Some(c) = chars.next() {
-                match c {
-                    '\'' => {
-                        in_word = true;
-                        for q in chars.by_ref() {
-                            if q == '\'' {
-                                break;
-                            }
-                            word.push(q);
-                        }
-                    }
-                    // A minimal double-quote pass so the POSIX `'"'"'` embedding
-                    // (an apostrophe inside `"'"`) parses the way sh reads it.
-                    '"' => {
-                        in_word = true;
-                        while let Some(q) = chars.next() {
-                            if q == '"' {
-                                break;
-                            }
-                            if q == '\\' {
-                                if let Some(esc) = chars.next() {
-                                    word.push(esc);
-                                }
-                            } else {
-                                word.push(q);
-                            }
-                        }
-                    }
-                    c if c.is_whitespace() => {
-                        if in_word {
-                            words.push(std::mem::take(&mut word));
-                            in_word = false;
-                        }
-                    }
-                    c => {
-                        in_word = true;
-                        word.push(c);
-                    }
-                }
-            }
-            if in_word {
-                words.push(word);
-            }
-            words
-        }
         let cmd = "echo it's fine";
         let ps_form = format!("'{}'", cmd.replace('\'', "''"));
         assert_eq!(sh_words(&ps_form), ["echo its fine"]);

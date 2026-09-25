@@ -2,6 +2,7 @@
 //! Markdown (T68.8); `mode=stripped` via tree-sitter comment nodes (plan T50.3).
 
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -23,7 +24,7 @@ pub struct TagHit {
 
 /// True when `path` has a tags-supported extension (cheap; does not parse).
 pub fn supported(path: &Path) -> bool {
-    grammar_for_ext(path.extension().and_then(|e| e.to_str())).is_some()
+    grammar_for_ext(path.extension().and_then(OsStr::to_str)).is_some()
 }
 
 /// Whether a grammar name from `[plugins.graph.extensions]` is available in this build.
@@ -60,7 +61,7 @@ pub fn supported_with(path: &Path, extensions: &HashMap<String, String>) -> bool
     if supported(path) {
         return true;
     }
-    let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+    let Some(ext) = path.extension().and_then(OsStr::to_str) else {
         return false;
     };
     extensions

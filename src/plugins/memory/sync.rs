@@ -3,6 +3,7 @@
 //! Not a hook: writing a host file on SessionStart would break fail-open.
 
 use anyhow::{Result, bail};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use crate::config::Config;
@@ -102,7 +103,7 @@ pub fn run(
     remove: bool,
     force: bool,
 ) -> Result<()> {
-    let name = file.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let name = file.file_name().and_then(OsStr::to_str).unwrap_or("");
     if name != "CLAUDE.md" && name != "AGENTS.md" {
         bail!("--file must be CLAUDE.md or AGENTS.md");
     }

@@ -2,8 +2,9 @@
 //! when Cargo feature `wasm-host` is on and `[plugins.wasm] enabled = true`.
 
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use rtok_plugin_sdk::{Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface, ToolDef};
 use serde::Deserialize;
@@ -26,7 +27,7 @@ pub fn append(
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("wasm") {
+        if path.extension().and_then(OsStr::to_str) != Some("wasm") {
             continue;
         }
         match WasmPlugin::load(&path, &config.estimator) {
@@ -325,8 +326,8 @@ fn leak_str(s: String) -> &'static str {
 /// One leak per distinct string. `Measurement` wants `&'static str`, and a guest records one
 /// per call; leaking each would grow `rtok mcp` for as long as it runs.
 fn intern(s: &str) -> &'static str {
-    static POOL: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
-    let mut g = POOL.lock().unwrap_or_else(|e| e.into_inner());
+    static POOL: Mutex<Option<HashSet<&str>>> = Mutex::new(None);
+    let mut g = POOL.lock().unwrap_or_else(PoisonError::into_inner);
     let pool = g.get_or_insert_with(HashSet::new);
     if let Some(k) = pool.get(s) {
         return k;

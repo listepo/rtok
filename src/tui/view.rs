@@ -1262,10 +1262,6 @@ mod tests {
         cfg
     }
 
-    /// T15.5: the Calls tab lists the ledger's rows newest first — surface, kind,
-    /// session, latency, the linked usage tokens — straight off the snapshot (D23), and
-    /// the detail pane is closed until a key opens it.
-
     #[rstest]
     fn live_passthrough_rows_show_bytes_not_tokens() {
         let _ring = crate::proxy::live::test_lock();
@@ -1296,6 +1292,10 @@ mod tests {
         );
         crate::proxy::live::clear();
     }
+
+    /// T15.5: the Calls tab lists the ledger's rows newest first — surface, kind,
+    /// session, latency, the linked usage tokens — straight off the snapshot (D23), and
+    /// the detail pane is closed until a key opens it.
     #[test]
     fn calls_tab_lists_rows_newest_first() {
         let mut app = App::new(&calls_seeded());

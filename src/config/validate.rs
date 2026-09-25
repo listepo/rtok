@@ -91,7 +91,7 @@ pub fn set_all_with(
     dry_run: bool,
 ) -> Result<(PathBuf, String)> {
     for (key, _) in pairs {
-        if key.is_empty() || key.split('.').any(|p| p.is_empty()) {
+        if key.is_empty() || key.split('.').any(str::is_empty) {
             bail!("empty key");
         }
     }

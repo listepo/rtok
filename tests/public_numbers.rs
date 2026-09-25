@@ -7,6 +7,7 @@
 //! `EXEMPT_FIGURES` covers the "10 ms" fail-open budget.
 
 use regex::Regex;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -63,6 +64,34 @@ fn build_blocks(lines: &[&str], in_fence: &[bool], list_re: &Regex) -> Vec<Block
     blocks
 }
 
+/// The text a figure on line `idx` may cite from: its whole block, and for a table also
+/// the paragraph introducing it (unless a heading intervenes). A line outside every block
+/// stands alone.
+fn block_context(blocks: &[Block], lines: &[&str], idx: usize) -> String {
+    let block_text = |bi: usize| lines[blocks[bi].1..=blocks[bi].2].join("\n");
+    let Some(bi) = blocks.iter().position(|b| b.1 <= idx && idx <= b.2) else {
+        return lines[idx].to_string();
+    };
+    let mut c = block_text(bi);
+    if blocks[bi].0 != Kind::Table {
+        return c;
+    }
+    let mut first = bi;
+    while first > 0 && blocks[first - 1].0 == Kind::Table {
+        first -= 1;
+    }
+    // inherit the paragraph before the table, unless a heading intervenes
+    if first > 0 && blocks[first - 1].0 == Kind::Para {
+        let prev = &blocks[first - 1];
+        let crosses = (prev.2 + 1..blocks[first].1).any(|k| lines[k].starts_with('#'));
+        if !crosses {
+            c.push(' ');
+            c.push_str(&block_text(first - 1));
+        }
+    }
+    c
+}
+
 /// Figures with no citation anywhere in their block (see `build_blocks`; a table also
 /// checks the paragraph introducing it): `(1-based line, figure text)`.
 fn missing_citations(text: &str) -> Vec<(usize, String)> {
@@ -95,8 +124,6 @@ fn missing_citations(text: &str) -> Vec<(usize, String)> {
     }
 
     let blocks = build_blocks(&lines, &in_fence, &list_re);
-    let block_idx_for = |idx: usize| blocks.iter().position(|b| b.1 <= idx && idx <= b.2);
-    let block_text = |bi: usize| lines[blocks[bi].1..=blocks[bi].2].join("\n");
     let nearest_heading = |idx: usize| {
         (0..=idx)
             .rev()
@@ -112,29 +139,7 @@ fn missing_citations(text: &str) -> Vec<(usize, String)> {
         for cap in num_re.captures_iter(line) {
             let fig = cap[1].to_string();
             let heading = nearest_heading(i);
-            let ctx = match block_idx_for(i) {
-                None => line.to_string(),
-                Some(bi) => {
-                    let mut c = block_text(bi);
-                    if blocks[bi].0 == Kind::Table {
-                        let mut first = bi;
-                        while first > 0 && blocks[first - 1].0 == Kind::Table {
-                            first -= 1;
-                        }
-                        // inherit the paragraph before the table, unless a heading intervenes
-                        if first > 0 && blocks[first - 1].0 == Kind::Para {
-                            let prev = &blocks[first - 1];
-                            let crosses =
-                                (prev.2 + 1..blocks[first].1).any(|k| lines[k].starts_with('#'));
-                            if !crosses {
-                                c.push(' ');
-                                c.push_str(&block_text(first - 1));
-                            }
-                        }
-                    }
-                    c
-                }
-            };
+            let ctx = block_context(&blocks, &lines, i);
             let ctx = format!("{ctx} {heading}");
             let ok = ctx.contains("research.md")
                 || date_re.is_match(&ctx)
@@ -160,7 +165,7 @@ fn markdown_targets(root: &Path) -> Vec<PathBuf> {
             let path = entry.unwrap().path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            } else if path.extension().and_then(OsStr::to_str) == Some("md") {
                 files.push(path.strip_prefix(root).unwrap_or(&path).to_path_buf());
             }
         }

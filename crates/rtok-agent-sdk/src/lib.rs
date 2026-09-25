@@ -27,6 +27,7 @@
 //! std::fs::remove_dir_all(&dir).ok();
 //! ```
 
+use std::ffi::OsStr;
 use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -100,7 +101,7 @@ pub fn backup(path: &Path, keep: usize) -> Result<Option<PathBuf>> {
 /// Only regular files with that exact name shape inside a `_backup` folder are candidates.
 /// Best effort: an fs error leaves the rest in place and is not reported.
 pub fn prune_backups(kept: &Path, keep: usize) {
-    let (Some(dir), Some(file)) = (kept.parent(), kept.file_name().and_then(|f| f.to_str())) else {
+    let (Some(dir), Some(file)) = (kept.parent(), kept.file_name().and_then(OsStr::to_str)) else {
         return;
     };
     if keep == 0 || dir.file_name().is_none_or(|d| d != BACKUP_DIR) {
@@ -125,7 +126,7 @@ fn generations(dir: &Path, name: &str) -> Vec<((u64, u64), PathBuf)> {
         return Vec::new();
     };
     entries
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
         .filter_map(|e| {
             let f = e.file_name().into_string().ok()?;
@@ -187,7 +188,7 @@ fn identical_backup_exists(dir: &Path, body: &[u8]) -> bool {
         return false;
     };
     entries
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .filter(|e| e.path().is_file())
         .any(|e| {
             e.metadata().is_ok_and(|m| m.len() == body.len() as u64)

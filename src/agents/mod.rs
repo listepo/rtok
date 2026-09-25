@@ -828,7 +828,7 @@ pub fn installed_hosts(cfg: &Config) -> Vec<String> {
                     .any(|v| present(a, v, cfg) && !a.installed(cfg, v.kind).is_empty())
             })
         })
-        .map(|id| id.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
@@ -1379,7 +1379,7 @@ pub(crate) fn resolve_plugin_src(
     pkg_version: &str,
 ) -> std::path::PathBuf {
     let cargo = join_rel(manifest_dir, rel);
-    let beside = exe.and_then(|e| e.parent()).map(|dir| join_rel(dir, rel));
+    let beside = exe.and_then(Path::parent).map(|dir| join_rel(dir, rel));
 
     // `exists()`, not `is_dir()`: a host plugin may be one file (`plugins/opencode/rtok.ts`).
     if let Some(ref p) = beside
@@ -1421,7 +1421,7 @@ fn ketch_store_plugin(
     }
     let mut entries: Vec<_> = std::fs::read_dir(&store)
         .ok()?
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
         .map(|e| e.path())
         .collect();

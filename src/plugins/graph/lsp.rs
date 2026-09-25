@@ -2,10 +2,11 @@
 //! Spawns rust-analyzer / clangd / typescript-language-server from PATH (D6: not serena).
 
 use std::collections::{BTreeMap, HashSet};
+use std::ffi::OsStr;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -328,7 +329,7 @@ impl Session {
         }
         let path = path_from_file_uri(uri);
         let text = std::fs::read_to_string(&path).unwrap_or_default();
-        let language_id = match path.extension().and_then(|e| e.to_str()) {
+        let language_id = match path.extension().and_then(OsStr::to_str) {
             Some("rs") => "rust",
             Some("dart") => "dart",
             _ => "plaintext",
@@ -357,7 +358,7 @@ static SESSION: Mutex<Option<(String, Session)>> = Mutex::new(None);
 
 fn with_session<T>(root: &Path, f: impl FnOnce(&mut Session) -> Result<T>) -> Result<T> {
     let key = super::index::canon(root);
-    let mut g = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = SESSION.lock().unwrap_or_else(PoisonError::into_inner);
     let restart = match g.as_mut() {
         Some((k, s)) if *k == key => s.child.try_wait().ok().flatten().is_some(),
         _ => true,
@@ -373,7 +374,12 @@ fn with_session<T>(root: &Path, f: impl FnOnce(&mut Session) -> Result<T>) -> Re
 
 /// Stop the cached language server (`exit`, kill, reap) and remove its stderr file.
 pub(crate) fn shutdown() {
-    drop(SESSION.lock().unwrap_or_else(|e| e.into_inner()).take());
+    drop(
+        SESSION
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take(),
+    );
 }
 
 struct Def {

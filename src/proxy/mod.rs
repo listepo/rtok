@@ -188,6 +188,25 @@ pub async fn serve(cfg: &Config) -> Result<()> {
         .context("proxy server")
 }
 
+/// Upstream chunks buffered between the tee task and the client stream before the tee
+/// waits for the client to catch up.
+const TEE_CHANNEL_CHUNKS: usize = 32;
+
+/// Milliseconds in a second, for the ledger's `ms` columns.
+const MS_PER_SEC: f64 = 1000.0;
+
+/// Wall time since `start`, in the milliseconds the ledger records.
+fn elapsed_ms(start: Instant) -> f64 {
+    start.elapsed().as_secs_f64() * MS_PER_SEC
+}
+
+/// The request's `model` field, when the body is JSON and names one.
+fn request_model(body: &[u8]) -> Option<String> {
+    serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|v| v.get("model").and_then(Value::as_str).map(str::to_string))
+}
+
 async fn proxy(State(state): State<Arc<ProxyState>>, req: Request<Body>) -> AxumResponse {
     handle(state, req).await
 }
@@ -283,9 +302,7 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
         Ok(r) => r,
         Err(e) => {
             if plain {
-                let model = serde_json::from_slice::<Value>(&request_body)
-                    .ok()
-                    .and_then(|v| v.get("model").and_then(Value::as_str).map(str::to_string));
+                let model = request_model(&request_body);
                 live::push(live::LiveCall {
                     ts: crate::log::now() as i64,
                     method: method.to_string(),
@@ -295,15 +312,13 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
                     status: StatusCode::BAD_GATEWAY.as_u16(),
                     request_bytes: request_body.len(),
                     response_bytes: 0,
-                    ms: start.elapsed().as_secs_f64() * 1000.0,
+                    ms: elapsed_ms(start),
                 });
             } else {
                 let session = recorded.as_ref().map_or("?", |r| r.session.as_str());
                 let call_id = recorded.as_ref().map(|r| r.call_id);
                 if let Some(id) = call_id {
-                    let _ = state
-                        .store
-                        .set_call_ms(id, start.elapsed().as_secs_f64() * 1000.0);
+                    let _ = state.store.set_call_ms(id, elapsed_ms(start));
                 }
                 // Every request owes one usage row (T5.1): with no response there
                 // are no counters. The `api` comes from the wire, like `finish`.
@@ -344,11 +359,9 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
     let method_s = method.to_string();
     let path_s = path.clone();
     let req_len = request_body.len();
-    let model_live = serde_json::from_slice::<Value>(&request_body)
-        .ok()
-        .and_then(|v| v.get("model").and_then(Value::as_str).map(str::to_string));
+    let model_live = request_model(&request_body);
     let provider_live = wire.map(Wire::provider).map(str::to_string);
-    let (tx, rx) = mpsc::channel::<Result<Bytes, io::Error>>(32);
+    let (tx, rx) = mpsc::channel::<Result<Bytes, io::Error>>(TEE_CHANNEL_CHUNKS);
     let recorder = state.clone();
     let body_stream = upstream.bytes_stream();
     tokio::spawn(async move {
@@ -387,7 +400,7 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
                 status: status_code,
                 request_bytes: req_len,
                 response_bytes: total_bytes,
-                ms: start.elapsed().as_secs_f64() * 1000.0,
+                ms: elapsed_ms(start),
             });
         } else {
             // `finish`'s store writes are synchronous (T205); move them off the tokio
@@ -774,10 +787,7 @@ fn finish(
             &format!("{what}: {e:#}"),
         );
     };
-    if let Err(e) = state
-        .store
-        .set_call_ms(r.call_id, start.elapsed().as_secs_f64() * 1000.0)
-    {
+    if let Err(e) = state.store.set_call_ms(r.call_id, elapsed_ms(start)) {
         log_err("set_call_ms", e);
     }
     if response_total_bytes > response_body.len() {
@@ -866,9 +876,7 @@ fn cache_response(
                 &format!("cache hit: {e}"),
             );
         }
-        let _ = state
-            .store
-            .set_call_ms(call_id, start.elapsed().as_secs_f64() * 1000.0);
+        let _ = state.store.set_call_ms(call_id, elapsed_ms(start));
         let _ = state.store.insert_call_io(
             call_id,
             Some(request_body),

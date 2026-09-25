@@ -1,5 +1,7 @@
 //! Pure line filter for `rtok run` output (plan T3.2). No I/O.
 
+use std::ffi::OsStr;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Group {
     #[default]
@@ -138,7 +140,7 @@ impl Settings {
             let mut files: Vec<std::path::PathBuf> = rd
                 .flatten()
                 .map(|e| e.path())
-                .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("toml"))
+                .filter(|p| p.extension().and_then(OsStr::to_str) == Some("toml"))
                 .collect();
             files.sort();
             for path in files {
@@ -274,7 +276,7 @@ pub fn issues_in(rules_path: &std::path::Path, rules_dir: &std::path::Path) -> V
         let mut dropins: Vec<std::path::PathBuf> = rd
             .flatten()
             .map(|e| e.path())
-            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("toml"))
+            .filter(|p| p.extension().and_then(OsStr::to_str) == Some("toml"))
             .collect();
         dropins.sort();
         files.extend(dropins);
@@ -520,12 +522,12 @@ fn placeholder_token(rest: &str) -> Option<(usize, &'static str)> {
         && (b[10] == b'T' || b[10] == b' ')
         && b[13] == b':'
         && b[16] == b':'
-        && b[0..4].iter().all(|c| c.is_ascii_digit())
-        && b[5..7].iter().all(|c| c.is_ascii_digit())
-        && b[8..10].iter().all(|c| c.is_ascii_digit())
-        && b[11..13].iter().all(|c| c.is_ascii_digit())
-        && b[14..16].iter().all(|c| c.is_ascii_digit())
-        && b[17..19].iter().all(|c| c.is_ascii_digit())
+        && b[0..4].iter().all(u8::is_ascii_digit)
+        && b[5..7].iter().all(u8::is_ascii_digit)
+        && b[8..10].iter().all(u8::is_ascii_digit)
+        && b[11..13].iter().all(u8::is_ascii_digit)
+        && b[14..16].iter().all(u8::is_ascii_digit)
+        && b[17..19].iter().all(u8::is_ascii_digit)
     {
         return Some((19, "<TS>"));
     }
@@ -535,11 +537,11 @@ fn placeholder_token(rest: &str) -> Option<(usize, &'static str)> {
         && b[11] == b':'
         && b[14] == b':'
         && b[17] == b':'
-        && b[0..2].iter().all(|c| c.is_ascii_digit())
-        && b[7..11].iter().all(|c| c.is_ascii_digit())
-        && b[12..14].iter().all(|c| c.is_ascii_digit())
-        && b[15..17].iter().all(|c| c.is_ascii_digit())
-        && b[18..20].iter().all(|c| c.is_ascii_digit())
+        && b[0..2].iter().all(u8::is_ascii_digit)
+        && b[7..11].iter().all(u8::is_ascii_digit)
+        && b[12..14].iter().all(u8::is_ascii_digit)
+        && b[15..17].iter().all(u8::is_ascii_digit)
+        && b[18..20].iter().all(u8::is_ascii_digit)
         && rest
             .get(3..6)
             .is_some_and(|s| s.chars().all(|c| c.is_ascii_alphabetic()))
@@ -561,7 +563,7 @@ fn placeholder_token(rest: &str) -> Option<(usize, &'static str)> {
     if let Some(n) = long_hex_at(rest) {
         return Some((n, "<HEX>"));
     }
-    if b.first().is_some_and(|c| c.is_ascii_digit())
+    if b.first().is_some_and(u8::is_ascii_digit)
         && let Some((n, _)) = duration_at(rest)
     {
         return Some((n, "<DUR>"));
@@ -626,7 +628,7 @@ fn duration_at(rest: &str) -> Option<(usize, ())> {
 
 fn format_also_lines(nums: &[usize]) -> String {
     nums.iter()
-        .map(|n| n.to_string())
+        .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(", ")
 }

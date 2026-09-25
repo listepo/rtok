@@ -8,7 +8,7 @@ pub mod model;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -71,7 +71,7 @@ impl DashState {
 
     /// The snapshot frame `/ws` sends next, after any accepted `set`.
     pub fn snapshot_json(&self) -> String {
-        frame(&self.cfg.lock().unwrap_or_else(|e| e.into_inner()))
+        frame(&self.cfg.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     /// The snapshot frame for one `/ws` tick (T206). The `Config` mutex is held only long
@@ -88,7 +88,7 @@ impl DashState {
             Build(watch::Sender<Option<String>>),
         }
         let claim = {
-            let mut guard = self.build.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = self.build.lock().unwrap_or_else(PoisonError::into_inner);
             match &*guard {
                 BuildSlot::InFlight(rx) => Claim::Join(rx.clone()),
                 BuildSlot::Idle => {
@@ -108,14 +108,18 @@ impl DashState {
                 }
                 // The build ahead of us never sent (it panicked): claim it ourselves instead
                 // of hanging this socket forever.
-                let mut guard = self.build.lock().unwrap_or_else(|e| e.into_inner());
+                let mut guard = self.build.lock().unwrap_or_else(PoisonError::into_inner);
                 let (tx, rx) = watch::channel(None);
                 *guard = BuildSlot::InFlight(rx);
                 tx
             }
         };
 
-        let cfg = self.cfg.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let cfg = self
+            .cfg
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         let build_fn = self.build_fn.clone();
         let snap = tokio::task::spawn_blocking(move || build_fn(&cfg))
             .await
@@ -123,7 +127,7 @@ impl DashState {
                 json!({"type": "snapshot", "error": "snapshot build panicked"}).to_string()
             });
 
-        *self.build.lock().unwrap_or_else(|e| e.into_inner()) = BuildSlot::Idle;
+        *self.build.lock().unwrap_or_else(PoisonError::into_inner) = BuildSlot::Idle;
         let _ = tx.send(Some(snap.clone()));
         snap
     }
@@ -418,7 +422,11 @@ async fn socket_loop(mut socket: WebSocket, state: Arc<DashState>) {
 fn inbound(state: &DashState, text: &str) -> Option<String> {
     let v: Value = serde_json::from_str(text).ok()?;
     if let Some(id) = v.get("expand").and_then(Value::as_str) {
-        let cfg = state.cfg.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let cfg = state
+            .cfg
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         return Some(match model::expand_payload(&cfg, id, None) {
             Some(body) => json!({ "type": "expand", "id": id, "text": body }).to_string(),
             None => message_frame(&format!("unknown archive id: {id}")),
@@ -429,7 +437,7 @@ fn inbound(state: &DashState, text: &str) -> Option<String> {
     let Some(value) = set.get("value").and_then(Value::as_bool) else {
         return Some(message_frame("set.value must be a bool"));
     };
-    let mut cfg = state.cfg.lock().unwrap_or_else(|e| e.into_inner());
+    let mut cfg = state.cfg.lock().unwrap_or_else(PoisonError::into_inner);
     if !allowlisted_plugin_enabled(&cfg, key) {
         return Some(message_frame(&format!("refused key {key}")));
     }

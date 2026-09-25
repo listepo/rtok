@@ -11,6 +11,7 @@ use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsStr;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -998,7 +999,7 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
             continue;
         };
         report.compact += compact_events(&p);
-        if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+        if let Some(stem) = p.file_stem().and_then(OsStr::to_str) {
             report.session_stems.push(stem.to_string());
         }
         fold_session(
@@ -1467,7 +1468,7 @@ fn bash_touches(cmd: &str, path: &str) -> bool {
     let named = cmd.contains(path)
         || Path::new(path)
             .file_name()
-            .and_then(|f| f.to_str())
+            .and_then(OsStr::to_str)
             .is_some_and(|f| cmd.contains(f));
     named
         && (WRITE_SYMBOLS.iter().any(|w| cmd.contains(w))
