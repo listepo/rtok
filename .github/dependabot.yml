@@ -1,15 +1,22 @@
-# Dependency updates as pull requests (T18.7). ci.yml runs `just check` on every pull request,
-# so an update merges only on a green suite. Commit prefixes land in cliff.toml's Tooling group.
+# Dependency updates as pull requests (T18.7). Each one runs ci.yml's full suite through
+# .github/workflows/dependabot.yml, which merges a patch update once that run is green and
+# labels minor and major updates `needs-review` for a human. Commit prefixes land in
+# cliff.toml's Tooling group.
+#
+# Patch and minor updates are grouped separately so a patch-only pull request can be merged
+# on its own; a major update always arrives alone.
 version: 2
 updates:
   - package-ecosystem: cargo
-    directory: /
+    # crates/rtok-webui is excluded from the workspace and keeps its own Cargo.lock.
+    directories: ["/", "/crates/rtok-webui"]
     schedule:
       interval: weekly
     # A release waits a week before a pull request opens, so a yanked or broken version is
     # usually caught upstream first.
     cooldown:
       default-days: 7
+    open-pull-requests-limit: 5
     commit-message:
       prefix: deps
     groups:
@@ -17,17 +24,23 @@ updates:
       # query sees, so they move together (a stored index keeps the old rows until T35.5).
       tree-sitter:
         patterns: ["tree-sitter*"]
-      # Everything else short of a major bump: one pull request a week, not one per crate.
-      # Dependabot ranks a group without patterns as the more specific one, so tree-sitter
-      # is excluded here or it never reaches its own group (first run, 2026-09-11).
-      minor-and-patch:
+      # Everything else short of a major bump: at most two pull requests a week, not one per
+      # crate. Dependabot ranks a group without patterns as the more specific one, so
+      # tree-sitter is excluded here or it never reaches its own group (first run, 2026-09-11).
+      patch:
         exclude-patterns: ["tree-sitter*"]
-        update-types: [minor, patch]
+        update-types: [patch]
+      minor:
+        exclude-patterns: ["tree-sitter*"]
+        update-types: [minor]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
     commit-message:
       prefix: ci
     # release.yml is written by tools/dist-generate.sh (`dist generate` plus a patch); an edit
@@ -35,5 +48,23 @@ updates:
     exclude-paths:
       - .github/workflows/release.yml
     groups:
+      actions-patch:
+        update-types: [patch]
       actions:
-        patterns: ["*"]
+        update-types: [minor, major]
+
+  # The Hugo site's modules (site/go.mod).
+  - package-ecosystem: gomod
+    directory: /site
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+    groups:
+      site-patch:
+        update-types: [patch]
+      site-minor:
+        update-types: [minor]
