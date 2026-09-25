@@ -1,6 +1,7 @@
 //! One SQLite file (plan T0.3, T13.1, decision D8): WAL mode, FTS5, migrations keyed by filename.
 
 pub mod embed;
+mod migrations;
 pub mod models;
 pub mod otel;
 pub mod schema;
@@ -67,104 +68,8 @@ extern "SQL" {
     ) -> diesel::sql_types::Text;
 }
 
-/// Embedded migrations, applied in order, each exactly once.
 /// Pause between `open` attempts while another connection holds the lock.
 const OPEN_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(100);
-
-const MIGRATIONS: &[(&str, &str)] = &[
-    (
-        "0001.sql",
-        include_str!("../../migrations/0001_schema_v1/up.sql"),
-    ),
-    (
-        "0002.sql",
-        include_str!("../../migrations/0002_schema_v2/up.sql"),
-    ),
-    (
-        "0003.sql",
-        include_str!("../../migrations/0003_symbol_index/up.sql"),
-    ),
-    (
-        "0004.sql",
-        include_str!("../../migrations/0004_archive_decisions/up.sql"),
-    ),
-    (
-        "0005.sql",
-        include_str!("../../migrations/0005_usage_api/up.sql"),
-    ),
-    (
-        "0006.sql",
-        include_str!("../../migrations/0006_symbols_root/up.sql"),
-    ),
-    (
-        "0007.sql",
-        include_str!("../../migrations/0007_symbols_freshness/up.sql"),
-    ),
-    (
-        "0008.sql",
-        include_str!("../../migrations/0008_call_edges/up.sql"),
-    ),
-    (
-        "0009.sql",
-        include_str!("../../migrations/0009_otel_export/up.sql"),
-    ),
-    (
-        "0010.sql",
-        include_str!("../../migrations/0010_seed_pi_host/up.sql"),
-    ),
-    (
-        "0011.sql",
-        include_str!("../../migrations/0011_extractor/up.sql"),
-    ),
-    (
-        "0012.sql",
-        include_str!("../../migrations/0012_note_embeddings/up.sql"),
-    ),
-    (
-        "0013.sql",
-        include_str!("../../migrations/0013_call_id_indexes/up.sql"),
-    ),
-    (
-        "0014.sql",
-        include_str!("../../migrations/0014_archive_decisions_pk/up.sql"),
-    ),
-    (
-        "0015.sql",
-        include_str!("../../migrations/0015_notes_lifecycle/up.sql"),
-    ),
-    (
-        "0016.sql",
-        include_str!("../../migrations/0016_symbol_stale/up.sql"),
-    ),
-    (
-        "0017.sql",
-        include_str!("../../migrations/0017_notes_recall/up.sql"),
-    ),
-    (
-        "0018.sql",
-        include_str!("../../migrations/0018_kv_guard/up.sql"),
-    ),
-    (
-        "0019.sql",
-        include_str!("../../migrations/0019_archive_agent_context/up.sql"),
-    ),
-    (
-        "0020.sql",
-        include_str!("../../migrations/0020_notes_topic_unique/up.sql"),
-    ),
-    (
-        "0021.sql",
-        include_str!("../../migrations/0021_measurements_once/up.sql"),
-    ),
-    (
-        "0022.sql",
-        include_str!("../../migrations/0022_call_io_raw_bodies/up.sql"),
-    ),
-    (
-        "0023.sql",
-        include_str!("../../migrations/0023_measurements_session_ts/up.sql"),
-    ),
-];
 
 pub struct Store {
     conn: Mutex<SqliteConnection>,
@@ -317,52 +222,26 @@ impl Store {
 
     /// Apply pending migrations; returns how many ran. Idempotent.
     ///
-    /// Each migration's SQL and its `schema_migrations` row commit together: several are
-    /// `ALTER TABLE … ADD COLUMN`, so a run interrupted between the two used to leave a
-    /// column added with no version row, and every later `Store::open` failed on
-    /// `duplicate column name` — a store nothing could repair but deletion.
+    /// Diesel runs each `up.sql` in its own transaction and records the directory version, so a
+    /// crash cannot leave a column added with no version row. Names already in `schema_migrations`
+    /// (`NNNN.sql`, the pre-T163.4 runner) are marked applied first and are not run again.
     ///
-    /// The check and the apply share one `BEGIN EXCLUSIVE` for the same reason across
-    /// processes: hooks, the MCP server and the proxy all open this file, and on a fresh
-    /// store two of them landed in the gap between the `SELECT` and the `ALTER`, so the
-    /// loser died on `duplicate column name`. The read-only pre-check keeps the settled
-    /// case — every open after the first — off the write lock.
+    /// The apply takes one `BEGIN EXCLUSIVE`: hooks, the MCP server and the proxy all open this
+    /// file, and on a fresh store two of them used to land between the version check and the
+    /// `ALTER`. A store with nothing pending stays off that write lock.
     pub fn migrate(&self) -> Result<usize> {
         let mut conn = self.lock()?;
-        conn.batch_execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (
-                name TEXT PRIMARY KEY,
-                applied_at INTEGER NOT NULL DEFAULT (unixepoch()))",
-        )?;
-        let done: Vec<Count> =
-            sql_query("SELECT COUNT(*) AS n FROM schema_migrations").load(&mut *conn)?;
-        if done.first().map(|r| r.n).unwrap_or(0) >= MIGRATIONS.len() as i64 {
+        migrations::bridge_legacy(&mut conn)?;
+        if !migrations::has_pending(&mut conn)? {
             return Ok(0);
         }
-        // Only a fresh or upgraded store reaches here, and everything else opening it in the
-        // same moment queues behind this one transaction. `open`'s 1 s is the steady-state
-        // bound; one migration run plus that queue outlives it, and the losers came back
-        // "database is locked". Restored below, so the bound still holds after. The hook
-        // keeps its few ms here too and fails open instead (T178).
+        // Only a fresh or upgraded store reaches here. `open`'s 1 s is the steady-state bound;
+        // one migration run plus the queue of other openers outlives it. Restored below. The
+        // hook keeps its few ms here too and fails open instead (T178).
         set_busy(&mut conn, self.wait.migrate)?;
         let applied = conn.exclusive_transaction::<_, anyhow::Error, _>(|conn| {
-            let mut applied = 0;
-            for (name, sql) in MIGRATIONS {
-                let rows: Vec<Count> =
-                    sql_query("SELECT COUNT(*) AS n FROM schema_migrations WHERE name = ?")
-                        .bind::<Text, _>(*name)
-                        .load(&mut *conn)?;
-                if rows.first().map(|r| r.n).unwrap_or(0) > 0 {
-                    continue;
-                }
-                conn.batch_execute(sql)
-                    .with_context(|| format!("migration {name}"))?;
-                sql_query("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
-                    .bind::<Text, _>(*name)
-                    .execute(conn)?;
-                applied += 1;
-            }
-            Ok(applied)
+            migrations::bridge_legacy(conn)?;
+            migrations::run_pending(conn)
         });
         set_busy(&mut conn, self.wait.busy)?;
         applied
@@ -2681,6 +2560,30 @@ mod tests {
         assert_eq!(rows[0].n, 6);
     }
 
+    /// A database that already recorded `NNNN.sql` in `schema_migrations` must not run those
+    /// files again when Diesel's version table is empty.
+    #[test]
+    fn legacy_schema_migrations_are_not_rerun() {
+        let dir = std::env::temp_dir().join(format!("rtok-mig-legacy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("rtok.db");
+        let store = Store::open(&db).unwrap();
+        let id = store
+            .insert_note(None, "note", "kept", "survives the bridge")
+            .unwrap();
+        drop(store);
+        let mut conn = SqliteConnection::establish(db.to_str().unwrap()).unwrap();
+        super::migrations::revert_to_legacy_bookkeeping(&mut conn).unwrap();
+        drop(conn);
+        let store = Store::open(&db).unwrap();
+        assert_eq!(store.migrate().unwrap(), 0);
+        let row = store.note_row(id).unwrap().unwrap();
+        assert_eq!(row.body, "survives the bridge");
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Every surface opens the same file, so a fresh store is migrated by whichever of them
     /// starts first — and the others start at the same moment. Each `Store::open` is its own
     /// connection, so these threads race exactly as separate processes do: before the
@@ -2753,22 +2656,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let db = dir.join("rtok.db");
         let mut conn = SqliteConnection::establish(db.to_str().unwrap()).unwrap();
-        conn.batch_execute("PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL;")
-            .unwrap();
-        conn.batch_execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (
-                name TEXT PRIMARY KEY,
-                applied_at INTEGER NOT NULL DEFAULT (unixepoch()))",
-        )
-        .unwrap();
-        let before = format!("{tag}.sql");
-        for (name, sql) in MIGRATIONS.iter().take_while(|(n, _)| *n < before.as_str()) {
-            conn.batch_execute(sql).unwrap();
-            sql_query("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
-                .bind::<Text, _>(*name)
-                .execute(&mut conn)
-                .unwrap();
-        }
+        super::migrations::run_before(&mut conn, tag).unwrap();
         (dir, conn)
     }
 
@@ -2778,12 +2666,15 @@ mod tests {
     fn migration_0015_adds_lifecycle_columns_to_a_previous_schema_db() {
         let (dir, mut conn) = db_before_migration("0015");
         let db = dir.join("rtok.db");
-        sql_query(
-            "INSERT INTO notes (ts, kind, title, body)
-             VALUES (1, 'note', 'old', 'before the lifecycle')",
-        )
-        .execute(&mut conn)
-        .unwrap();
+        diesel::insert_into(notes::table)
+            .values((
+                notes::ts.eq(1i64),
+                notes::kind.eq("note"),
+                notes::title.eq("old"),
+                notes::body.eq("before the lifecycle"),
+            ))
+            .execute(&mut conn)
+            .unwrap();
         drop(conn);
         let store = Store::open(&db).unwrap();
         let row = store.note_row(1).unwrap().unwrap();
@@ -2970,13 +2861,12 @@ mod tests {
         .load(&mut *conn)
         .unwrap();
         assert_eq!(tables[0].n, 8);
-        let hosts: Vec<Count> = sql_query("SELECT count(*) AS n FROM hosts")
-            .load(&mut *conn)
-            .unwrap();
+        let hosts: i64 = schema::hosts::table.count().get_result(&mut *conn).unwrap();
         // 0002.sql seeds 6; 0010.sql (T25.0) adds `pi`, the slug `rtok agent setup` installs
         // but the original list never had.
-        assert_eq!(hosts[0].n, 7);
-        sql_query("INSERT INTO sessions (id) VALUES ('s1')")
+        assert_eq!(hosts, 7);
+        diesel::insert_into(schema::sessions::table)
+            .values(schema::sessions::id.eq("s1"))
             .execute(&mut *conn)
             .unwrap();
         let err = diesel::insert_into(calls::table)
@@ -4222,14 +4112,10 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    // T104: `MIGRATIONS` and the `table!` macros are both kept by hand.
-
-    /// Every `migrations/*.sql` is in `MIGRATIONS`, in filename order, and nothing else is.
+    /// Every `migrations/<version>/up.sql` directory is embedded, in filename order.
     #[test]
     fn migrations_list_matches_the_directory() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-        // Each migration is a `<version>_<slug>/up.sql` directory (Diesel's own layout);
-        // `MIGRATIONS` still keys by the pre-T163.4 `NNNN.sql` name, so compare prefixes.
         let mut dirs: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap())
@@ -4237,12 +4123,15 @@ mod tests {
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
         dirs.sort();
-        let dir_versions: Vec<&str> = dirs.iter().map(|d| d.split('_').next().unwrap()).collect();
-        let listed: Vec<&str> = MIGRATIONS
+        let dir_versions: Vec<String> = dirs
             .iter()
-            .map(|(n, _)| n.strip_suffix(".sql").unwrap())
+            .map(|d| d.split('_').next().unwrap().to_string())
             .collect();
-        assert_eq!(listed, dir_versions, "MIGRATIONS drifted from migrations/");
+        let listed = super::migrations::versions().unwrap();
+        assert_eq!(
+            listed, dir_versions,
+            "embedded migrations drifted from migrations/"
+        );
     }
 
     // T220: schema-drift guard — per-column type/NOT NULL/PK, the full table set, and (since
@@ -4255,7 +4144,7 @@ mod tests {
         "notes_fts_idx",     // FTS5 shadow table for notes_fts
         "notes_fts_docsize", // FTS5 shadow table for notes_fts
         "notes_fts_config",  // FTS5 shadow table for notes_fts
-        "schema_migrations", // written by Store::migrate itself, not a migrations/*.sql file
+        "__diesel_schema_migrations", // diesel_migrations version table, not a migrations/*.sql file (T163.4)
     ];
 
     /// One `diesel::table!`: its name, declared PK columns, and (SQL name, Diesel type) pairs.

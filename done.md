@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+### T163.4. Migrations through `diesel_migrations`
+
+`migrate()` (`schema_migrations` bookkeeping plus `batch_execute` of each file) moves to `diesel_migrations` (approved 2026-09-23). Existing databases must not re-run anything: the names already in `schema_migrations` map onto Diesel's version table in a one-time, idempotent bridge, and a DB that was never migrated still gets every file once. Tests move with it: `migration_is_idempotent`, `concurrent_opens_of_a_fresh_store_all_migrate`, `migration_0015_adds_lifecycle_columns_to_a_previous_schema_db`, `schema_0002_seeds_hosts_and_rejects_bad_fk`, `migrations_list_matches_the_directory`, `schema_rs_matches_the_migrated_tables`. The `.sql` files stay raw SQL (the rulebook allows it in migrations).
+
+Check: `migrate()` and its tests hold no `sql_query|batch_execute`; a pre-T163.4 database opens, keeps its data and applies only newer migrations; fresh and concurrent opens green; `just check`.
+
+Result: `Store::migrate` calls `diesel_migrations` (`embed_migrations!("migrations")`). A database that still has `NNNN.sql` rows in `schema_migrations` and an empty `__diesel_schema_migrations` is marked applied and does not re-run `up.sql` (`legacy_schema_migrations_are_not_rerun`). Fresh and concurrent opens stay green. `migrate()` itself has no `sql_query` or `batch_execute`. `sqlite_master` counts in `migration_is_idempotent`, `schema_0002_seeds_hosts_and_rejects_bad_fk`, and the schema-drift helper still use `sql_query`: Diesel has no form for `sqlite_master`. `cargo test -p rtok --lib store::` (60) and clippy `-D warnings` on `--lib --tests` passed.
+
 ### T255. Tests run under a fake `HOME`
 
 Creator request 2026-09-24. T254 closes the leaks through `Config`, but code that resolves home itself (`agents::home_dir`, `Config::home_dir`, `env_user_home`) still sees the real `HOME` in any test that does not set it. Give every test process a throwaway `HOME` (and `USERPROFILE`) under `target/` so a missed path lands in a sandbox, never in `~/.claude` or `~/.codex`. The obvious place is cargo's `[env]` in `.cargo/config.toml` with `force = true`, provided nextest honours it and build scripts are not affected; if either fails, use a nextest setup script instead. Tests that need git settings from the home (commits in fixtures) get an explicit `user.name`/`user.email` instead.

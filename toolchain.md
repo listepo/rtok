@@ -58,6 +58,7 @@ Project programs and direct packages from the manifests.
 | console_error_panic_hook | local | https://crates.io/crates/console_error_panic_hook | WASM panic hook for the Slint web UI (T222) |
 | crossterm | local | https://crates.io/crates/crossterm | Terminal |
 | diesel | local | https://crates.io/crates/diesel | SQLite ORM |
+| diesel_migrations | local | https://crates.io/crates/diesel_migrations | Embedded SQLite migrations (T163.4) |
 | divan | local | https://crates.io/crates/divan | Divan benches in benches/ |
 | dotenvy | local | https://crates.io/crates/dotenvy | Rust dependency |
 | dunce | local | https://crates.io/crates/dunce | Canonicalize without Windows UNC prefixes |
