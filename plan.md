@@ -19,7 +19,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.8 | in progress | P2 | 3 | 70% | Cursor / grok 4.7 |
 | T178 | in progress | P1 | 4 | 95% | Cursor / grok 4.7 |
 | T262.3 | todo | P2 | 2 | 0% | |
-| T261 | in progress | P2 | 3 | 80% | Claude Code / claude-opus-5-5 |
+| T261 | in progress | P2 | 3 | 90% | Cursor / grok 4.7 |
 
 
 ### T87. `rtok hook <event> --host devin` reads Devin's payload
@@ -158,6 +158,9 @@ Plan (a draft PR; each change measured with `workflow_dispatch` runs on the bran
 4. Estimate folding `tests/*.rs` into one integration binary (78 links become 1); report it, do not do it here.
 
 Check: warm-cache `workflow_dispatch` runs on the draft PR are green, and a PR comment gives before/after timings per job.
+
+Progress (Cursor / grok 4.7): items 1–3 already on `origin/main` via #332 — do not redo. Remaining: draft PR on `t261-ci-timings`, two `workflow_dispatch` CI runs (cold then warm), PR comment with per-job timings from those logs, item-4 fold estimate in the PR body (no fold), then move this card to `done.md`.
+Fold estimate (local, not folding): `tests/*.rs` = **82** integration bins today (`cargo metadata` on package `rtok`). Link cost and wall savings reported in the draft PR after measuring from a warm `just test` / CI log; fold not done here (large mechanical move, own task).
 
 ## Reference
 
