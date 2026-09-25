@@ -789,7 +789,8 @@ mod tests {
         let home = tmp("dotenv-bad");
         let log = home.join("rtok.log");
         std::fs::write(home.join(".env"), "this is not a pair\n").unwrap();
-        let toml = format!("[log]\npath = \"{}\"\n", log.display());
+        // A TOML literal string keeps Windows backslashes from being read as escapes.
+        let toml = format!("[log]\npath = '{}'\n", log.display());
         std::fs::write(Config::path_for(&home), toml).unwrap();
         let cfg = load(&home, Some(&Config::path_for(&home)), None).unwrap();
         let text = std::fs::read_to_string(&cfg.log.path).unwrap();

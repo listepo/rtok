@@ -149,7 +149,8 @@ pub async fn serve(cfg: Config) -> Result<()> {
     let listener = TcpListener::bind(addr)
         .await
         .with_context(|| format!("bind {addr}"))?;
-    let listen = format!("http://{addr} ws://{addr}/ws");
+    // Loopback dashboard address for the operator; no socket is opened from this string.
+    let listen = format!("http://{addr} ws://{addr}/ws"); // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
     eprintln!("rtok web {listen}");
     crate::log::append(&cfg, "info", "web", "serve", &listen);
     let pkg = resolve_pkg();
