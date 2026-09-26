@@ -178,7 +178,11 @@ impl HookInput {
         }
         if let Some(Value::Object(resp)) = self.tool_response.as_mut()
             && !resp.contains_key("stdout")
-            && let Some(out) = resp.get("output").filter(|v| v.is_string()).cloned()
+            && let Some(out) = resp
+                .get("output")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| Value::String(s.to_owned()))
         {
             resp.insert("stdout".into(), out);
         }
@@ -806,25 +810,58 @@ mod tests {
         assert_eq!(copilot_tool_name("web_search"), "web_search");
     }
 
-    /// Payloads as https://docs.devin.ai/cli/extensibility/hooks/lifecycle-hooks gives them.
+    /// Payloads as https://docs.devin.ai/cli/extensibility/hooks/lifecycle-hooks gives them,
+    /// plus a live capture (2026-09-26, `devin 3000.11.3`): stdin has no `cwd`; `read` uses
+    /// `file_path` (not `path`).
     #[test]
     fn devin_maps_tool_names_result_project_dir_and_compaction() {
-        let mut pre: HookInput = serde_json::from_value(serde_json::json!({
-            "session_id": "dv-1",
-            "prompt_id": "p-1",
-            "tool_name": "exec",
-            "tool_input": {"command": "git status", "shell_id": "main"}
-        }))
+        // Captured PreToolUse for `exec` (verbatim object from the logging hook).
+        let mut pre: HookInput = serde_json::from_str(
+            r#"{"hook_event_name":"PreToolUse","tool_name":"exec","tool_input":{"command":"echo rtok-t87"},"tool_use_id":"call_e53ac12625584a319924ddb5","session_id":"regal-name","prompt_id":"9d55c94c-4032-4f0d-a353-9a19d43d39d0"}"#,
+        )
         .unwrap();
         pre.adapt_devin("PreToolUse", Some("/work/app".into()));
         assert_eq!(pre.hook_event_name, "PreToolUse");
         assert_eq!(pre.tool_name.as_deref(), Some("Bash"));
-        assert_eq!(pre.tool_input.as_ref().unwrap()["shell_id"], "main");
+        assert_eq!(pre.tool_input.as_ref().unwrap()["command"], "echo rtok-t87");
+        assert!(pre.tool_input.as_ref().unwrap().get("shell_id").is_none());
         assert_eq!(pre.cwd.as_deref(), Some("/work/app"));
-        assert_eq!(pre.extra.get("prompt_id"), Some(&serde_json::json!("p-1")));
+        assert_eq!(
+            pre.extra.get("prompt_id"),
+            Some(&serde_json::json!("9d55c94c-4032-4f0d-a353-9a19d43d39d0"))
+        );
         assert!(pre.pre_tool().is_some());
 
-        let mut post: HookInput = serde_json::from_value(serde_json::json!({
+        // Captured PreToolUse for `read` — path key is `file_path`.
+        let mut read: HookInput = serde_json::from_str(
+            r#"{"hook_event_name":"PreToolUse","tool_name":"read","tool_input":{"file_path":"/private/tmp/rtok-t87-capture-72600/ws/hello.txt"},"tool_use_id":"call_9af95feed7d74e8e8c466b2c","session_id":"regal-name","prompt_id":"9d55c94c-4032-4f0d-a353-9a19d43d39d0"}"#,
+        )
+        .unwrap();
+        read.adapt_devin("PreToolUse", Some("/work/app".into()));
+        assert_eq!(read.tool_name.as_deref(), Some("Read"));
+        assert_eq!(
+            read.tool_input.as_ref().unwrap()["file_path"],
+            "/private/tmp/rtok-t87-capture-72600/ws/hello.txt"
+        );
+        assert!(read.tool_input.as_ref().unwrap().get("path").is_none());
+
+        // Captured PostToolUse for `exec` (no stdin `cwd`).
+        let mut post: HookInput = serde_json::from_str(
+            r#"{"hook_event_name":"PostToolUse","tool_name":"exec","tool_input":{"command":"echo rtok-t87"},"tool_use_id":"call_e53ac12625584a319924ddb5","tool_response":{"success":true,"output":"Output from command in shell 131f83:\nrtok-t87\n\n\nExit code: 0","error":null},"session_id":"regal-name","prompt_id":"9d55c94c-4032-4f0d-a353-9a19d43d39d0"}"#,
+        )
+        .unwrap();
+        post.adapt_devin("PostToolUse", Some("/work/app".into()));
+        let resp = post.tool_response.as_ref().unwrap();
+        assert_eq!(
+            resp["stdout"],
+            "Output from command in shell 131f83:\nrtok-t87\n\n\nExit code: 0"
+        );
+        assert_eq!(resp["success"], true);
+        assert_eq!(post.cwd.as_deref(), Some("/work/app"));
+        assert!(post.post_tool().is_some());
+
+        // Stdin `cwd` still wins over `DEVIN_PROJECT_DIR` when both are present.
+        let mut cwd_wins: HookInput = serde_json::from_value(serde_json::json!({
             "session_id": "dv-1",
             "cwd": "/from/stdin",
             "tool_name": "exec",
@@ -832,13 +869,8 @@ mod tests {
             "tool_response": {"success": true, "output": "a\nb\n", "error": null}
         }))
         .unwrap();
-        post.adapt_devin("PostToolUse", Some("/work/app".into()));
-        let resp = post.tool_response.as_ref().unwrap();
-        assert_eq!(resp["stdout"], "a\nb\n");
-        assert_eq!(resp["output"], "a\nb\n");
-        assert_eq!(resp["success"], true);
-        assert_eq!(post.cwd.as_deref(), Some("/from/stdin"));
-        assert!(post.post_tool().is_some());
+        cwd_wins.adapt_devin("PostToolUse", Some("/work/app".into()));
+        assert_eq!(cwd_wins.cwd.as_deref(), Some("/from/stdin"));
 
         let mut other: HookInput = serde_json::from_value(serde_json::json!({
             "tool_name": "mcp__github__execute_query",
@@ -857,6 +889,26 @@ mod tests {
                 .unwrap();
         compact.adapt_devin("PostCompaction", None);
         assert_eq!(compact.hook_event_name, "PostCompact");
+    }
+
+    /// Failed Devin calls keep `{success, output, error}` as sent — an empty `output` must
+    /// not become a `stdout` field plugins would treat as a Bash body.
+    #[test]
+    fn devin_failed_empty_output_lifts_no_stdout() {
+        let mut post: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "dv-fail",
+            "tool_name": "exec",
+            "tool_input": {"command": "false"},
+            "tool_response": {"success": false, "output": "", "error": "exit 1"}
+        }))
+        .unwrap();
+        post.adapt_devin("PostToolUse", None);
+        let resp = post.tool_response.as_ref().unwrap();
+        assert_eq!(resp["success"], false);
+        assert_eq!(resp["output"], "");
+        assert_eq!(resp["error"], "exit 1");
+        assert!(resp.get("stdout").is_none(), "{resp}");
+        assert!(post.post_tool().is_some());
     }
 
     #[test]

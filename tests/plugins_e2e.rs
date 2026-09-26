@@ -211,6 +211,71 @@ fn graph_session_start_map_off_by_default_and_on_when_capped() {
     assert!(on_ctx.contains("repo map"), "{on}");
     assert!(on_ctx.contains("hot"), "{on}");
 }
+/// T87: Devin's `PostCompaction` must reach the PostCompact plugins after `adapt_devin`
+/// renames it. Graph's session-start repo map (source=`compact`) is the signal.
+#[test]
+fn graph_post_compaction_devin_reaches_post_compact_plugins() {
+    let home = tmp("graph-post-compaction-devin");
+    let repo = home.0.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    std::fs::write(
+        repo.join("a.rs"),
+        "fn hot() {}\nfn cold() { hot(); hot(); }\n",
+    )
+    .unwrap();
+    let arg = repo.to_string_lossy().into_owned();
+    let _ = run(&home, &["graph", "index", &arg], "", &home.0);
+    std::fs::write(
+        home.0.join("config.toml"),
+        "[plugins.graph]\nmap_tokens = 200\n",
+    )
+    .unwrap();
+    let input = json!({
+        "session_id": "s-compact-devin",
+        "cwd": repo,
+        "hook_event_name": "PostCompaction",
+        "summary": null
+    })
+    .to_string();
+    let out = run(
+        &home,
+        &["hook", "PostCompaction", "--host", "devin"],
+        &input,
+        &home.0,
+    );
+    let on_v = js(&out);
+    let ctx = on_v
+        .get("hookSpecificOutput")
+        .and_then(|v| v.get("additionalContext"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert!(ctx.contains("repo map"), "{out}");
+    assert!(ctx.contains("hot"), "{out}");
+}
+/// T87 Check: a live-captured Devin `exec` PreToolUse (2026-09-26, `devin 3000.11.3`)
+/// yields the same decision as the equivalent Claude `Bash` payload; an unknown tool is `{}`.
+#[test]
+fn devin_captured_exec_pre_tool_use_matches_claude_bash() {
+    let home = tmp("devin-captured-exec");
+    let exec = r#"{"hook_event_name":"PreToolUse","tool_name":"exec","tool_input":{"command":"echo rtok-t87"},"tool_use_id":"call_e53ac12625584a319924ddb5","session_id":"regal-name","prompt_id":"9d55c94c-4032-4f0d-a353-9a19d43d39d0"}"#;
+    let bash = r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo rtok-t87"},"tool_use_id":"call_e53ac12625584a319924ddb5","session_id":"regal-name","prompt_id":"9d55c94c-4032-4f0d-a353-9a19d43d39d0"}"#;
+    let unknown = r#"{"hook_event_name":"PreToolUse","tool_name":"not_a_real_tool","tool_input":{},"session_id":"regal-name"}"#;
+    let devin = js(&run(
+        &home,
+        &["hook", "PreToolUse", "--host", "devin"],
+        exec,
+        &home.0,
+    ));
+    let claude = js(&run(&home, &["hook", "PreToolUse"], bash, &home.0));
+    assert_eq!(devin, claude, "devin={devin} claude={claude}");
+    let unk = js(&run(
+        &home,
+        &["hook", "PreToolUse", "--host", "devin"],
+        unknown,
+        &home.0,
+    ));
+    assert_eq!(unk, json!({}));
+}
 #[test]
 fn inject_session_start_records_measurement() {
     let home = tmp("inject");

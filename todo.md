@@ -1,4 +1,3 @@
-- T87. `rtok hook <event> --host devin` reads Devin's payload
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
 
 - T124. Realized `tools_rewrite` saving as a dated `research.md` row
@@ -9,7 +8,6 @@
 
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
-- T178. Hook wall-clock time as Claude Code sees it
 - T262.3. Codex: spawn brief on `SubagentStart`
 - T261. CI takes ~9.5 min on macOS; the webui check recompiles 183 crates every run
 - T271. The Claude desktop Code tab sees rtok's MCP twice while the plugin is installed
