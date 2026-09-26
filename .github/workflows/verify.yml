@@ -18,9 +18,12 @@ on:
 
 env:
   # Each job installs only the mise.toml tools it runs (`install_args` below). Without these, a
-  # bare `mise exec` (the justfile's `cargo`) first installs every other tool in mise.toml.
+  # bare `mise exec` (how the justfile runs each tool) first installs every other one in mise.toml.
   MISE_AUTO_INSTALL: "false"
   MISE_EXEC_AUTO_INSTALL: "false"
+  # cargo:cargo-nextest from its release binary, not `cargo install` (minutes of compiling on
+  # every cold mise cache, i.e. after any mise.toml change).
+  MISE_CARGO_BINSTALL_NATIVE: "true"
 
 jobs:
   verify:

@@ -25,7 +25,7 @@ permissions:
 
 env:
   # Each job installs only the mise.toml tools it runs (`install_args` below). Without these, a
-  # bare `mise exec` (the justfile's `cargo`) first installs every other tool in mise.toml.
+  # bare `mise exec` (how the justfile runs each tool) first installs every other one in mise.toml.
   MISE_AUTO_INSTALL: "false"
   MISE_EXEC_AUTO_INSTALL: "false"
 
