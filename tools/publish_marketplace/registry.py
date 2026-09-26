@@ -58,6 +58,7 @@ UNSUPPORTED: dict[str, tuple[str, str, str]] = {
     "cline": ("no marketplace: `cline plugin install <source>` installs straight from a git repo or local path (SDK/CLI/Kanban only, not the VS Code extension), no catalog file to publish", "https://docs.cline.bot/customization/plugins.md", "2026-09-24"),
     "copilot": ("git-hosted catalog possible, not wired in this repo yet", "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference", "2026-09-23"),
     "cursor": ("manual review via cursor.com/marketplace/publish", "https://cursor.com/docs/plugins", "2026-09-23"),
+    "devin": ("no public catalog to publish to: `devin plugins install <owner/repo>` installs straight from a git repo, and the Devin marketplace is an org/enterprise manifest in the web app", "https://docs.devin.ai/cli/extensibility/plugins/overview", "2026-09-26"),
     "gemini": ("no marketplace: `gemini extensions install <source>` links a git repo or local path directly, no catalog file to publish", "https://geminicli.com/docs/extensions/reference/", "2026-09-24"),
     "grok": ("catalog is the externally-owned xai-org/plugin-marketplace repo", "https://docs.x.ai/build/features/skills-plugins-marketplaces", "2026-09-23"),
     "kimi": ("git-hosted catalog possible, not wired in this repo yet", "https://www.kimi.com/code/docs/en/kimi-code-cli/customization/plugins.html", "2026-09-23"),
