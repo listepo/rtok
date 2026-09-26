@@ -373,23 +373,22 @@ pub(crate) mod tests {
             .unwrap()
             .join(format!("rtok-read-symlink-out-{}", std::process::id()));
         fs::write(&outside, "secret\n").unwrap();
-        let link = cwd.join("escape");
         #[cfg(unix)]
-        std::os::unix::fs::symlink(&outside, &link).unwrap();
-        #[cfg(not(unix))]
         {
+            let link = cwd.join("escape");
+            std::os::unix::fs::symlink(&outside, &link).unwrap();
+            // `read` passes the process cwd to `resolve`; calling `resolve` with `cwd` and
+            // no allow_paths checks the same guard without moving the cwd every parallel
+            // test shares (moving it failed `map_src_main_lists_fn_main` on ubuntu CI,
+            // 2026-09-11).
+            let err = resolve(&cwd, Path::new("escape"), &[])
+                .unwrap_err()
+                .to_string();
             let _ = fs::remove_file(&outside);
-            let _ = fs::remove_dir_all(dir);
-            return;
+            assert!(err.contains("outside cwd"), "{err}");
         }
-        // `read` passes the process cwd to `resolve`; calling `resolve` with `cwd` and no
-        // allow_paths checks the same guard without moving the cwd every parallel test shares
-        // (moving it failed `map_src_main_lists_fn_main` on ubuntu CI, 2026-09-11).
-        let err = resolve(&cwd, Path::new("escape"), &[])
-            .unwrap_err()
-            .to_string();
+        #[cfg(not(unix))]
         let _ = fs::remove_file(&outside);
-        assert!(err.contains("outside cwd"), "{err}");
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -488,11 +487,11 @@ pub(crate) mod tests {
     fn under_ascii_case_insensitive_matches_windows_prefix() {
         let path = Path::new(r"C:\Users\Me\proj\file.txt");
         let root = Path::new(r"c:\users\me\proj");
-        assert_eq!(under_ascii_case_insensitive(path, root), true);
-        assert_eq!(
-            under_ascii_case_insensitive(path, Path::new(r"c:\users\me\project")),
-            false
-        );
+        assert!(under_ascii_case_insensitive(path, root));
+        assert!(!under_ascii_case_insensitive(
+            path,
+            Path::new(r"c:\users\me\project")
+        ));
     }
 
     /// T56.2: line numbering / range from Vfs bytes — same grammar as `read` full|lines, no host disk.
