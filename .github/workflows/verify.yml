@@ -25,8 +25,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+      # Rust toolchain from the last run; mise then skips `rustup toolchain install`.
+      - id: rustup
+        uses: ./.github/actions/rustup-toolchain-cache
       # Installs the Rust version pinned in mise.toml — same toolchain as local and as ci.yml.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - if: steps.rustup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.rustup.outputs.path }}
+          key: ${{ steps.rustup.outputs.key }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: just check
       - run: just example

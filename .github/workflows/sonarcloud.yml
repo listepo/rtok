@@ -30,8 +30,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Rust toolchain from the last run; mise then skips `rustup toolchain install`.
+      - id: rustup
+        uses: ./.github/actions/rustup-toolchain-cache
+        with:
+          extra: llvm-tools-preview
+
       # Same pin as ci.yml — Rust/just from mise.toml.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+      - name: Install llvm-tools-preview
+        run: rustup component add llvm-tools-preview
+
+      - name: Save the rustup toolchain
+        if: steps.rustup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.rustup.outputs.path }}
+          key: ${{ steps.rustup.outputs.key }}
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -43,9 +59,6 @@ jobs:
 
       - name: Clippy
         run: just lint
-
-      - name: Install llvm-tools-preview
-        run: rustup component add llvm-tools-preview
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20

@@ -39,6 +39,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # Rust toolchain from the last run; mise then skips `rustup toolchain install`.
+      - id: rustup
+        uses: ./.github/actions/rustup-toolchain-cache
+        with:
+          extra: wasm32-unknown-unknown
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -53,6 +58,12 @@ jobs:
       # The webui crate is out of the workspace and builds for wasm only; nothing
       # above compiles it (T81).
       - run: just webui-check
+      # After webui-check, so the saved toolchain carries its wasm32 target.
+      - if: steps.rustup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.rustup.outputs.path }}
+          key: ${{ steps.rustup.outputs.key }}
       # T23.6: `rtok-plugin-sdk` is published on release; a broken manifest fails here.
       - run: just publish-dry
 
@@ -66,8 +77,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+      # Rust toolchain from the last run; mise then skips `rustup toolchain install`.
+      - id: rustup
+        uses: ./.github/actions/rustup-toolchain-cache
       # Installs the Rust version pinned in mise.toml — same toolchain as local.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - if: steps.rustup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.rustup.outputs.path }}
+          key: ${{ steps.rustup.outputs.key }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # Skip slow cache upload on PRs; restore still works from main keys.
@@ -85,7 +104,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      # Rust toolchain from the last run; mise then skips `rustup toolchain install`.
+      - id: rustup
+        uses: ./.github/actions/rustup-toolchain-cache
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - if: steps.rustup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.rustup.outputs.path }}
+          key: ${{ steps.rustup.outputs.key }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
