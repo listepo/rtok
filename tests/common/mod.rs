@@ -27,7 +27,8 @@ pub fn vitest(file: &str, envs: &[(&str, &Path)]) {
         "vitest"
     };
     let mut cmd = Command::new(exe);
-    cmd.args(["run", file])
+    // `--bail=1`: stop at the first failing test; the panic below names the file either way.
+    cmd.args(["run", "--bail=1", file])
         .envs(envs.iter().copied())
         .current_dir(env!("CARGO_MANIFEST_DIR"));
     // Windows mise leaves `@vitest/mocker` without its `vite` peer, and ESM ignores NODE_PATH:

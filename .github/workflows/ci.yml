@@ -73,13 +73,31 @@ jobs:
           # Skip slow cache upload on PRs; restore still works from main keys.
           # T261 experiment: also save on the branch's manual runs to measure a warm cache.
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+      # The host plugin tests (vitest) run on Linux only. Node and vitest themselves come from
+      # the mise cache above (keyed on mise.toml); this keeps vitest's own cacheDir
+      # (`vitest.config.mjs`) warm, keyed on the plugin sources.
+      - if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/vitest
+          key: vitest-${{ runner.os }}-${{ hashFiles('mise.toml', 'vitest.config.mjs', 'plugins/**/*.ts') }}
+          restore-keys: vitest-${{ runner.os }}-
       - run: just test
       - run: just example
 
   # T44.4: the agent installers write Windows paths and `%APPDATA%` files; run the suite there.
   # T83.4: a gate like `check` — a Windows-only failure fails the run and reverts main.
+  # The suite run (~250 s) outweighs the build (~85 s) on this runner, so it is split across
+  # `partitions` runners with nextest `--partition count:i/n`. Every shard builds the same
+  # test binaries and runs its share; the job still fails if any shard fails.
   windows:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2]
+        partitions: [2]
+    name: windows (${{ matrix.partition }}/${{ matrix.partitions }})
     runs-on: windows-latest
     # A hung test is killed by nextest's `terminate-after`; this caps everything else.
     timeout-minutes: 30
@@ -88,8 +106,11 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: mise exec -- cargo nextest run --workspace
+          # The shards build the same target dir; one upload is enough.
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.partition == 1 }}
+      - run: >-
+          mise exec -- cargo nextest run --workspace
+          --partition count:${{ matrix.partition }}/${{ matrix.partitions }}
 
   revert-on-failure:
     name: revert-on-failure
