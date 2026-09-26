@@ -56,8 +56,12 @@ fn tasklist_running(name: &str) -> bool {
 /// about).
 #[cfg(not(target_os = "windows"))]
 fn pgrep_running(name: &str) -> bool {
+    // `pgrep` prints matching PIDs; only the exit status is wanted, so the PIDs must not
+    // leak into rtok's own stdout.
     std::process::Command::new("pgrep")
         .args(["-x", name])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
