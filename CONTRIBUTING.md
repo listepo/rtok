@@ -87,6 +87,10 @@ the same change. Extract duplicated helpers into `packages/` via local
 
 ## Testing
 
+On Windows the local gate is stricter than the Windows CI job and has a few
+machine-specific traps (line endings, a dart-gated test, antivirus warm-up) — see
+`docs/windows.md`.
+
 Run tests with `just test` — the default locally and in CI (`just check`):
 `-j` = logical CPUs (`--test-threads {{cpus}}`). Heavy tests (cold repo
 index, 100-session memory bench, 3 000-file graph bench) run alone via
