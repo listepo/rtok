@@ -959,16 +959,7 @@ mod tests {
 
     #[test]
     fn cline_pre_tool_use_rewrites_single_command_and_fails_open() {
-        let dir = std::env::temp_dir().join(format!(
-            "rtok-hook-cline-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = unique_dir("rtok-hook-cline");
         let cfg = cline_cfg(&dir);
         let stdin = serde_json::to_vec(&serde_json::json!({
             "hookName": "tool_call",
@@ -1119,14 +1110,24 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn cap_budget_marks_drop_when_first_line_exceeds() {
-        let mut cx = Runtime::in_memory("cap-first").unwrap();
-        cx.config.plugins.inject.budget_tokens = 40;
-        let huge = "word ".repeat(400);
-        let want = huge.trim_end().to_string();
-        let out = cap_budget(&cx, &want);
-        assert!(!out.is_empty(), "must not swallow the whole payload");
+    /// A fresh, empty scratch dir named `<prefix>-<pid>-<nanos>`, unique per call.
+    fn unique_dir(prefix: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "{prefix}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// `out` carries one `dropped:post_tool:` marker whose `rtok expand <sha256>` id fetches
+    /// back exactly `want`.
+    fn assert_marker_expands_to(cx: &Runtime, out: &str, want: &str) {
         let marker = out
             .lines()
             .find(|l| l.starts_with("dropped:post_tool:"))
@@ -1137,8 +1138,19 @@ mod tests {
             id.len() == 64 && id.chars().all(|c| c.is_ascii_hexdigit()),
             "{marker}"
         );
-        let got = crate::expand::fetch(&cx, id).unwrap().unwrap();
+        let got = crate::expand::fetch(cx, id).unwrap().unwrap();
         assert_eq!(got, want.as_bytes(), "{marker}");
+    }
+
+    #[test]
+    fn cap_budget_marks_drop_when_first_line_exceeds() {
+        let mut cx = Runtime::in_memory("cap-first").unwrap();
+        cx.config.plugins.inject.budget_tokens = 40;
+        let huge = "word ".repeat(400);
+        let want = huge.trim_end().to_string();
+        let out = cap_budget(&cx, &want);
+        assert!(!out.is_empty(), "must not swallow the whole payload");
+        assert_marker_expands_to(&cx, &out, &want);
         assert!(cx.estimate(&out, Class::Prose) <= 40, "{out}");
     }
 
@@ -1175,18 +1187,7 @@ mod tests {
         let text = format!("{small}\n{want}");
         let out = cap_budget(&cx, &text);
         assert!(out.starts_with("ok\n"), "{out}");
-        let marker = out
-            .lines()
-            .find(|l| l.starts_with("dropped:post_tool:"))
-            .unwrap_or_else(|| panic!("marker missing: {out}"));
-        assert!(marker.contains(" · expand: rtok expand "), "{marker}");
-        let id = marker.rsplit("rtok expand ").next().unwrap();
-        assert!(
-            id.len() == 64 && id.chars().all(|c| c.is_ascii_hexdigit()),
-            "{marker}"
-        );
-        let got = crate::expand::fetch(&cx, id).unwrap().unwrap();
-        assert_eq!(got, want.as_bytes(), "{marker}");
+        assert_marker_expands_to(&cx, &out, &want);
         assert!(cx.estimate(&out, Class::Prose) <= 30, "{out}");
     }
 
@@ -1308,15 +1309,7 @@ mod tests {
 
     #[test]
     fn cursor_mcp_post_tool_use_shortens_only_foreign_long_results() {
-        let dir = std::env::temp_dir().join(format!(
-            "rtok-hook-mcp-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = std::fs::create_dir_all(&dir);
+        let dir = unique_dir("rtok-hook-mcp");
         let cfg = cursor_cfg(&dir);
         let long: String = (1..=200).map(|i| format!("line {i}\n")).collect();
         let out = dispatch_owned_strict(
@@ -1383,15 +1376,7 @@ mod tests {
     /// and for an `isError` result alike.
     #[test]
     fn cursor_after_mcp_execution_is_byte_passthrough() {
-        let dir = std::env::temp_dir().join(format!(
-            "rtok-hook-after-mcp-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = std::fs::create_dir_all(&dir);
+        let dir = unique_dir("rtok-hook-after-mcp");
         let cfg = cursor_cfg(&dir);
 
         let long: String = (1..=200).map(|i| format!("line {i}\n")).collect();
