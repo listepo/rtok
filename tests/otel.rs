@@ -666,6 +666,7 @@ fn concurrent_flushes_post_each_row_once() {
 /// tests can count concurrent flush children without querying the host process table — no
 /// `ps`, no `kill`, ever, per the creator's hard rule. `home` already gives each test its own
 /// scratch directory, so nesting the trace dir under it keeps parallel tests apart too.
+#[cfg(unix)]
 fn trace_dir(base: &Path) -> PathBuf {
     let dir = base.join("flush-trace");
     std::fs::create_dir_all(&dir).unwrap();
@@ -674,6 +675,7 @@ fn trace_dir(base: &Path) -> PathBuf {
 
 /// Markers in `trace_dir` with extension `ext`: `run` (child alive), `done` (child exited),
 /// `spawned` (written by the hook itself before it exits — T161).
+#[cfg(unix)]
 fn trace_files(dir: &Path, ext: &str) -> usize {
     std::fs::read_dir(dir)
         .map(|it| {
@@ -685,12 +687,14 @@ fn trace_files(dir: &Path, ext: &str) -> usize {
 }
 
 /// Flush children currently alive, per `trace_dir`.
+#[cfg(unix)]
 fn trace_count(dir: &Path) -> usize {
     trace_files(dir, "run")
 }
 
 /// T161: wait (bounded) until every spawned flush child has exited. An empty `run` set alone
 /// is not enough — a child that was spawned but has not started yet has no marker either.
+#[cfg(unix)]
 fn trace_drained(dir: &Path, timeout: Duration) -> bool {
     let deadline = std::time::Instant::now() + timeout;
     loop {
