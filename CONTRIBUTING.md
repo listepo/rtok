@@ -103,4 +103,5 @@ for unit tests that only need path/content/size. See plan D29 / T56.
 
 JS/TS tests (host plugins) use vitest (`vitest.config.mjs`, globals, no
 `vitest` import); never `node:test`/`node:assert`. Prefer
-`toMatchInlineSnapshot` for structured output. See T111.
+`toMatchInlineSnapshot` for structured output. See T111. They run on Linux
+only; `common::vitest` skips them on macOS and Windows.
