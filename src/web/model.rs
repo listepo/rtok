@@ -1123,6 +1123,7 @@ fn stats_page_text(cfg: &Config, report: &stats::Report) -> String {
 /// Dead-symbol lines shown on the Graph page before it says "and N more" instead of
 /// flooding the page (T230). A cheap per-tick bound, not a token budget — `graph dead
 /// --json` (uncapped) still has the rest.
+#[cfg(feature = "graph")]
 const GRAPH_DEAD_CAP: usize = 200;
 
 /// The Graph page (T230): `graph status::collect`/`format_table` (same text `rtok
