@@ -8,6 +8,14 @@ Result: `HookInput::adapt_devin` maps `exec`→`Bash`, `PostCompaction`→`PostC
 
 Check: `devin_maps_tool_names_result_project_dir_and_compaction`, `devin_failed_empty_output_lifts_no_stdout`, `devin_captured_exec_pre_tool_use_matches_claude_bash`, `graph_post_compaction_devin_reaches_post_compact_plugins`; fail-open matrix covers garbage/empty for `--host devin`.
 
+### T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton
+
+After T88. New host `devin` in `src/agents/devin/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()`. Variants: CLI (`devin` on PATH) and Desktop (`Devin.app`), same files. Without the plugin, install edits the user files directly: the `"hooks"` key of `~/.config/devin/config.json` (`%APPDATA%\devin\` on Windows) and `mcpServers.rtok` in `~/.config/devin/mcp_config.json`. The plugin offer prints the exact `devin plugins install --local <resolved plugins/devin path>` line — rtok does not write Devin's plugin store, its on-disk location is undocumented (the Kimi rule from T86). D21 singleton: while the plugin is installed, setup strips rtok's own hooks and `mcpServers.rtok` from the user files instead of adding them. The existing `windsurf` host stays untouched for machines that still run Windsurf; retiring or aliasing it is not part of this task.
+
+Check: the unit tests above; `rtok agents list` shows `devin`; `agents_doc`, `host_docs`, `config_coverage` green; `just check`.
+
+Result: `installed()` never reports `plugin`. Devin's plugins overview (fetched 2026-09-25) does not name a store path, `devin plugins list` is a live command rather than a file, and this machine's `~/.config/devin/` has no plugin store — guessing would either double-fire hooks or delete entries the plugin still needs. Setup always writes the user files (the path without the plugin) and, behind `--yes`, prints `devin plugins install --local <plugins/devin>` only when something else changed, so a second install is all `NO_CHANGES`. Remove strips our hooks and `mcpServers.rtok` and leaves the plugin. `hooks_doc()` equals `plugins/devin/hooks.json`. Foreign hooks in the real `~/.config/devin/config.json` survive install and remove (`devin_keeps_the_real_config_and_mcp_json`). `agents list` shows Devin CLI and Devin. `agents::devin` (4), `agents_doc`, `agents_list_content`, `host_docs`, `config_coverage`, `readme_tables_match_support`, and `default_toml_is_the_defaults` passed; clippy `-D warnings` on `--lib --tests` passed.
+
 ### T267. Normalized dedupe treats `1src` as a duration and never matches `d:d:d`
 
 `duration_at` scanned only digits and `.`, then treated any following `s` as a duration. `copied 1src/a.rs` and `copied 2src/a.rs` collapsed to the same key. The `d:d:d` branch (`1:2:3`) required five digits after a scan that stops at `:`, so it never matched. `s` and `ms` now match only at a token boundary, and `d:d:d` is recognized before that scan.

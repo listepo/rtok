@@ -98,6 +98,10 @@ const HOSTS: &[Host] = &[
         id: "omp",
         files: &[".omp/agent/mcp.json"],
     },
+    Host {
+        id: "devin",
+        files: &[".config/devin/config.json", ".config/devin/mcp_config.json"],
+    },
 ];
 
 /// True for anything rtok owns: install puts it there and remove takes it away, so it is the
@@ -301,6 +305,7 @@ real_config_round_trip! {
     codewhale_keeps_the_real_config_toml_and_mcp_json => "codewhale",
     mimo_keeps_the_real_mimocode_json => "mimo",
     omp_keeps_the_real_mcp_json => "omp",
+    devin_keeps_the_real_config_and_mcp_json => "devin",
 }
 
 /// Zed writes **JSONC** — its `settings.json` carries `//` comments and trailing commas
