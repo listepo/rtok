@@ -142,7 +142,7 @@ function hookPayload(event: string, sessionID: string, extra: object = {}): stri
 
 /** Single-quote for `rtok run -- '…'` (same shape as the Claude PreToolUse rewrite). */
 function shellQuote(cmd: string): string {
-  return `'${cmd.replace(/'/g, `'\"'\"'`)}'`;
+  return `'${cmd.replace(/'/g, `'"'"'`)}'`;
 }
 
 /** OpenCode + Kilo plugin: bash → `rtok run`, guard, skill filter, compaction (T70.6 / T97).
@@ -164,7 +164,11 @@ export function createPlugin(
       if (!v.allow && v.reason) throw new Error(v.reason);
       // Rewrite bash to `rtok run` before the host executes it (T97 live check; matches
       // Claude/pi). Skip when already wrapped so a second before-hook cannot nest.
-      if (tool.toLowerCase() === "bash" && output?.args && typeof output.args.command === "string") {
+      if (
+        tool.toLowerCase() === "bash" &&
+        output?.args &&
+        typeof output.args.command === "string"
+      ) {
         const cmd = output.args.command;
         if (!/^\s*rtok(\s|$)/.test(cmd)) {
           output.args.command = `rtok run -- ${shellQuote(cmd)}`;
