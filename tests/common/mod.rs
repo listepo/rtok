@@ -12,7 +12,14 @@ use std::time::Duration;
 
 /// T111: run one TS host plugin test file under vitest (the mise tool; `vitest.config.mjs` at the
 /// repo root). `envs` are set for the run. Panics with the file name when a test fails.
+///
+/// Linux only: the plugins are plain TypeScript with no OS-specific paths, so one OS covers
+/// them; on macOS and Windows this is a no-op.
 pub fn vitest(file: &str, envs: &[(&str, &Path)]) {
+    if !cfg!(target_os = "linux") {
+        eprintln!("skip vitest {file}: host plugin tests run on Linux only");
+        return;
+    }
     // npm installs a `.cmd` shim on Windows, which `Command` only finds by its full name.
     let exe = if cfg!(windows) {
         "vitest.cmd"

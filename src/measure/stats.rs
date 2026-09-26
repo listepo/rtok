@@ -1424,6 +1424,7 @@ fn has_outline(_path: &str) -> bool {
 /// (`plugins::read::hook`), an MCP `read` cache-hit message (unreachable from a
 /// native Read, kept for the session-wide "any sign rtok saw it" check), or an
 /// archive/cmd trailer.
+#[cfg(feature = "read")]
 fn has_rtok_marker(content: &str) -> bool {
     content.contains("use rtok read")
         || content.contains("file changed since last read")
@@ -1435,9 +1436,12 @@ fn has_rtok_marker(content: &str) -> bool {
 /// Path-named write signals (need the path in `cmd` too); words are whole shell
 /// tokens so `rm` cannot match inside `warm`. `mv`/`cp` don't distinguish
 /// source from destination — approximation, not a shell parser.
+#[cfg(feature = "read")]
 const WRITE_SYMBOLS: [&str; 5] = [">", "sed -i", "perl -i", "perl -pi", "tee "];
+#[cfg(feature = "read")]
 const WRITE_WORDS: [&str; 5] = ["mv", "cp", "rm", "touch", "patch"];
 /// Blanket writers: can rewrite any tracked file without naming it.
+#[cfg(feature = "read")]
 const BLANKET_WRITERS: [&str; 13] = [
     "git checkout",
     "git restore",
@@ -1454,6 +1458,7 @@ const BLANKET_WRITERS: [&str; 13] = [
     "prettier --write",
 ];
 
+#[cfg(feature = "read")]
 fn has_word(cmd: &str, w: &str) -> bool {
     cmd.split(|c: char| c.is_whitespace() || matches!(c, '&' | '|' | ';'))
         .any(|t| t == w)
@@ -1461,6 +1466,7 @@ fn has_word(cmd: &str, w: &str) -> bool {
 
 /// T179 "changed" class, narrowed to a write signal so a `cat`/`grep`/`sed -n` of
 /// the path doesn't count — only something that could have changed it.
+#[cfg(feature = "read")]
 fn bash_touches(cmd: &str, path: &str) -> bool {
     if BLANKET_WRITERS.iter().any(|w| cmd.contains(w)) {
         return true;
@@ -1477,6 +1483,7 @@ fn bash_touches(cmd: &str, path: &str) -> bool {
 
 /// Per-path state since its last Read: `.1`/`.2` are its `offset`/`limit`, `.3`
 /// whether an Edit/Write/MultiEdit/Bash touched it since.
+#[cfg(feature = "read")]
 type Last = (String, Option<u64>, Option<u64>, bool);
 
 /// Classifies each repeat native `Read` this session; `subagent` is filled by the
@@ -2275,6 +2282,7 @@ mod tests {
         fs::remove_dir_all(&dir).ok();
     }
 
+    #[cfg(feature = "read")]
     #[test]
     fn bash_touches_needs_a_write_signal_not_just_a_named_read() {
         let cases = [
