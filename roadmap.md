@@ -409,6 +409,7 @@ Not v0.1 work. Same plugins, extra backends. P28–P33 were promoted from `ideas
 | `proxy` | Optional semantic response cache (bifrost-like), off until a false-hit Check is 0 on the P9 set. | I-23 → **P31** |
 | ~~core / daemon~~ | Promoted to P20 (D22) — `rtok demon` supervises `proxy`/`mcp`/`dashboard`. | (was mis-tagged I-26; daemon ≠ WASM) → **P20** |
 | core | WASM host for out-of-tree plugins (`from_plugins` + `.wasm` example). | I-26 → **P32** |
+| hooks | Cut another ~10 ms off the §19.2 harness p50 so it reaches 10 ms (today §19.7: PreToolUse 12.3 ms / PostToolUse 12.5 ms). | from T178 |
 
 Design notes: `src/plugins/compress/PLAN.md` (P28, T28.0). Each one carries the `Target:` its gate
 must beat, and that line is the gate text below.
