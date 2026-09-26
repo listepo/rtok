@@ -20,6 +20,50 @@ Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree uncha
 
 Result (2026-09-26, Cursor / grok 4.7): live check passed under a throwaway `HOME` (real `~/.config/kilo` and `~/.local/share/kilo` unchanged). `rtok agents install kilo --yes` linked `plugins/opencode/rtok.ts` and wrote `mcp.rtok`. Kilo 7.7.5 rejected the old bare-function default export (`failed to load plugin` / `plugin config hook failed`); the shared plugin now exports `{ id: "rtok", server }` and rewrites bash in `tool.execute.before` to `rtok run -- '…'`. `kilo run --auto -m vercel/alibaba/qwen3.5-flash` invoked bash with `rtok run -- 'echo rtok-t97'`; tool output carried the expand trailer; `RTOK_HOME=… rtok stats --plugin cmd --json` showed one `cmd`/`rule` row (`ref_id` `echo:301a303c…`). OpenAI env key had no credits; Vercel AI Gateway worked. Extension (b) not re-probed here — same files as CLI. Unit: `agents::kilo` 6/6, `opencode_plugin`+`filter` 6/6 (vitest 21/21), `readme_tables_match_support` green.
 
+### T163. Replace raw SQL in `src/store/` with Diesel's query builder
+
+Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 104 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2 (`symbols.rs`'s 15 are done — T163.1). Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`; creator approved wiring it into rtok on 2026-09-23). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
+
+Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing store tests unchanged and green; hook path still ≤ 10 ms; `just check`.
+
+**Split (2026-09-23).** T163.1 (`symbols.rs`, done — see `done.md`) created the shared `src/store/sql_ext.rs` extension module. T163.2 takes `otel.rs` and `embed.rs`, reusing it. `mod.rs` (92 sites, including migration DDL and PRAGMA) stays in this card and is split further when claimed; `diesel_migrations` is approved (2026-09-23).
+
+**Split of `mod.rs` (2026-09-23).** Six slices by area, each ≤ 200 LOC: T163.3 PRAGMA, `unixepoch()` and FTS5 in the shared extension module; T163.4 migrations; T163.5 sessions, calls, measurements and `kv`; T163.6 archive, `call_io` and `read_cache`; T163.7 usage and stats aggregates; T163.8 retention and the last test helpers, which also runs this card's full Check and closes T163. Raw SQL in `mod.rs` tests moves with the slice that owns the table it touches. Execution: T163.3 waits for T163.1's `sql_ext.rs` to land on `main` (one module, never a second); T163.4–T163.7 do not depend on each other; T163.8 goes last. T163.9 (window and CTE queries T163.7 could not express) was split off T163.7 on 2026-09-23 and also waits for `sql_ext.rs`.
+
+Progress (2026-09-26, Cursor / grok 4.7): production `sql_ext::exec_pragma` no longer uses `batch_execute`. It runs each PRAGMA through a `PragmaStmt` `QueryFragment` + `.execute()` (`HAS_STATIC_QUERY_ID = false`). Measured on diesel 2.3.13, on-disk file: before `delete`, after `QueryFragment.execute` → `wal`, still `wal` after reconnect; `get_result` and `sql_query(...).execute` also returned `wal`. `grep -nE 'sql_query|sql::<|batch_execute' src/store/sql_ext.rs` is empty; `open_on_disk_uses_wal` and clippy `-D warnings` on `--lib --tests` green.
+
+Progress (2026-09-26, Cursor / grok 4.7): schema-drift cluster. Removed: `sql_query` in `live_schema_snapshot` / `schema_drift` (`SqliteMasterSnapshot`, `PragmaTableXinfo` in `sql_ext`, `HAS_STATIC_QUERY_ID = false`); `batch_execute` in `drift_after` (`FixtureSql`); `into_sql::<Bool>()` in `memory_note_aggs`; `sql_query` token in the `schema.rs` `uses` comment. Combined with WAL / BeginImmediate / Explain slices — remaining hits (if any) after the migration-fixtures merge close the card.
+
+Result (2026-09-26, Cursor / grok 4.7): combined slice branches `t163.4-migration-bridge`, `t163-wal-pragma`, `t163.8-test-lock`, `t163-schema-drift`, and `t163.8-migration-fixtures` onto `t163-grep-clean` from `origin/main`. `git grep -nE 'sql_query|sql::<|batch_execute' -- src` is empty. `open_on_disk_uses_wal`, `migration_is_idempotent`, `legacy_schema_migrations_are_not_rerun`, `schema_matches_the_migrated_tables_and_snapshot`, and `cargo clippy -p rtok --lib --tests -- -D warnings` passed. Slice PRs left open (not force-pushed, not merged here).
+
+### T163.4. Migrations through `diesel_migrations`
+
+`migrate()` (`schema_migrations` bookkeeping plus `batch_execute` of each file) moves to `diesel_migrations` (approved 2026-09-23). Existing databases must not re-run anything: the names already in `schema_migrations` map onto Diesel's version table in a one-time, idempotent bridge, and a DB that was never migrated still gets every file once. Tests move with it: `migration_is_idempotent`, `concurrent_opens_of_a_fresh_store_all_migrate`, `migration_0015_adds_lifecycle_columns_to_a_previous_schema_db`, `schema_0002_seeds_hosts_and_rejects_bad_fk`, `migrations_list_matches_the_directory`, `schema_rs_matches_the_migrated_tables`. The `.sql` files stay raw SQL (the rulebook allows it in migrations).
+
+Execution plan: (1) choose between Diesel's `<version>/up.sql` layout and a `MigrationSource` over the flat `migrations/NNNN.sql` files — the layout move alone touches every file, so if chosen it lands as its own mechanical PR; (2) write the bridge and a test that opens a DB migrated by the current code and sees no re-run; (3) toolchain row for `diesel_migrations`; (4) `just check`.
+
+Check: `migrate()` and its tests hold no `sql_query|batch_execute`; a pre-T163.4 database opens, keeps its data and applies only newer migrations; fresh and concurrent opens green; `just check`.
+
+Progress (2026-09-26, Cursor / grok 4.7): merged `origin/main` into `t163.4-migration-bridge` and re-applied the diesel_migrations bridge onto main's typed store (`sql_ext`, purge, FTS, windows, otel, embed). `Store::migrate` / `db_before_migration` / `migration_is_idempotent` / `migration_0015_*` hold no `sql_query` / `sql::<` / `batch_execute`. Still open: `migration_0020`, `migration_0021`, and `schema_0002` still contain those tokens (other open PRs own them) — do not close until those land clean.
+
+Result (2026-09-26, Cursor / grok 4.7): combined slice branches `t163.4-migration-bridge`, `t163-wal-pragma`, `t163.8-test-lock`, `t163-schema-drift`, and `t163.8-migration-fixtures` onto `t163-grep-clean` from `origin/main`. `git grep -nE 'sql_query|sql::<|batch_execute' -- src` is empty. `open_on_disk_uses_wal`, `migration_is_idempotent`, `legacy_schema_migrations_are_not_rerun`, `schema_matches_the_migrated_tables_and_snapshot`, and `cargo clippy -p rtok --lib --tests -- -D warnings` passed. Slice PRs left open (not force-pushed, not merged here).
+
+### T163.8. Retention without raw SQL; close T163
+
+`purge_calls_older_than` and `run_retention` (dynamic `DELETE`s, archive path collection) and the remaining test sites (`purge_drops_old_calls…`, `retention_keeps_plugin_archives…`, `archive_in_session…`), then T163's full Check. Last slice: it runs after T163.3–T163.7 and removes `use diesel::sql_query` from `mod.rs`; it runs after T163.9 too.
+
+Execution plan: (1) rewrite with `diesel::delete(...).filter(...)` and typed updates inside the existing transaction; (2) T163's `grep` over `src` finds nothing; (3) hook path still ≤ 10 ms (`rtok bench` or the existing timing test); (4) move T163 and all its slices to `done.md`.
+
+Check: T163's Check.
+
+Progress: `purge_related`, `delete_old_calls` and `purge_archive` are `diesel::delete` / `diesel::update`. `doomed_archives` is `sql_ext::DoomedArchives` (UNION of two archive columns plus three `NOT EXISTS` — no typed form). `sql_ext` no longer calls `sql_query`. Store tests (59) and clippy `-D warnings` on `--lib --tests` passed.
+
+Progress (2026-09-26, Cursor / grok 4.7): removed `batch_execute` / `sql_query` from `purge_waits_out_a_concurrent_writer` and `archive_in_session_query_plan_uses_the_session_ts_index`. Those two use `sql_ext::BeginImmediate` / `Commit` / `ExplainArchiveInSessionPlan` (`QueryFragment`; Diesel has no statement form for `BEGIN IMMEDIATE` or `EXPLAIN QUERY PLAN`) plus the existing `busy_timeout` / `pragma_journal_wal`. Still open: T163's grep. Hits left are `migrate()` (T163.4), `db_before_migration` / migration / schema-drift tests, `into_sql::<Bool>()`, and `exec_pragma`'s WAL `batch_execute` (a prepared execute leaves `journal_mode` at `delete`). Do not close T163.8 until the parent grep is clean.
+
+Progress (2026-09-26, Cursor / grok 4.7): three store tests no longer use raw SQL — `migration_0020_drops_pre_existing_duplicate_notes` and `migration_0021_keeps_old_rows_and_records_a_keyed_call_once` seed through `sql_ext` `QueryFragment`s (one statement each); `schema_0002_seeds_hosts_and_rejects_bad_fk` uses `CountCoreV2Tables` for `sqlite_master`, typed `hosts::table.count()`, and typed `sessions` insert. Card stays open: parent grep still hits `migrate()` and WAL `batch_execute`.
+
+Result (2026-09-26, Cursor / grok 4.7): combined slice branches `t163.4-migration-bridge`, `t163-wal-pragma`, `t163.8-test-lock`, `t163-schema-drift`, and `t163.8-migration-fixtures` onto `t163-grep-clean` from `origin/main`. `git grep -nE 'sql_query|sql::<|batch_execute' -- src` is empty. `open_on_disk_uses_wal`, `migration_is_idempotent`, `legacy_schema_migrations_are_not_rerun`, `schema_matches_the_migrated_tables_and_snapshot`, and `cargo clippy -p rtok --lib --tests -- -D warnings` passed. Slice PRs left open (not force-pushed, not merged here).
+
 ### T87. `rtok hook <event> --host devin` reads Devin's payload
 
 Creator request 2026-09-21: a host plugin for Devin CLI + Devin Desktop. Devin's hooks are Claude-shaped on the way out (`hookSpecificOutput`, exit 2 blocks); the way in differs: tools `exec`/`read`/`edit`/`write`, `tool_response` `{success, output, error}`, compaction event `PostCompaction`, project root via `DEVIN_PROJECT_DIR`.

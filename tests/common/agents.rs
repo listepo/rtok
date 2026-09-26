@@ -149,7 +149,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
 /// `rtok --config <cfg> <args>` with `home` as HOME, USERPROFILE and APPDATA, so every
 /// platform's home-relative path lands inside the temp dir.
 ///
-/// `agents install|remove|update` calls get `--no-restart` appended (T141): these tests must never
+/// `agents install|remove|update` calls (and their `agent` / `setup` / `uninstall` aliases) get
+/// `--no-restart` appended (T141): these tests must never
 /// shell out to a real `osascript`/`pgrep`/`tasklist` to probe whether some app on the test
 /// machine happens to be running, let alone quit or reopen one.
 pub fn raw(args: &[&str], cfg: &Path, home: &Path) -> Output {
@@ -170,7 +171,14 @@ pub fn raw_without_claude(args: &[&str], cfg: &Path, home: &Path) -> Output {
 
 fn raw_with_path(args: &[&str], cfg: &Path, home: &Path, path: std::ffi::OsString) -> Output {
     let mut full: Vec<&str> = args.to_vec();
-    if matches!(args, ["agents", "install" | "remove" | "update", ..]) {
+    if matches!(
+        args,
+        [
+            "agents" | "agent",
+            "install" | "setup" | "remove" | "uninstall" | "update",
+            ..
+        ]
+    ) {
         full.push("--no-restart");
     }
     Command::new(bin())

@@ -128,17 +128,33 @@ extern "SQL" {
 // SQLite `unixepoch()` — not a Diesel built-in.
 diesel::define_sql_function!(fn unixepoch() -> Nullable<BigInt>);
 
-/// `PRAGMA` does not accept a bound parameter, and `journal_mode` is ignored when Diesel
-/// runs it as a prepared statement (`execute` left the file in `delete` mode). `sqlite3_exec`
-/// is what applies it. The text is a literal this module builds.
-fn exec_pragma(conn: &mut SqliteConnection, sql: &str) -> QueryResult<()> {
-    use diesel::connection::SimpleConnection;
-    conn.batch_execute(sql)
+/// One `PRAGMA` as a `QueryFragment`. `HAS_STATIC_QUERY_ID = false` because
+/// `busy_timeout`'s text includes the millisecond value.
+struct PragmaStmt {
+    sql: String,
+}
+
+impl QueryId for PragmaStmt {
+    type QueryId = ();
+    const HAS_STATIC_QUERY_ID: bool = false;
+}
+
+impl QueryFragment<Sqlite> for PragmaStmt {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(&self.sql);
+        Ok(())
+    }
+}
+
+impl RunQueryDsl<SqliteConnection> for PragmaStmt {}
+
+fn exec_pragma(conn: &mut SqliteConnection, sql: impl Into<String>) -> QueryResult<()> {
+    PragmaStmt { sql: sql.into() }.execute(conn).map(|_| ())
 }
 
 /// Milliseconds are a duration we computed, written as digits.
 pub(crate) fn busy_timeout(conn: &mut SqliteConnection, ms: u128) -> QueryResult<()> {
-    exec_pragma(conn, &format!("PRAGMA busy_timeout = {ms}"))
+    exec_pragma(conn, format!("PRAGMA busy_timeout = {ms}"))
 }
 
 pub(crate) fn pragma_journal_wal(conn: &mut SqliteConnection) -> QueryResult<()> {
@@ -178,6 +194,218 @@ impl Query for JournalMode {
 
 #[cfg(test)]
 impl RunQueryDsl<SqliteConnection> for JournalMode {}
+
+/// `BEGIN IMMEDIATE` — Diesel 2.3 has `immediate_transaction` but no statement form for a
+/// second connection that holds the write lock across a sleep (concurrency test).
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct BeginImmediate;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for BeginImmediate {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql("BEGIN IMMEDIATE");
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for BeginImmediate {}
+
+/// `COMMIT` — pair for [`BeginImmediate`] when the lock is released by hand.
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct Commit;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for Commit {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql("COMMIT");
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for Commit {}
+
+/// `EXPLAIN QUERY PLAN` — no form in Diesel 2.3's typed DSL. Restates `archive_in_session`'s
+/// correlated subquery so the plan can assert `measurements_session_ts`.
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct ExplainArchiveInSessionPlan;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for ExplainArchiveInSessionPlan {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(
+            "EXPLAIN QUERY PLAN SELECT archive.id, \
+             (SELECT COUNT(*) FROM measurements \
+              WHERE measurements.session = archive.session AND measurements.ts > archive.ts) \
+             FROM archive \
+             WHERE archive.id = 'x' AND archive.session = 's' AND archive.agent_id IS NULL",
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl Query for ExplainArchiveInSessionPlan {
+    type SqlType = (Integer, Integer, Integer, Text);
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for ExplainArchiveInSessionPlan {}
+
+/// `sqlite_master` catalog — not a `table!` Diesel can model.
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct SqliteMasterSnapshot;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for SqliteMasterSnapshot {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(
+            "SELECT type AS kind, name, tbl_name, sql FROM sqlite_master \
+             WHERE type IN ('table', 'index', 'trigger')",
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl Query for SqliteMasterSnapshot {
+    type SqlType = (Text, Text, Text, Nullable<Text>);
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for SqliteMasterSnapshot {}
+
+/// `PRAGMA table_xinfo` — no DSL form; table name is a schema identifier, not a bind.
+/// `HAS_STATIC_QUERY_ID = false`: the SQL text changes with `table`, so Diesel must not
+/// reuse a prepared statement from another table.
+#[cfg(test)]
+pub(crate) struct PragmaTableXinfo {
+    pub table: String,
+}
+
+#[cfg(test)]
+impl QueryId for PragmaTableXinfo {
+    type QueryId = ();
+    const HAS_STATIC_QUERY_ID: bool = false;
+}
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for PragmaTableXinfo {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql("SELECT name, type AS ty, \"notnull\", pk FROM pragma_table_xinfo('");
+        out.push_sql(&self.table);
+        out.push_sql("')");
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl Query for PragmaTableXinfo {
+    type SqlType = (Text, Text, Integer, Integer);
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for PragmaTableXinfo {}
+
+/// Fixture DDL for schema-drift mutation tests — one statement per execute (prepared
+/// statements do not run a semicolon-separated batch). Not a static query id: each
+/// fixture string is a different statement.
+#[cfg(test)]
+pub(crate) struct FixtureSql {
+    pub sql: &'static str,
+}
+
+#[cfg(test)]
+impl QueryId for FixtureSql {
+    type QueryId = ();
+    const HAS_STATIC_QUERY_ID: bool = false;
+}
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for FixtureSql {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(self.sql);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for FixtureSql {}
+
+/// `sqlite_master` catalog count — no `table!` for SQLite's schema tables.
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct CountCoreV2Tables;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for CountCoreV2Tables {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN \
+             ('hosts','providers','models','sessions','calls','call_io','tokens','logs')",
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl Query for CountCoreV2Tables {
+    type SqlType = BigInt;
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for CountCoreV2Tables {}
+
+/// Multi-row fixture seed with fixed ids and duplicate topic keys on a pre-0020
+/// database. One statement (a prepared execute does not run a semicolon batch); not a
+/// typed insert of the live `notes` shape.
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct SeedPre0020DuplicateNotes;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for SeedPre0020DuplicateNotes {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(
+            "INSERT INTO notes (id, ts, project, kind, title, body) VALUES \
+             (1, 1, NULL, 'note', 'dup', 'stale'), \
+             (2, 2, NULL, 'note', 'dup', 'fresh'), \
+             (3, 1, 'rtok', 'note', 'dup', 'stale'), \
+             (4, 2, 'rtok', 'note', 'dup', 'fresh')",
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for SeedPre0020DuplicateNotes {}
+
+/// Multi-row fixture seed on a pre-0021 `measurements` table (`once_key` does not exist
+/// yet; Diesel's `table!` already lists it). One statement (a prepared execute does not
+/// run a semicolon batch).
+#[cfg(test)]
+#[derive(QueryId)]
+pub(crate) struct SeedPre0021Measurements;
+
+#[cfg(test)]
+impl QueryFragment<Sqlite> for SeedPre0021Measurements {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql(
+            "INSERT INTO measurements (ts, session, plugin, kind, before_bytes, after_bytes, \
+             est_before, est_after) VALUES (1, 's', 'read', 'delta', 9, 1, 3, 1), \
+             (1, 's', 'read', 'delta', 9, 1, 3, 1)",
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl RunQueryDsl<SqliteConnection> for SeedPre0021Measurements {}
 
 /// Expression conflict target `COALESCE(project, '')` — Diesel's `on_conflict` names columns only.
 #[derive(QueryId)]
