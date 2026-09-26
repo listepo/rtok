@@ -107,7 +107,10 @@ fn pi_extension_owns_the_single_bash_call_path() {
 /// T47.3: the extension's own unit test (`plugins/pi/tests/rtok.test.ts`) — rewrite, quoting,
 /// fail-open with the ketch hint, and the filter result — against a fake `rtok` on PATH.
 #[test]
-#[cfg_attr(not(target_os = "linux"), ignore = "host plugin tests run on Linux only")]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "host plugin tests run on Linux only"
+)]
 fn pi_extension_unit_test_with_fake_rtok() {
     common::vitest("plugins/pi/tests/rtok.test.ts", &[]);
 }
