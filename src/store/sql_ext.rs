@@ -407,7 +407,6 @@ impl QueryFragment<Sqlite> for SeedPre0021Measurements {
 #[cfg(test)]
 impl RunQueryDsl<SqliteConnection> for SeedPre0021Measurements {}
 
-
 /// Expression conflict target `COALESCE(project, '')` — Diesel's `on_conflict` names columns only.
 #[derive(QueryId)]
 pub(crate) struct UpsertNote {

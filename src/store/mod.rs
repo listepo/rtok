@@ -2352,7 +2352,10 @@ mod tests {
         );
         // Core tables from the embedded migrations — typed counts, not sqlite_master.
         let mut conn = store.lock().unwrap();
-        let _: i64 = schema::events::table.count().get_result(&mut *conn).unwrap();
+        let _: i64 = schema::events::table
+            .count()
+            .get_result(&mut *conn)
+            .unwrap();
         let _: i64 = measurements::table.count().get_result(&mut *conn).unwrap();
         let _: i64 = archive::table.count().get_result(&mut *conn).unwrap();
         let _: i64 = read_cache::table.count().get_result(&mut *conn).unwrap();
@@ -3920,11 +3923,11 @@ mod tests {
     // `table!` models neither) defaults/indexes/triggers via a golden `sqlite_master` dump.
     /// A migrated table with no `table!` macro, and why.
     const RAW_SQL_TABLES: &[&str] = &[
-        "notes_fts",         // 0001: FTS5 virtual table, MATCH/bm25 in sql_ext (T163.3)
-        "notes_fts_data",    // FTS5 shadow table for notes_fts
-        "notes_fts_idx",     // FTS5 shadow table for notes_fts
-        "notes_fts_docsize", // FTS5 shadow table for notes_fts
-        "notes_fts_config",  // FTS5 shadow table for notes_fts
+        "notes_fts",                  // 0001: FTS5 virtual table, MATCH/bm25 in sql_ext (T163.3)
+        "notes_fts_data",             // FTS5 shadow table for notes_fts
+        "notes_fts_idx",              // FTS5 shadow table for notes_fts
+        "notes_fts_docsize",          // FTS5 shadow table for notes_fts
+        "notes_fts_config",           // FTS5 shadow table for notes_fts
         "__diesel_schema_migrations", // diesel_migrations version table, not a migrations/*.sql file (T163.4)
     ];
 
@@ -4097,9 +4100,7 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let mut conn = store.lock().unwrap();
         for s in sql {
-            sql_ext::FixtureSql { sql: s }
-                .execute(&mut *conn)
-                .unwrap();
+            sql_ext::FixtureSql { sql: s }.execute(&mut *conn).unwrap();
         }
         schema_drift(&mut conn)
     }
