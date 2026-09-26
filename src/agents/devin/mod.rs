@@ -134,9 +134,10 @@ impl Agent for Devin {
     }
 }
 
-/// `config.json`. On Windows the shipped default (`~/.config/devin/config.json`) is
-/// not where Devin reads; the docs name `%APPDATA%\devin\config.json`. An explicit
-/// path (tests, `rtok config set`) is kept.
+/// `config.json`. On Windows a path ending in the shipped default
+/// (`~/.config/devin/config.json`) is not where Devin reads; the docs name
+/// `%APPDATA%\devin\config.json`, so that one is redirected. Any other path (tests,
+/// `rtok config set`) is kept as is.
 pub fn config_path(cfg: &Config) -> PathBuf {
     let path = &cfg.setup.devin.config_path;
     if cfg!(windows)
@@ -163,12 +164,21 @@ pub fn mcp_path(cfg: &Config) -> PathBuf {
         .join("mcp_config.json")
 }
 
+/// The timeout `plugins/devin/hooks.json` ships with, in seconds: the default
+/// `[setup] hook_timeout_s`, since the plugin has no rtok config to read.
+const PLUGIN_HOOK_TIMEOUT_S: u64 = 5;
+
 fn command(bin: &str, event: &str) -> String {
-    let args = format!("hook {event} --host devin");
     if cfg!(windows) || bin != "rtok" {
-        return format!("{bin} {args}");
+        return format!("{bin} hook {event} --host devin");
     }
-    super::hook_resolver(&args, None)
+    plugin_command(event)
+}
+
+/// The POSIX resolver the plugin's `hooks.json` carries on every OS (the file is one
+/// checked-in artifact; the installer writes a bare command on Windows instead).
+fn plugin_command(event: &str) -> String {
+    super::hook_resolver(&format!("hook {event} --host devin"), None)
 }
 
 /// The POSIX resolver's `exec rtok hook <event> --host devin;` marker, or a bare
@@ -182,16 +192,20 @@ fn is_ours(cmd: &str, event: &str) -> bool {
 }
 
 /// The plugin's `hooks.json`: top-level event names, no `"hooks"` wrapper.
-/// Built from [`ENTRIES`] and [`command`], so the installer and the plugin cannot drift.
+/// Built from [`ENTRIES`] and [`plugin_command`], so the installer and the plugin cannot drift.
 pub fn hooks_doc() -> Value {
+    hooks_doc_with(plugin_command, PLUGIN_HOOK_TIMEOUT_S)
+}
+
+/// [`hooks_doc`]'s shape with `command(event)` and `timeout` of the caller's choosing.
+fn hooks_doc_with(command: impl Fn(&str) -> String, timeout: u64) -> Value {
     let mut hooks = serde_json::Map::new();
     for &(event, matcher) in ENTRIES {
-        let cmd = command("rtok", event);
         let mut group = json!({
             "hooks": [{
                 "type": "command",
-                "command": cmd,
-                "timeout": 5
+                "command": command(event),
+                "timeout": timeout
             }]
         });
         if !matcher.is_empty() {
@@ -291,7 +305,10 @@ mod tests {
         );
         let hooks =
             serde_json::from_str::<Value>(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(hooks["hooks"], hooks_doc());
+        // What this OS's installer writes: the plugin's resolver on POSIX, a bare command on
+        // Windows (`plugin_manifest_matches_the_installer` pins the plugin form itself).
+        let want = hooks_doc_with(|e| command("rtok", e), c.setup.hook_timeout_s);
+        assert_eq!(hooks["hooks"], want);
         let mcp: Value = serde_json::from_str(
             &std::fs::read_to_string(path.parent().unwrap().join("mcp_config.json")).unwrap(),
         )
