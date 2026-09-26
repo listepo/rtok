@@ -92,11 +92,7 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
         ),
         // Desktop links the plugin on `--yes` (no `default_install`); nothing file-backed.
         ("antigravity", vec!["--yes"], None),
-        (
-            "devin",
-            vec!["--yes"],
-            Some(home.join(".config/devin/config.json")),
-        ),
+        ("devin", vec!["--yes"], Some(home.join("devin/config.json"))),
     ]
 }
 
