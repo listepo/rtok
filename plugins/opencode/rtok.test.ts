@@ -14,6 +14,33 @@ test("replaces bash output via the injected filter", async () => {
   expect(output.output).toBe("On branch main\nmodified:   src/lib.rs\n");
 });
 
+test("before rewrites bash to a quoted `rtok run --` and does not nest", async () => {
+  const plugin = await createPlugin(
+    () => {
+      throw new Error("filter must not run");
+    },
+    () => "",
+    () => ({ allow: true }),
+  )();
+  const args: { command: string } = { command: "echo it's" };
+  await plugin["tool.execute.before"]({ tool: "bash", sessionID: "s" }, { args });
+  expect(args.command).toBe(`rtok run -- 'echo it'"'"'s'`);
+  await plugin["tool.execute.before"]({ tool: "bash", sessionID: "s" }, { args });
+  expect(args.command).toBe(`rtok run -- 'echo it'"'"'s'`);
+  // after must not filter again once the host ran `rtok run`
+  const out = { output: "already filtered\n" };
+  await plugin["tool.execute.after"]({ tool: "bash", args }, out);
+  expect(out.output).toBe("already filtered\n");
+});
+
+test("default export is Kilo's { id, server } descriptor", async () => {
+  const mod = await import("./rtok.ts");
+  expect(mod.default.id).toBe("rtok");
+  expect(typeof mod.default.server).toBe("function");
+  const hooks = await mod.default.server();
+  expect(typeof hooks["tool.execute.before"]).toBe("function");
+});
+
 test("replaces skill output via the injected filter", async () => {
   const plugin = await createPlugin((cmd, stdin) => {
     expect(cmd).toBe("skill nx-workspace");

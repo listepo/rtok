@@ -2,10 +2,11 @@
 
 `rtok.ts` — OpenCode plugin: `tool.execute.before` calls `rtok guard check` (T70.5) and
 throws the deny reason so the model sees it; missing `rtok`, non-zero, unparsable or a deny
-without a reason fails open. `tool.execute.after` records via `rtok hook PostToolUse` then
-replaces bash output with `rtok filter` and skill-tool output with
-`rtok filter --cmd "skill <name>" --archive` (head 30 / tail 5, headings kept; fail open:
-any spawn error returns the original output). `experimental.session.compacting` calls
+without a reason fails open. The same before-hook rewrites bash to `rtok run -- '…'`
+(skipped when already wrapped). `tool.execute.after` records via `rtok hook PostToolUse`;
+skill-tool output goes through `rtok filter --cmd "skill <name>" --archive` (head 30 /
+tail 5, headings kept; fail open: any spawn error returns the original output). Bash that
+already ran under `rtok run` is left alone. `experimental.session.compacting` calls
 `rtok hook PreCompact --host opencode` and
 appends the budgeted checkpoint to `output.context` (never `output.prompt`). The next
 `experimental.chat.system.transform` injects `PostCompact` restore bytes (T70.6). Hook hosts
@@ -14,10 +15,12 @@ default, once OpenCode itself is detected (T164), for the CLI and the desktop ap
 `rtok.test.ts` is its unit test (vitest). Missing `rtok`: install with ketch
 (`ketch install listepo/rtok`).
 
-Kilo Code 7 runs on the OpenCode server and loads the same file unchanged:
-`rtok agents install kilo` links it into `~/.config/kilo/plugins/rtok.ts` by default, once
-Kilo Code itself is detected (T164), for the `kilo` CLI and the VS Code extension (T97). The
-plugin still passes `--host opencode`, so Kilo rows are labelled `opencode`.
+Kilo Code 7 runs on the OpenCode server and loads the same file: the default export is
+`{ id: "rtok", server }` (Kilo's module descriptor,
+https://kilo.ai/docs/automate/extending/plugins). `rtok agents install kilo` links it into
+`~/.config/kilo/plugins/rtok.ts` by default, once Kilo Code itself is detected (T164), for
+the `kilo` CLI and the VS Code extension (T97). The plugin still passes `--host opencode`, so
+Kilo rows are labelled `opencode`.
 
 ## Docs
 
