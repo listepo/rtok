@@ -109,7 +109,7 @@ jobs:
           # The shards build the same target dir; one upload is enough.
           save-if: ${{ github.ref == 'refs/heads/main' && matrix.partition == 1 }}
       - run: >-
-          mise exec -- cargo nextest run --workspace --no-fail-fast
+          mise exec -- cargo nextest run --workspace
           --partition count:${{ matrix.partition }}/${{ matrix.partitions }}
 
   revert-on-failure:
