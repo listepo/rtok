@@ -18,12 +18,21 @@ on:
 permissions:
   contents: read
 
+env:
+  # Each job installs only the mise.toml tools it runs (`install_args` below). Without these, a
+  # bare `mise exec` (the justfile's `cargo`) first installs every other tool in mise.toml.
+  MISE_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: python
+          cache_key_prefix: mise-v1-python
       - name: Verify marketplace catalog(s)
         working-directory: tools
         env:

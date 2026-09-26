@@ -24,6 +24,12 @@ concurrency:
   group: release-plz
   cancel-in-progress: false
 
+env:
+  # Each job installs only the mise.toml tools it runs (`install_args` below). Without these, a
+  # bare `mise exec` (the justfile's `cargo`) first installs every other tool in mise.toml.
+  MISE_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
+
 jobs:
   # Is this push the merge of a release PR? Only a line that *is* the PR title counts — the
   # squash title, or the title line GitHub adds to a merge commit — never a mention inside a
@@ -72,8 +78,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # tags and history decide the next version
-      # cargo from mise.toml, same as local and ci.yml
+      # cargo from mise.toml, same as local and ci.yml; nothing else is needed here
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: rust
+          cache_key_prefix: mise-v1-rust
       - uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5.139
         with:
           command: release-pr

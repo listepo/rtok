@@ -13,6 +13,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Each job installs only the mise.toml tools it runs (`install_args` below). Without these, a
+  # bare `mise exec` (the justfile's `cargo`) first installs every other tool in mise.toml.
+  MISE_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,7 +26,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # hugo.toml sets enableGitInfo; last-modified needs full history
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0 — installs the Hugo, Go and just versions pinned in mise.toml
+      # Installs the Hugo, Go and just versions pinned in mise.toml, nothing else.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: just hugo go
+          cache_key_prefix: mise-v1-site
       - run: just site # --panicOnWarning: a broken mount or link fails the build
       - uses: actions/upload-pages-artifact@v5
         with:

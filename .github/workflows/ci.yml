@@ -24,6 +24,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Each job installs only the mise.toml tools it runs (`install_args` below). Without these, a
+  # bare `mise exec` (the justfile's `cargo`) first installs every other tool in mise.toml.
+  MISE_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
   # T261: no DWARF for workspace code in CI (dependencies have none already, Cargo.toml).
   # Smaller test binaries, less for the linker to move. A panic message still names
   # file:line (`Location` is compiled in); backtrace frames lose it. Local builds keep
@@ -39,7 +43,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # fmt/clippy/build-min/webui-check (rust), dup (jscpd), js (oxlint, oxfmt), python (pytest).
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: just rust node npm:jscpd npm:oxlint npm:oxfmt python pipx:pytest
+          cache_key_prefix: mise-v1-lint
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # The webui crate is outside the workspace, with its own target dir (T81); without
@@ -66,8 +74,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      # Installs the Rust version pinned in mise.toml — same toolchain as local.
+      # Installs the Rust version pinned in mise.toml — same toolchain as local — plus what
+      # `just test` / `just example` run: nextest, and vitest on node for the TS plugin tests.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: just rust cargo:cargo-nextest node npm:vitest npm:vite
+          cache_key_prefix: mise-v1-test
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # Skip slow cache upload on PRs; restore still works from main keys.
@@ -85,7 +97,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      # No just here: nextest runs directly. vite is vitest's peer (tests/common/mod.rs).
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: rust cargo:cargo-nextest node npm:vitest npm:vite
+          cache_key_prefix: mise-v1-test
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}

@@ -16,6 +16,12 @@ name: verify
 on:
   workflow_call:
 
+env:
+  # Each job installs only the mise.toml tools it runs (`install_args` below). Without these, a
+  # bare `mise exec` (the justfile's `cargo`) first installs every other tool in mise.toml.
+  MISE_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
+
 jobs:
   verify:
     strategy:
@@ -25,8 +31,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      # Installs the Rust version pinned in mise.toml — same toolchain as local and as ci.yml.
+      # Installs the Rust version pinned in mise.toml — same toolchain as local and as ci.yml — and
+      # the rest `just check` runs (ci.yml's lint + check tool sets together).
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: just rust cargo:cargo-nextest node npm:vitest npm:vite npm:jscpd npm:oxlint npm:oxfmt python pipx:pytest
+          cache_key_prefix: mise-v1-verify
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: just check
       - run: just example

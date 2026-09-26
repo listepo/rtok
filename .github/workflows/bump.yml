@@ -23,6 +23,12 @@ permissions:
   contents: write # push the version commit
   actions: write # dispatch release.yml
 
+env:
+  # Each job installs only the mise.toml tools it runs (`install_args` below). Without these, a
+  # bare `mise exec` (the justfile's `cargo`) first installs every other tool in mise.toml.
+  MISE_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
+
 jobs:
   # T18.6: the same gate every pull request passes, on the commit this release is cut from. The
   # version commit `release.sh` makes afterwards touches only Cargo.toml, Cargo.lock and
@@ -39,8 +45,12 @@ jobs:
           # Tags decide whether the current version was already released; the changelog reads history.
           fetch-depth: 0
           persist-credentials: true
-      # The toolchain pinned in mise.toml — same cargo and git-cliff as local.
+      # The toolchain pinned in mise.toml — same cargo and git-cliff as local; tools/release.sh runs
+      # nothing else.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: rust git-cliff
+          cache_key_prefix: mise-v1-release
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Release
         env:
