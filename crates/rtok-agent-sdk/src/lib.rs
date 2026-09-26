@@ -349,6 +349,8 @@ pub fn write_atomic(target: &Path, body: &str) -> Result<()> {
 
 /// `MOVEFILE_REPLACE_EXISTING` cannot replace a read-only file; drop that bit.
 #[cfg(windows)]
+// Windows-only, so the world-writable risk the lint names for Unix cannot arise here.
+#[allow(clippy::permissions_set_readonly_false)]
 fn clear_readonly(path: &Path) {
     let Ok(meta) = fs::metadata(path) else {
         return;

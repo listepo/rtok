@@ -7030,6 +7030,17 @@ Check: the file matches the live registry entry (`git -C ../packages/ketch-regis
 
 Result: ketch.toml now carries the pin and the note verbatim; no code changed. The machine that hit the hang was repaired by copying the store's real `rtok.exe` over `~/.ketch/bin/rtok.exe`; until ketch's B62 lands, fresh Windows `ketch install rtok` of the v0.9.0 archive still links the stub — ketch B62 is the fix to watch.
 
+### T273. Windows clippy: `permissions_set_readonly_false` in the cfg(windows) `clear_readonly`
+
+Found 2026-09-26 running `just check` locally on Windows (rust 1.97.1, the mise pin): the new clippy lint `permissions_set_readonly_false` fires on `rtok-agent-sdk`'s `clear_readonly` and, under `-D warnings`, fails the whole `lint` recipe. CI never sees it — the function is `#[cfg(windows)]`, compiled out on the Linux/macOS runners.
+
+Plan: a scoped `#[allow(clippy::permissions_set_readonly_false)]` with a comment — the lint's world-writable rationale is Unix-only and this function exists only on Windows, where `MOVEFILE_REPLACE_EXISTING` needs the read-only bit gone.
+
+Check: `cargo clippy -p rtok-agent-sdk --all-targets --all-features -- -D warnings` green on Windows (2026-09-26). The full gate runs in CI on the branch — the creator's call; this lint is invisible to CI's ubuntu jobs, which analyze no cfg(windows) code.
+
+Status: done 2026-09-26
+Model: ZCode / glm-5.3
+
 ### T274. Windows clippy: test code that only Unix compiles cleanly
 
 Found 2026-09-26 continuing the local Windows `just check` from T273: `-D warnings` also fails on test code CI never lints this way — the `read` symlink-escape test returns early under `#[cfg(not(unix))]` leaving the rest unreachable and `link` unused on Windows; the `otel.rs` flush-trace helpers and Cursor's `MISSING_RTOK_NOTE` serve Unix-gated tests only; and two `assert_eq!(.., true/false)` in `read` now trip `bool_assert_comparison`.
