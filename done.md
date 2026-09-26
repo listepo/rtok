@@ -7020,6 +7020,16 @@ Result: The creator raised the Check (2026-09-26) to hook p50 as Claude Code see
 Status: done 2026-09-26
 Model: Cursor / grok 4.7
 
+### T272. ketch.toml syncs with the live registry entry, plus the rtok-hook hazard note
+
+Found 2026-09-26, from `rtok agents install claude` hanging on Windows: `ketch install listepo/rtok` had linked `rtok-hook.exe` (the 390 KB std-only hook client dist ships beside the 34 MB `rtok.exe`) into `~/.ketch/bin/rtok.exe`, so every `rtok` invocation — `--version` included — hung reading stdin for a hook payload that never came. Chain: the registry entry pins `bin = [{ path = "rtok*", name = "rtok" }];` ketch resolves a glob to the first payload match; NTFS lists `rtok-hook.exe` before `rtok.exe`, so Windows takes the stub (Unix readdir order keeps `rtok` first, which is why only Windows hung). No `*`/`?` pattern matches `rtok`+`rtok.exe` while excluding `rtok-hook.exe`, so the entry's spelling is the best ketch's matcher allows; the durable fix — prefer the candidate whose stem is the link name — belongs to ketch (its B62). Meanwhile this repo's `ketch.toml`, the file `ketch push` sends, still predated registry commit 9b73cae: no `bin` pin and no Windows zip in `[asset] include`. A push from it would have dropped the pin and returned Windows installs to linking `plugins/cursor/scripts/mcp.cmd` — the exact regression 9b73cae fixed.
+
+Plan: sync `ketch.toml` with the live registry entry (bin pin, `*-pc-windows-msvc.zip` include) and extend its comment to record the rtok-hook first-match hazard, why no tighter glob exists, and that the fix is ketch-side.
+
+Check: the file matches the live registry entry (`git -C ../packages/ketch-registry show origin/main:rtok/ketch.toml`) apart from the extended comment, verified by diff. No code changed. On this Windows machine fmt and clippy passed (after T273/T274, separate branches) and one clean nextest run put 1295/1296 green with the single failure the local-only dart LSP gate (`docs/windows.md`, roadmap W1); the remaining suite runs in CI on the branch (the creator's call, 2026-09-26).
+
+Result: ketch.toml now carries the pin and the note verbatim; no code changed. The machine that hit the hang was repaired by copying the store's real `rtok.exe` over `~/.ketch/bin/rtok.exe`; until ketch's B62 lands, fresh Windows `ketch install rtok` of the v0.9.0 archive still links the stub — ketch B62 is the fix to watch.
+
 ### T274. Windows clippy: test code that only Unix compiles cleanly
 
 Found 2026-09-26 continuing the local Windows `just check` from T273: `-D warnings` also fails on test code CI never lints this way — the `read` symlink-escape test returns early under `#[cfg(not(unix))]` leaving the rest unreachable and `link` unused on Windows; the `otel.rs` flush-trace helpers and Cursor's `MISSING_RTOK_NOTE` serve Unix-gated tests only; and two `assert_eq!(.., true/false)` in `read` now trip `bool_assert_comparison`.
