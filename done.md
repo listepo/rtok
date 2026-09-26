@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+### T87. `rtok hook <event> --host devin` reads Devin's payload
+
+Creator request 2026-09-21: a host plugin for Devin CLI + Devin Desktop. Devin's hooks are Claude-shaped on the way out (`hookSpecificOutput`, exit 2 blocks); the way in differs: tools `exec`/`read`/`edit`/`write`, `tool_response` `{success, output, error}`, compaction event `PostCompaction`, project root via `DEVIN_PROJECT_DIR`.
+
+Result: `HookInput::adapt_devin` maps `exec`→`Bash`, `PostCompaction`→`PostCompact`, lifts non-empty `output` to `stdout`, fills `cwd` from `DEVIN_PROJECT_DIR` when stdin has none. Live capture 2026-09-26 (`devin 3000.11.3`, temp `--config`, `--respect-workspace-trust false`, `--permission-mode accept-edits`): PreToolUse / PostToolUse / SessionStart stdin carry **no `cwd`**; `read` uses **`file_path`**. Captured `exec` PreToolUse yields the same `updatedInput` decision as Claude `Bash`; unknown tool → `{}`. Extra: empty failed `output` lifts no `stdout`; `PostCompaction --host devin` reaches PostCompact plugins (graph repo map).
+
+Check: `devin_maps_tool_names_result_project_dir_and_compaction`, `devin_failed_empty_output_lifts_no_stdout`, `devin_captured_exec_pre_tool_use_matches_claude_bash`, `graph_post_compaction_devin_reaches_post_compact_plugins`; fail-open matrix covers garbage/empty for `--host devin`.
+
 ### T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton
 
 After T88. New host `devin` in `src/agents/devin/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()`. Variants: CLI (`devin` on PATH) and Desktop (`Devin.app`), same files. Without the plugin, install edits the user files directly: the `"hooks"` key of `~/.config/devin/config.json` (`%APPDATA%\devin\` on Windows) and `mcpServers.rtok` in `~/.config/devin/mcp_config.json`. The plugin offer prints the exact `devin plugins install --local <resolved plugins/devin path>` line — rtok does not write Devin's plugin store, its on-disk location is undocumented (the Kimi rule from T86). D21 singleton: while the plugin is installed, setup strips rtok's own hooks and `mcpServers.rtok` from the user files instead of adding them. The existing `windsurf` host stays untouched for machines that still run Windsurf; retiring or aliasing it is not part of this task.
