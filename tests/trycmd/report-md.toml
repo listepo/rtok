@@ -209,6 +209,7 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.codex.config_path | ~/.codex/config.toml | default |
 | setup.copilot.dir | ~/.copilot | default |
 | setup.cursor.hooks_path | ~/.cursor/hooks.json | default |
+| setup.devin.config_path | ~/.config/devin/config.json | default |
 | setup.dry_run | false | default |
 | setup.gemini.dir | ~/.gemini | default |
 | setup.grok.config_path | ~/.grok/config.toml | default |
@@ -260,7 +261,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-214 keys.
+215 keys.
 
 ## Doctor
 
@@ -425,6 +426,16 @@ agents
     hooks   not supported: Antigravity's PreToolUse cannot rewrite tool input and PostToolUse cannot add context
     mcp     not supported: rtok's MCP ships inside the plugin, the only install path
     proxy   not supported: Antigravity documents no model base-URL override
+    plugin  not installed (--yes)
+  devin (cli)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: Devin's proxy key is an HTTP proxy for CLI traffic, not a model API base URL
+    plugin  not installed (--yes)
+  devin (desktop)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: Devin's proxy key is an HTTP proxy for CLI traffic, not a model API base URL
     plugin  not installed (--yes)
 skills (1 listed, 154 desc bytes ≈ 38 tokens per request)
   dry-refactoring project desc 154c body 2772B calls - WARN never invoked

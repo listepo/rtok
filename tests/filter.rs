@@ -44,6 +44,10 @@ fn printf_git_status_returns_filtered_text() {
 }
 
 #[test]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "host plugin tests run on Linux only"
+)]
 fn opencode_plugin_unit_test_with_api_mock() {
     common::vitest("plugins/opencode/rtok.test.ts", &[]);
 }

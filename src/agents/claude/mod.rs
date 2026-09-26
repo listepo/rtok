@@ -145,7 +145,20 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     })
 }
 
-fn has_ours(entry: &Value, event: &str, matcher: &str) -> bool {
+/// How a host spells rtok's hook command: `command(bin, event)` is what gets written and
+/// `is_ours(cmd, event)` recognises one already there. The shared insert/strip walk
+/// ([`insert_ours_as`], [`strip_ours_as`]) is the same for every host with Claude's
+/// `hooks.<event>[] = {matcher?, hooks: [..]}` layout; only this spelling differs (Devin adds
+/// `--host devin`, T89).
+pub(super) struct HookForm {
+    pub command: fn(&str, &str) -> String,
+    pub is_ours: fn(&str, &str) -> bool,
+}
+
+/// Claude's own spelling, which Codex and ZCode share.
+const CLAUDE_FORM: HookForm = HookForm { command, is_ours };
+
+fn has_ours(form: &HookForm, entry: &Value, event: &str, matcher: &str) -> bool {
     let got = entry.get("matcher").and_then(Value::as_str).unwrap_or("");
     got == matcher
         && entry
@@ -154,7 +167,7 @@ fn has_ours(entry: &Value, event: &str, matcher: &str) -> bool {
             .into_iter()
             .flatten()
             .filter_map(|h| h.get("command").and_then(Value::as_str))
-            .any(|c| is_ours(c, event))
+            .any(|c| (form.is_ours)(c, event))
 }
 
 /// Add `<bin> hook <event>` under `hooks.<event>[]` for each entry not already ours, and
@@ -169,16 +182,31 @@ pub(super) fn insert_ours(
     timeout_key: &str,
     timeout: u64,
 ) -> String {
-    let mut changed = prune_ours(hooks, entries);
+    insert_ours_as(&CLAUDE_FORM, hooks, entries, bin, timeout_key, timeout)
+}
+
+/// [`insert_ours`] for a host whose command is spelled as `form` says.
+pub(super) fn insert_ours_as(
+    form: &HookForm,
+    hooks: &mut Value,
+    entries: &[(&str, &str)],
+    bin: &str,
+    timeout_key: &str,
+    timeout: u64,
+) -> String {
+    let mut changed = prune_ours(form, hooks, entries);
     for &(event, matcher) in entries {
-        let want = command(bin, event);
+        let want = (form.command)(bin, event);
         let mut found = false;
         for entry in array_at(hooks, event).iter_mut() {
-            if !has_ours(entry, event, matcher) {
+            if !has_ours(form, entry, event, matcher) {
                 continue;
             }
             for h in entry["hooks"].as_array_mut().into_iter().flatten() {
-                if !h["command"].as_str().is_some_and(|c| is_ours(c, event)) {
+                if !h["command"]
+                    .as_str()
+                    .is_some_and(|c| (form.is_ours)(c, event))
+                {
                     continue;
                 }
                 found = true;
@@ -198,7 +226,7 @@ pub(super) fn insert_ours(
         }
         obj.insert(
             "hooks".into(),
-            json!([{"type":"command","command":command(bin, event),timeout_key:timeout}]),
+            json!([{"type":"command","command":want,timeout_key:timeout}]),
         );
         array_at(hooks, event).push(Value::Object(obj));
         changed.push(format!("+ {event}{} {want}", show(matcher)));
@@ -227,7 +255,7 @@ pub(super) fn show(matcher: &str) -> String {
 /// Drop rtok hooks sitting on an `(event, matcher)` pair `entries` does not list — what an
 /// older install wrote before a matcher changed or an event went (T242.1). Emptied entries
 /// and event arrays go, as in [`strip_ours`]; one `- …` report line per dropped hook.
-fn prune_ours(hooks: &mut Value, entries: &[(&str, &str)]) -> Vec<String> {
+fn prune_ours(form: &HookForm, hooks: &mut Value, entries: &[(&str, &str)]) -> Vec<String> {
     let (mut removed, mut emptied) = (Vec::new(), Vec::new());
     let Some(map) = hooks.as_object_mut() else {
         return removed;
@@ -246,7 +274,7 @@ fn prune_ours(hooks: &mut Value, entries: &[(&str, &str)]) -> Vec<String> {
                 continue;
             };
             inner.retain(|h| match h["command"].as_str() {
-                Some(c) if is_ours(c, event) => {
+                Some(c) if (form.is_ours)(c, event) => {
                     removed.push(format!("- {event}{} {c}", show(&matcher)));
                     false
                 }
@@ -280,6 +308,27 @@ pub(super) fn strip_ours(
     timeout_key: &str,
     timeout: u64,
 ) -> String {
+    strip_ours_as(
+        &CLAUDE_FORM,
+        apply,
+        path,
+        hooks,
+        entries,
+        timeout_key,
+        timeout,
+    )
+}
+
+/// [`strip_ours`] for a host whose command is spelled as `form` says.
+pub(super) fn strip_ours_as(
+    form: &HookForm,
+    apply: &Apply,
+    path: &Path,
+    hooks: Option<&mut Value>,
+    entries: &[(&str, &str)],
+    timeout_key: &str,
+    timeout: u64,
+) -> String {
     let Some(hooks) = hooks.and_then(Value::as_object_mut) else {
         return NO_CHANGES.into();
     };
@@ -295,7 +344,7 @@ pub(super) fn strip_ours(
                 continue;
             };
             inner.retain(|h| {
-                let Some(cmd) = h["command"].as_str().filter(|c| is_ours(c, event)) else {
+                let Some(cmd) = h["command"].as_str().filter(|c| (form.is_ours)(c, event)) else {
                     return true;
                 };
                 let want = json!({"type": "command", "command": cmd, timeout_key: timeout});
@@ -1133,10 +1182,11 @@ mod tests {
         assert!(claude_entries().contains(&("SubagentStart", "")));
         let mut want = json!({});
         for &(event, matcher) in claude_entries() {
-            // T178: `rtok` on PATH is exec'd from Claude Code's own shell; `hook.sh` (a second
-            // shell, ~6 ms) only runs when PATH has no `rtok` (desktop app, fail-open hint).
+            // T178: prefer the tiny `rtok-hook` client (resident), then `rtok hook`, then
+            // `hook.sh` when neither binary is on PATH (desktop app, fail-open hint).
             let cmd = format!(
-                "command -v rtok >/dev/null 2>&1 && exec rtok hook {event}; \
+                "command -v rtok-hook >/dev/null 2>&1 && exec rtok-hook {event}; \
+                 command -v rtok >/dev/null 2>&1 && exec rtok hook {event}; \
                  exec \"${{CLAUDE_PLUGIN_ROOT}}/scripts/hook.sh\" {event}"
             );
             let mut e = json!({"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]});
