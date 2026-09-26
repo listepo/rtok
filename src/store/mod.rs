@@ -1,6 +1,7 @@
 //! One SQLite file (plan T0.3, T13.1, decision D8): WAL mode, FTS5, migrations keyed by filename.
 
 pub mod embed;
+mod migrations;
 pub mod models;
 pub mod otel;
 pub mod schema;
@@ -16,10 +17,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use anyhow::{Context, Result};
-use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::{BigInt, Bool, Double, Integer, Nullable, Text};
+use diesel::sql_types::{BigInt, Double, Integer, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -37,104 +36,8 @@ use schema::{
 
 pub(crate) use sql_ext::{coalesce, length, substr, sum_bigint, unixepoch};
 
-/// Embedded migrations, applied in order, each exactly once.
 /// Pause between `open` attempts while another connection holds the lock.
 const OPEN_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(100);
-
-const MIGRATIONS: &[(&str, &str)] = &[
-    (
-        "0001.sql",
-        include_str!("../../migrations/0001_schema_v1/up.sql"),
-    ),
-    (
-        "0002.sql",
-        include_str!("../../migrations/0002_schema_v2/up.sql"),
-    ),
-    (
-        "0003.sql",
-        include_str!("../../migrations/0003_symbol_index/up.sql"),
-    ),
-    (
-        "0004.sql",
-        include_str!("../../migrations/0004_archive_decisions/up.sql"),
-    ),
-    (
-        "0005.sql",
-        include_str!("../../migrations/0005_usage_api/up.sql"),
-    ),
-    (
-        "0006.sql",
-        include_str!("../../migrations/0006_symbols_root/up.sql"),
-    ),
-    (
-        "0007.sql",
-        include_str!("../../migrations/0007_symbols_freshness/up.sql"),
-    ),
-    (
-        "0008.sql",
-        include_str!("../../migrations/0008_call_edges/up.sql"),
-    ),
-    (
-        "0009.sql",
-        include_str!("../../migrations/0009_otel_export/up.sql"),
-    ),
-    (
-        "0010.sql",
-        include_str!("../../migrations/0010_seed_pi_host/up.sql"),
-    ),
-    (
-        "0011.sql",
-        include_str!("../../migrations/0011_extractor/up.sql"),
-    ),
-    (
-        "0012.sql",
-        include_str!("../../migrations/0012_note_embeddings/up.sql"),
-    ),
-    (
-        "0013.sql",
-        include_str!("../../migrations/0013_call_id_indexes/up.sql"),
-    ),
-    (
-        "0014.sql",
-        include_str!("../../migrations/0014_archive_decisions_pk/up.sql"),
-    ),
-    (
-        "0015.sql",
-        include_str!("../../migrations/0015_notes_lifecycle/up.sql"),
-    ),
-    (
-        "0016.sql",
-        include_str!("../../migrations/0016_symbol_stale/up.sql"),
-    ),
-    (
-        "0017.sql",
-        include_str!("../../migrations/0017_notes_recall/up.sql"),
-    ),
-    (
-        "0018.sql",
-        include_str!("../../migrations/0018_kv_guard/up.sql"),
-    ),
-    (
-        "0019.sql",
-        include_str!("../../migrations/0019_archive_agent_context/up.sql"),
-    ),
-    (
-        "0020.sql",
-        include_str!("../../migrations/0020_notes_topic_unique/up.sql"),
-    ),
-    (
-        "0021.sql",
-        include_str!("../../migrations/0021_measurements_once/up.sql"),
-    ),
-    (
-        "0022.sql",
-        include_str!("../../migrations/0022_call_io_raw_bodies/up.sql"),
-    ),
-    (
-        "0023.sql",
-        include_str!("../../migrations/0023_measurements_session_ts/up.sql"),
-    ),
-];
 
 pub struct Store {
     conn: Mutex<SqliteConnection>,
@@ -290,52 +193,26 @@ impl Store {
 
     /// Apply pending migrations; returns how many ran. Idempotent.
     ///
-    /// Each migration's SQL and its `schema_migrations` row commit together: several are
-    /// `ALTER TABLE … ADD COLUMN`, so a run interrupted between the two used to leave a
-    /// column added with no version row, and every later `Store::open` failed on
-    /// `duplicate column name` — a store nothing could repair but deletion.
+    /// Diesel runs each `up.sql` in its own transaction and records the directory version, so a
+    /// crash cannot leave a column added with no version row. Names already in `schema_migrations`
+    /// (`NNNN.sql`, the pre-T163.4 runner) are marked applied first and are not run again.
     ///
-    /// The check and the apply share one `BEGIN EXCLUSIVE` for the same reason across
-    /// processes: hooks, the MCP server and the proxy all open this file, and on a fresh
-    /// store two of them landed in the gap between the `SELECT` and the `ALTER`, so the
-    /// loser died on `duplicate column name`. The read-only pre-check keeps the settled
-    /// case — every open after the first — off the write lock.
+    /// The apply takes one `BEGIN EXCLUSIVE`: hooks, the MCP server and the proxy all open this
+    /// file, and on a fresh store two of them used to land between the version check and the
+    /// `ALTER`. A store with nothing pending stays off that write lock.
     pub fn migrate(&self) -> Result<usize> {
         let mut conn = self.lock()?;
-        conn.batch_execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (
-                name TEXT PRIMARY KEY,
-                applied_at INTEGER NOT NULL DEFAULT (unixepoch()))",
-        )?;
-        let done: Vec<Count> =
-            sql_query("SELECT COUNT(*) AS n FROM schema_migrations").load(&mut *conn)?;
-        if done.first().map(|r| r.n).unwrap_or(0) >= MIGRATIONS.len() as i64 {
+        migrations::bridge_legacy(&mut conn)?;
+        if !migrations::has_pending(&mut conn)? {
             return Ok(0);
         }
-        // Only a fresh or upgraded store reaches here, and everything else opening it in the
-        // same moment queues behind this one transaction. `open`'s 1 s is the steady-state
-        // bound; one migration run plus that queue outlives it, and the losers came back
-        // "database is locked". Restored below, so the bound still holds after. The hook
-        // keeps its few ms here too and fails open instead (T178).
+        // Only a fresh or upgraded store reaches here. `open`'s 1 s is the steady-state bound;
+        // one migration run plus the queue of other openers outlives it. Restored below. The
+        // hook keeps its few ms here too and fails open instead (T178).
         set_busy(&mut conn, self.wait.migrate)?;
         let applied = conn.exclusive_transaction::<_, anyhow::Error, _>(|conn| {
-            let mut applied = 0;
-            for (name, sql) in MIGRATIONS {
-                let rows: Vec<Count> =
-                    sql_query("SELECT COUNT(*) AS n FROM schema_migrations WHERE name = ?")
-                        .bind::<Text, _>(*name)
-                        .load(&mut *conn)?;
-                if rows.first().map(|r| r.n).unwrap_or(0) > 0 {
-                    continue;
-                }
-                conn.batch_execute(sql)
-                    .with_context(|| format!("migration {name}"))?;
-                sql_query("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
-                    .bind::<Text, _>(*name)
-                    .execute(conn)?;
-                applied += 1;
-            }
-            Ok(applied)
+            migrations::bridge_legacy(conn)?;
+            migrations::run_pending(conn)
         });
         set_busy(&mut conn, self.wait.busy)?;
         applied
@@ -1572,7 +1449,6 @@ impl Store {
 
     /// Per `(project, kind)` note counts for `memory status` (T69.4).
     pub fn memory_note_aggs(&self, project: Option<&str>) -> Result<Vec<MemoryNoteKindAgg>> {
-        use diesel::IntoSql;
         use diesel::dsl::{case_when, max, min};
         type Row = (
             Option<String>,
@@ -1585,37 +1461,42 @@ impl Store {
             Option<i64>,
         );
         let mut conn = self.lock()?;
-        // One statement for both `project` cases: `project.is_none()` is bound as a SQL
-        // boolean literal and OR'd ahead of the equality check, so a `None` short-circuits
-        // the whole condition to true (no project filter) while `Some(p)` falls through to
-        // `notes::project.eq(p)` — the same filter the two-statement version used per branch.
-        let no_project_filter = project.is_none().into_sql::<Bool>().nullable();
-        let rows: Vec<Row> = notes::table
-            .filter(notes::kind.not_like("checkpoint%"))
-            .filter(no_project_filter.or(notes::project.eq(project.unwrap_or_default())))
-            .group_by((notes::project, notes::kind))
-            .select((
-                notes::project,
-                notes::kind,
-                sum_bigint(
-                    case_when::<_, _, BigInt>(notes::retired.is_null(), 1i64).otherwise(0i64),
-                ),
-                sum_bigint(
-                    case_when::<_, _, BigInt>(
-                        notes::retired.is_null().and(notes::pinned.ne(0)),
-                        1i64,
-                    )
-                    .otherwise(0i64),
-                ),
-                sum_bigint(
-                    case_when::<_, _, BigInt>(notes::retired.is_not_null(), 1i64).otherwise(0i64),
-                ),
-                sum_bigint(length(notes::body)),
-                min(notes::ts),
-                max(notes::ts),
-            ))
-            .order((notes::project, notes::kind))
-            .load(&mut *conn)?;
+        // `None` = no project filter; `Some(p)` = equality. Two typed arms — boxed queries
+        // cannot `group_by` this select shape.
+        macro_rules! load_aggs {
+            ($q:expr) => {
+                $q.group_by((notes::project, notes::kind))
+                    .select((
+                        notes::project,
+                        notes::kind,
+                        sum_bigint(
+                            case_when::<_, _, BigInt>(notes::retired.is_null(), 1i64)
+                                .otherwise(0i64),
+                        ),
+                        sum_bigint(
+                            case_when::<_, _, BigInt>(
+                                notes::retired.is_null().and(notes::pinned.ne(0)),
+                                1i64,
+                            )
+                            .otherwise(0i64),
+                        ),
+                        sum_bigint(
+                            case_when::<_, _, BigInt>(notes::retired.is_not_null(), 1i64)
+                                .otherwise(0i64),
+                        ),
+                        sum_bigint(length(notes::body)),
+                        min(notes::ts),
+                        max(notes::ts),
+                    ))
+                    .order((notes::project, notes::kind))
+                    .load(&mut *conn)?
+            };
+        }
+        let base = notes::table.filter(notes::kind.not_like("checkpoint%"));
+        let rows: Vec<Row> = match project {
+            Some(p) => load_aggs!(base.filter(notes::project.eq(p))),
+            None => load_aggs!(base),
+        };
         Ok(rows
             .into_iter()
             .map(
@@ -2261,12 +2142,6 @@ fn insert_measurement_conn(
     Ok(())
 }
 
-#[derive(QueryableByName)]
-struct Count {
-    #[diesel(sql_type = BigInt)]
-    n: i64,
-}
-
 /// One `notes` row's lifecycle-relevant fields (T69.1): revise needs `kind`/`project`,
 /// `mem_get` prefixes retired rows, recall orders by `pinned`. Field order matches
 /// [`Store::note_row`]'s select.
@@ -2475,14 +2350,41 @@ mod tests {
             0,
             "init already applied everything"
         );
+        // Core tables from the embedded migrations — typed counts, not sqlite_master.
         let mut conn = store.lock().unwrap();
-        let rows: Vec<Count> = sql_query(
-            "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN
-             ('events','measurements','archive','read_cache','notes','usage')",
-        )
-        .load(&mut *conn)
-        .unwrap();
-        assert_eq!(rows[0].n, 6);
+        let _: i64 = schema::events::table
+            .count()
+            .get_result(&mut *conn)
+            .unwrap();
+        let _: i64 = measurements::table.count().get_result(&mut *conn).unwrap();
+        let _: i64 = archive::table.count().get_result(&mut *conn).unwrap();
+        let _: i64 = read_cache::table.count().get_result(&mut *conn).unwrap();
+        let _: i64 = notes::table.count().get_result(&mut *conn).unwrap();
+        let _: i64 = usage::table.count().get_result(&mut *conn).unwrap();
+    }
+
+    /// A database that already recorded `NNNN.sql` in `schema_migrations` must not run those
+    /// files again when Diesel's version table is empty.
+    #[test]
+    fn legacy_schema_migrations_are_not_rerun() {
+        let dir = std::env::temp_dir().join(format!("rtok-mig-legacy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("rtok.db");
+        let store = Store::open(&db).unwrap();
+        let id = store
+            .insert_note(None, "note", "kept", "survives the bridge")
+            .unwrap();
+        drop(store);
+        let mut conn = SqliteConnection::establish(db.to_str().unwrap()).unwrap();
+        super::migrations::revert_to_legacy_bookkeeping(&mut conn).unwrap();
+        drop(conn);
+        let store = Store::open(&db).unwrap();
+        assert_eq!(store.migrate().unwrap(), 0);
+        let row = store.note_row(id).unwrap().unwrap();
+        assert_eq!(row.body, "survives the bridge");
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Every surface opens the same file, so a fresh store is migrated by whichever of them
@@ -2530,12 +2432,12 @@ mod tests {
         let url = db.to_str().unwrap().to_string();
         let holder = std::thread::spawn(move || {
             let mut conn = SqliteConnection::establish(&url).unwrap();
-            conn.batch_execute("PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL;")
-                .unwrap();
-            conn.batch_execute("BEGIN IMMEDIATE;").unwrap();
+            sql_ext::busy_timeout(&mut conn, 1000).unwrap();
+            sql_ext::pragma_journal_wal(&mut conn).unwrap();
+            sql_ext::BeginImmediate.execute(&mut conn).unwrap();
             held.send(()).unwrap();
             std::thread::sleep(std::time::Duration::from_millis(1200));
-            conn.batch_execute("COMMIT;").unwrap();
+            sql_ext::Commit.execute(&mut conn).unwrap();
         });
         held_ack.recv().unwrap();
         let store = Store::open(&db).unwrap();
@@ -2557,22 +2459,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let db = dir.join("rtok.db");
         let mut conn = SqliteConnection::establish(db.to_str().unwrap()).unwrap();
-        conn.batch_execute("PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL;")
-            .unwrap();
-        conn.batch_execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (
-                name TEXT PRIMARY KEY,
-                applied_at INTEGER NOT NULL DEFAULT (unixepoch()))",
-        )
-        .unwrap();
-        let before = format!("{tag}.sql");
-        for (name, sql) in MIGRATIONS.iter().take_while(|(n, _)| *n < before.as_str()) {
-            conn.batch_execute(sql).unwrap();
-            sql_query("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
-                .bind::<Text, _>(*name)
-                .execute(&mut conn)
-                .unwrap();
-        }
+        super::migrations::run_before(&mut conn, tag).unwrap();
         (dir, conn)
     }
 
@@ -2582,12 +2469,15 @@ mod tests {
     fn migration_0015_adds_lifecycle_columns_to_a_previous_schema_db() {
         let (dir, mut conn) = db_before_migration("0015");
         let db = dir.join("rtok.db");
-        sql_query(
-            "INSERT INTO notes (ts, kind, title, body)
-             VALUES (1, 'note', 'old', 'before the lifecycle')",
-        )
-        .execute(&mut conn)
-        .unwrap();
+        diesel::insert_into(notes::table)
+            .values((
+                notes::ts.eq(1i64),
+                notes::kind.eq("note"),
+                notes::title.eq("old"),
+                notes::body.eq("before the lifecycle"),
+            ))
+            .execute(&mut conn)
+            .unwrap();
         drop(conn);
         let store = Store::open(&db).unwrap();
         let row = store.note_row(1).unwrap().unwrap();
@@ -2616,14 +2506,9 @@ mod tests {
     fn migration_0020_drops_pre_existing_duplicate_notes() {
         let (dir, mut conn) = db_before_migration("0020");
         let db = dir.join("rtok.db");
-        conn.batch_execute(
-            "INSERT INTO notes (id, ts, project, kind, title, body) VALUES
-             (1, 1, NULL,   'note', 'dup', 'stale'),
-             (2, 2, NULL,   'note', 'dup', 'fresh'),
-             (3, 1, 'rtok', 'note', 'dup', 'stale'),
-             (4, 2, 'rtok', 'note', 'dup', 'fresh')",
-        )
-        .unwrap();
+        sql_ext::SeedPre0020DuplicateNotes
+            .execute(&mut conn)
+            .unwrap();
         drop(conn);
         let store = Store::open(&db).unwrap();
         let mut conn = store.lock().unwrap();
@@ -2660,12 +2545,7 @@ mod tests {
     fn migration_0021_keeps_old_rows_and_records_a_keyed_call_once() {
         let (dir, mut conn) = db_before_migration("0021");
         let db = dir.join("rtok.db");
-        conn.batch_execute(
-            "INSERT INTO measurements (ts, session, plugin, kind, before_bytes, after_bytes,
-             est_before, est_after) VALUES (1, 's', 'read', 'delta', 9, 1, 3, 1),
-             (1, 's', 'read', 'delta', 9, 1, 3, 1)",
-        )
-        .unwrap();
+        sql_ext::SeedPre0021Measurements.execute(&mut conn).unwrap();
         drop(conn);
         let store = Store::open(&db).unwrap();
         let m = Measurement {
@@ -2764,20 +2644,14 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         assert_eq!(store.migrate().unwrap(), 0);
         let mut conn = store.lock().unwrap();
-        let tables: Vec<Count> = sql_query(
-            "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN
-             ('hosts','providers','models','sessions','calls','call_io','tokens','logs')",
-        )
-        .load(&mut *conn)
-        .unwrap();
-        assert_eq!(tables[0].n, 8);
-        let hosts: Vec<Count> = sql_query("SELECT count(*) AS n FROM hosts")
-            .load(&mut *conn)
-            .unwrap();
+        let tables: i64 = sql_ext::CountCoreV2Tables.get_result(&mut *conn).unwrap();
+        assert_eq!(tables, 8);
+        let host_n: i64 = hosts::table.count().get_result(&mut *conn).unwrap();
         // 0002.sql seeds 6; 0010.sql (T25.0) adds `pi`, the slug `rtok agent setup` installs
         // but the original list never had.
-        assert_eq!(hosts[0].n, 7);
-        sql_query("INSERT INTO sessions (id) VALUES ('s1')")
+        assert_eq!(host_n, 7);
+        diesel::insert_into(sessions::table)
+            .values(sessions::id.eq("s1"))
             .execute(&mut *conn)
             .unwrap();
         let err = diesel::insert_into(calls::table)
@@ -3548,25 +3422,13 @@ mod tests {
     #[test]
     fn archive_in_session_query_plan_uses_the_session_ts_index() {
         let store = Store::open_in_memory().unwrap();
-        #[derive(QueryableByName)]
-        struct PlanRow {
-            #[diesel(sql_type = Text)]
-            detail: String,
-        }
         let mut conn = store.lock().unwrap();
-        // Raw SQL: Diesel has no `EXPLAIN QUERY PLAN`, so the query is restated by hand.
-        let rows: Vec<PlanRow> = sql_query(
-            "EXPLAIN QUERY PLAN SELECT archive.id, \
-             (SELECT COUNT(*) FROM measurements \
-              WHERE measurements.session = archive.session AND measurements.ts > archive.ts) \
-             FROM archive \
-             WHERE archive.id = 'x' AND archive.session = 's' AND archive.agent_id IS NULL",
-        )
-        .load(&mut *conn)
-        .unwrap();
+        let rows: Vec<(i32, i32, i32, String)> = sql_ext::ExplainArchiveInSessionPlan
+            .load(&mut *conn)
+            .unwrap();
         let plan = rows
             .iter()
-            .map(|r| r.detail.as_str())
+            .map(|r| r.3.as_str())
             .collect::<Vec<_>>()
             .join(" | ");
         assert!(
@@ -4035,14 +3897,10 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    // T104: `MIGRATIONS` and the `table!` macros are both kept by hand.
-
-    /// Every `migrations/*.sql` is in `MIGRATIONS`, in filename order, and nothing else is.
+    /// Every `migrations/<version>/up.sql` directory is embedded, in filename order.
     #[test]
     fn migrations_list_matches_the_directory() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-        // Each migration is a `<version>_<slug>/up.sql` directory (Diesel's own layout);
-        // `MIGRATIONS` still keys by the pre-T163.4 `NNNN.sql` name, so compare prefixes.
         let mut dirs: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap())
@@ -4050,24 +3908,27 @@ mod tests {
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
         dirs.sort();
-        let dir_versions: Vec<&str> = dirs.iter().map(|d| d.split('_').next().unwrap()).collect();
-        let listed: Vec<&str> = MIGRATIONS
+        let dir_versions: Vec<String> = dirs
             .iter()
-            .map(|(n, _)| n.strip_suffix(".sql").unwrap())
+            .map(|d| d.split('_').next().unwrap().to_string())
             .collect();
-        assert_eq!(listed, dir_versions, "MIGRATIONS drifted from migrations/");
+        let listed = super::migrations::versions().unwrap();
+        assert_eq!(
+            listed, dir_versions,
+            "embedded migrations drifted from migrations/"
+        );
     }
 
     // T220: schema-drift guard — per-column type/NOT NULL/PK, the full table set, and (since
     // `table!` models neither) defaults/indexes/triggers via a golden `sqlite_master` dump.
     /// A migrated table with no `table!` macro, and why.
     const RAW_SQL_TABLES: &[&str] = &[
-        "notes_fts",         // 0001: FTS5 virtual table, MATCH/bm25 in sql_ext (T163.3)
-        "notes_fts_data",    // FTS5 shadow table for notes_fts
-        "notes_fts_idx",     // FTS5 shadow table for notes_fts
-        "notes_fts_docsize", // FTS5 shadow table for notes_fts
-        "notes_fts_config",  // FTS5 shadow table for notes_fts
-        "schema_migrations", // written by Store::migrate itself, not a migrations/*.sql file
+        "notes_fts",                  // 0001: FTS5 virtual table, MATCH/bm25 in sql_ext (T163.3)
+        "notes_fts_data",             // FTS5 shadow table for notes_fts
+        "notes_fts_idx",              // FTS5 shadow table for notes_fts
+        "notes_fts_docsize",          // FTS5 shadow table for notes_fts
+        "notes_fts_config",           // FTS5 shadow table for notes_fts
+        "__diesel_schema_migrations", // diesel_migrations version table, not a migrations/*.sql file (T163.4)
     ];
 
     /// One `diesel::table!`: its name, declared PK columns, and (SQL name, Diesel type) pairs.
@@ -4142,29 +4003,14 @@ mod tests {
     /// `sqlite_master` normalized for a golden diff: tables/indexes/triggers, sorted, `sql`
     /// collapsed to single-spaced so reindenting a migration is not itself drift.
     fn live_schema_snapshot(conn: &mut SqliteConnection) -> String {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            kind: String,
-            #[diesel(sql_type = Text)]
-            name: String,
-            #[diesel(sql_type = Text)]
-            tbl_name: String,
-            #[diesel(sql_type = Nullable<Text>)]
-            sql: Option<String>,
-        }
-        let mut rows: Vec<Row> = sql_query(
-            "SELECT type AS kind, name, tbl_name, sql FROM sqlite_master \
-             WHERE type IN ('table', 'index', 'trigger')",
-        )
-        .load(conn)
-        .unwrap();
-        rows.sort_by(|a, b| (&a.kind, &a.name).cmp(&(&b.kind, &b.name)));
+        let mut rows: Vec<(String, String, String, Option<String>)> =
+            sql_ext::SqliteMasterSnapshot.load(conn).unwrap();
+        rows.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
         rows.into_iter()
-            .map(|r| {
-                let sql = r.sql.unwrap_or_default();
+            .map(|(kind, name, tbl_name, sql)| {
+                let sql = sql.unwrap_or_default();
                 let sql = sql.split_whitespace().collect::<Vec<_>>().join(" ");
-                format!("{}|{}|{}|{}\n", r.kind, r.name, r.tbl_name, sql)
+                format!("{kind}|{name}|{tbl_name}|{sql}\n")
             })
             .collect()
     }
@@ -4190,27 +4036,15 @@ mod tests {
             ));
         }
 
-        #[derive(QueryableByName)]
-        struct XCol {
-            #[diesel(sql_type = Text)]
-            name: String,
-            #[diesel(sql_type = Text)]
-            ty: String,
-            #[diesel(sql_type = Integer)]
-            notnull: i32,
-            #[diesel(sql_type = Integer)]
-            pk: i32,
-        }
         for t in &tables {
             // `notnull` is a SQLite keyword; the pragma's own column of that name needs quoting.
-            let live: Vec<XCol> = sql_query(format!(
-                "SELECT name, type AS ty, \"notnull\", pk FROM pragma_table_xinfo('{}')",
-                t.name
-            ))
+            let live: Vec<(String, String, i32, i32)> = sql_ext::PragmaTableXinfo {
+                table: t.name.clone(),
+            }
             .load(conn)
             .unwrap();
             let live_names: std::collections::BTreeSet<&str> =
-                live.iter().map(|c| c.name.as_str()).collect();
+                live.iter().map(|c| c.0.as_str()).collect();
             let want_names: std::collections::BTreeSet<&str> =
                 t.cols.iter().map(|c| c.0.as_str()).collect();
             if live_names != want_names {
@@ -4221,21 +4055,21 @@ mod tests {
                 continue;
             }
             for (name, ty) in &t.cols {
-                let live = live.iter().find(|c| &c.name == name).unwrap();
+                let live = live.iter().find(|c| &c.0 == name).unwrap();
                 let (base, nullable) = ty
                     .strip_prefix("Nullable<")
                     .map_or((ty.as_str(), false), |i| (i.trim_end_matches('>'), true));
                 let want_pk = t.pk.iter().any(|p| p == name);
-                let ty_ok = diesel_affinity(base).is_none_or(|w| sqlite_affinity(&live.ty) == w);
-                let pk_ok = want_pk == (live.pk > 0);
+                let ty_ok = diesel_affinity(base).is_none_or(|w| sqlite_affinity(&live.1) == w);
+                let pk_ok = want_pk == (live.3 > 0);
                 // A bare SQLite `PRIMARY KEY` does not itself imply `NOT NULL` (unlike standard
                 // SQL, and several migrations rely on it), so a PK column's live `notnull` is
                 // never compared against `table!`'s always-non-`Nullable` Rust type.
-                let notnull_ok = want_pk || nullable != (live.notnull != 0);
+                let notnull_ok = want_pk || nullable != (live.2 != 0);
                 if !(ty_ok && pk_ok && notnull_ok) {
                     out.push(format!(
                         "{}.{name}: schema.rs `{ty}` pk={want_pk} vs live `{}` notnull={} pk={}",
-                        t.name, live.ty, live.notnull, live.pk
+                        t.name, live.1, live.2, live.3
                     ));
                 }
             }
@@ -4261,11 +4095,13 @@ mod tests {
         assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
     }
 
-    /// Runs `sql` on a fresh migrated in-memory DB, then the guard — for the mutation tests.
-    fn drift_after(sql: &str) -> Vec<String> {
+    /// Runs each statement on a fresh migrated in-memory DB, then the guard.
+    fn drift_after(sql: &[&'static str]) -> Vec<String> {
         let store = Store::open_in_memory().unwrap();
         let mut conn = store.lock().unwrap();
-        conn.batch_execute(sql).unwrap();
+        for s in sql {
+            sql_ext::FixtureSql { sql: s }.execute(&mut *conn).unwrap();
+        }
         schema_drift(&mut conn)
     }
 
@@ -4273,23 +4109,25 @@ mod tests {
     // catches them. A column dropped from a live table still fails, as it always has.
     #[test]
     fn schema_drift_catches_a_changed_default() {
-        let m = drift_after(
-            "DROP TABLE otel_export; CREATE TABLE otel_export (stream TEXT PRIMARY KEY, mark BIGINT NOT NULL DEFAULT 1)",
-        );
+        let m = drift_after(&[
+            "DROP TABLE otel_export",
+            "CREATE TABLE otel_export (stream TEXT PRIMARY KEY, mark BIGINT NOT NULL DEFAULT 1)",
+        ]);
         assert!(m.iter().any(|s| s.contains("schema_snapshot.txt")), "{m:?}");
     }
 
     #[test]
     fn schema_drift_catches_a_dropped_index() {
-        let m = drift_after("DROP INDEX usage_call"); // 0013
+        let m = drift_after(&["DROP INDEX usage_call"]); // 0013
         assert!(m.iter().any(|s| s.contains("schema_snapshot.txt")), "{m:?}");
     }
 
     #[test]
     fn schema_drift_catches_a_column_removed_from_the_live_table() {
-        let m = drift_after(
-            "DROP TABLE otel_export; CREATE TABLE otel_export (stream TEXT PRIMARY KEY)",
-        );
+        let m = drift_after(&[
+            "DROP TABLE otel_export",
+            "CREATE TABLE otel_export (stream TEXT PRIMARY KEY)",
+        ]);
         assert!(m.iter().any(|s| s.starts_with("otel_export:")), "{m:?}");
     }
 }
