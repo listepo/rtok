@@ -560,6 +560,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "creates a locked git worktree and prints its path (T158)",
     ),
     (
+        "worktree claim",
+        "rewrites one git worktree lock and its claim row (T285)",
+    ),
+    (
         "worktree clean",
         "deletes tagged build caches on the checkout's file system, not the store (T152)",
     ),

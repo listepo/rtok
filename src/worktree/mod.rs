@@ -3,6 +3,7 @@
 //! Parsing and classification are pure; [`git`] is the only module that spawns git.
 
 pub mod add;
+pub mod claim;
 pub mod clean;
 pub mod gc;
 pub mod git;
@@ -69,25 +70,43 @@ pub fn parse_porcelain(out: &[u8]) -> Vec<Record> {
     records
 }
 
-/// Who holds a worktree, from a lock reason `<owner> | <task-id> | <date>` — ASCII on
-/// purpose: plain `--porcelain` C-quotes anything else.
+/// Who holds a worktree, from a lock reason `<owner> | <task-id> | <date>` or, since T285,
+/// `<owner> | <task-id> | <date> | agent <uuid>` — ASCII on purpose: plain `--porcelain`
+/// C-quotes anything else. A 3-field lock stays valid and has no agent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Owner {
     pub owner: String,
     pub task: String,
     pub date: String,
+    /// The rtok agent id (T282) the worktree is bound to.
+    pub agent: Option<String>,
 }
 
 impl Owner {
     pub fn parse(reason: &str) -> Option<Self> {
         let mut parts = reason.split(" | ").map(str::trim);
         let (owner, task, date) = (parts.next()?, parts.next()?, parts.next()?);
+        let agent = match parts.next() {
+            None => None,
+            Some(field) => Some(field.strip_prefix("agent ")?.trim()),
+        };
+        let well_formed = agent.is_none_or(|a| !a.is_empty() && !a.contains(' '));
         let filled = parts.next().is_none() && ![owner, task, date].contains(&"");
-        filled.then(|| Self {
+        (filled && well_formed).then(|| Self {
             owner: owner.into(),
             task: task.into(),
             date: date.into(),
+            agent: agent.map(Into::into),
         })
+    }
+
+    /// The lock reason [`Owner::parse`] reads back: v2 when an agent is known.
+    pub fn reason(&self) -> String {
+        let base = format!("{} | {} | {}", self.owner, self.task, self.date);
+        match &self.agent {
+            Some(agent) => format!("{base} | agent {agent}"),
+            None => base,
+        }
     }
 }
 
@@ -100,6 +119,16 @@ impl Record {
     /// unknown owner, so it holds against everyone — never read it as "unlocked".
     pub fn held_against(&self, me: Option<&str>) -> bool {
         self.locked.is_some() && self.owner().is_none_or(|o| Some(o.owner.as_str()) != me)
+    }
+
+    /// `rtok worktree claim` (T285) may rewrite this lock: there is none, or it names this
+    /// agent, or — an old lock without an agent — this owner. Never another agent's lock.
+    pub fn claimable_by(&self, owner: &str, agent: &str) -> bool {
+        self.locked.is_none()
+            || self.owner().is_some_and(|o| match &o.agent {
+                Some(bound) => bound == agent,
+                None => o.owner == owner,
+            })
     }
 }
 
@@ -231,6 +260,35 @@ mod tests {
             ..Record::default()
         };
         assert_eq!(record.held_against(me), held);
+    }
+
+    #[rstest]
+    #[case::v1("me | t1 | 2026-09-22", Some(None))]
+    #[case::v2("me | t1 | 2026-09-22 | agent 0193ab12-7", Some(Some("0193ab12-7")))]
+    #[case::no_agent_word("me | t1 | 2026-09-22 | 0193ab12", None)]
+    #[case::empty_agent("me | t1 | 2026-09-22 | agent ", None)]
+    #[case::five_fields("me | t1 | 2026-09-22 | agent a | x", None)]
+    fn lock_reason_v1_and_v2(#[case] reason: &str, #[case] agent: Option<Option<&str>>) {
+        let parsed = Owner::parse(reason);
+        assert_eq!(parsed.as_ref().map(|o| o.agent.as_deref()), agent);
+        // Whatever parses writes back byte for byte.
+        assert!(parsed.is_none_or(|o| o.reason() == reason), "{reason}");
+    }
+
+    #[rstest]
+    #[case(None, true)]
+    #[case(Some("me | t1 | 2026-09-22"), true)] // old lock, same owner
+    #[case(Some("you | t1 | 2026-09-22"), false)]
+    #[case(Some("me | t1 | 2026-09-22 | agent A1"), true)]
+    #[case(Some("you | t1 | 2026-09-22 | agent A1"), true)] // the agent is the owner
+    #[case(Some("me | t1 | 2026-09-22 | agent B2"), false)] // same name, other agent
+    #[case(Some(""), false)]
+    fn a_claim_takes_no_lock_or_its_own(#[case] locked: Option<&str>, #[case] ok: bool) {
+        let record = Record {
+            locked: locked.map(Into::into),
+            ..Record::default()
+        };
+        assert_eq!(record.claimable_by("me", "A1"), ok);
     }
 
     #[rstest]
