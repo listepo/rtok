@@ -44,24 +44,13 @@ jobs:
       - name: Clippy
         run: just lint
 
-      - name: Install llvm-tools-preview
-        run: rustup component add llvm-tools-preview
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
-        with:
-          tool: cargo-llvm-cov
-
       - name: Generate LCOV coverage
-        run: |
-          mkdir -p coverage
-          # rtok-webui is already outside the workspace; llvm-cov --workspace covers the rest.
-          # Follow-ups (narrower filters, exclude slow integration tests) live in
-          # docs/sonarcloud-setup.md — do not block the first OSS landing on perfect coverage.
-          # nextest (from mise.toml), like `just test`: one process per test and the
-          # target/test-home setup script. Plain `cargo test` shares one process, where the
-          # proxy tests exhaust httpmock's server pool and hang.
-          mise exec -- cargo llvm-cov nextest --workspace --lcov --output-path coverage/lcov.info
+        # `just test-cov` (T301): cargo-llvm-cov from mise.toml over the nextest suite, like
+        # `just test` — one process per test and the target/test-home setup script. Plain
+        # `cargo test` shares one process, where the proxy tests exhaust httpmock's server
+        # pool and hang. Writes coverage/lcov.info. Narrower filters and excluding slow
+        # integration tests are follow-ups in docs/sonarcloud-setup.md.
+        run: just test-cov
 
       - name: SonarCloud Scan
         if: env.SONAR_TOKEN != ''
