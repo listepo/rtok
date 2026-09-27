@@ -26,9 +26,9 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T283 | in progress | P1 | 3 | 40% | Claude Code / claude-opus-5-5 |
 | T284 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T285 | in progress | P1 | 4 | 0% | Claude Code / claude-opus-5-5 |
-| T286 | todo | P1 | 3 | 0% | |
+| T286 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T287 | in progress | P1 | 4 | 0% | Claude Code / claude-opus-5-5 |
-| T288 | todo | P2 | 3 | 0% | |
+| T288 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
 | T296 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
@@ -492,6 +492,8 @@ Plan:
 
 Check: e2e in a scratch repo: merged clean → gone with branch; unmerged clean → refused, then removed with `--keep-branch`; dirty → refused; another agent's → refused; cwd → refused; gc tests unchanged and green after the extraction; MCP e2e; trycmd and gates; `just check`.
 
+Execution (2026-09-27): two PRs. PR 1, cut on top of T285 PR 1: extract the single-worktree removal from `gc` into one shared function; `rtok worktree remove <path|task-id> [--agent] [--keep-branch] [--json]` with the refusals above; the claim is released; the skill finish step changes; e2e tests in a scratch repo. PR 2, after T283 PR 2: MCP `worktree_remove`.
+
 ### T287. Messages between agents and the user: `rtok agents send`, `rtok agents inbox`, MCP `agent_send`, `agent_inbox`
 
 Depends on T282, T283. The creator wants to reach any running agent by its id from the terminal, and agents to reach each other over MCP.
@@ -518,6 +520,8 @@ Plan:
 4. Hosts without hooks: documented as pull-only; the SessionStart line from T283 mentions `agent_inbox` there.
 
 Check: hook fixture tests (one message, over-budget batch, empty inbox prints nothing, delivered once); hook bench row; `just check`.
+
+Execution (2026-09-27): one PR, cut on top of T287 PR 1. The push goes through the budgeted injection path on `UserPromptSubmit` and `PostToolUse` using the T287 frame. New key `[agents] push_bytes`. Messages are marked delivered, not read. The `agent_inbox` mention is deferred until T287 PR 2 ships the tool. Includes hook fixture tests and a hook bench row in the PR.
 
 ### T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 
