@@ -21,13 +21,18 @@ use std::path::Path;
 /// folded into the plugin, so both `mcpServers.rtok` files (CLI + VS Code extension, T96.1)
 /// are meant to carry it at once and neither is a duplicate of the plugin. The Claude plugin
 /// carries hooks and the scout sub-agent only (T275): its `.mcp.json` is gone, so it never
-/// counts here either.
+/// counts here either. Copilot's plugin lost its `.mcp.json` the same way (T275). VS Code
+/// links the Claude tree, not a `plugins/vscode` folder, so it walks that one too. Gemini is
+/// the T275/D33 exception: its extension keeps `mcpServers.rtok` alongside the always-written
+/// `settings.json` entry, so it stays on the default arm below.
 fn plugin_tree(host: &str) -> (&str, bool) {
     match host {
         "opencode" | "kilo" => ("opencode", false),
         "omp" => ("pi", false),
         "cline" => ("cline", false),
         "claude" => ("claude", false),
+        "copilot" => ("copilot", false),
+        "vscode" => ("claude", false),
         _ => (host, true),
     }
 }
@@ -53,8 +58,15 @@ fn cross_loads(host: &str, kind: &str) -> &'static [(&'static str, &'static str,
 /// config sources it reads, instead of running one process per source (T275 decision rule 2):
 /// true for Claude CLI and Claude Desktop, so a name seen from two sources (e.g. the desktop
 /// surface's own file plus the Claude Code file it cross-loads) still counts as one server.
+/// Gemini CLI is the D33 exception: its extension and `settings.json` both declare `rtok` by
+/// that same real name (`walk_plugin` records the plugin's marker as `rtok` too, not a
+/// synthetic per-host name, exactly because Gemini's case must merge like Claude's does), and
+/// `settings.json` wins over the extension's same-name server.
 fn merges_same_name(host: &str, kind: &str) -> bool {
-    matches!((host, kind), ("claude", "cli") | ("claude", "desktop"))
+    matches!(
+        (host, kind),
+        ("claude", "cli") | ("claude", "desktop") | ("gemini", "cli")
+    )
 }
 
 /// VS Code and VS Code Insiders are two apps behind one variant, each with its own
@@ -65,8 +77,9 @@ fn one_surface_per_file(host: &str) -> bool {
 
 #[derive(Default)]
 struct Seen {
-    /// MCP server name (the parent key of its entry, e.g. `rtok`; a plugin's own server is
-    /// namespaced as `plugin_<host>`) → sources that install a server under that name.
+    /// MCP server name (the parent key of its entry, always `rtok` here, including a
+    /// plugin's own marker from `walk_plugin`) → sources that install a server under that
+    /// name.
     mcp: BTreeMap<String, Vec<String>>,
     /// `event|matcher` → sources.
     hooks: BTreeMap<String, Vec<String>>,
@@ -217,8 +230,13 @@ fn walk_file(path: &Path, seen: &mut Seen) {
 fn walk_plugin(host: &str, seen: &mut Seen) {
     let (tree, mcp) = plugin_tree(host);
     if mcp {
+        // Every host with `mcp: true` here ships its plugin's MCP server under the real name
+        // `rtok` (never anything else), so the marker uses that same name rather than a
+        // synthetic `plugin_<host>` placeholder — required for Gemini to merge with its own
+        // `settings.json` entry through `merges_same_name`, and harmless everywhere else since
+        // only `len()` (only used when merging) is sensitive to the name at all.
         seen.mcp
-            .entry(format!("plugin_{host}"))
+            .entry("rtok".to_string())
             .or_default()
             .push(format!("plugin {host}"));
     }
