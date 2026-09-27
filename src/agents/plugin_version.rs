@@ -100,7 +100,7 @@ pub struct ReceiptEntry {
     pub marketplace: Option<String>,
     pub path: PathBuf,
     pub version: Version,
-    pub time: String,
+    pub installed_at: String,
 }
 
 /// The install receipt, one row per host, at [`receipt_path`]. Missing on disk reads as empty
@@ -277,9 +277,12 @@ pub enum Decision {
 
 /// The pure decision. `force` bypasses every other rule (reinstall when installed, install
 /// when not — the comparison below never runs). Otherwise: a source change always reinstalls;
-/// else compare by SemVer ignoring build metadata (`Version::cmp`'s own rule) — newer updates,
-/// older skips with a warning, equal with equal build metadata skips, equal with different
-/// build metadata updates (a local rebuild at the same base version).
+/// else compare by SemVer *precedence* (`Version::cmp_precedence`, which disregards build
+/// metadata per the SemVer spec — plain `Version::cmp`/`Ord` does not: it orders build
+/// metadata lexicographically as a last tiebreaker, which would call two builds of the same
+/// base version "older"/"newer" instead of just differently built) — newer updates, older
+/// skips with a warning, equal precedence with equal build metadata skips, equal precedence
+/// with different build metadata updates (a local rebuild at the same base version).
 pub fn decide(installed: Option<Installed>, available: &Available, force: bool) -> Decision {
     let Some(installed) = installed else {
         return Decision::Install;
@@ -297,7 +300,7 @@ pub fn decide(installed: Option<Installed>, available: &Available, force: bool) 
             ),
         };
     }
-    match available.version.cmp(&installed.version) {
+    match available.version.cmp_precedence(&installed.version) {
         Ordering::Greater => Decision::Update,
         Ordering::Less => Decision::SkipOlder {
             warning: format!(
@@ -387,6 +390,26 @@ mod tests {
     }
 
     #[test]
+    fn same_base_updates_even_when_the_available_build_sha_sorts_first() {
+        // `Version::cmp` (plain `Ord`) falls back to comparing build metadata lexicographically
+        // once major/minor/patch/pre are equal, so a naive `cmp` here would call this pair
+        // "older" just because "gaaa" < "gfff" as strings. `cmp_precedence` disregards build
+        // metadata entirely, so same base version + different build is always Update.
+        let i = installed_at("0.10.0+gfff", Source::Local, false);
+        let a = available("0.10.0+gaaa", Source::Local);
+        assert_eq!(decide(Some(i), &a, false), Decision::Update);
+    }
+
+    #[test]
+    fn rebuilding_clean_over_a_previously_dirty_install_updates() {
+        // "gaaa" is a string-prefix of "gaaa.dirty", so it sorts first — another case a plain
+        // `cmp` would misread as the available build being older.
+        let i = installed_at("0.10.0+gaaa.dirty", Source::Local, false);
+        let a = available("0.10.0+gaaa", Source::Local);
+        assert_eq!(decide(Some(i), &a, false), Decision::Update);
+    }
+
+    #[test]
     fn identical_build_metadata_skips() {
         let i = installed_at("0.10.0+g111aaaa", Source::Local, false);
         let a = available("0.10.0+g111aaaa", Source::Local);
@@ -451,7 +474,7 @@ mod tests {
             marketplace: None,
             path: PathBuf::from("/x"),
             version: v("0.9.0"),
-            time: "t".to_string(),
+            installed_at: "t".to_string(),
         };
         let got = installed(Some(&vf), Some(&entry), Some("0.0.1"), Source::Github);
         assert_eq!(got.version, v("0.10.0"));
@@ -466,7 +489,7 @@ mod tests {
             marketplace: None,
             path: PathBuf::from("/x"),
             version: v("0.9.0"),
-            time: "t".to_string(),
+            installed_at: "t".to_string(),
         };
         let got = installed(None, Some(&entry), Some("0.0.1"), Source::Github);
         assert_eq!(got.version, v("0.9.0"));
@@ -584,7 +607,7 @@ mod tests {
                 marketplace: Some("rtok".to_string()),
                 path: PathBuf::from("/home/x/.claude/plugins/cache/rtok/rtok/0.10.0"),
                 version: v("0.10.0"),
-                time: "2026-09-27T00:00:00Z".to_string(),
+                installed_at: "2026-09-27T00:00:00Z".to_string(),
             },
         );
         receipt.write(&path).unwrap();
