@@ -1246,10 +1246,21 @@ fn replay_ctt(content: &str, tokens: u64, remain: u64, rp: Replay) -> u64 {
     let kept: usize = lines[..head]
         .iter()
         .chain(&lines[n - tail..])
-        .map(|l| crate::plugins::archive::clip(l).len() + 1)
+        .map(|l| shown_len(l) + 1)
         .sum();
     let pointer = est_tokens(kept as u64 + 64); // + the `[archived …]` line itself
     tokens.saturating_mul(rp.keep_turns) + pointer.saturating_mul(remain - rp.keep_turns)
+}
+
+/// One line as the archive pointer shows it: clipped when the `archive` plugin is built.
+#[cfg(feature = "archive")]
+fn shown_len(line: &str) -> usize {
+    crate::plugins::archive::clip(line).len()
+}
+
+#[cfg(not(feature = "archive"))]
+fn shown_len(line: &str) -> usize {
+    line.len()
 }
 
 /// T58.3: every tool input counts toward the denominator; `Edit` and each `MultiEdit.edits[]`
