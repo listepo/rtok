@@ -8,7 +8,9 @@ use std::io::Write;
 /// session-local and stay behind. Returns the row count.
 pub fn run(cfg: &Config, project: Option<&str>, out: &mut impl Write) -> Result<u32> {
     let cx = crate::plugin::Runtime::open(cfg.clone(), "export")?;
-    let rows = cx.store.list_notes(project)?;
+    // T304: never export a retired note — an import into another store must not resurrect
+    // it as live there.
+    let rows = cx.store.list_notes(project, false)?;
     for (project, kind, title, body) in &rows {
         serde_json::to_writer(
             &mut *out,
@@ -62,5 +64,29 @@ mod tests {
         assert_eq!((second.inserted, second.skipped), (0, 3));
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    /// T304: a retired note must not leave the store, so an import elsewhere never
+    /// resurrects it as live.
+    #[test]
+    fn retired_note_is_not_exported() {
+        let (a, dir_a) = cfg("export-retired");
+        {
+            let cx = crate::plugin::Runtime::open(a.clone(), "seed").unwrap();
+            let id = cx
+                .store
+                .insert_note(Some("p"), "note", "old plan", "scrapped")
+                .unwrap();
+            cx.store.retire_note(id, None).unwrap();
+            cx.store
+                .insert_note(Some("p"), "note", "current plan", "still true")
+                .unwrap();
+        }
+        let mut buf = Vec::new();
+        assert_eq!(run(&a, None, &mut buf).unwrap(), 1);
+        let text = String::from_utf8(buf).unwrap();
+        assert!(!text.contains("old plan"), "{text}");
+        assert!(text.contains("current plan"), "{text}");
+        let _ = std::fs::remove_dir_all(&dir_a);
     }
 }

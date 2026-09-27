@@ -8,7 +8,7 @@ Agent rules for the **Kimi Code** host package. Humans: [`README.md`](README.md)
 | --- | --- |
 | Manifest / entry | `kimi.plugin.json` only |
 | Hooks | Events in `kimi.plugin.json` → `rtok hook <event>` |
-| MCP | `mcpServers.rtok` in the same manifest |
+| MCP | none in the plugin (T275/D33): `mcpServers.rtok` is written by `rtok agents install kimi` into `mcp.json` directly, plugin installed or not |
 | Installer | [`../src/agents/kimi/README.md`](../src/agents/kimi/README.md) |
 | Root human guide | [`../README.md`](../README.md) |
 

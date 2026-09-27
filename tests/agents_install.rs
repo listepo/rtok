@@ -19,14 +19,21 @@ use std::path::{Path, PathBuf};
 /// `already installed` needs the link regardless of a future default change.
 fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)> {
     vec![
-        // T115: the plugin installs by default (fake `claude`), which then serves hooks
-        // and MCP, so rtok itself writes no settings file there (D21). `--cli`: with the
-        // plugin in, the desktop variant has nothing to write from the first run (T243,
-        // covered in `claude_plugin.rs`).
-        ("claude", vec!["--yes", "--cli"], None),
-        // The linked plugin carries hooks and MCP, so `hooks.json` and `mcp.json` stay
-        // unwritten (D21, T244).
-        ("cursor", vec!["--yes"], None),
+        // Must run before claude: once claude has written `~/.claude.json`'s `mcpServers.rtok`,
+        // grok's own MCP is covered by `[compat.claude]` importing that file, so grok's own
+        // config gets no write on its first install (T275) — this test needs a real write.
+        ("grok", vec!["--yes"], Some(home.join(".grok/config.toml"))),
+        // T115: the plugin installs by default (fake `claude`), which then serves hooks, so
+        // rtok itself writes no settings file there (D21). MCP is independent of the plugin
+        // (T275): `~/.claude.json` still gets `mcpServers.rtok`, tracked here for backups.
+        (
+            "claude",
+            vec!["--yes", "--cli"],
+            Some(home.join(".claude.json")),
+        ),
+        // The linked plugin carries hooks only (D21, T244), so `hooks.json` stays unwritten;
+        // MCP is independent of it (T275/D33) and `mcp.json` is written and backed up here.
+        ("cursor", vec!["--yes"], Some(home.join(".cursor/mcp.json"))),
         ("codex", vec![], Some(home.join(".codex/config.toml"))),
         (
             "opencode",
@@ -52,7 +59,6 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             vec!["--yes"],
             Some(home.join(".kimi-code/config.toml")),
         ),
-        ("grok", vec!["--yes"], Some(home.join(".grok/config.toml"))),
         (
             "cline",
             vec!["--yes"],
@@ -71,9 +77,9 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
         ),
         (
             // T117: the plugin needs `--yes` to link (no `default_install`, since it also
-            // edits the user's own settings.json); once accepted, D21 strips the plain
-            // `mcp.json` entry, so `settings.json` (`chat.pluginLocations`) is the file that
-            // actually stays written and backed up.
+            // edits the user's own settings.json); `settings.json` (`chat.pluginLocations`)
+            // is the file that stays written and backed up — its own `mcp.servers.rtok` entry
+            // is independent of the plugin (T275/D33) and is written there too.
             "vscode",
             vec!["--yes"],
             Some(home.join("Library/Application Support/Code/User/settings.json")),
@@ -335,7 +341,7 @@ fn claude_desktop_installs_mcp_with_the_absolute_binary_under_a_temp_home() {
     let out = rtok(&["agents", "install", "claude", "--desktop"], &cfg, &home);
     assert!(out.contains("Desktop: Claude Desktop"), "{out}");
     assert!(!out.contains("CLI: Claude Code"), "{out}");
-    assert!(out.contains("✓ mcp     installed"), "{out}");
+    assert!(out.contains("✓ mcp     desktop  entry "), "{out}");
     assert!(
         out.contains("− hooks   not supported: Claude Desktop has no hook events"),
         "{out}"
@@ -366,7 +372,8 @@ fn claude_desktop_installs_mcp_with_the_absolute_binary_under_a_temp_home() {
 
 /// T81 + T139: a pipe is the CI / agent shape. The plugin no longer asks a question at all —
 /// it installs by default once `claude` is on PATH — so a plain install on a pipe still
-/// finishes green, with the plugin as the only call path (D21: it serves hooks and MCP too).
+/// finishes green, with the plugin as the only call path for hooks (D21); MCP is written
+/// independently of it (T275).
 #[test]
 fn a_pipe_still_installs_the_plugin_without_asking() {
     let home = tmp("offer-pipe");

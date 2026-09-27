@@ -183,8 +183,54 @@ if (
     )
     sys.exit(1)
 
+# T279: fail the release before it builds anything when a plugin manifest or
+# .rtok-plugin-version file does not match the tag being released (`v` stripped).
+plan_checkout = """  plan:
+    runs-on: "ubuntu-22.04"
+    outputs:
+      val: ${{ steps.plan.outputs.manifest }}
+      tag: ${{ (inputs.tag != 'dry-run' && inputs.tag) || '' }}
+      tag-flag: ${{ inputs.tag && inputs.tag != 'dry-run' && format('--tag={0}', inputs.tag) || '' }}
+      publishing: ${{ inputs.tag && inputs.tag != 'dry-run' }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install dist"""
+
+plan_checkout_with_check = """  plan:
+    runs-on: "ubuntu-22.04"
+    outputs:
+      val: ${{ steps.plan.outputs.manifest }}
+      tag: ${{ (inputs.tag != 'dry-run' && inputs.tag) || '' }}
+      tag-flag: ${{ inputs.tag && inputs.tag != 'dry-run' && format('--tag={0}', inputs.tag) || '' }}
+      publishing: ${{ inputs.tag && inputs.tag != 'dry-run' }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Check plugin manifest versions
+        if: ${{ inputs.tag && inputs.tag != 'dry-run' }}
+        run: tools/plugin-versions.sh --check "${TAG#v}"
+        env:
+          TAG: ${{ inputs.tag }}
+      - name: Install dist"""
+
+if "Check plugin manifest versions" not in text:
+    if plan_checkout not in text:
+        print("dist-generate patch: plan job checkout block missing/changed", file=sys.stderr)
+        sys.exit(1)
+    text = text.replace(plan_checkout, plan_checkout_with_check, 1)
+
 path.write_text(text)
 print(
-    f"patched {path}: MACOS_* secrets, artifact size reports, release notes sizes"
+    f"patched {path}: MACOS_* secrets, artifact size reports, release notes sizes, "
+    "plugin version check"
 )
 PY

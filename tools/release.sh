@@ -63,9 +63,14 @@ if [ "$version" != "$current" ]; then
   sed -i.bak "s|^version = \".*\"|version = \"$version\"|" Cargo.toml && rm -f Cargo.toml.bak
   # Cargo.lock carries the package's own version too; -w touches workspace members only.
   $CARGO update --workspace --quiet
+  # T279: every plugin manifest and .rtok-plugin-version file moves with Cargo.toml, in the
+  # same commit, so a host that caches a plugin by its manifest version sees a new build.
+  tools/plugin-versions.sh --set "$version"
   # Run before the commit, so the release commit itself is never in the notes it generates.
   $CLIFF --tag "v$version" -o CHANGELOG.md
-  git add Cargo.toml Cargo.lock CHANGELOG.md
+  # T279: the file list lives once, in tools/plugin-versions.sh --files, not copied here too.
+  # shellcheck disable=SC2046 # --files prints repo-root-relative paths with no spaces.
+  git add Cargo.toml Cargo.lock CHANGELOG.md $(tools/plugin-versions.sh --files)
   git commit -m "release: v$version"
 fi
 

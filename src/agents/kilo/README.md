@@ -23,9 +23,10 @@ variant is detected by VS Code itself.
 Plugin link (D21): Kilo loads every `*.ts` / `*.js` in `<config dir>/{plugin,plugins}/`, and
 `plugins/opencode/rtok.ts` imports nothing from OpenCode, so the OpenCode plugin is reused as
 is. The plugin and the MCP entry are two capabilities, not two paths to one: the plugin
-filters bash output through `rtok filter`, the MCP serves `read`/`search`/`memory`/`graph`.
-The plugin reports as `--host opencode`. A missing `rtok` fails open (output unchanged) and
-prints the ketch install line once.
+rewrites bash to `rtok run -- '…'` (skills still go through `rtok filter`), the MCP serves
+`read`/`search`/`memory`/`graph`. The default export is `{ id: "rtok", server }` for Kilo's
+module descriptor. The plugin reports as `--host opencode`. A missing `rtok` fails open
+(output unchanged) and prints the ketch install line once.
 
 ## rtok plugins this host reaches
 

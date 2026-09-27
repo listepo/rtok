@@ -133,6 +133,14 @@ Commands:
   info       One host: the same block `agents list` prints, just for that app
   sessions   What is running in this project: host, provider, model, tokens, start, run time
   junk       Junk rtok owns under its own home: log siblings and archive payloads past retention
+  whoami     This session's own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the
+             store
+  show       One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status
+  status     Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars
+  send       Send a message to an agent (T287): `send <id-prefix> <text|->` or `send --all-live
+             <text|->`
+  inbox      Read messages (T287): your own inbox from `RTOK_AGENT_ID` (marks them read), or with an
+             id that agent's queue (marks nothing)
   help       Print this message or the help of the given subcommand(s)
 
 Options:
@@ -190,13 +198,17 @@ Arguments:
   [HOST]  Host(s), comma-separated; omitted = every host rtok is installed in
 
 Options:
-      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
-      --dry-run        Print the planned edits and exit
-      --cli            Only the CLI app (default is all)
-      --desktop        Only the desktop app (default is all)
-      --all            All variants (the default when neither `--cli` nor `--desktop` is given)
-      --no-restart     Skip closing/reopening a running desktop app around the write (T141)
-  -h, --help           Print help
+      --config <PATH>    User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --dry-run          Print the planned edits and exit
+      --cli              Only the CLI app (default is all)
+      --desktop          Only the desktop app (default is all)
+      --all              All variants (the default when neither `--cli` nor `--desktop` is given)
+      --no-restart       Skip closing/reopening a running desktop app around the write (T141)
+      --force            Reinstall the plugin even when it is already at the available version
+                         (T279)
+      --source <SOURCE>  Compare against this install source instead of the one on record (T279)
+                         [possible values: github, local, marketplace]
+  -h, --help             Print help
 
 $ rtok agents list --help
 Every known app: kind and name, path and version, config files, rtok modules
@@ -269,6 +281,70 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --yes            Apply; without it this is a dry run that changes nothing
       --json           JSON instead of the table
+  -h, --help           Print help
+
+$ rtok agents whoami --help
+This session's own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store
+
+Usage: rtok agents whoami [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the text lines
+  -h, --help           Print help
+
+$ rtok agents show --help
+One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status
+
+Usage: rtok agents show [OPTIONS] <ID>
+
+Arguments:
+  <ID>  Agent id or any unique prefix of it
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the text lines
+  -h, --help           Print help
+
+$ rtok agents status --help
+Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars
+
+Usage: rtok agents status [OPTIONS] <TEXT>
+
+Arguments:
+  <TEXT>  The status text; empty clears it
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok agents send --help
+Send a message to an agent (T287): `send <id-prefix> <text|->` or `send --all-live <text|->`
+
+Usage: rtok agents send [OPTIONS] [TO] [TEXT]
+
+Arguments:
+  [TO]    Recipient's rtok agent id (any unique prefix); with `--all-live`, the text instead
+  [TEXT]  The message; `-` reads it from stdin (≤ 4 KiB, control characters stripped)
+
+Options:
+      --all-live       Every live agent of this project (same repository or cwd), except the sender
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok agents inbox --help
+Read messages (T287): your own inbox from `RTOK_AGENT_ID` (marks them read), or with an id that
+agent's queue (marks nothing)
+
+Usage: rtok agents inbox [OPTIONS] [ID]
+
+Arguments:
+  [ID]  An agent's rtok id (any unique prefix); omitted: `RTOK_AGENT_ID`
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --unread         Only messages not read yet
+      --json           JSON instead of the framed text
   -h, --help           Print help
 
 $ rtok run --help
@@ -825,12 +901,16 @@ Git worktrees of this repository: owner, state and disk cost
 Usage: rtok worktree [OPTIONS] <COMMAND>
 
 Commands:
-  add    Create the worktree for a task: one location, one name, one locked owner; prints its path
-  list   Every worktree and orphan with its owner, state, source and build-cache bytes
-  gc     Remove merged, clean, idle worktrees with their branches; drop records of deleted ones
-  clean  Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without
-         `--yes`
-  help   Print this message or the help of the given subcommand(s)
+  add     Create the worktree for a task: one location, one name, one locked owner; prints its path
+  claim   Bind an existing worktree to an agent: rewrites its lock only when unlocked or already
+          yours
+  remove  Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when
+          merged, release the claim; refuses dirty, foreign-locked or current worktrees
+  list    Every worktree and orphan with its owner, state, source and build-cache bytes
+  gc      Remove merged, clean, idle worktrees with their branches; drop records of deleted ones
+  clean   Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without
+          `--yes`
+  help    Print this message or the help of the given subcommand(s)
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
@@ -878,7 +958,7 @@ Options:
 $ rtok worktree add --help
 Create the worktree for a task: one location, one name, one locked owner; prints its path
 
-Usage: rtok worktree add [OPTIONS] --owner <OWNER> <TASK> [SLUG]
+Usage: rtok worktree add [OPTIONS] <TASK> [SLUG]
 
 Arguments:
   <TASK>  Task id, e.g. `t158`; directory `<repo>-<task>`, branch `<task>[-<slug>]`
@@ -886,7 +966,44 @@ Arguments:
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
-      --owner <OWNER>  Who holds it, as `<provider> / <model>`; written into the lock reason
+      --owner <OWNER>  Who holds it, as `<provider> / <model>`; written into the lock reason.
+                       Defaults to `<host> / <model>` of the agent
+      --agent <AGENT>  The rtok agent id (any unique prefix) to bind it to; defaults to
+                       `RTOK_AGENT_ID`
+  -h, --help           Print help
+
+$ rtok worktree claim --help
+Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours
+
+Usage: rtok worktree claim [OPTIONS] <PATH>
+
+Arguments:
+  <PATH>  The worktree
+
+Options:
+      --agent <AGENT>  The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --owner <OWNER>  The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> /
+                       <model>` of the agent
+  -h, --help           Print help
+
+$ rtok worktree remove --help
+Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when merged,
+release the claim; refuses dirty, foreign-locked or current worktrees
+
+Usage: rtok worktree remove [OPTIONS] <TARGET>
+
+Arguments:
+  <TARGET>  The worktree's path, or its task id (the lock's task or the branch `<task>[-<slug>]`)
+
+Options:
+      --agent <AGENT>  The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --owner <OWNER>  The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> /
+                       <model>` of the agent
+      --keep-branch    Remove an unmerged worktree too and keep its branch (a merged branch is kept
+                       as well)
+      --json           JSON instead of the text line
   -h, --help           Print help
 
 ```

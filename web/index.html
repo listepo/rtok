@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#06101A">
+  <title>rtok · admin</title>
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="tailwind.css">
+  <!-- Quick hacking without a rebuild (needs network; never ship this):
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { darkMode: 'class', theme: { extend: { colors: { canvas: 'rgb(var(--canvas) / <alpha-value>)', accent: { DEFAULT: 'rgb(var(--accent) / <alpha-value>)' } } } } };</script>
+  -->
+  <script>
+    // Theme before first paint. Same localStorage key the Slint UI uses (T60.9).
+    (function () {
+      var s = localStorage.getItem('rtok-theme');
+      var dark = s ? s === 'dark' : !matchMedia('(prefers-color-scheme: light)').matches;
+      document.documentElement.classList.toggle('dark', dark);
+      if (localStorage.getItem('rtok-opaque') === 'on') document.documentElement.classList.add('opaque');
+    })();
+  </script>
+</head>
+<body class="overflow-x-hidden">
+  <!-- Background: WebGL orb (orb.js) over a static gradient fallback. Decorative. -->
+  <div id="orb-fallback" class="orb-fallback fixed inset-0 -z-10 pointer-events-none" aria-hidden="true"></div>
+  <canvas id="orb" class="fixed inset-0 -z-10 w-full h-full pointer-events-none [opacity:var(--orb-opacity)]" aria-hidden="true" hidden></canvas>
+
+  <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 btn btn-primary">Skip to content</a>
+
+  <div class="min-h-screen md:grid md:grid-cols-[64px_minmax(0,1fr)] lg:grid-cols-[224px_minmax(0,1fr)]">
+    <!-- Sidebar: rail (md) / full (lg+). Phone uses the bottom tab bar. -->
+    <aside class="hidden md:flex flex-col sticky top-0 h-screen p-2 lg:p-3" aria-label="Primary">
+      <div class="glass shine flex flex-col h-full p-2">
+        <a href="#/overview" class="focus-ring flex items-center gap-2.5 h-11 px-1.5 lg:px-2 rounded-md max-lg:justify-center" aria-label="rtok overview">
+          <img src="assets/logo.svg" alt="" width="24" height="24" class="w-6 h-6 rounded-sm">
+          <span class="hidden lg:inline text-base font-bold tracking-[0.12em]">RTOK</span>
+          <span class="hidden lg:inline ml-auto text-2xs text-ink-subtle">admin</span>
+        </a>
+        <div id="side-status" class="mt-1 mb-2 flex items-center gap-2 h-7 px-2 rounded-md bg-surface-2 text-2xs text-ink-muted max-lg:justify-center"></div>
+        <nav id="side-nav" class="flex flex-col gap-0.5"></nav>
+        <div class="mt-auto flex flex-col gap-0.5 pt-2 border-t border-line">
+          <button type="button" data-action="theme" class="nav-item focus-ring max-lg:justify-center" aria-label="Toggle theme">
+            <span data-icon="theme" class="shrink-0"></span><span class="hidden lg:inline" data-theme-label>Light mode</span>
+          </button>
+          <button type="button" data-action="settings" class="nav-item focus-ring max-lg:justify-center" aria-label="Settings">
+            <span class="shrink-0 w-4 text-center font-bold">⋯</span><span class="hidden lg:inline">Settings</span>
+          </button>
+          <button type="button" data-action="help" class="nav-item focus-ring max-lg:justify-center" aria-label="Keyboard help">
+            <span class="shrink-0 w-4 text-center font-bold">?</span><span class="hidden lg:inline">Help</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="min-w-0 flex flex-col">
+      <!-- Top bar -->
+      <header class="sticky top-0 z-30 px-2 pt-2 md:px-3 md:pt-3 lg:px-4" style="padding-top:max(0.5rem, env(safe-area-inset-top))">
+        <div class="glass flex items-center gap-2 md:gap-3 h-14 md:h-12 px-2 md:px-3">
+          <img src="assets/logo.svg" alt="" width="24" height="24" class="md:hidden w-6 h-6 rounded-sm ml-1">
+          <div class="min-w-0">
+            <div id="crumb" class="hidden md:block text-2xs text-ink-subtle leading-none mb-0.5">rtok / admin</div>
+            <h1 id="page-title" tabindex="-1" class="text-base md:text-sm font-bold leading-tight truncate outline-none">overview</h1>
+          </div>
+          <div class="ml-auto flex items-center gap-1.5 md:gap-2">
+            <span id="source-badge"></span>
+            <span id="top-status" class="md:hidden"></span>
+            <button type="button" data-action="theme" class="btn btn-ghost btn-icon md:hidden" aria-label="Toggle theme"><span data-icon="theme"></span></button>
+            <button type="button" data-action="settings" class="btn btn-ghost btn-icon" aria-label="Settings"><span class="font-bold">⋯</span></button>
+          </div>
+        </div>
+      </header>
+
+      <div id="banners" class="px-2 md:px-3 lg:px-4" aria-live="polite"></div>
+
+      <main id="main" class="flex-1 min-w-0 px-2 md:px-3 lg:px-4 pt-3 pb-24 md:pb-6 2xl:max-w-[1760px] 2xl:w-full 2xl:mx-auto" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <!-- Phone: bottom tab bar (≥44px targets, safe-area aware) -->
+  <nav id="tab-nav" class="md:hidden fixed bottom-0 inset-x-0 z-40 px-2 pb-2" style="padding-bottom:max(0.5rem, env(safe-area-inset-bottom))" aria-label="Primary"></nav>
+
+  <!-- Settings -->
+  <dialog id="settings" class="glass shine p-0 w-[min(420px,calc(100vw-1rem))] text-ink backdrop:bg-canvas/70 backdrop:backdrop-blur-sm" aria-labelledby="settings-title">
+    <form method="dialog" class="p-4 flex flex-col gap-4">
+      <div class="flex items-center">
+        <h2 id="settings-title" class="text-sm font-bold">Settings</h2>
+        <button class="btn btn-ghost btn-icon ml-auto" value="close" aria-label="Close settings">✕</button>
+      </div>
+      <fieldset class="flex flex-col gap-2">
+        <legend class="kicker mb-2">Appearance</legend>
+        <div class="flex items-center justify-between gap-3"><span id="lbl-dark" class="text-xs">Dark theme</span><button type="button" class="switch focus-ring" role="switch" aria-labelledby="lbl-dark" data-setting="dark"></button></div>
+        <div class="flex items-center justify-between gap-3"><span class="text-xs"><span id="lbl-orb">Background orb</span><span id="orb-note" class="block text-2xs text-ink-subtle"></span></span><button type="button" class="switch focus-ring" role="switch" aria-labelledby="lbl-orb" data-setting="orb"></button></div>
+        <div class="flex items-center justify-between gap-3"><span class="text-xs"><span id="lbl-opaque">Opaque panels</span><span class="block text-2xs text-ink-subtle">No blur/transparency (also follows the OS setting)</span></span><button type="button" class="switch focus-ring" role="switch" aria-labelledby="lbl-opaque" data-setting="opaque"></button></div>
+      </fieldset>
+      <fieldset class="flex flex-col gap-2">
+        <legend class="kicker mb-2">Preview state (design review)</legend>
+        <div id="state-chips" class="flex flex-wrap gap-1.5" role="group" aria-label="Preview state"></div>
+        <p class="text-2xs text-ink-subtle">Also via URL: <code>#/calls?state=empty</code></p>
+      </fieldset>
+    </form>
+  </dialog>
+
+  <!-- Help -->
+  <dialog id="help" class="glass shine p-0 w-[min(440px,calc(100vw-1rem))] text-ink backdrop:bg-canvas/70" aria-labelledby="help-title">
+    <form method="dialog" class="p-4 flex flex-col gap-3">
+      <div class="flex items-center"><h2 id="help-title" class="text-sm font-bold">Help</h2><button class="btn btn-ghost btn-icon ml-auto" value="close" aria-label="Close help">✕</button></div>
+      <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+        <dt class="text-accent-fg font-semibold">1–6</dt><dd class="text-ink-muted">switch screen</dd>
+        <dt class="text-accent-fg font-semibold">/</dt><dd class="text-ink-muted">focus the screen filter</dd>
+        <dt class="text-accent-fg font-semibold">↑ ↓</dt><dd class="text-ink-muted">move the row cursor in a list</dd>
+        <dt class="text-accent-fg font-semibold">expand</dt><dd class="text-ink-muted">open a call's full archived output</dd>
+        <dt class="text-accent-fg font-semibold">toggle</dt><dd class="text-ink-muted">enable or disable a plugin</dd>
+        <dt class="text-accent-fg font-semibold">live</dt><dd class="text-ink-muted">show only sessions still running</dd>
+      </dl>
+    </form>
+  </dialog>
+
+  <div id="toasts" class="fixed z-50 bottom-24 md:bottom-4 right-2 md:right-4 flex flex-col gap-2" role="status" aria-live="polite"></div>
+
+  <script src="orb.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

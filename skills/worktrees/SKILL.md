@@ -30,10 +30,10 @@ sizes; `--json` for scripts.
 
 ## Finish
 
-After the PR is merged: `rtok worktree gc --owner "<provider> / <model>"` is a dry run; `--yes`
-removes merged, clean, idle worktrees you own with their branches, and drops records of
-directories deleted by hand (until then the branch counts as checked out). Then delete the
-remote branch if the forge did not, and `git fetch --prune`.
+After the PR is merged, from the main checkout: `rtok worktree remove <path|task>` removes
+your worktree with its merged branch; it refuses uncommitted files, a foreign lock and an
+unmerged branch (`--keep-branch` keeps that). Then delete the remote branch if the forge did
+not, and `git fetch --prune`. `rtok worktree gc --yes` sweeps many.
 
 ## Free disk
 

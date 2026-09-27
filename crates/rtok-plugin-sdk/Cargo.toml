@@ -2,7 +2,7 @@
 name = "rtok-plugin-sdk"
 version = "0.0.1"
 edition = "2024"
-rust-version = "1.97.1" # the pin in mise.toml; a plugin author needs no newer toolchain
+rust-version = "1.98.1" # the pin in mise.toml; a plugin author needs no newer toolchain
 readme = "README.md"
 repository = "https://github.com/listepo/rtok"
 homepage = "https://listepo.github.io/rtok/"

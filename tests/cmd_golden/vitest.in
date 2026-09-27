@@ -1,0 +1,68 @@
+argv: vitest run
+exit: 0
+min_saving: 73
+---
+ RUN  v1.6.0 /repo
+
+stdout | src/db/setup.test.ts
+connecting to test db
+
+PASS src/utils/date.test.ts
+  formatDate
+    ✓ formats ISO date 3ms
+    ✓ formats relative date 1ms
+
+PASS src/utils/string.test.ts
+  truncate
+    ✓ truncates long strings 2ms
+    ✓ leaves short strings alone 1ms
+
+PASS src/hooks/useAuth.test.ts
+  useAuth
+    ✓ returns null when logged out 4ms
+    ✓ returns the user when logged in 2ms
+
+stderr | src/hooks/useAuth.test.ts
+deprecated: use useAuthV2 instead
+
+PASS src/hooks/useTheme.test.ts
+  useTheme
+    ✓ defaults to light 1ms
+    ✓ toggles to dark 2ms
+
+FAIL src/components/Button.test.ts
+  Button
+    ✓ renders children 2ms
+    ✕ renders label 5ms
+
+  ● Button > renders label
+
+    AssertionError: expected 'submit' to be 'Submit'
+
+      10 |   render(<Button label="Submit" />)
+      11 |   const el = screen.getByText(/submit/i)
+    > 12 |   expect(el.textContent).toBe('Submit')
+         |                          ^
+      13 | })
+
+      at src/components/Button.test.ts:12:26
+
+PASS src/components/Input.test.ts
+  Input
+    ✓ renders placeholder 2ms
+    ✓ calls onChange 3ms
+
+PASS src/components/Modal.test.ts
+  Modal
+    ✓ opens on trigger 2ms
+    ✓ closes on escape 2ms
+
+PASS src/api/user.test.ts
+  fetchUser
+    ✓ returns the user 6ms
+    ✓ throws on 404 3ms
+
+Test Files  1 failed | 7 passed (8)
+Tests:       1 failed, 15 passed (16)
+Start at  14:32:10
+Duration  1.24s (transform 120ms, setup 0ms, collect 340ms, tests 780ms)

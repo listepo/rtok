@@ -349,10 +349,12 @@ fn sections(doc: &Document) -> Vec<Sec> {
     if calls.total > 0 {
         blocks.push(chart(
             "calls per surface",
-            calls
-                .rows
-                .iter()
-                .map(|r| (r.surface.clone(), r.calls as i64)),
+            calls.rows.iter().map(|r| {
+                (
+                    r.surface.clone(),
+                    i64::try_from(r.calls).unwrap_or(i64::MAX),
+                )
+            }),
         ));
     }
     secs.push(Sec {
@@ -377,7 +379,10 @@ fn sections(doc: &Document) -> Vec<Sec> {
     if cache.sessions > 0 {
         blocks.push(chart(
             "busts per cause",
-            cache.by_cause.iter().map(|(c, n)| (c.clone(), *n as i64)),
+            cache
+                .by_cause
+                .iter()
+                .map(|(c, n)| (c.clone(), i64::try_from(*n).unwrap_or(i64::MAX))),
         ));
     }
     secs.push(Sec {

@@ -1234,14 +1234,33 @@ fn replay_ctt(content: &str, tokens: u64, remain: u64, rp: Replay) -> u64 {
         return tokens.saturating_mul(remain);
     }
     let lines: Vec<&str> = content.lines().collect();
-    let kept: usize = lines
+    // Mirrors `archive::pointer`: with `lines.len() <= head + tail` it dumps the whole body
+    // once instead of separate head/tail slices (which used to overlap here and double-count
+    // lines, so `kept` came out up to 2x too big), and every shown line is clipped.
+    let n = lines.len();
+    let (head, tail) = if n <= rp.head_lines + rp.tail_lines {
+        (n, 0)
+    } else {
+        (rp.head_lines, rp.tail_lines)
+    };
+    let kept: usize = lines[..head]
         .iter()
-        .take(rp.head_lines)
-        .chain(lines.iter().rev().take(rp.tail_lines))
-        .map(|l| l.len() + 1)
+        .chain(&lines[n - tail..])
+        .map(|l| shown_len(l) + 1)
         .sum();
     let pointer = est_tokens(kept as u64 + 64); // + the `[archived …]` line itself
     tokens.saturating_mul(rp.keep_turns) + pointer.saturating_mul(remain - rp.keep_turns)
+}
+
+/// One line as the archive pointer shows it: clipped when the `archive` plugin is built.
+#[cfg(feature = "archive")]
+fn shown_len(line: &str) -> usize {
+    crate::plugins::archive::clip(line).len()
+}
+
+#[cfg(not(feature = "archive"))]
+fn shown_len(line: &str) -> usize {
+    line.len()
 }
 
 /// T58.3: every tool input counts toward the denominator; `Edit` and each `MultiEdit.edits[]`
@@ -2347,6 +2366,37 @@ mod tests {
     }
 
     #[test]
+    fn archive_replay_never_doubles_short_bodies() {
+        let rp = Replay {
+            keep_turns: 2,
+            min_tokens: 100,
+            head_lines: 1,
+            tail_lines: 1,
+            ..Replay::default()
+        };
+        // Single line, fewer than head_lines + tail_lines: `take(head)` and
+        // `rev().take(tail)` used to grab the same line twice, so `kept` came out
+        // ~2x too big and the estimate could land above not archiving at all.
+        let single = "y".repeat(600);
+        let tokens = est_tokens(single.len() as u64);
+        let replay = replay_ctt(&single, tokens, 5, rp);
+        assert!(
+            replay <= tokens * 5,
+            "replay {replay} > no-archive {}",
+            tokens * 5
+        );
+
+        // Multi-line, no overlap between head and tail: unaffected by the fix.
+        let content = "x".repeat(50) + "\n" + &"y".repeat(500) + "\n" + &"z".repeat(50);
+        let tokens = est_tokens(content.len() as u64);
+        let pointer = est_tokens(51 + 51 + 64); // head line, tail line, pointer line
+        assert_eq!(
+            replay_ctt(&content, tokens, 5, rp),
+            tokens * 2 + pointer * 3
+        );
+    }
+
+    #[test]
     fn compact_boundary_counts_once_per_event() {
         let dir = tempfile_dir();
         std::fs::write(
@@ -2479,14 +2529,19 @@ mod tests {
         .unwrap()
     }
 
+    /// A fresh directory per call. The counter keeps two parallel tests apart: macOS clocks
+    /// tick in microseconds, so pid + nanos alone collided and one test read the other's
+    /// transcript.
     fn tempfile_dir() -> std::path::PathBuf {
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let p = std::env::temp_dir().join(format!(
-            "rtok-stats-{}-{}",
+            "rtok-stats-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         fs::create_dir_all(&p).unwrap();
         p

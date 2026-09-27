@@ -1,8 +1,10 @@
-//! T118.3 + D21: the Gemini CLI extension tree is one unit — `gemini-extension.json` with an
+//! T118.3 + D21: the Gemini CLI extension tree carries `gemini-extension.json` with an
 //! embedded MCP server, plus Gemini's own `hooks/hooks.json` — and `rtok agents install
 //! gemini --yes` drives `gemini extensions link <resolved plugins/gemini>` through the
-//! `gemini` CLI (the fake shim's log), taking rtok's own `settings.json` hook entries and
-//! `mcpServers.rtok` back.
+//! `gemini` CLI (the fake shim's log), taking rtok's own `settings.json` hook entries back
+//! (hooks only, D21). Gemini is the T275/D33 exception for MCP: `settings.json` always gets
+//! `mcpServers.rtok` too, alongside the extension's own — Gemini's `settings.json` wins over
+//! a same-name extension server, so the two merge into one live process.
 
 use std::fs;
 use std::path::PathBuf;
@@ -71,8 +73,9 @@ fn the_extension_installs_through_the_gemini_cli_and_remove_uninstalls() {
     assert!(dry.contains("plugins/gemini"), "{dry}");
     assert!(!log.exists(), "dry-run runs nothing");
 
-    // `--yes` links through the CLI; D21 — the extension is the unit, so rtok's own
-    // settings.json hook entries and mcpServers.rtok never come beside it.
+    // `--yes` links through the CLI; D21 (hooks only) — the extension is the hooks unit, so
+    // rtok's own settings.json hook entries never come beside it. MCP is the T275/D33
+    // exception: `mcpServers.rtok` is written into settings.json on this same run regardless.
     let first = rtok(&["agents", "install", "gemini", "--yes"], &cfg, &home);
     assert!(first.contains("+ plugin plugins/gemini → rtok"), "{first}");
     assert!(
@@ -86,9 +89,12 @@ fn the_extension_installs_through_the_gemini_cli_and_remove_uninstalls() {
         !settings.contains("hook PreToolUse"),
         "D21: no second hooks set: {settings}"
     );
-    assert!(!settings.contains("\"rtok\""), "D21: no second rtok mcp");
+    assert!(
+        settings.contains("\"rtok\""),
+        "T275/D33: settings.json gets rtok's mcp entry even with the extension linked"
+    );
 
-    // A repeat is a no-op with no second CLI call.
+    // A repeat is a no-op with no second CLI call, and the mcp entry is kept, not stripped.
     let again = rtok(&["agents", "install", "gemini", "--yes"], &cfg, &home);
     assert!(again.contains("already installed"), "{again}");
     let calls = fs::read_to_string(&log).unwrap();
@@ -100,10 +106,22 @@ fn the_extension_installs_through_the_gemini_cli_and_remove_uninstalls() {
         1,
         "{calls}"
     );
+    assert!(
+        fs::read_to_string(home.join(".gemini/settings.json"))
+            .unwrap_or_default()
+            .contains("\"rtok\""),
+        "a repeat install must not strip the mcp entry"
+    );
 
-    // Remove uninstalls by the manifest's `name`.
+    // Remove uninstalls by the manifest's `name` and takes the mcp entry out too.
     let removed = rtok(&["agents", "remove", "gemini"], &cfg, &home);
     assert!(removed.contains("- plugin rtok"), "{removed}");
     assert!(!marker.exists());
+    assert!(
+        !fs::read_to_string(home.join(".gemini/settings.json"))
+            .unwrap_or_default()
+            .contains("\"rtok\""),
+        "remove takes the mcp entry out too"
+    );
     let _ = fs::remove_dir_all(&home);
 }

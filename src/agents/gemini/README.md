@@ -11,7 +11,7 @@
 | hooks | yes | `hooks.<Event>[]` → `{hooks: [{type: "command", command: "rtok hook <Event> --host gemini", timeout}]}` on BeforeTool, AfterTool, BeforeAgent, SessionStart, SessionEnd, PreCompress — no `matcher`, so every call fires (a Claude-shaped tool-name matcher would never match Gemini's own tool names) |
 | mcp | yes | `mcpServers.rtok` → `rtok mcp` in `settings.json` as `{command, args}` (off with `[setup] mcp = false`) |
 | proxy | no | Gemini CLI has no documented base-URL setting; its own HTTP_PROXY/HTTPS_PROXY covers MCP server transport only, not the model API |
-| plugin | `--yes` | `gemini extensions link <plugins/gemini>` (T118.3); D21 — while linked, `hooks`/`mcp` above go instead of coming |
+| plugin | `--yes` | `gemini extensions link <plugins/gemini>` (T118.3); D21 — while linked, `hooks` above go instead of coming. MCP is the T275/D33 exception: `mcp` above is written into `settings.json` on every install/update regardless, alongside the extension's own `mcpServers.rtok` (Gemini's `settings.json` wins over a same-name extension server, so the two merge into one process) |
 
 `--host gemini` (T118.1) maps Gemini's own event names to Claude's before the shared
 plugins run (`BeforeTool`→`PreToolUse`, `AfterTool`→`PostToolUse`, `BeforeAgent`→

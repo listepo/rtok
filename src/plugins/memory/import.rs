@@ -56,7 +56,7 @@ pub fn run(cfg: &Config, path: &Path, dry_run: bool) -> Result<Report> {
     // for two imported lines that share a key neither one starts out matching locally.
     let mut keys: HashSet<(Option<String>, String, String)> = cx
         .store
-        .list_notes(None)?
+        .list_notes(None, true)?
         .into_iter()
         .map(|(project, kind, title, _body)| (project, kind, title))
         .collect();
@@ -181,7 +181,7 @@ mod tests {
         assert_eq!(real, dry, "dry_run and a real run agree");
 
         let cx = crate::plugin::Runtime::open(c.clone(), "verify").unwrap();
-        let rows = cx.store.list_notes(Some("p")).unwrap();
+        let rows = cx.store.list_notes(Some("p"), true).unwrap();
         assert_eq!(
             rows,
             vec![(

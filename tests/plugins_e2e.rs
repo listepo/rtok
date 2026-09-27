@@ -211,6 +211,71 @@ fn graph_session_start_map_off_by_default_and_on_when_capped() {
     assert!(on_ctx.contains("repo map"), "{on}");
     assert!(on_ctx.contains("hot"), "{on}");
 }
+/// T87: Devin's `PostCompaction` must reach the PostCompact plugins after `adapt_devin`
+/// renames it. Graph's session-start repo map (source=`compact`) is the signal.
+#[test]
+fn graph_post_compaction_devin_reaches_post_compact_plugins() {
+    let home = tmp("graph-post-compaction-devin");
+    let repo = home.0.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    std::fs::write(
+        repo.join("a.rs"),
+        "fn hot() {}\nfn cold() { hot(); hot(); }\n",
+    )
+    .unwrap();
+    let arg = repo.to_string_lossy().into_owned();
+    let _ = run(&home, &["graph", "index", &arg], "", &home.0);
+    std::fs::write(
+        home.0.join("config.toml"),
+        "[plugins.graph]\nmap_tokens = 200\n",
+    )
+    .unwrap();
+    let input = json!({
+        "session_id": "s-compact-devin",
+        "cwd": repo,
+        "hook_event_name": "PostCompaction",
+        "summary": null
+    })
+    .to_string();
+    let out = run(
+        &home,
+        &["hook", "PostCompaction", "--host", "devin"],
+        &input,
+        &home.0,
+    );
+    let on_v = js(&out);
+    let ctx = on_v
+        .get("hookSpecificOutput")
+        .and_then(|v| v.get("additionalContext"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert!(ctx.contains("repo map"), "{out}");
+    assert!(ctx.contains("hot"), "{out}");
+}
+/// T87 Check: a live-captured Devin `exec` PreToolUse (2026-09-26, `devin 3000.11.3`)
+/// yields the same decision as the equivalent Claude `Bash` payload; an unknown tool is `{}`.
+#[test]
+fn devin_captured_exec_pre_tool_use_matches_claude_bash() {
+    let home = tmp("devin-captured-exec");
+    let exec = r#"{"hook_event_name":"PreToolUse","tool_name":"exec","tool_input":{"command":"echo rtok-t87"},"tool_use_id":"call_e53ac12625584a319924ddb5","session_id":"regal-name","prompt_id":"9d55c94c-4032-4f0d-a353-9a19d43d39d0"}"#;
+    let bash = r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo rtok-t87"},"tool_use_id":"call_e53ac12625584a319924ddb5","session_id":"regal-name","prompt_id":"9d55c94c-4032-4f0d-a353-9a19d43d39d0"}"#;
+    let unknown = r#"{"hook_event_name":"PreToolUse","tool_name":"not_a_real_tool","tool_input":{},"session_id":"regal-name"}"#;
+    let devin = js(&run(
+        &home,
+        &["hook", "PreToolUse", "--host", "devin"],
+        exec,
+        &home.0,
+    ));
+    let claude = js(&run(&home, &["hook", "PreToolUse"], bash, &home.0));
+    assert_eq!(devin, claude, "devin={devin} claude={claude}");
+    let unk = js(&run(
+        &home,
+        &["hook", "PreToolUse", "--host", "devin"],
+        unknown,
+        &home.0,
+    ));
+    assert_eq!(unk, json!({}));
+}
 #[test]
 fn inject_session_start_records_measurement() {
     let home = tmp("inject");
@@ -419,6 +484,121 @@ fn read_stripped_measurement_matches_returned_text() {
         row.est_after,
         tokens::estimate(&out, Class::Code, &cfg.estimator) as i32
     );
+}
+
+/// T299: `map`, `signatures` (outline) and `search` over one realistic fixture must keep
+/// saving at least `floor` percent of the raw file's tokens (same estimator the code uses).
+/// Floors are the saving measured at authoring time minus 5 points.
+/// T300: `map`/`signatures` now also write exactly one fresh `read` row (`before` the raw
+/// fixture, `after` the returned text). `search`'s only "before" is its own full output, and
+/// this fixture is small enough that `cap` never truncates it, so it writes none.
+#[test]
+fn read_modes_keep_a_saving_floor() {
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/read_modes_sample.rs"
+    ))
+    .unwrap();
+    // (tool, args, floor %, expected `read` row kind): measured 95.1 / 88.8 / 88.9
+    // (1350 -> 66 / 151 / 150 tokens).
+    let cases = [
+        (
+            "read",
+            r#"{"path":"sample.rs","mode":"map"}"#,
+            90.1,
+            Some("map"),
+        ),
+        (
+            "read",
+            r#"{"path":"sample.rs","mode":"signatures"}"#,
+            83.8,
+            Some("signatures"),
+        ),
+        (
+            "search",
+            r#"{"pattern":"pub fn","path":"sample.rs"}"#,
+            83.9,
+            None,
+        ),
+    ];
+    for (name, args, floor, expected_kind) in cases {
+        let home = tmp("read-modes");
+        std::fs::write(home.0.join("sample.rs"), &src).unwrap();
+        let out = tool(&home, &home.0, name, args);
+        let cfg = Config::load_from(&home.0).unwrap();
+        let before = tokens::estimate(&src, Class::Code, &cfg.estimator);
+        let after = tokens::estimate(&out, Class::Code, &cfg.estimator);
+        let pct = 100.0 * (1.0 - f64::from(after) / f64::from(before));
+        assert!(
+            pct >= floor,
+            "{name} {args}: saved {pct:.1}% < floor {floor}% ({before} -> {after} tokens): {out}"
+        );
+        let read_rows = rows(&home, "read");
+        match expected_kind {
+            Some(kind) => {
+                let matching: Vec<_> = read_rows.iter().filter(|r| r.kind == kind).collect();
+                assert_eq!(matching.len(), 1, "{name} {args}: {read_rows:?}");
+                let row = matching[0];
+                assert_eq!(row.before_bytes as usize, src.len(), "{row:?}");
+                assert_eq!(row.after_bytes as usize, out.len(), "{row:?}");
+            }
+            None => {
+                assert!(
+                    read_rows.is_empty(),
+                    "{name} {args}: unexpected rows {read_rows:?}"
+                );
+            }
+        }
+    }
+}
+
+/// T300: `search`/`tree` write a `Measurement` only when `cap` actually cuts their output —
+/// a small `max_chars` forces that, and the row's `before` must be the full uncapped text
+/// (recovered via the row's `ref_id`, the same archive `cap` made for the returned pointer).
+#[test]
+fn search_and_tree_cap_measurement_matches_full_and_returned_text() {
+    let home = tmp("read-cap");
+    std::fs::write(
+        home.0.join("config.toml"),
+        "[plugins.read]\nmax_chars = 200\n",
+    )
+    .unwrap();
+    let nested = home.0.join("nest");
+    std::fs::create_dir_all(&nested).unwrap();
+    for i in 0..40 {
+        std::fs::write(nested.join(format!("f{i}.rs")), format!("fn f{i}() {{}}\n")).unwrap();
+    }
+
+    for (name, args, kind) in [
+        ("search", r#"{"pattern":"fn","path":"nest"}"#, "search_cap"),
+        ("tree", r#"{"path":"nest"}"#, "tree_cap"),
+    ] {
+        let out = tool(&home, &home.0, name, args);
+        assert!(out.contains("archived"), "{name}: {out}");
+        let cfg = Config::load_from(&home.0).unwrap();
+        let read_rows = rows(&home, "read");
+        let matching: Vec<_> = read_rows.iter().filter(|r| r.kind == kind).collect();
+        assert_eq!(matching.len(), 1, "{name}: {read_rows:?}");
+        let row = matching[0];
+        assert_eq!(row.after_bytes as usize, out.len(), "{row:?}");
+        assert_eq!(
+            row.est_after,
+            tokens::estimate(&out, Class::Code, &cfg.estimator) as i32
+        );
+        let id = row.ref_id.as_deref().expect("cap archives, so ref_id");
+        let full = rtok::store::Store::open(&home.0.join("rtok.db"))
+            .unwrap()
+            .get_archive(id, None)
+            .unwrap()
+            .expect("archived full text");
+        let full = String::from_utf8(full).unwrap();
+        assert_eq!(row.before_bytes as usize, full.len(), "{row:?}");
+        assert_eq!(
+            row.est_before,
+            tokens::estimate(&full, Class::Code, &cfg.estimator) as i32
+        );
+        assert!(row.after_bytes < row.before_bytes, "{row:?}");
+    }
 }
 
 /// Proxy surface: `compress` mode archives a `tool_result` older than `keep_turns`

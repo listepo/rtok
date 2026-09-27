@@ -7,9 +7,10 @@ pub mod resident;
 pub mod types;
 
 use crate::config::Config;
-use crate::plugin::{Ctx, PreToolDecision, Runtime, SessionStart};
+use crate::plugin::{Ctx, Injection, PreToolDecision, Runtime, SessionStart};
 use crate::plugins::Registry;
 use crate::tokens::Class;
+use serde_json::Value;
 use std::io::{Read, Write};
 use std::panic::{self, AssertUnwindSafe};
 use std::time::Instant;
@@ -22,6 +23,10 @@ const LOCK_WAIT: crate::store::LockWait = crate::store::LockWait {
     attempts: 1,
     migrate: std::time::Duration::from_millis(5),
 };
+
+// T304: each lock wait stays within half the 10 ms hook budget (D1). `tests/latency.rs` proves
+// the hook gives up instead of waiting for the holder; the ms bound lives here, where it is exact.
+const _: () = assert!(LOCK_WAIT.busy.as_millis() <= 5 && LOCK_WAIT.migrate.as_millis() <= 5);
 
 /// Fail-open hook entry: always writes JSON and does not return `Err`.
 /// With `[hook] fail_open = false` (debugging only) errors surface as a panic
@@ -97,6 +102,95 @@ fn resolve_session(
         }
     }
     "unknown".into()
+}
+
+/// T282: the sub-agent key `register_agent`/`end_agent` upsert against — the host's own
+/// `agent_id` (`HookInput`, `research.md` §17.2), or `None` for the main window. An empty
+/// string round-trips from a host that sends the field but leaves it blank, so it is treated
+/// the same as absent.
+fn agent_parent_key(input: &HookInput) -> Option<&str> {
+    input.agent_id.as_deref().filter(|s| !s.is_empty())
+}
+
+/// T282 (D34): "Bash: cargo nextest run", "Edit: src/worktree/add.rs" — the tool name plus
+/// the first 60 chars of its main argument, truncated again to 120 total. Never file
+/// contents or prompt text: `tool_input` is scanned only for a short handful of well-known
+/// argument keys, never serialized whole.
+fn agent_activity(input: &HookInput) -> Option<String> {
+    let tool = input.tool_name.as_deref()?;
+    let arg = input.tool_input.as_ref().and_then(tool_main_argument);
+    let activity = match arg {
+        Some(a) => format!("{tool}: {}", first_chars(&a, 60)),
+        None => tool.to_string(),
+    };
+    Some(first_chars(&activity, 120))
+}
+
+/// The one field, among a tool's several, that names what it acts on — never the body of a
+/// `Write`/`Edit` or the text of a prompt.
+fn tool_main_argument(input: &Value) -> Option<String> {
+    ["command", "file_path", "path", "pattern", "query", "url"]
+        .iter()
+        .find_map(|key| input.get(key).and_then(Value::as_str))
+        .map(str::to_string)
+}
+
+fn first_chars(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        return s.to_string();
+    }
+    s.chars().take(n).collect()
+}
+
+/// T283 (D34): the line SessionStart/SubagentStart offer so an agent learns its own rtok id.
+/// Fixed wording, byte-stable but for the id; fed into the same budgeted `inject::apply`
+/// path as every other offering (`inject_event`) rather than a parallel one. `None` when
+/// `agent` is `None` — `[agents] enabled = false` or the host id could not be resolved
+/// (`dispatch` already folds both into that one `Option`).
+fn agent_id_injection(agent: Option<&str>) -> Option<Injection> {
+    let id = agent?;
+    let short = first_chars(id, 8);
+    Some(Injection {
+        plugin: "agent_id",
+        text: format!(
+            "rtok agent id: {short} (full: {id}). Use it with rtok's agent_* and worktree_* MCP tools."
+        ),
+        // Highest offered priority (`Inject`'s own compact/startup recall tops out at 9): a
+        // few words wide, so it never meaningfully competes with a real offering for budget,
+        // and an agent that cannot see its own id cannot use `agent_*`/`worktree_*` at all.
+        priority: 10,
+    })
+}
+
+/// T283: Claude Code's `SessionStart` hook may run with `CLAUDE_ENV_FILE` set to a path it
+/// then runs as a script preamble before every Bash command of the session (confirmed
+/// 2026-09-27 against <https://code.claude.com/docs/en/hooks-guide> "Reload environment when
+/// directory or files change" — `SessionStart`/`CwdChanged` "write to `CLAUDE_ENV_FILE`,
+/// which Claude Code runs as a script preamble before each Bash command" — and the reference
+/// entry it links to, <https://code.claude.com/docs/en/hooks#persist-environment-variables>).
+/// Appending `export RTOK_AGENT_ID=<uuid>` there lets `rtok` invoked from the agent's own
+/// Bash tool resolve its caller without the T281 host rule. Idempotent (a resumed session can
+/// run `SessionStart` more than once) and fail-open: no env var, no file, or a write error
+/// each leave the hook's exit-0 contract untouched.
+fn write_agent_env_file(agent: Option<&str>) {
+    let Some(id) = agent else { return };
+    let Some(path) = std::env::var_os("CLAUDE_ENV_FILE").filter(|p| !p.is_empty()) else {
+        return;
+    };
+    let line = format!("export RTOK_AGENT_ID={id}");
+    if let Ok(existing) = std::fs::read_to_string(&path)
+        && existing.lines().any(|l| l == line)
+    {
+        return;
+    }
+    let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    else {
+        return;
+    };
+    let _ = writeln!(f, "{line}");
 }
 
 /// `Some(message)` when `[hook] max_ms` is non-zero and the event ran over budget.
@@ -368,6 +462,30 @@ pub fn cline_output(out: &HookOutput) -> Vec<u8> {
 pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     let start = Instant::now();
     let registry = Registry::new(&cx.config);
+    // T282 (D34): every event registers or touches this session's rtok agent id — one
+    // indexed upsert (two when `agent_id` names a sub-agent, so its `parent_id` is set from
+    // the row's first insert). Never lets a store error reach the fail-open hook (D1); skipped
+    // entirely when the host id could not be resolved (`agents.host_id` is `NOT NULL` — SQLite
+    // treats NULL as distinct in a UNIQUE index, so a NULL host_id would insert a fresh row on
+    // every event instead of upserting). `SessionEnd` below reuses this same id rather than
+    // upserting a second time.
+    let agent = cx
+        .config
+        .agents
+        .enabled
+        .then(|| cx.host_id())
+        .flatten()
+        .and_then(|host_id| {
+            cx.store
+                .register_agent(
+                    host_id,
+                    &cx.session,
+                    agent_parent_key(input),
+                    cx.cwd.as_deref(),
+                    agent_activity(input).as_deref(),
+                )
+                .ok()
+        });
     let parent = match cx.record_call("hook", "hook", Some(&input.hook_event_name)) {
         Ok(id) => Some(id),
         // T178: another process held the writer lock past `LOCK_WAIT`. Every later write would
@@ -394,8 +512,21 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         "PreToolUse" => pre_tool(input, cx, &registry),
         "PostToolUse" => post_tool(input, cx, &registry),
         "AfterMCPExecution" => after_mcp(input, cx),
-        "SessionStart" | "UserPromptSubmit" | "PostCompact" | "SubagentStart" => {
-            inject_event(input, cx, &registry)
+        // T295: Claude Code's PostCompact has no decision control and rejects any
+        // `hookSpecificOutput` (code.claude.com/docs/en/hooks, checked 2026-09-27); its
+        // checkpoint arrives on SessionStart source=compact. `compact_summary` is Claude's own
+        // input field: Codex (`turn_id`) and Devin's `PostCompaction` still inject below.
+        "PostCompact"
+            if cx.config.hook.host == "claude" && input.extra.contains_key("compact_summary") =>
+        {
+            HookOutput::default()
+        }
+        "SessionStart" => {
+            write_agent_env_file(agent.as_deref());
+            inject_event(input, cx, &registry, agent.as_deref())
+        }
+        "UserPromptSubmit" | "PostCompact" | "SubagentStart" => {
+            inject_event(input, cx, &registry, agent.as_deref())
         }
         "PreCompact" => {
             if let Some(ev) = input.pre_compact() {
@@ -421,6 +552,12 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
+            // T282: end this event's own agent row (the main window, or the sub-agent named
+            // by its `agent_id`) — reuse the id `register_agent` above already resolved,
+            // rather than upserting the row a second time.
+            if let Some(id) = &agent {
+                let _ = cx.store.end_agent(id, now);
+            }
             if cx
                 .store
                 .end_session(&cx.session, now)
@@ -655,7 +792,12 @@ fn cursor_mcp_output(input: &HookInput, cx: &Runtime) -> Option<serde_json::Valu
     None
 }
 
-fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput {
+fn inject_event(
+    input: &HookInput,
+    cx: &Runtime,
+    registry: &Registry,
+    agent: Option<&str>,
+) -> HookOutput {
     let mut inj = Vec::new();
     for p in registry.enabled() {
         let one = match panic::catch_unwind(AssertUnwindSafe(|| {
@@ -681,6 +823,15 @@ fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOut
         if let Some(i) = one {
             inj.push(i);
         }
+    }
+    // T283: the agent's own id, SessionStart/SubagentStart only — never UserPromptSubmit or
+    // a post-compaction re-inject, which already knows it.
+    if matches!(
+        input.hook_event_name.as_str(),
+        "SessionStart" | "SubagentStart"
+    ) && let Some(i) = agent_id_injection(agent)
+    {
+        inj.push(i);
     }
     // No offerings → no Measurement noise (D3): UserPromptSubmit usually has none.
     if inj.is_empty() {
@@ -1231,7 +1382,70 @@ mod tests {
         let claude_ctx = cv["hookSpecificOutput"]["additionalContext"]
             .as_str()
             .unwrap_or("");
-        assert_eq!(cursor_ctx, claude_ctx);
+        // T283: both now lead with `rtok agent id: ...` — a different id per host/session
+        // by design (two different registered agents), so the flat-shape claim is about
+        // everything after that first line.
+        assert!(cursor_ctx.starts_with("rtok agent id: "), "{cursor_ctx}");
+        assert!(claude_ctx.starts_with("rtok agent id: "), "{claude_ctx}");
+        fn after_first_line(s: &str) -> &str {
+            s.split_once('\n').map_or("", |(_, rest)| rest)
+        }
+        assert_eq!(after_first_line(cursor_ctx), after_first_line(claude_ctx));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T295: Claude Code's PostCompact prints `{}` (it rejects `hookSpecificOutput`), while
+    /// SessionStart source=compact carries the checkpoint. The same PostCompact without
+    /// `compact_summary` (Codex's shape) still injects it.
+    #[test]
+    fn claude_post_compact_prints_empty_and_session_start_carries_the_checkpoint() {
+        let dir = std::env::temp_dir().join(format!("rtok-t295-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut cfg = Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.core.archive_dir = dir.join("archive");
+        let post: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/hooks/post_compact.json"))
+                .unwrap();
+        let session = post["session_id"].clone();
+        let pre = serde_json::json!({
+            "hook_event_name": "PreCompact", "session_id": session,
+            "cwd": post["cwd"], "transcript_path": "", "trigger": "auto"
+        });
+        let mut out = Vec::new();
+        run("PreCompact", pre.to_string().as_bytes(), &mut out, &cfg);
+        let context = |event: &str, input: &serde_json::Value| {
+            let mut out = Vec::new();
+            run(event, input.to_string().as_bytes(), &mut out, &cfg);
+            out
+        };
+        assert_eq!(
+            String::from_utf8_lossy(&context("PostCompact", &post)),
+            "{}"
+        );
+
+        let start = serde_json::json!({
+            "hook_event_name": "SessionStart", "session_id": session,
+            "cwd": post["cwd"], "source": "compact"
+        });
+        let v: serde_json::Value =
+            serde_json::from_slice(&context("SessionStart", &start)).unwrap();
+        assert_eq!(
+            v["hookSpecificOutput"]["hookEventName"], "SessionStart",
+            "{v}"
+        );
+        let text = v["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or("");
+        assert!(text.contains("checkpoint"), "{v}");
+
+        let mut codex = post.clone();
+        codex.as_object_mut().unwrap().remove("compact_summary");
+        let v: serde_json::Value = serde_json::from_slice(&context("PostCompact", &codex)).unwrap();
+        let text = v["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or("");
+        assert!(text.contains("checkpoint"), "{v}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1499,5 +1713,263 @@ mod tests {
             0,
             "the plugin that did not panic must not be logged"
         );
+    }
+
+    // ── T282 (D34): the rtok agent registry ────────────────────────────────────
+
+    /// `pre_tool_bash.json` with `session_id` overridden, parsed both ways (the raw `Value`
+    /// for further mutation, and the typed `HookInput`) plus a fresh in-memory `Runtime` for
+    /// that same session — the shape every T282 dispatch-level test below starts from.
+    fn agent_fixture(session_id: &str) -> (serde_json::Value, Vec<u8>, HookInput, Runtime) {
+        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
+        let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        v["session_id"] = serde_json::Value::String(session_id.into());
+        let stdin = serde_json::to_vec(&v).unwrap();
+        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
+        let cx = Runtime::in_memory(input.session_id.clone()).unwrap();
+        (v, stdin, input, cx)
+    }
+
+    #[test]
+    fn dispatch_registers_and_touches_the_agent_with_truncated_activity() {
+        let (mut v, _, _, mut cx) = agent_fixture("agent-sess-1");
+        v["tool_input"]["command"] = serde_json::Value::String(
+            "cargo nextest run --no-fail-fast --release --workspace --all-targets --verbose".into(),
+        );
+        let stdin = serde_json::to_vec(&v).unwrap();
+        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
+        cx.cwd = input.cwd.clone();
+        let _ = dispatch(&stdin, &input, &cx);
+
+        let id = cx
+            .store
+            .register_agent(cx.host_id().unwrap(), &cx.session, None, None, None)
+            .unwrap();
+        let row = cx.store.agent_row(&id).unwrap().unwrap();
+        assert_eq!(row.host_session_id, "agent-sess-1");
+        assert_eq!(row.parent_id, None);
+        assert_eq!(
+            row.activity.as_deref(),
+            Some("Bash: cargo nextest run --no-fail-fast --release --workspace --all"),
+            "tool name plus the first 60 chars of its main argument"
+        );
+    }
+
+    #[test]
+    fn a_sub_agent_hook_event_registers_a_child_row_under_its_parent() {
+        let (v, stdin, input, cx) = agent_fixture("agent-sess-2");
+        let _ = dispatch(&stdin, &input, &cx); // the main window's own row
+
+        let mut child = v.clone();
+        child["agent_id"] = serde_json::Value::String("sub-1".into());
+        let child_stdin = serde_json::to_vec(&child).unwrap();
+        let child_input: HookInput = serde_json::from_slice(&child_stdin).unwrap();
+        let _ = dispatch(&child_stdin, &child_input, &cx);
+
+        let host_id = cx.host_id().unwrap();
+        let parent_id = cx
+            .store
+            .register_agent(host_id, &cx.session, None, None, None)
+            .unwrap();
+        let child_id = cx
+            .store
+            .register_agent(host_id, &cx.session, Some("sub-1"), None, None)
+            .unwrap();
+        assert_ne!(parent_id, child_id);
+        let child_row = cx.store.agent_row(&child_id).unwrap().unwrap();
+        assert_eq!(child_row.parent_id.as_deref(), Some(parent_id.as_str()));
+        assert_eq!(child_row.host_session_id, "agent-sess-2");
+    }
+
+    #[test]
+    fn session_end_ends_the_agent_row() {
+        let (v, stdin, input, cx) = agent_fixture("agent-sess-3");
+        let _ = dispatch(&stdin, &input, &cx);
+        let id = cx
+            .store
+            .register_agent(cx.host_id().unwrap(), &cx.session, None, None, None)
+            .unwrap();
+        assert_eq!(cx.store.agent_row(&id).unwrap().unwrap().ended_at, None);
+
+        let mut end = v.clone();
+        end["hook_event_name"] = serde_json::Value::String("SessionEnd".into());
+        let end_stdin = serde_json::to_vec(&end).unwrap();
+        let end_input: HookInput = serde_json::from_slice(&end_stdin).unwrap();
+        let _ = dispatch(&end_stdin, &end_input, &cx);
+        assert!(cx.store.agent_row(&id).unwrap().unwrap().ended_at.is_some());
+    }
+
+    #[test]
+    fn agents_enabled_false_skips_registration() {
+        let (_, stdin, input, mut cx) = agent_fixture("agent-sess-off");
+        cx.config.agents.enabled = false;
+        let _ = dispatch(&stdin, &input, &cx);
+        assert!(
+            cx.store.live_agents("1d").unwrap().is_empty(),
+            "[agents] enabled = false must leave the agents table untouched"
+        );
+    }
+
+    /// research.md §26: Cursor sends `conversation_id`, Cline sends `taskId` — neither is
+    /// `session_id`, so this proves each host's adapter feeds its own field into the same
+    /// `agents.host_session_id` the Claude-shaped hosts write directly.
+    #[test]
+    fn cursor_and_cline_register_under_their_own_session_id_field() {
+        let dir = unique_dir("rtok-hook-t282-cursor");
+        let cfg = cursor_cfg(&dir);
+        let stdin = serde_json::to_vec(&serde_json::json!({
+            "hook_event_name": "beforeShellExecution",
+            "conversation_id": "sess-cursor-282",
+            "cwd": dir.to_string_lossy(),
+            "command": "ls -la",
+        }))
+        .unwrap();
+        dispatch_owned_strict(&stdin, "PreToolUse", &cfg).unwrap();
+        let store = crate::store::Store::open(&cfg.core.db_path).unwrap();
+        // Same resolution `dispatch` itself used (`Runtime::with_store`'s `[hook] host` lookup,
+        // falling back to `other`) — never a second copy of that fallback here.
+        let host_id = Runtime::open(cfg.clone(), "irrelevant")
+            .unwrap()
+            .host_id()
+            .unwrap();
+        let id = store
+            .register_agent(host_id, "sess-cursor-282", None, None, None)
+            .unwrap();
+        let row = store.agent_row(&id).unwrap().unwrap();
+        assert_eq!(row.host_session_id, "sess-cursor-282");
+        assert_eq!(row.activity.as_deref(), Some("Bash: ls -la"));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let dir = unique_dir("rtok-hook-t282-cline");
+        let cfg = cline_cfg(&dir);
+        let stdin = serde_json::to_vec(&serde_json::json!({
+            "hookName": "tool_call",
+            "taskId": "cline-sess-282",
+            "workspaceRoots": ["/tmp"],
+            "tool_call": {"id": "tc-1", "name": "run_commands", "input": {"commands": ["git status"]}}
+        }))
+        .unwrap();
+        dispatch_owned_strict(&stdin, "PreToolUse", &cfg).unwrap();
+        let store = crate::store::Store::open(&cfg.core.db_path).unwrap();
+        let host_id = Runtime::open(cfg.clone(), "irrelevant")
+            .unwrap()
+            .host_id()
+            .unwrap();
+        let id = store
+            .register_agent(host_id, "cline-sess-282", None, None, None)
+            .unwrap();
+        let row = store.agent_row(&id).unwrap().unwrap();
+        assert_eq!(row.host_session_id, "cline-sess-282");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── T283 (D34): an agent learns its own rtok agent id ──────────────────────
+
+    /// A bare `SessionStart` (`source: "startup"`) for `session_id`, plus a fresh in-memory
+    /// `Runtime` for the same session — every T283 test below starts from this.
+    fn session_start_fixture(session_id: &str) -> (Vec<u8>, HookInput, Runtime) {
+        let raw = serde_json::json!({
+            "hook_event_name": "SessionStart",
+            "session_id": session_id,
+            "cwd": "/repo",
+            "source": "startup",
+        });
+        let stdin = serde_json::to_vec(&raw).unwrap();
+        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
+        let cx = Runtime::in_memory(session_id.to_string()).unwrap();
+        (stdin, input, cx)
+    }
+
+    fn additional_context(out: &[u8]) -> String {
+        let v: serde_json::Value = serde_json::from_slice(out).unwrap();
+        v["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    /// The fixed wording `agent_id_injection` builds — kept here too so the test pins the
+    /// spec's exact sentence, not just whatever the function happens to emit.
+    fn expected_agent_line(id: &str) -> String {
+        format!(
+            "rtok agent id: {} (full: {id}). Use it with rtok's agent_* and worktree_* MCP tools.",
+            &id[..8]
+        )
+    }
+
+    #[test]
+    fn session_start_injects_the_fixed_wording_line_with_the_registered_id() {
+        let (stdin, input, cx) = session_start_fixture("t283-sess-1");
+        let out = dispatch(&stdin, &input, &cx);
+        let id = cx
+            .store
+            .register_agent(cx.host_id().unwrap(), &cx.session, None, None, None)
+            .unwrap();
+        assert_eq!(additional_context(&out), expected_agent_line(&id));
+
+        // Same session again: `register_agent` upserts the same row, so the id — and the
+        // whole line — stays byte-identical.
+        let out2 = dispatch(&stdin, &input, &cx);
+        assert_eq!(out, out2, "byte-stable across two runs of the same session");
+    }
+
+    #[test]
+    fn session_start_line_is_fixed_wording_that_differs_only_by_the_id() {
+        let (stdin_a, input_a, cx_a) = session_start_fixture("t283-sess-a");
+        let (stdin_b, input_b, cx_b) = session_start_fixture("t283-sess-b");
+        let ctx_a = additional_context(&dispatch(&stdin_a, &input_a, &cx_a));
+        let ctx_b = additional_context(&dispatch(&stdin_b, &input_b, &cx_b));
+        assert_ne!(ctx_a, ctx_b, "two sessions get two different ids");
+        let id_a = cx_a
+            .store
+            .register_agent(cx_a.host_id().unwrap(), &cx_a.session, None, None, None)
+            .unwrap();
+        let id_b = cx_b
+            .store
+            .register_agent(cx_b.host_id().unwrap(), &cx_b.session, None, None, None)
+            .unwrap();
+        assert_eq!(ctx_a, expected_agent_line(&id_a));
+        assert_eq!(ctx_b, expected_agent_line(&id_b));
+    }
+
+    #[test]
+    fn session_start_has_no_line_when_agents_disabled() {
+        let (stdin, input, mut cx) = session_start_fixture("t283-sess-off");
+        cx.config.agents.enabled = false;
+        let out = dispatch(&stdin, &input, &cx);
+        assert_eq!(
+            out,
+            b"{}",
+            "no other offering configured: {}",
+            String::from_utf8_lossy(&out)
+        );
+    }
+
+    /// `SubagentStart` gets the sub-agent's *own* id, not its parent's (`agent_parent_key`
+    /// is the resolving key `dispatch` already upserts against — no second lookup here).
+    #[test]
+    fn subagent_start_injects_the_sub_agent_s_own_id_not_the_parent_s() {
+        let (v, stdin, input, cx) = agent_fixture("t283-parent-sess");
+        let _ = dispatch(&stdin, &input, &cx); // registers the parent row
+
+        let mut sub = v.clone();
+        sub["hook_event_name"] = serde_json::Value::String("SubagentStart".into());
+        sub["agent_id"] = serde_json::Value::String("sub-283".into());
+        sub["agent_type"] = serde_json::Value::String("general-purpose".into());
+        let sub_stdin = serde_json::to_vec(&sub).unwrap();
+        let sub_input: HookInput = serde_json::from_slice(&sub_stdin).unwrap();
+        let ctx = additional_context(&dispatch(&sub_stdin, &sub_input, &cx));
+
+        let host_id = cx.host_id().unwrap();
+        let parent_id = cx
+            .store
+            .register_agent(host_id, &cx.session, None, None, None)
+            .unwrap();
+        let sub_id = cx
+            .store
+            .register_agent(host_id, &cx.session, Some("sub-283"), None, None)
+            .unwrap();
+        assert_eq!(ctx, expected_agent_line(&sub_id));
+        assert_ne!(ctx, expected_agent_line(&parent_id));
     }
 }

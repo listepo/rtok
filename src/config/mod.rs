@@ -151,6 +151,17 @@ section! {
 }
 
 section! {
+    /// `[agents]` — the rtok agent registry (T282, D34): one row per host session, resolved
+    /// by any unique id prefix of 4+ hex chars. `idle` bounds `live()` (`store::live_agents`,
+    /// parsed by `humantime::parse_duration`); `enabled` gates registration only — the
+    /// hook itself and `[core] enabled` are unaffected.
+    Agents {
+        enabled: bool = true,
+        idle: String = s("30m"),
+    }
+}
+
+section! {
     /// `[mcp]` — `rtok mcp`.
     Mcp {
         tools: Vec<String> = Vec::new(),
@@ -362,6 +373,14 @@ section! {
         modes: Vec<String> = Vec::new(),
         mcp: bool = true,
         proxy: bool = false,
+        /// `agents update --force` (T279 PR 3): reinstall the host plugin even when the
+        /// version decision would otherwise skip it.
+        force: bool = false,
+        /// `agents update --source github|local|marketplace` (T279 PR 3): override the
+        /// install source the version decision compares against, instead of the receipt's
+        /// recorded one. Validated by `agents::plugin_version::Source`'s `FromStr`, not here,
+        /// so this section stays free of that module's types.
+        source: Option<String> = None,
         claude: SetupClaude = SetupClaude::default(),
         cursor: SetupCursor = SetupCursor::default(),
         codex: SetupCodex = SetupCodex::default(),
@@ -809,6 +828,7 @@ pub struct Config {
     pub estimator: Estimator,
     pub log: Log,
     pub hook: Hook,
+    pub agents: Agents,
     pub mcp: Mcp,
     pub proxy: Proxy,
     pub web: Web,
@@ -831,13 +851,19 @@ pub struct Config {
     /// Directory the config was loaded from; not part of the file.
     #[serde(skip)]
     pub home: PathBuf,
+    /// Override for the plugin install receipt path (T279, `agents::plugin_version`):
+    /// `$XDG_STATE_HOME/rtok/plugins.json` and OS equivalents by default. Not part of the
+    /// file — tests set it directly so a receipt round-trip never touches the real state
+    /// directory (D29).
+    #[serde(skip)]
+    pub plugin_receipt_path: Option<PathBuf>,
 }
 
 impl Config {
     /// `$RTOK_HOME` or `$HOME/.rtok`; always absolute (T184).
     ///
     /// Unlike [`env_user_home`], this falls all the way to `std::env::home_dir()` (Unix:
-    /// `getpwuid_r` when `HOME` is unset too; not deprecated on the pinned 1.97.1) before
+    /// `getpwuid_r` when `HOME` is unset too; not deprecated on the pinned 1.98.1) before
     /// giving up on a user home — scoped to *this* one lookup so it does not also widen every
     /// other `~/x` config default's fallback (see [`env_user_home`]'s doc).
     pub fn home_dir() -> PathBuf {

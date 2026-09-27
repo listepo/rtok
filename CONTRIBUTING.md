@@ -87,12 +87,21 @@ the same change. Extract duplicated helpers into `packages/` via local
 
 ## Testing
 
+On Windows the local gate is stricter than the Windows CI job and has a few
+machine-specific traps (line endings, a dart-gated test, antivirus warm-up) — see
+`docs/windows.md`.
+
 Run tests with `just test` — the default locally and in CI (`just check`):
 `-j` = logical CPUs (`--test-threads {{cpus}}`). Heavy tests (cold repo
 index, 100-session memory bench, 3 000-file graph bench) run alone via
 `threads-required = "num-test-threads"` in `.config/nextest.toml`; add a
 matching `[[profile.default.overrides]]` there for new resource-hungry tests,
 never `--test-threads=1` in the test.
+
+Coverage: `just test-cov` runs the same suite under `cargo-llvm-cov`, writes
+`coverage/lcov.info` and prints a per-file summary; nextest args pass through
+(`just test-cov -E 'test(formatters)'`). Slower, so it is not part of `just check`;
+CI runs it in the SonarCloud job on `main`.
 
 Unit tests for logic; integration tests (`assert_cmd`, `predicates`,
 `assert_fs`, `trycmd`) for the binary, args, and output — see `plan.md` →
@@ -101,6 +110,11 @@ Reference / Working agreement.
 Prefer `crate::testutil::Vfs` (in-memory path → bytes) over host `TempDir`
 for unit tests that only need path/content/size. See plan D29 / T56.
 
+Tests never touch a real agent installed on the machine (its CLI, its app bundle): use
+fakes under the test `HOME` (`tests/common/agents.rs`). nextest sets `RTOK_HOST_SANDBOX`,
+which hides every host outside `HOME` (T280). Real agents are for manual debugging only.
+
 JS/TS tests (host plugins) use vitest (`vitest.config.mjs`, globals, no
 `vitest` import); never `node:test`/`node:assert`. Prefer
-`toMatchInlineSnapshot` for structured output. See T111.
+`toMatchInlineSnapshot` for structured output. See T111. They run on Linux
+only; `common::vitest` skips them on macOS and Windows.

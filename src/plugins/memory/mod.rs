@@ -503,7 +503,7 @@ mod tests {
         let (c, _) = mem_save(&cx, "note", "auth model", "other kind", Some("p")).unwrap();
         let (d, _) = mem_save(&cx, "decision", "auth model", "other project", Some("q")).unwrap();
         assert!(a != c && a != d && c != d);
-        assert_eq!(cx.store.list_notes(Some("p")).unwrap().len(), 2);
+        assert_eq!(cx.store.list_notes(Some("p"), true).unwrap().len(), 2);
         let hits = mem_search(&cx, "jwt", 5).unwrap();
         assert_eq!(hits[0].id, a);
         assert!(mem_search(&cx, "sessions", 5).unwrap().is_empty());

@@ -149,6 +149,12 @@ impl Runtime {
         tokens::estimate(text, class, &self.config.estimator)
     }
 
+    /// Resolved `[hook] host` id (T282: the hooks dispatcher's own agent-registry writes need
+    /// it, the same value `insert_call` already attributes `sessions`/`calls` rows to).
+    pub(crate) fn host_id(&self) -> Option<i32> {
+        self.host_id
+    }
+
     /// Persist a measurement for this session (the only path for savings into the DB).
     pub fn record(&self, m: &Measurement) -> Result<()> {
         self.store

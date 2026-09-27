@@ -199,10 +199,7 @@ impl Agent for Zcode {
     }
 
     fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
-        &[
-            rtok_plugin_sdk::Surface::Hook,
-            rtok_plugin_sdk::Surface::Mcp,
-        ]
+        &[rtok_plugin_sdk::Surface::Hook]
     }
 
     fn support(&self, _kind: Kind, module: &str) -> Support {
@@ -236,8 +233,7 @@ impl Agent for Zcode {
         if s.contains(" hook PreToolUse") || plugin {
             out.push("hooks");
         }
-        let root: Value = serde_json::from_str(&s).unwrap_or(Value::Null);
-        if root["mcp"]["servers"][NAME].is_object() || plugin {
+        if super::mcp::has_entry(&cfg.setup.zcode.config_path, "mcp.servers", NAME) {
             out.push("mcp");
         }
         if plugin {
@@ -255,7 +251,9 @@ impl Agent for Zcode {
         // and still gets the config-file install.
         let mut lines = vec![offer_plugin(cfg, remove)?];
         lines.push(run(cfg, remove || plugin_serves(cfg, remove))?);
-        if remove || plugin_serves(cfg, remove) {
+        // MCP is independent of the plugin (T275/D33): install/update always write it,
+        // plugin linked or not; only remove takes it out.
+        if remove {
             lines.push(unregister_mcp(cfg)?);
         } else if cfg.setup.mcp {
             lines.push(register_mcp(cfg)?);
@@ -319,6 +317,9 @@ mod tests {
             plugin_dest(&c).display().to_string()
         );
         assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
+        // T275/D33: linking the plugin alone never implies mcp — only an actual entry does.
+        assert_eq!(Zcode.installed(&c, Kind::Desktop), ["hooks", "plugin"]);
+        register_mcp(&c).unwrap();
         assert_eq!(
             Zcode.installed(&c, Kind::Desktop),
             ["hooks", "mcp", "plugin"]
@@ -326,10 +327,11 @@ mod tests {
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
-    /// The plugin installs by default (T164) and, once linked, is the only call path
-    /// (D21): a plain install's config-file hooks and `mcp.servers.rtok` never appear.
+    /// The plugin installs by default (T164) and, once linked, is the only call path for
+    /// hooks (D21): a plain install's config-file hooks never appear. MCP is independent of
+    /// the plugin (T275/D33): `mcp.servers.rtok` is written regardless.
     #[test]
-    fn linked_plugin_is_the_only_call_path() {
+    fn linked_plugin_is_the_only_call_path_for_hooks_mcp_is_independent() {
         let (c, path) = cfg("singleton", false);
         let linking = Zcode
             .apply(&c, Kind::Desktop, Mode::Install)
@@ -339,7 +341,10 @@ mod tests {
         let raw = fs::read_to_string(&path).unwrap();
         assert!(!raw.contains(" hook PreToolUse"), "{raw}");
         let root: Value = serde_json::from_str(&raw).unwrap();
-        assert!(root["mcp"]["servers"]["rtok"].is_null(), "{raw}");
+        assert_eq!(
+            root["mcp"]["servers"]["rtok"]["args"][0], "mcp",
+            "T275/D33: {raw}"
+        );
         assert!(plugin_serves(&c, false));
         // A later full setup neither re-adds the config entries nor churns.
         let steady = Zcode
@@ -468,6 +473,26 @@ mod tests {
         let root: Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(root["mcp"]["servers"]["other"]["command"], "npx");
         assert!(Zcode.installed(&c, Kind::Desktop).is_empty());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// T275/D33: install/update always write `mcp.servers.rtok`, plugin linked or not; only
+    /// remove takes it out; a user-edited entry is left with a `leave` line.
+    #[test]
+    fn t275_mcp_entry_always_written_except_on_remove() {
+        let (c, path) = cfg("t275-mcp", false);
+        // ZCode's `default_install: true` links the real plugin tree without needing --yes.
+        assert!(offer_plugin(&c, false).unwrap().starts_with("+ plugin"));
+        assert!(PLUGIN.ours(&c));
+
+        crate::agents::mcp::assert_json_entry_lifecycle(
+            &Zcode,
+            &c,
+            Kind::Desktop,
+            &path,
+            "mcp.servers",
+            || register_mcp(&c),
+        );
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }

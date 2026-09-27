@@ -1,6 +1,7 @@
 [tools]
 "cargo:cargo-cache" = "0.8.3" # `just cache` / `just cache-autoclean` (T17.2); the shared cargo home fills up
 "cargo:cargo-nextest" = "0.9.143" # `just test` / `just check` (cargo nextest run)
+"cargo:cargo-llvm-cov" = "0.9.1" # `just test-cov` (T301): the nextest suite under coverage, lcov for SonarCloud
 codeql = "2.27.0" # `just codeql` (T119): local run of the code scanning in .github/workflows/codeql.yml
 git-cliff = "2.13.1"
 go = "1.27.0" # hugo resolves the hextra theme as a Go module (site/go.mod)
@@ -8,13 +9,14 @@ hugo = "0.165.0"
 just = "1.58.0"
 node = "26.8.2" # jscpd, oxlint, oxfmt and vitest run on it; nothing in the binary does
 python = "3.14.7" # T183: tools/publish_marketplace and its tests
+uv = "0.12.19" # resolves the pipx: tool backend on Windows, where pipx itself has no build
 "pipx:pytest" = "9.1.1" # T183: `just python` runs tools/tests
 "npm:jscpd" = "5.1.2" # `just dup` (T26.0): copy-paste detector, config in .jscpd.json
 "npm:oxlint" = "1.83.0" # `just js` (T110): lint for the TS host plugins and tests/node
 "npm:oxfmt" = "0.68.0" # `just js` (T110): format check for the same files
 "npm:vitest" = "5.0.1" # T111: test runner for the TS host plugin tests (run by tests/filter.rs, tests/pi_plugin.rs)
 "npm:vite" = "8.3.0" # peer of vitest 5 mocker; Windows mise install does not hoist it otherwise
-rust = { version = "1.97.1", components = "rustfmt,clippy" } # CI otherwise installs the minimal profile
+rust = { version = "1.98.1", components = "rustfmt,clippy" } # CI otherwise installs the minimal profile
 
 # Lightweight Docker-compatible stack (agents: prefer this over Docker Desktop; see docs/colima.md)
 colima = { version = "0.10.3", os = ["linux", "macos"] } # container runtime UI → Lima VM (aqua:abiosoft/colima)

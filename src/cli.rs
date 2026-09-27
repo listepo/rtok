@@ -444,9 +444,44 @@ enum WorktreeCmd {
         task: String,
         /// Optional branch suffix
         slug: Option<String>,
-        /// Who holds it, as `<provider> / <model>`; written into the lock reason
+        /// Who holds it, as `<provider> / <model>`; written into the lock reason. Defaults to
+        /// `<host> / <model>` of the agent
         #[arg(long)]
-        owner: String,
+        owner: Option<String>,
+        /// The rtok agent id (any unique prefix) to bind it to; defaults to `RTOK_AGENT_ID`
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours
+    Claim {
+        /// The worktree
+        path: PathBuf,
+        /// The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`
+        #[arg(long)]
+        agent: Option<String>,
+        /// The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> / <model>`
+        /// of the agent
+        #[arg(long)]
+        owner: Option<String>,
+    },
+    /// Remove your own finished worktree: unlock, `git worktree remove`, delete the branch
+    /// when merged, release the claim; refuses dirty, foreign-locked or current worktrees
+    Remove {
+        /// The worktree's path, or its task id (the lock's task or the branch `<task>[-<slug>]`)
+        target: String,
+        /// The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`
+        #[arg(long)]
+        agent: Option<String>,
+        /// The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> / <model>`
+        /// of the agent
+        #[arg(long)]
+        owner: Option<String>,
+        /// Remove an unmerged worktree too and keep its branch (a merged branch is kept as well)
+        #[arg(long)]
+        keep_branch: bool,
+        /// JSON instead of the text line
+        #[arg(long)]
+        json: bool,
     },
     /// Every worktree and orphan with its owner, state, source and build-cache bytes
     List {
@@ -592,6 +627,47 @@ enum AgentCmd {
         #[command(subcommand)]
         action: JunkCmd,
     },
+    /// This session's own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store
+    Whoami {
+        /// JSON instead of the text lines
+        #[arg(long)]
+        json: bool,
+    },
+    /// One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status
+    Show {
+        /// Agent id or any unique prefix of it
+        id: String,
+        /// JSON instead of the text lines
+        #[arg(long)]
+        json: bool,
+    },
+    /// Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars
+    Status {
+        /// The status text; empty clears it
+        text: String,
+    },
+    /// Send a message to an agent (T287): `send <id-prefix> <text|->` or `send --all-live <text|->`
+    Send {
+        /// Recipient's rtok agent id (any unique prefix); with `--all-live`, the text instead
+        to: Option<String>,
+        /// The message; `-` reads it from stdin (≤ 4 KiB, control characters stripped)
+        text: Option<String>,
+        /// Every live agent of this project (same repository or cwd), except the sender
+        #[arg(long)]
+        all_live: bool,
+    },
+    /// Read messages (T287): your own inbox from `RTOK_AGENT_ID` (marks them read), or with an
+    /// id that agent's queue (marks nothing)
+    Inbox {
+        /// An agent's rtok id (any unique prefix); omitted: `RTOK_AGENT_ID`
+        id: Option<String>,
+        /// Only messages not read yet
+        #[arg(long)]
+        unread: bool,
+        /// JSON instead of the framed text
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -651,6 +727,31 @@ struct UpdateArgs {
     /// Skip closing/reopening a running desktop app around the write (T141)
     #[arg(long)]
     no_restart: bool,
+    /// Reinstall the plugin even when it is already at the available version (T279)
+    #[arg(long)]
+    force: bool,
+    /// Compare against this install source instead of the one on record (T279)
+    #[arg(long, value_enum)]
+    source: Option<SourceArg>,
+}
+
+/// `--source` for `rtok agents update` (T279): mirrors `agents::plugin_version::Source`, kept
+/// separate so this module does not need that one's `serde`/`FromStr` shape.
+#[derive(Copy, Clone, clap::ValueEnum)]
+enum SourceArg {
+    Github,
+    Local,
+    Marketplace,
+}
+
+impl SourceArg {
+    fn as_str(self) -> &'static str {
+        match self {
+            SourceArg::Github => "github",
+            SourceArg::Local => "local",
+            SourceArg::Marketplace => "marketplace",
+        }
+    }
 }
 
 /// One definition behind `rtok agents install` and the deprecated `rtok setup`.
@@ -944,13 +1045,77 @@ pub fn run() -> Result<()> {
             }
         }
         Cmd::Worktree {
-            action: WorktreeCmd::Add { task, slug, owner },
+            action:
+                WorktreeCmd::Add {
+                    task,
+                    slug,
+                    owner,
+                    agent,
+                },
         } => {
+            use crate::worktree::claim;
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let root = Some(cfg.worktree.root.as_path()).filter(|r| !r.as_os_str().is_empty());
             let id = (task.as_str(), slug.as_deref());
-            let path = crate::worktree::add::run(&std::env::current_dir()?, root, id, &owner)?;
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            let agent = claim::caller(store.as_ref(), agent.as_deref())?;
+            let owner = claim::owner(owner, agent.as_ref(), store.as_ref())?;
+            let agent_id = agent.as_ref().map(|a| a.id.as_str());
+            let cwd = std::env::current_dir()?;
+            let plan = crate::worktree::add::run(&cwd, root, id, (&owner, agent_id))?;
+            if let Some(agent) = agent_id {
+                claim::remember(store.as_ref(), &plan.path, agent, &plan.task);
+            }
+            println!("{}", plan.path.display());
+        }
+        Cmd::Worktree {
+            action: WorktreeCmd::Claim { path, agent, owner },
+        } => {
+            use crate::worktree::claim;
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            let Some(agent) = claim::caller(store.as_ref(), agent.as_deref())? else {
+                bail!("no agent to bind: pass --agent or set RTOK_AGENT_ID");
+            };
+            let owner = claim::owner(owner, Some(&agent), store.as_ref())?;
+            let (path, task) = claim::run(&path, &owner, &agent.id)?;
+            claim::remember(store.as_ref(), &path, &agent.id, &task);
             println!("{}", path.display());
+        }
+        Cmd::Worktree {
+            action:
+                WorktreeCmd::Remove {
+                    target,
+                    agent,
+                    owner,
+                    keep_branch,
+                    json,
+                },
+        } => {
+            use crate::worktree::{claim, remove};
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            let agent = claim::caller(store.as_ref(), agent.as_deref())?;
+            // No agent and no `--owner`: no name to hold a lock by, so only an unlocked one goes.
+            let owner = match (owner, &agent) {
+                (None, None) => None,
+                (owner, agent) => Some(claim::owner(owner, agent.as_ref(), store.as_ref())?),
+            };
+            let who = remove::Caller {
+                agent: agent.as_ref().map(|a| a.id.as_str()),
+                owner: owner.as_deref(),
+            };
+            let cwd = std::env::current_dir()?;
+            let done = remove::run(&cwd, &target, &who, keep_branch)?;
+            let released = store.as_ref().map(|s| s.release_worktree_claim(&done.path));
+            if let Some(Err(e)) = released {
+                eprintln!("warning: claim not released: {e:#}");
+            }
+            if json {
+                print_json(&done)?;
+            } else {
+                println!("{}: {}", done.path, done.note);
+            }
         }
         Cmd::Worktree {
             action: WorktreeCmd::List { json },
@@ -963,6 +1128,8 @@ pub fn run() -> Result<()> {
                 && let Ok(seen) = store.sessions_by_cwd()
             {
                 crate::worktree::list::attribute(&mut rows, &seen);
+                // T285: the bound agent's host and state; a store error leaves the ids bare.
+                let _ = crate::worktree::list::bind(&mut rows, &store, &cfg.agents.idle);
             }
             if json {
                 print_json(&rows)?;
@@ -982,10 +1149,17 @@ pub fn run() -> Result<()> {
         } => {
             use crate::worktree::gc;
             use anyhow::Context as _;
+            // T285: a live agent's worktree is never removed; no store, no live agents.
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let live = crate::store::Store::open(&cfg.core.db_path)
+                .and_then(|s| s.live_agents(&cfg.agents.idle))
+                .map(|agents| agents.into_iter().map(|a| a.id).collect())
+                .unwrap_or_default();
             let policy = gc::Policy {
                 owner: owner.as_deref(),
                 idle: crate::measure::stats::parse_since(&idle).context("--idle")?,
                 now: std::time::SystemTime::now(),
+                live,
             };
             let outcomes = gc::run(&std::env::current_dir()?, &policy, yes)?;
             if json {
@@ -1114,7 +1288,7 @@ pub fn run() -> Result<()> {
                     let run =
                         crate::log::watch_loop(&mut out, tty, crate::log::WATCH_POLL, move || {
                             let now = crate::log::now() as i64;
-                            match model::sessions(&cfg, 0) {
+                            match model::agent_sessions(&cfg, all, now) {
                                 Ok(rows) => {
                                     Some(crate::render::sessions_tick(&mut prev, &rows, all, now))
                                 }
@@ -1136,18 +1310,12 @@ pub fn run() -> Result<()> {
                     }
                     return Ok(());
                 }
-                let rows = model::sessions(&cfg, 0)?;
+                let now = crate::log::now() as i64;
+                let rows = model::agent_sessions(&cfg, all, now)?;
                 if json {
-                    let rows: Vec<_> = rows
-                        .into_iter()
-                        .filter(|r| all || r.ended_at.is_none())
-                        .collect();
                     print_json(&rows)?;
                 } else {
-                    print!(
-                        "{}",
-                        crate::render::sessions_table(&rows, all, crate::log::now() as i64)
-                    );
+                    print!("{}", crate::render::sessions_table(&rows, all, now));
                 }
             }
             AgentCmd::Junk {
@@ -1164,6 +1332,49 @@ pub fn run() -> Result<()> {
                 if failed {
                     bail!("some junk could not be removed");
                 }
+            }
+            AgentCmd::Whoami { json } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let store = crate::store::Store::open(&cfg.core.db_path)?;
+                let detail = std::env::var("RTOK_AGENT_ID")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .and_then(|raw| store.resolve_agent(&raw).ok())
+                    .and_then(|id| store.agent_detail(&id).ok().flatten());
+                let Some(detail) = detail else {
+                    bail!("not inside an agent session");
+                };
+                if json {
+                    print_json(&detail)?;
+                } else {
+                    print!("{}", crate::render::agent_whoami_text(&detail));
+                }
+            }
+            AgentCmd::Show { id, json } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let now = crate::log::now() as i64;
+                let agent = model::agent_show(&cfg, &id, now)?;
+                if json {
+                    print_json(&agent)?;
+                } else {
+                    print!("{}", crate::render::agent_show_text(&agent, now));
+                }
+            }
+            AgentCmd::Status { text } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let me = std::env::var("RTOK_AGENT_ID").ok();
+                match model::set_status(&cfg, me.as_deref(), &text)? {
+                    Some(text) => println!("status: {text}"),
+                    None => println!("status cleared"),
+                }
+            }
+            AgentCmd::Send { to, text, all_live } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                agents_send(&cfg, to, text, all_live)?;
+            }
+            AgentCmd::Inbox { id, unread, json } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                agents_inbox(&cfg, id, unread, json)?;
             }
         },
         Cmd::Setup(args) => {
@@ -1662,7 +1873,10 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         all,
         no_restart,
     } = args;
-    let mut cfg = Config::load_with(config_file, setup_flags(dry_run, yes, mcp, proxy, &mode))?;
+    let mut cfg = Config::load_with(
+        config_file,
+        setup_flags(dry_run, yes, mcp, proxy, &mode, false, None),
+    )?;
     // Comma-separated hosts: `rtok agents install opencode,cursor` installs both.
     let hosts = parse_hosts(&host)?;
     let mode = if remove {
@@ -1687,7 +1901,15 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
 fn update_hosts(config_file: Option<&std::path::Path>, args: UpdateArgs) -> Result<()> {
     let mut cfg = Config::load_with(
         config_file,
-        setup_flags(args.dry_run, false, false, false, &[]),
+        setup_flags(
+            args.dry_run,
+            false,
+            false,
+            false,
+            &[],
+            args.force,
+            args.source.map(SourceArg::as_str),
+        ),
     )?;
     let hosts = match &args.host {
         Some(h) => parse_hosts(h)?,
@@ -1726,6 +1948,13 @@ fn apply_hosts(cfg: &mut Config, req: &crate::agents::Request, no_restart: bool)
         })?
     };
     print!("{out}");
+    // T279 step 3/6 "Failure": a Claude reinstall that removed the old plugin and then failed
+    // to install the new one must not exit 0 like every other `claude` degrade — the host is
+    // left with nothing. Printed first, same as `worktree gc`/`clean`'s own "print the table,
+    // then bail if something in it failed" shape, so the line above is not lost.
+    if out.contains(crate::agents::claude::REINSTALL_FAILED) {
+        bail!("a plugin reinstall failed");
+    }
     Ok(())
 }
 
@@ -1742,8 +1971,10 @@ fn setup_flags(
     mcp: bool,
     proxy: bool,
     mode: &[String],
+    force: bool,
+    source: Option<&str>,
 ) -> Option<figment::value::Dict> {
-    if !dry_run && !yes && !mcp && !proxy && mode.is_empty() {
+    if !dry_run && !yes && !mcp && !proxy && mode.is_empty() && !force && source.is_none() {
         return None;
     }
     use figment::value::{Dict, Value};
@@ -1759,6 +1990,12 @@ fn setup_flags(
     }
     if proxy {
         setup.insert("proxy".into(), Value::from(true));
+    }
+    if force {
+        setup.insert("force".into(), Value::from(true));
+    }
+    if let Some(s) = source {
+        setup.insert("source".into(), Value::from(s));
     }
     if !mode.is_empty() {
         setup.insert(
@@ -1838,6 +2075,126 @@ fn report_flags(
     let mut flags = Dict::new();
     flags.insert("report".into(), Value::from(report));
     Some(flags)
+}
+
+/// T287: the caller's own rtok agent id — `RTOK_AGENT_ID` resolved, `None` when unset (the
+/// user at a terminal). A set but unresolvable id is an error, never a silent "user".
+fn caller_agent(store: &crate::store::Store) -> Result<Option<String>> {
+    match std::env::var("RTOK_AGENT_ID")
+        .ok()
+        .filter(|s| !s.is_empty())
+    {
+        None => Ok(None),
+        Some(raw) => store
+            .resolve_agent(&raw)
+            .map(Some)
+            .map_err(|e| anyhow::anyhow!("RTOK_AGENT_ID {raw}: {e}")),
+    }
+}
+
+/// `rtok agents send` (T287): one recipient by id prefix, or every live agent of the caller's
+/// project (`project_name` of its cwd, else the cwd itself) minus the sender.
+fn agents_send(
+    cfg: &Config,
+    to: Option<String>,
+    text: Option<String>,
+    all_live: bool,
+) -> Result<()> {
+    let (to, text) = match (all_live, to, text) {
+        (false, Some(to), Some(text)) => (Some(to), text),
+        (true, Some(text), None) => (None, text),
+        _ => bail!("usage: rtok agents send <id-prefix> <text|->, or --all-live <text|->"),
+    };
+    let text = if text == "-" {
+        let mut buf = String::new();
+        io::stdin().read_to_string(&mut buf)?;
+        buf
+    } else {
+        text
+    };
+    let store = crate::store::Store::open(&cfg.core.db_path)?;
+    let from = caller_agent(&store)?;
+    let targets = if all_live {
+        let here = match &from {
+            Some(id) => store
+                .agent_detail(id)?
+                .and_then(|d| d.cwd)
+                .map(PathBuf::from),
+            None => std::env::current_dir().ok(),
+        };
+        let key = |p: &std::path::Path| {
+            crate::project::project_name(p).unwrap_or_else(|| p.display().to_string())
+        };
+        let Some(here) = here.as_deref().map(key) else {
+            bail!("--all-live: the caller has no cwd to match a project by");
+        };
+        let ids: Vec<String> = store
+            .live_agents(&cfg.agents.idle)?
+            .into_iter()
+            .filter(|a| Some(&a.id) != from.as_ref())
+            .filter(|a| {
+                a.cwd
+                    .as_deref()
+                    .is_some_and(|c| key(std::path::Path::new(c)) == here)
+            })
+            .map(|a| a.id)
+            .collect();
+        if ids.is_empty() {
+            bail!("no other live agent in this project");
+        }
+        ids
+    } else {
+        let prefix = to.unwrap_or_default();
+        let id = store
+            .resolve_agent(&prefix)
+            .map_err(|e| anyhow::anyhow!("agent {prefix}: {e}"))?;
+        vec![id]
+    };
+    for id in targets {
+        let msg = store.send_message(from.as_deref(), &id, &text)?;
+        println!("sent #{msg} to {}", crate::store::short_agent_id(&id));
+    }
+    Ok(())
+}
+
+/// `rtok agents inbox` (T287): with no id the caller reads — and marks read — its own queue;
+/// with one the user peeks at that agent's queue and marks nothing.
+fn agents_inbox(cfg: &Config, id: Option<String>, unread: bool, json: bool) -> Result<()> {
+    let store = crate::store::Store::open(&cfg.core.db_path)?;
+    let (to, mark) = match id {
+        Some(prefix) => (
+            store
+                .resolve_agent(&prefix)
+                .map_err(|e| anyhow::anyhow!("agent {prefix}: {e}"))?,
+            false,
+        ),
+        None => match caller_agent(&store)? {
+            Some(me) => (me, true),
+            None => bail!("not inside an agent session; pass an agent id"),
+        },
+    };
+    let rows = store.inbox(&to, unread, mark)?;
+    if json {
+        let framed: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|m| {
+                let mut v = serde_json::to_value(m).unwrap_or_default();
+                v["framed"] = crate::render::agent_message_frame(m).into();
+                v
+            })
+            .collect();
+        return print_json(&framed);
+    }
+    if rows.is_empty() {
+        println!("no messages");
+    }
+    for (i, m) in rows.iter().enumerate() {
+        if i > 0 {
+            println!();
+        }
+        print!("{}", crate::render::agent_message_frame(m));
+    }
+    Ok(())
 }
 
 fn print_json(value: &(impl serde::Serialize + ?Sized)) -> Result<()> {

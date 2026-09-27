@@ -2,7 +2,7 @@
 name = "rtok-log"
 version = "0.0.1"
 edition = "2024"
-rust-version = "1.97.1"
+rust-version = "1.98.1"
 readme = "README.md"
 repository = "https://github.com/listepo/rtok"
 description = "A rotating text log: one line format, a level floor, and a lock around rename"

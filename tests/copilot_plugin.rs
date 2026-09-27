@@ -1,12 +1,13 @@
-//! T116 + D21: the Copilot CLI plugin tree is one unit — a legacy `plugin.json` manifest,
-//! Copilot's camelCase hooks and one MCP server — and `rtok agents install copilot --yes`
-//! drives `copilot plugin install <resolved plugins/copilot>` through the `copilot` CLI
-//! (the fake shim's log), taking rtok's own hooks/rtok.json and mcp-config.json back.
+//! T116 + D21: the Copilot CLI plugin tree carries a legacy `plugin.json` manifest and
+//! Copilot's camelCase hooks only (T275/D33 dropped its MCP server) — and `rtok agents
+//! install copilot --yes` drives `copilot plugin install <resolved plugins/copilot>` through
+//! the `copilot` CLI (the fake shim's log), taking rtok's own hooks/rtok.json back while
+//! `mcp-config.json`'s `mcpServers.rtok` is written independently, plugin installed or not.
 
 use std::fs;
 use std::path::PathBuf;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
 mod common;
 use common::agents::{fake_copilot, rtok, tmp, write_cfg};
@@ -20,11 +21,17 @@ fn read(name: &str) -> Value {
 }
 
 #[test]
-fn manifest_is_rtok_with_the_two_component_paths() {
+fn manifest_is_rtok_with_the_hooks_component_path_and_no_mcp() {
     let m = read("plugin.json");
     assert_eq!(m["name"], "rtok");
     assert_eq!(m["hooks"], "hooks/hooks.json");
-    assert_eq!(m["mcpServers"], ".mcp.json");
+    assert!(m.get("mcpServers").is_none(), "{m}");
+    assert!(
+        !PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("plugins/copilot/.mcp.json")
+            .exists(),
+        "T275/D33: the plugin no longer ships an MCP server"
+    );
 }
 
 /// The tree's hooks file is exactly what `~/.copilot/hooks/rtok.json` writes — one shape,
@@ -34,19 +41,6 @@ fn hooks_are_the_installers_doc_with_the_rtok_resolver() {
     assert_eq!(
         read("hooks/hooks.json"),
         rtok::agents::copilot::hooks_doc("rtok", 5)
-    );
-}
-
-#[test]
-fn mcp_is_exactly_rtok() {
-    assert_eq!(
-        read(".mcp.json"),
-        json!({"mcpServers": {"rtok": {
-            "type": "local",
-            "command": "rtok",
-            "args": ["mcp"],
-            "tools": ["*"]
-        }}})
     );
 }
 
@@ -68,8 +62,9 @@ fn the_plugin_installs_through_the_copilot_cli_and_remove_uninstalls() {
     assert!(dry.contains("plugins/copilot"), "{dry}");
     assert!(!log.exists(), "dry-run runs nothing");
 
-    // `--yes` installs through the CLI; D21 — the plugin is the unit, so rtok's own
-    // hooks/rtok.json and mcpServers.rtok never come beside it.
+    // `--yes` installs through the CLI; D21 (hooks only) — the plugin is the hooks unit, so
+    // rtok's own hooks/rtok.json never comes beside it. MCP is independent of it (T275/D33):
+    // `mcp-config.json`'s `mcpServers.rtok` is written on this same run regardless.
     let first = rtok(&["agents", "install", "copilot", "--yes"], &cfg, &home);
     assert!(first.contains("+ plugin plugins/copilot → rtok"), "{first}");
     assert!(fs::read_to_string(&log).unwrap().contains("plugin install"));
@@ -79,13 +74,13 @@ fn the_plugin_installs_through_the_copilot_cli_and_remove_uninstalls() {
         "D21: no second hooks set: {first}"
     );
     assert!(
-        !fs::read_to_string(home.join(".copilot/mcp-config.json"))
+        fs::read_to_string(home.join(".copilot/mcp-config.json"))
             .unwrap_or_default()
             .contains("rtok"),
-        "D21: no second rtok mcp"
+        "T275/D33: mcp-config.json gets rtok's entry even with the plugin installed"
     );
 
-    // A repeat is a no-op with no second CLI call.
+    // A repeat is a no-op with no second CLI call, and the mcp entry is kept, not stripped.
     let again = rtok(&["agents", "install", "copilot", "--yes"], &cfg, &home);
     assert!(again.contains("already installed"), "{again}");
     let calls = fs::read_to_string(&log).unwrap();
@@ -97,11 +92,23 @@ fn the_plugin_installs_through_the_copilot_cli_and_remove_uninstalls() {
         1,
         "{calls}"
     );
+    assert!(
+        fs::read_to_string(home.join(".copilot/mcp-config.json"))
+            .unwrap_or_default()
+            .contains("rtok"),
+        "a repeat install must not strip the mcp entry"
+    );
 
-    // Remove uninstalls by the manifest's `name`.
+    // Remove uninstalls by the manifest's `name` and takes the mcp entry out too.
     let removed = rtok(&["agents", "remove", "copilot"], &cfg, &home);
     assert!(removed.contains("- plugin rtok"), "{removed}");
     assert!(!marker.exists());
+    assert!(
+        !fs::read_to_string(home.join(".copilot/mcp-config.json"))
+            .unwrap_or_default()
+            .contains("rtok"),
+        "remove takes the mcp entry out too"
+    );
     let _ = fs::remove_dir_all(&home);
 }
 

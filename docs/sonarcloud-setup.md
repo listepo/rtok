@@ -61,10 +61,11 @@ triggers later if you want decoration.
 
 The workflow:
 
-1. Installs `llvm-tools-preview` and `cargo-llvm-cov`.
-2. Runs `cargo llvm-cov nextest --workspace --lcov --output-path coverage/lcov.info` —
-   nextest (from `mise.toml`) like `just test`; plain `cargo test` runs every test in one
-   process, where the proxy tests exhaust httpmock's server pool and hang.
+1. Installs `cargo-llvm-cov` from `mise.toml` (with the other tools).
+2. Runs `just test-cov`: adds `llvm-tools-preview`, then `cargo llvm-cov nextest --workspace
+   --lcov --output-path coverage/lcov.info` — nextest like `just test`; plain `cargo test`
+   runs every test in one process, where the proxy tests exhaust httpmock's server pool and
+   hang.
 3. Points Sonar at that file via **`sonar.rust.lcov.reportPaths`** in
    `sonar-project.properties` (not `sonar.coverageReportPaths`).
 
@@ -85,10 +86,7 @@ If llvm-cov is too slow or fragile on CI:
 
 ```bash
 mise install
-rustup component add llvm-tools-preview
-cargo install cargo-llvm-cov --locked
-mkdir -p coverage
-mise exec -- cargo llvm-cov nextest --workspace --lcov --output-path coverage/lcov.info
+just test-cov
 # Then run the Sonar scanner locally only if you have SONAR_TOKEN exported —
 # never write the token into the repo.
 ```

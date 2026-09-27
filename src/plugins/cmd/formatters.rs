@@ -807,6 +807,68 @@ mod tests {
         assert!(!got.contains("PID"), "{got}");
     }
 
+    /// T296: every `(bin, sub)` arm dispatched by `format()` above must have a golden `.in`
+    /// whose argv reaches that arm and for which `format(...)` actually returns `Some`. This
+    /// list must mirror the match arms in `format()` — add a row here whenever a new arm is
+    /// added there. `""` stands for a `_` (wildcard) sub-command.
+    #[test]
+    fn every_formatter_arm_has_a_golden() {
+        const ARMS: &[(&str, &str)] = &[
+            ("cargo", "test"),
+            ("cargo", "build"),
+            ("cargo", "clippy"),
+            ("git", "status"),
+            ("git", "diff"),
+            ("git", "log"),
+            ("pytest", ""),
+            ("jest", ""),
+            ("vitest", ""),
+            ("go", "test"),
+            ("tree", ""),
+            ("docker", "ps"),
+            ("kubectl", "get"),
+            ("ps", "aux"),
+        ];
+        // A stem added to `FORMATTER_STEMS` without a row here fails too.
+        for stem in FORMATTER_STEMS {
+            assert!(
+                ARMS.iter().any(|(b, _)| b == stem),
+                "{stem} missing from ARMS"
+            );
+        }
+        let parsed: Vec<(Vec<String>, String)> = fs::read_dir(goldens())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("in"))
+            .map(|p| fs::read_to_string(&p).unwrap())
+            .map(|raw| {
+                let (argv, _, _, output) = parse_in(&raw);
+                (argv, output)
+            })
+            .collect();
+        let covered = |b: &str, s: &str| {
+            parsed.iter().any(|(argv, output)| {
+                if argv.is_empty() {
+                    return false;
+                }
+                let split = family_argv(argv);
+                if bin(&split) != b || (!s.is_empty() && sub(&split) != s) {
+                    return false;
+                }
+                format(&split, output).is_some()
+            })
+        };
+        let missing: Vec<String> = ARMS
+            .iter()
+            .filter(|(b, s)| !covered(b, s))
+            .map(|(b, s)| format!("({b:?}, {s:?})"))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "formatter arms without a golden: {missing:?}"
+        );
+    }
+
     /// T240: every family a builtin rule names in `rules/default.toml` must have a golden
     /// `.in` whose argv actually picks that rule via `family_argv`/`bin` — the same path
     /// `compress` uses in production. `[script]` is reached by mixed-chain detection, not

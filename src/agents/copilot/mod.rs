@@ -97,10 +97,7 @@ impl Agent for Copilot {
     }
 
     fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
-        &[
-            rtok_plugin_sdk::Surface::Hook,
-            rtok_plugin_sdk::Surface::Mcp,
-        ]
+        &[rtok_plugin_sdk::Surface::Hook]
     }
 
     fn files(&self, cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
@@ -112,7 +109,7 @@ impl Agent for Copilot {
         if super::read(&hooks_path(cfg)).contains(" hook PreToolUse") {
             out.push("hooks");
         }
-        if super::read(&mcp_path(cfg)).contains("\"rtok\"") {
+        if super::mcp::has_entry(&mcp_path(cfg), "mcpServers", NAME) {
             out.push("mcp");
         }
         if plugin_installed(cfg) {
@@ -122,9 +119,10 @@ impl Agent for Copilot {
     }
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
-        // D21: the plugin is the unit — its hooks and `rtok mcp` serve already, so rtok's
-        // own hooks/rtok.json and mcp-config.json entry go instead of coming (kimi's
-        // `plugin_detected` rule), on the same run that installs it too.
+        // D21: the plugin is the hooks unit — its own hooks serve already, so rtok's
+        // hooks/rtok.json goes instead of coming, on the same run that installs it too.
+        // MCP is no longer part of that unit (T275/D33): `mcp-config.json`'s `mcpServers.rtok`
+        // is written on every install/update behind `[setup] mcp`, plugin state or not.
         super::d21_plugin_apply(
             cfg,
             mode,
@@ -314,6 +312,18 @@ mod tests {
         (c, dir)
     }
 
+    /// Copilot's record of an installed rtok plugin: the manifest under `installed-plugins`.
+    fn fake_plugin(c: &Config) -> PathBuf {
+        let marker = c
+            .setup
+            .copilot
+            .dir
+            .join("installed-plugins/_direct/x/plugin.json");
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, r#"{"name":"rtok"}"#).unwrap();
+        marker
+    }
+
     #[test]
     fn dry_run_names_the_hook_file_and_creates_nothing() {
         let (c, dir) = cfg("dry", true);
@@ -376,13 +386,7 @@ mod tests {
         assert!(s.contains("copilot plugin install"), "{s}");
         assert!(s.contains("ketch install listepo/rtok"), "{s}");
         assert!(!plugin_installed(&c));
-        let marker = c
-            .setup
-            .copilot
-            .dir
-            .join("installed-plugins/_direct/x/plugin.json");
-        fs::create_dir_all(marker.parent().unwrap()).unwrap();
-        fs::write(&marker, r#"{"name":"rtok"}"#).unwrap();
+        let marker = fake_plugin(&c);
         assert!(plugin_installed(&c));
         assert_eq!(plugin(&c, false).unwrap(), NO_CHANGES);
         assert_eq!(
@@ -394,21 +398,16 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// D21: while the plugin serves, its hooks and MCP are the unit — an earlier plain
-    /// install's `hooks/rtok.json` and `mcpServers.rtok` are taken back, never added again.
+    /// D21: while the plugin serves, its hooks are the unit — an earlier plain install's
+    /// `hooks/rtok.json` is taken back, never added again. MCP is not part of that unit any
+    /// more (T275/D33): `mcpServers.rtok` stays written independently of the plugin.
     #[test]
-    fn the_plugin_is_the_singleton_over_hooks_and_mcp() {
+    fn the_plugin_is_the_hooks_singleton_but_mcp_stays_independent() {
         let (mut c, dir) = cfg("single", false);
         c.setup.yes = true;
         assert!(run(&c, false).unwrap().starts_with("+ "));
         assert!(register_mcp(&c).unwrap().starts_with("mcpServers.rtok: "));
-        let marker = c
-            .setup
-            .copilot
-            .dir
-            .join("installed-plugins/_direct/x/plugin.json");
-        fs::create_dir_all(marker.parent().unwrap()).unwrap();
-        fs::write(&marker, r#"{"name":"rtok"}"#).unwrap();
+        fake_plugin(&c);
         let lines = Copilot.apply(&c, Kind::Cli, Mode::Install).unwrap();
         assert!(
             lines
@@ -417,17 +416,38 @@ mod tests {
             "{lines:?}"
         );
         assert!(
-            lines.contains(&"- mcpServers.rtok".to_string()),
-            "{lines:?}"
+            !lines.iter().any(|l| l.contains("mcpServers.rtok")),
+            "no mcp line while nothing changed: {lines:?}"
         );
         assert!(!hooks_path(&c).exists());
         assert!(
-            !fs::read_to_string(mcp_path(&c))
+            fs::read_to_string(mcp_path(&c))
                 .unwrap_or_default()
                 .contains("rtok"),
-            "no second rtok mcp"
+            "D33: mcp stays even while the plugin serves hooks"
         );
-        assert_eq!(Copilot.installed(&c, Kind::Cli), ["plugin"]);
+        assert_eq!(Copilot.installed(&c, Kind::Cli), ["mcp", "plugin"]);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T275/D33 check (a)-(e): install and update always write `mcpServers.rtok` — plugin
+    /// installed or not — with the right command/args; only remove takes it out; a
+    /// user-edited entry is left with a `leave` line instead of touched.
+    #[test]
+    fn t275_mcp_entry_always_written_except_on_remove() {
+        let (c, dir) = cfg("t275-mcp", false);
+        fake_plugin(&c);
+        assert!(plugin_installed(&c));
+
+        let path = mcp_path(&c);
+        crate::agents::mcp::assert_json_entry_lifecycle(
+            &Copilot,
+            &c,
+            Kind::Cli,
+            &path,
+            "mcpServers",
+            || register_mcp(&c),
+        );
         let _ = fs::remove_dir_all(dir);
     }
 

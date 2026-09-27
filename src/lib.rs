@@ -31,6 +31,7 @@ pub mod modes;
 pub mod otel;
 pub mod plugin;
 pub mod plugins;
+pub mod proc;
 pub mod project;
 pub mod proxy;
 pub mod render;

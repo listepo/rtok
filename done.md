@@ -1,5 +1,77 @@
 # rtok — completed tasks
 
+### T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
+
+Creator request 2026-09-21: a host plugin for Kilo Code CLI + desktop. Kilo Code 7 is rebuilt on the OpenCode server: the CLI (`kilo`, `npm i -g @kilocode/cli`) and the VS Code extension (`kilocode.kilo-code`) share one config — `~/.config/kilo/kilo.json[c]` globally, `kilo.jsonc` / `.kilo/kilo.jsonc` per project; the legacy `mcp_settings.json` is no longer read (v7.0.33+). Plugins are OpenCode-shaped TS modules (`tool.execute.before` / `tool.execute.after`, `shell.env`, …) loaded from `~/.config/kilo/plugin/` or `.kilo/plugin/`; MCP is `mcp.<name> = {type: "local", command: [..], enabled}` — the entry `agents::opencode::register_mcp` already writes. Creator decision 2026-09-21: reuse `plugins/opencode/rtok.ts` as is — it imports only `node:child_process` — so there is no `plugins/kilo/` tree (the omp rule from T92). Evidence (fetched 2026-09-21): https://kilo.ai/docs/automate/extending/plugins, https://kilo.ai/docs/automate/mcp/using-in-kilo-code, https://kilo.ai/docs/code-with-ai/platforms/cli.
+
+Plan:
+1. `src/agents/kilo/mod.rs` + `README.md` (`## Docs`: plugins, MCP, CLI, skills, custom rules): `HostPlugin { src_rel: "plugins/opencode/rtok.ts", host: "Kilo Code", dest: <config dir>/plugin/rtok.ts }`; MCP through the OpenCode helpers given Kilo's path (the `for_kind` trick or a path parameter — no copy of the logic). Variants: CLI (`kilo` on PATH) and the VS Code extension, same files. `support`: `plugin` → `Flag("--yes")`, `mcp` → yes, `hooks` → `No` (in-process plugin hooks; the plugin owns that path), `proxy` → decide from the OpenCode host's rule for `provider.*.options.baseURL`. `[setup.kilo] config_path = "~/.config/kilo/kilo.json"` in `config/default.toml` / `src/config/mod.rs` / `docs/config.md`. Registered in `HOSTS` and `host()`.
+2. `plugins/opencode/README.md` gains the Kilo section and links.
+3. Unit tests: offer names `plugins/opencode/rtok.ts` and the ketch line; `--yes` links and writes `mcp.rtok`, second apply `NO_CHANGES`, remove takes back exactly ours and keeps foreign servers; `docs/agents.md` blessed; `tests/agents_install.rs` `hosts()`; `tests/trycmd/agents-list*.toml` re-blessed.
+Verify first (check `command -v kilo` and `~/.config/kilo/`; otherwise the creator runs it): (a) the linked plugin loads under `kilo` and a bash call goes through `rtok run`; the plugin directory is `plugin/` (Kilo docs) and not OpenCode's `plugins/`; (b) the extension reads the same `~/.config/kilo/` plugin and `mcp` entries; (c) the plugin passes `--host opencode`, so Kilo rows are labelled `opencode` — accept, or let the host name come from the environment; (d) a user's `kilo.jsonc` with comments hits T79: until T79 lands the host refuses with T79's message and never rewrites a JSONC file.
+Over the ≤200 LOC / ≤3 files limit as written — split into T97.1 (host + plugin link + config) and T97.2 (MCP + docs bless) when claiming.
+
+Progress: host written and green in one change (not split — the rest were one-line list edits). Settled from Kilo's source (`packages/opencode/src/config/config.ts`, `config/plugin.ts`, fetched 2026-09-21): the global config merges `config.json`, `kilo.json`, `kilo.jsonc`, `opencode.json[c]`, so rtok writes `kilo.json` and never touches a user's `kilo.jsonc` — (d) is moot, T79 does not block; plugins are scanned as `{plugin,plugins}/*.{ts,js}` with `symlink: true`, so the link to `plugins/rtok.ts` loads. Both variants share the files (`shared() = true`); the desktop variant is detected by VS Code, because the extension's directory name carries its version. (c) accepted: rows are labelled `opencode`. `proxy` → `No`. Extra tests written and green (`agents::kilo::tests`); dangling-link fix in `rtok-agent-sdk`. Only the live check is left.
+Execution plan (Cursor / grok 4.7): (1) claim card; (2) throwaway `HOME` + stub `cursor` on PATH; (3) `rtok agents install kilo --yes`; (4) `kilo run` one bash prompt with `--auto`; (5) `RTOK_HOME`/`rtok stats` must show the plugin call — close only then; else write the exact blocker here.
+
+Check: the unit tests above; `rtok agents list` shows `kilo`; `agents_doc`, `host_docs`, `config_coverage`, `opencode_plugin` green; `just check`.
+
+Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree unchanged byte for byte); a user's `kilo.jsonc` is byte-identical after install and remove; an existing foreign file at `plugin/rtok.ts` is neither overwritten nor removed; a dangling `rtok.ts` symlink is repaired; remove on a clean home prints `NO_CHANGES`.
+
+Result (2026-09-26, Cursor / grok 4.7): live check passed under a throwaway `HOME` (real `~/.config/kilo` and `~/.local/share/kilo` unchanged). `rtok agents install kilo --yes` linked `plugins/opencode/rtok.ts` and wrote `mcp.rtok`. Kilo 7.7.5 rejected the old bare-function default export (`failed to load plugin` / `plugin config hook failed`); the shared plugin now exports `{ id: "rtok", server }` and rewrites bash in `tool.execute.before` to `rtok run -- '…'`. `kilo run --auto -m vercel/alibaba/qwen3.5-flash` invoked bash with `rtok run -- 'echo rtok-t97'`; tool output carried the expand trailer; `RTOK_HOME=… rtok stats --plugin cmd --json` showed one `cmd`/`rule` row (`ref_id` `echo:301a303c…`). OpenAI env key had no credits; Vercel AI Gateway worked. Extension (b) not re-probed here — same files as CLI. Unit: `agents::kilo` 6/6, `opencode_plugin`+`filter` 6/6 (vitest 21/21), `readme_tables_match_support` green.
+
+### T163. Replace raw SQL in `src/store/` with Diesel's query builder
+
+Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 104 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2 (`symbols.rs`'s 15 are done — T163.1). Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`; creator approved wiring it into rtok on 2026-09-23). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
+
+Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing store tests unchanged and green; hook path still ≤ 10 ms; `just check`.
+
+**Split (2026-09-23).** T163.1 (`symbols.rs`, done — see `done.md`) created the shared `src/store/sql_ext.rs` extension module. T163.2 takes `otel.rs` and `embed.rs`, reusing it. `mod.rs` (92 sites, including migration DDL and PRAGMA) stays in this card and is split further when claimed; `diesel_migrations` is approved (2026-09-23).
+
+**Split of `mod.rs` (2026-09-23).** Six slices by area, each ≤ 200 LOC: T163.3 PRAGMA, `unixepoch()` and FTS5 in the shared extension module; T163.4 migrations; T163.5 sessions, calls, measurements and `kv`; T163.6 archive, `call_io` and `read_cache`; T163.7 usage and stats aggregates; T163.8 retention and the last test helpers, which also runs this card's full Check and closes T163. Raw SQL in `mod.rs` tests moves with the slice that owns the table it touches. Execution: T163.3 waits for T163.1's `sql_ext.rs` to land on `main` (one module, never a second); T163.4–T163.7 do not depend on each other; T163.8 goes last. T163.9 (window and CTE queries T163.7 could not express) was split off T163.7 on 2026-09-23 and also waits for `sql_ext.rs`.
+
+Progress (2026-09-26, Cursor / grok 4.7): production `sql_ext::exec_pragma` no longer uses `batch_execute`. It runs each PRAGMA through a `PragmaStmt` `QueryFragment` + `.execute()` (`HAS_STATIC_QUERY_ID = false`). Measured on diesel 2.3.13, on-disk file: before `delete`, after `QueryFragment.execute` → `wal`, still `wal` after reconnect; `get_result` and `sql_query(...).execute` also returned `wal`. `grep -nE 'sql_query|sql::<|batch_execute' src/store/sql_ext.rs` is empty; `open_on_disk_uses_wal` and clippy `-D warnings` on `--lib --tests` green.
+
+Progress (2026-09-26, Cursor / grok 4.7): schema-drift cluster. Removed: `sql_query` in `live_schema_snapshot` / `schema_drift` (`SqliteMasterSnapshot`, `PragmaTableXinfo` in `sql_ext`, `HAS_STATIC_QUERY_ID = false`); `batch_execute` in `drift_after` (`FixtureSql`); `into_sql::<Bool>()` in `memory_note_aggs`; `sql_query` token in the `schema.rs` `uses` comment. Combined with WAL / BeginImmediate / Explain slices — remaining hits (if any) after the migration-fixtures merge close the card.
+
+Result (2026-09-26, Cursor / grok 4.7): combined slice branches `t163.4-migration-bridge`, `t163-wal-pragma`, `t163.8-test-lock`, `t163-schema-drift`, and `t163.8-migration-fixtures` onto `t163-grep-clean` from `origin/main`. `git grep -nE 'sql_query|sql::<|batch_execute' -- src` is empty. `open_on_disk_uses_wal`, `migration_is_idempotent`, `legacy_schema_migrations_are_not_rerun`, `schema_matches_the_migrated_tables_and_snapshot`, and `cargo clippy -p rtok --lib --tests -- -D warnings` passed. Slice PRs left open (not force-pushed, not merged here).
+
+### T163.4. Migrations through `diesel_migrations`
+
+`migrate()` (`schema_migrations` bookkeeping plus `batch_execute` of each file) moves to `diesel_migrations` (approved 2026-09-23). Existing databases must not re-run anything: the names already in `schema_migrations` map onto Diesel's version table in a one-time, idempotent bridge, and a DB that was never migrated still gets every file once. Tests move with it: `migration_is_idempotent`, `concurrent_opens_of_a_fresh_store_all_migrate`, `migration_0015_adds_lifecycle_columns_to_a_previous_schema_db`, `schema_0002_seeds_hosts_and_rejects_bad_fk`, `migrations_list_matches_the_directory`, `schema_rs_matches_the_migrated_tables`. The `.sql` files stay raw SQL (the rulebook allows it in migrations).
+
+Execution plan: (1) choose between Diesel's `<version>/up.sql` layout and a `MigrationSource` over the flat `migrations/NNNN.sql` files — the layout move alone touches every file, so if chosen it lands as its own mechanical PR; (2) write the bridge and a test that opens a DB migrated by the current code and sees no re-run; (3) toolchain row for `diesel_migrations`; (4) `just check`.
+
+Check: `migrate()` and its tests hold no `sql_query|batch_execute`; a pre-T163.4 database opens, keeps its data and applies only newer migrations; fresh and concurrent opens green; `just check`.
+
+Progress (2026-09-26, Cursor / grok 4.7): merged `origin/main` into `t163.4-migration-bridge` and re-applied the diesel_migrations bridge onto main's typed store (`sql_ext`, purge, FTS, windows, otel, embed). `Store::migrate` / `db_before_migration` / `migration_is_idempotent` / `migration_0015_*` hold no `sql_query` / `sql::<` / `batch_execute`. Still open: `migration_0020`, `migration_0021`, and `schema_0002` still contain those tokens (other open PRs own them) — do not close until those land clean.
+
+Result (2026-09-26, Cursor / grok 4.7): combined slice branches `t163.4-migration-bridge`, `t163-wal-pragma`, `t163.8-test-lock`, `t163-schema-drift`, and `t163.8-migration-fixtures` onto `t163-grep-clean` from `origin/main`. `git grep -nE 'sql_query|sql::<|batch_execute' -- src` is empty. `open_on_disk_uses_wal`, `migration_is_idempotent`, `legacy_schema_migrations_are_not_rerun`, `schema_matches_the_migrated_tables_and_snapshot`, and `cargo clippy -p rtok --lib --tests -- -D warnings` passed. Slice PRs left open (not force-pushed, not merged here).
+
+### T163.8. Retention without raw SQL; close T163
+
+`purge_calls_older_than` and `run_retention` (dynamic `DELETE`s, archive path collection) and the remaining test sites (`purge_drops_old_calls…`, `retention_keeps_plugin_archives…`, `archive_in_session…`), then T163's full Check. Last slice: it runs after T163.3–T163.7 and removes `use diesel::sql_query` from `mod.rs`; it runs after T163.9 too.
+
+Execution plan: (1) rewrite with `diesel::delete(...).filter(...)` and typed updates inside the existing transaction; (2) T163's `grep` over `src` finds nothing; (3) hook path still ≤ 10 ms (`rtok bench` or the existing timing test); (4) move T163 and all its slices to `done.md`.
+
+Check: T163's Check.
+
+Progress: `purge_related`, `delete_old_calls` and `purge_archive` are `diesel::delete` / `diesel::update`. `doomed_archives` is `sql_ext::DoomedArchives` (UNION of two archive columns plus three `NOT EXISTS` — no typed form). `sql_ext` no longer calls `sql_query`. Store tests (59) and clippy `-D warnings` on `--lib --tests` passed.
+
+Progress (2026-09-26, Cursor / grok 4.7): removed `batch_execute` / `sql_query` from `purge_waits_out_a_concurrent_writer` and `archive_in_session_query_plan_uses_the_session_ts_index`. Those two use `sql_ext::BeginImmediate` / `Commit` / `ExplainArchiveInSessionPlan` (`QueryFragment`; Diesel has no statement form for `BEGIN IMMEDIATE` or `EXPLAIN QUERY PLAN`) plus the existing `busy_timeout` / `pragma_journal_wal`. Still open: T163's grep. Hits left are `migrate()` (T163.4), `db_before_migration` / migration / schema-drift tests, `into_sql::<Bool>()`, and `exec_pragma`'s WAL `batch_execute` (a prepared execute leaves `journal_mode` at `delete`). Do not close T163.8 until the parent grep is clean.
+
+Progress (2026-09-26, Cursor / grok 4.7): three store tests no longer use raw SQL — `migration_0020_drops_pre_existing_duplicate_notes` and `migration_0021_keeps_old_rows_and_records_a_keyed_call_once` seed through `sql_ext` `QueryFragment`s (one statement each); `schema_0002_seeds_hosts_and_rejects_bad_fk` uses `CountCoreV2Tables` for `sqlite_master`, typed `hosts::table.count()`, and typed `sessions` insert. Card stays open: parent grep still hits `migrate()` and WAL `batch_execute`.
+
+Result (2026-09-26, Cursor / grok 4.7): combined slice branches `t163.4-migration-bridge`, `t163-wal-pragma`, `t163.8-test-lock`, `t163-schema-drift`, and `t163.8-migration-fixtures` onto `t163-grep-clean` from `origin/main`. `git grep -nE 'sql_query|sql::<|batch_execute' -- src` is empty. `open_on_disk_uses_wal`, `migration_is_idempotent`, `legacy_schema_migrations_are_not_rerun`, `schema_matches_the_migrated_tables_and_snapshot`, and `cargo clippy -p rtok --lib --tests -- -D warnings` passed. Slice PRs left open (not force-pushed, not merged here).
+
+### T87. `rtok hook <event> --host devin` reads Devin's payload
+
+Creator request 2026-09-21: a host plugin for Devin CLI + Devin Desktop. Devin's hooks are Claude-shaped on the way out (`hookSpecificOutput`, exit 2 blocks); the way in differs: tools `exec`/`read`/`edit`/`write`, `tool_response` `{success, output, error}`, compaction event `PostCompaction`, project root via `DEVIN_PROJECT_DIR`.
+
+Result: `HookInput::adapt_devin` maps `exec`→`Bash`, `PostCompaction`→`PostCompact`, lifts non-empty `output` to `stdout`, fills `cwd` from `DEVIN_PROJECT_DIR` when stdin has none. Live capture 2026-09-26 (`devin 3000.11.3`, temp `--config`, `--respect-workspace-trust false`, `--permission-mode accept-edits`): PreToolUse / PostToolUse / SessionStart stdin carry **no `cwd`**; `read` uses **`file_path`**. Captured `exec` PreToolUse yields the same `updatedInput` decision as Claude `Bash`; unknown tool → `{}`. Extra: empty failed `output` lifts no `stdout`; `PostCompaction --host devin` reaches PostCompact plugins (graph repo map).
+
+Check: `devin_maps_tool_names_result_project_dir_and_compaction`, `devin_failed_empty_output_lifts_no_stdout`, `devin_captured_exec_pre_tool_use_matches_claude_bash`, `graph_post_compaction_devin_reaches_post_compact_plugins`; fail-open matrix covers garbage/empty for `--host devin`.
+
 ### T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton
 
 After T88. New host `devin` in `src/agents/devin/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()`. Variants: CLI (`devin` on PATH) and Desktop (`Devin.app`), same files. Without the plugin, install edits the user files directly: the `"hooks"` key of `~/.config/devin/config.json` (`%APPDATA%\devin\` on Windows) and `mcpServers.rtok` in `~/.config/devin/mcp_config.json`. The plugin offer prints the exact `devin plugins install --local <resolved plugins/devin path>` line — rtok does not write Devin's plugin store, its on-disk location is undocumented (the Kimi rule from T86). D21 singleton: while the plugin is installed, setup strips rtok's own hooks and `mcpServers.rtok` from the user files instead of adding them. The existing `windsurf` host stays untouched for machines that still run Windsurf; retiring or aliasing it is not part of this task.
@@ -7,6 +79,14 @@ After T88. New host `devin` in `src/agents/devin/` (`mod.rs` + `README.md` with 
 Check: the unit tests above; `rtok agents list` shows `devin`; `agents_doc`, `host_docs`, `config_coverage` green; `just check`.
 
 Result: `installed()` never reports `plugin`. Devin's plugins overview (fetched 2026-09-25) does not name a store path, `devin plugins list` is a live command rather than a file, and this machine's `~/.config/devin/` has no plugin store — guessing would either double-fire hooks or delete entries the plugin still needs. Setup always writes the user files (the path without the plugin) and, behind `--yes`, prints `devin plugins install --local <plugins/devin>` only when something else changed, so a second install is all `NO_CHANGES`. Remove strips our hooks and `mcpServers.rtok` and leaves the plugin. `hooks_doc()` equals `plugins/devin/hooks.json`. Foreign hooks in the real `~/.config/devin/config.json` survive install and remove (`devin_keeps_the_real_config_and_mcp_json`). `agents list` shows Devin CLI and Devin. `agents::devin` (4), `agents_doc`, `agents_list_content`, `host_docs`, `config_coverage`, `readme_tables_match_support`, and `default_toml_is_the_defaults` passed; clippy `-D warnings` on `--lib --tests` passed.
+
+### T295. Claude Code rejects rtok's PostCompact output
+
+Seen live 2026-09-27 after `/compact` (Claude Code 2.1.x): `rtok hook PostCompact` printed `hookSpecificOutput` with `hookEventName: "PostCompact"`, and Claude Code failed validation ("expected one of PreToolUse | UserPromptSubmit | …"). Its hooks docs (https://code.claude.com/docs/en/hooks, checked 2026-09-27) list PostCompact under "No decision control" (its `systemMessage` and `continue` are discarded), and SessionStart `source: "compact"` accepts `hookSpecificOutput.additionalContext`. So the T2.5 checkpoint belongs on SessionStart source=compact, which already injects it.
+
+Do: `src/hooks/mod.rs` `dispatch` answers a PostCompact with host `claude` and a `compact_summary` field (Claude's own input field) with `{}`. Codex's PostCompact (`turn_id`, no `compact_summary`; https://developers.openai.com/codex/hooks, checked 2026-09-27) and Devin's `PostCompaction` (`--host devin`) keep injecting.
+
+Check: `hooks::tests::claude_post_compact_prints_empty_and_session_start_carries_the_checkpoint` with `tests/fixtures/hooks/post_compact.json`: PostCompact bytes are exactly `{}`; SessionStart source=compact carries the checkpoint; the same PostCompact without `compact_summary` still injects it. Fails on the old code with the live bytes. `codex::tests::compact_hooks_save_and_post_restores` and `graph_post_compaction_devin_reaches_post_compact_plugins` stay green.
 
 ### T267. Normalized dedupe treats `1src` as a duration and never matches `d:d:d`
 
@@ -71,6 +151,16 @@ Plan (creator chose the nextest route 2026-09-24): cargo `[env]` also reaches `c
 - Canary `testutil::tests::nextest_runs_under_the_test_home`: under nextest, `HOME` ends in `test-home`.
 
 Result: `.config/nextest.toml` has `test-home-unix` (`sh -c`) and `test-home-windows` (PowerShell) setup scripts, one per host platform. Each empties and recreates `target/test-home` on every run. The canary `testutil::tests::nextest_runs_under_the_test_home` passes under nextest and skips under `cargo test`. The first full run left 294 files in the fake home, written by real host CLIs that host tests spawn (codex `~/.codex/tmp`, cursor `~/.cursor/cli-config.json`, kilo and opencode XDG dirs, omp logs, the Dart analysis server) and one `~/.rtok/config.toml`; before, all of them went to the developer's real home. `just check` green (1730 tests).
+
+### T280. Tests never touch real agents; a hung host CLI cannot stall `agents list`
+
+`app_version()` ran `<bin> --version` through `Command::output`, which waits for EOF on the pipes. `cursor --version` under an empty `$HOME` (nextest's `target/test-home`) with stdout on a pipe never prints and leaves a helper holding the pipe for ~5 minutes, so `agents list`, the hosts page and every test that renders a block hit the 180 s nextest timeout on a machine with Cursor installed. Done: each probe is time-limited and never waits for a descendant's EOF; and no test finds or runs an agent installed on the machine (creator: real agents are for manual debugging only).
+
+Plan: move `rtok run`'s `capture` (T235.1) into `src/proc.rs` with an optional limit (kill at the limit, keep what was printed); `app_version` uses it with a 3 s limit; unit tests for the limit and for a stub CLI that never answers. `RTOK_HOST_SANDBOX` (set by `.config/nextest.toml`): host CLIs resolve only from PATH entries under `HOME`, absolute app paths are re-rooted under it, and host CLIs are spawned by the resolved path; the rule goes into `AGENTS.md` and `CONTRIBUTING.md`.
+
+Check: `cargo nextest run --workspace` on the dev box with real `cursor`/`claude`/`codex` on PATH: no test hits the nextest timeout, `tests_run_inside_the_host_sandbox` passes, and the tests named in the report take a couple of seconds.
+
+Result (Claude Code / claude-opus-5-5, 2026-09-27): `cursor --version` was the only hang (empty output, pipe held ~285 s). `src/proc.rs` holds the shared `capture` (T235.1) with an optional limit; `app_version` gives each probe 3 s. `RTOK_HOST_SANDBOX` lives in `src/agents/mod.rs` (`find_on_path`, `expand_app` via `under`, `host_program` for `run_cli` and `app_version`) and both nextest setup scripts export it. Full suite on the dev box with every host CLI installed: 1825 tests, none slow, 100 s wall (was 305 s with 180 s timeouts); `list_reports_installed_modules_per_host` 5.8 s (was >120 s); the tests named in the report run in 0.04-7 s. Rule added to `AGENTS.md` ("No real agents in tests (debug only)") and `CONTRIBUTING.md`.
 
 ### T254. Unit tests read the real `~/.claude*`, `~/.codex` and agent configs
 
@@ -897,6 +987,17 @@ Done when:
 
 **Check:** cargo test relevant areas pass (700/702 lib; skill_listing, memory_status, web_wasm pass)
 
+### T308. Regression test: `memory status` aggregates skip `session:` and `checkpoint:` kinds
+
+T304 (PR #480) made `Store::memory_note_aggs` skip `session:%` and tightened `checkpoint%` to `checkpoint:%`, the same filters as `list_notes` / `list_note_titles`. Its test `memory_status_excludes_session_handoff_notes` covers the `session:` row; nothing covered the tightened `checkpoint:` pattern, which used to drop any real kind that merely starts with `checkpoint`.
+
+Result: `tests/memory_status.rs::note_aggs_skip_session_and_checkpoint_kinds` stores `decision`, `session:s1`, `session:s2`, `checkpoint:c1` and `checkpointer` notes and asserts the aggregates list only `checkpointer` and `decision`: it fails on the old `checkpoint%` pattern and on a missing `session:%` filter.
+
+Check: fails before T304 (lists `session:s1` / `session:s2`, drops `checkpointer`); `cargo nextest run --test memory_status` on `main` after #480: 4 passed.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-opus-5-5
+
 ---
 
 ## T68.10 — `[plugins.graph]` exclude, include and extension map
@@ -1344,6 +1445,15 @@ Done when:
 
 **Result (2026-09-18).** Commits `6333958` `2d08e2a` `954a612` `ac50d96` `ac97b9c` `76e1d3c` on `t58.2` (not merged). `rtok stats` prints `sessions N  compact N` by counting transcript `subtype=compact_boundary` (30d: 923 sessions, 271 compacts, 75 sessions with at least one). T2.5 fixture checkpoint body is 144 B before archive-id lines (`checkpoint_tokens` = 400). `Checkpoint.ids` lists live `archive_decisions` newest first as `id <id> <tool> <bytes>`, capped by the existing budget. Hosts: Cursor `preCompact` → `pre_compact` (no post event); Copilot `preCompact` → `pre_compact` (no post); Codex `PreCompact`/`PostCompact` via `~/.codex/hooks.json`. Gemini is not a host. Kimi already installed both via Claude `ENTRIES` (docs confirm `PreCompact`/`PostCompact`) — left untouched. ZCode has none. pi/OpenCode stay with T70.6. `PreCompact` without `transcript_path` still saves (Cursor/Copilot). `docs/agents.md` blessed.
 
+### T306. checkpoint archive ids ordered by this session's decision time, once each
+
+`store::session_live_archives` (T58.2), consumed by `checkpoint::attach_ids`, ordered live archive ids by `archive::ts` — the time a body's bytes were first archived, never re-stamped since `archive` rows dedupe by sha256 — instead of `archive_decisions::ts`, the time this session's own pointer to that body was created. A later turn re-archiving an identical, unchanged body (e.g. re-reading a file) then ranked as the oldest entry, so `attach_ids`'s token budget could drop a genuinely recent archive in its place; the same archive id could also come back twice when two decisions named it.
+
+Check: `store::tests::session_live_archives_orders_by_decision_time_once_each` (new); `cargo test --lib store::` and `--lib checkpoint` pass; workspace clippy (`-D warnings`) and `cargo fmt --check` clean.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5
+
 ## T48.8 — VS Code Copilot Chat host
 
 **T48.8 VS Code Copilot Chat host** · P2, 3/5 · `src/agents/vscode/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `docs/agents.md` (blessed), `src/cli.rs`, `README.md`, `tests/agents_install.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
@@ -1465,6 +1575,18 @@ Done when `rtok memory export [--project <name>]` prints one `{kind,title,body,p
 Execution plan: `Store::list_notes(project)` in `src/store/mod.rs`; `plugins/memory/export.rs` writes JSONL to a `Write`; `MemoryCmd::Export` in `cli.rs`; docs rows. Verify: fmt, clippy, `nextest -p rtok memory`.
 
 **Result (2026-09-18).** `Store::list_notes(project)` (`kind NOT LIKE 'checkpoint:%'`, id ascending), `plugins/memory/export.rs::run(cfg, project, out)` writes `serde_json` objects one per line and returns the count, `rtok memory export [--project]` on the CLI. Test `export_round_trips_through_import_without_checkpoints`: three notes + one checkpoint → three lines, `--project q` → none, import into a second store inserts 3 then skips 3. README CLI row and plugin README section added; no config key (no flag beyond `--project`). Verified with T66.1 above.
+
+---
+
+### T304. memory export skips retired notes; memory status skips session handoff notes
+
+Bug 1: `Store::list_notes` (used by `memory export`) did not filter `notes::retired.is_null()`, and the export/import JSONL line shape carries no `retired` field, so an export piped into another store's `memory import` resurrected a note the user had retired there as a live note. `memory import`'s topic-key dedup (`list_notes(None, ..)`) still needs retired rows — the `notes_topic` unique index covers a retired row too, so a local key must block an imported line whether or not it is retired — so the filter could not simply move into the shared query. Fix: `list_notes` takes an `include_retired` flag; `memory export` passes `false`, `memory import`'s dedup and its own tests pass `true`.
+Bug 2: `Store::memory_note_aggs` (used by `memory status`) filtered `checkpoint%` but not `session:%`, unlike its siblings `list_notes` / `list_note_titles`. `session:<id>` kinds (`src/plugins/checkpoint.rs`'s per-session handoff note) are unique per session, so `memory status` grew one aggregate row per historical session forever. Fix: filter `session:%` alongside `checkpoint:%`, matching the siblings.
+
+Check: new tests `plugins::memory::export::tests::retired_note_is_not_exported` and `rtok::memory_status memory_status_excludes_session_handoff_notes`; `cargo test --lib store::` (67 passed) and `--lib memory::` (30 passed), `cargo nextest run -E 'binary(memory_status)'` (3 passed) and `-E 'binary(cli_trycmd)'` / `-E 'binary(p29_memory)'` unaffected, clippy `--lib --tests -D warnings` and `fmt --check` clean.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5
 
 ---
 
@@ -4359,6 +4481,15 @@ Do: in `compress` mode: for `tool_result` blocks that are (a) older than `archiv
 Check: fixture request with 6 turns → only turns 1–2 large results rewritten; sending the same request twice yields byte-identical rewritten bodies; unit test proves the prefix up to the first rewritten block is unchanged.
 Status: done 2026-09-02 · Check: `only_turns_older_than_keep_turns_are_rewritten` (6-turn fixture → exactly turns 1–2 rewritten, `system`/`tools`/turns 3–6 byte-equal), `same_request_twice_is_byte_identical_and_prefix_unchanged` (two runs serialise identically; bytes before the first rewritten block equal the original), `proxy_compress_rewrites_old_tool_results_identically` (same request twice through the live axum server in `compress` mode → identical `call_io` request bodies, 2 `plugin_run` rows, 4 `archive` measurements). `make check` green (119 tests). Deviation: the module is `src/plugins/archive/mod.rs` (T0.4 layout), not `archive.rs`; `Ctx` gained `call_id: Option<i32>` + `record_plugin_run` so the child row nests under the API request; `Store::spill` now ignores a duplicate archive id (the second identical request used to fail `call_io`). Pointer text is `[archived <id12>: N lines · T tokens · expand(<id>)]` + head/tail lines. Over the 200 LOC / 3 files budget: rewrite, store decisions, migration `0004.sql`, proxy wiring and tests are one unit.
 
+### T305. stats archive replay no longer double-counts short bodies
+
+`replay_ctt` (`src/measure/stats.rs`), which estimates what `rtok stats` calls `archive replay (estimate)` — the CTT the `archive` plugin (T5.3) leaves behind once a tool result ages past `keep_turns` — modelled the kept lines as `lines.iter().take(head_lines)` chained with `lines.iter().rev().take(tail_lines)`. When a result had fewer lines than `head_lines + tail_lines` (a single huge line, for example) the two slices overlapped, so `kept` counted those lines up to 2x and the estimate could land above not archiving at all. Fixed to mirror `archive::pointer`'s own guard: when `lines.len() <= head + tail`, sum each line once — through `archive::clip`, the same per-line truncation `pointer` applies — instead of taking overlapping head/tail slices; every shown line (head and tail too) goes through `archive::clip`, as `pointer` does. Also: the stats tests' `tempfile_dir` named directories by pid + nanos only, and macOS clocks tick in microseconds, so two parallel tests could share one directory (`compact_boundary_counts_once_per_event` failed intermittently); a counter now keeps them apart.
+
+Check: `mise exec -- cargo test --lib stats` — new `archive_replay_never_doubles_short_bodies` (a single-line body never yields a replay above `tokens * remain`; multi-line, non-overlapping content keeps its prior result) plus the existing `archive_replay_keeps_young_turns_and_shrinks_old_ones` unchanged; `cargo clippy --lib --tests -- -D warnings` and `cargo fmt --check` clean.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5, Claude Code / claude-opus-5-5
+
 **T5.4 `expand` through the proxy** · T5.3, T4.1 · `src/plugins/archive.rs`
 Do: MCP `expand(id, lines?)` returns the archived original (from T5.3 store); mark id as expanded → T5.3 stops rewriting it from the next request on. Track expand rate.
 Check: expand → next fixture request contains the original block again.
@@ -5691,6 +5822,17 @@ Model: Claude Code / claude-opus-5-5
 ### T236. Clean up target dirs with dunnage after tests
 
 `just test` and `just test-changed` now end with `just dunnage` (a just post-dependency; `just check` gets it through `test`). `dunnage run target` compresses and dedupes `./target` losslessly — it never deletes and keeps mtimes, so nothing rebuilds. Exit code 2 (a build held the lock) counts as success; a checkout with no `target/` yet or a machine without `dunnage` is a no-op with an install hint. dunnage is installed with `ketch install dunnage`; `toolchain.md` lists ketch and dunnage and gains a `ketch` package table.
+### T301. `just test-cov`: the test suite under coverage, `just test` stays without
+
+Creator request (2026-09-27): a separate command for tests with coverage; the plain one without. Coverage lived only inline in `.github/workflows/sonarcloud.yml`, with `cargo-llvm-cov` installed by a CI action, so it could not be run the same way locally.
+
+Result: `just test-cov` (`justfile`) adds `llvm-tools-preview`, runs `cargo llvm-cov nextest --workspace` with the same thread count as `just test`, writes `coverage/lcov.info` (ignored by git), prints a per-file summary, then runs `dunnage`; extra args go to nextest (`just test-cov -E 'test(formatters)'`). `just test` is unchanged and has no coverage. `cargo-llvm-cov` 0.9.1 is pinned in `mise.toml`; the SonarCloud job calls `just test-cov` instead of its own install steps and command. `toolchain.md`, `CONTRIBUTING.md`, `docs/sonarcloud-setup.md` and the shared `rust.md` updated.
+
+Check: `just test-cov -E 'test(every_formatter_arm_has_a_golden) | test(ten_families)'` — 2 passed, `coverage/lcov.info` written, TOTAL row printed; `cargo nextest run -p rtok --test toolchain_rows --test plugin_plans` green.
+
+Status: done 2026-09-27
+Model: Claude Code / claude-opus-5-5
+
 ### T226. A modern look for `rtok tui`
 
 Why: the TUI drew every page in the terminal's default colour — bare tables, a `>` cursor, plain text hints — so the operator model (D23) read like a log dump. Done means one palette and one set of frames across every page, with the tests still pinning the model's text, not the chrome.
@@ -6119,6 +6261,19 @@ Result: `hook_returns_despite_exclusive_lock` now proves the fail-open by work: 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
+### T304. Latency lock test: prove fail-open without a runner-speed bound
+
+`tests/latency.rs` `hook_returns_despite_exclusive_lock` flaked on unrelated PRs on 2026-09-27: `ci / check (macos-latest)` for listepo/rtok#461 ("hook waited 102.74ms", 100 ms bound, job 108701481370) and `ci / windows (2/2)` for listepo/rtok#466 ("313.66ms", 250 ms bound, job 108706221829); both green on rerun. The `calls` assert (T237) is the proof that the hook gave up instead of waiting; the wall bound is a fixed guess at runner speed and shares the CPUs with the whole suite. Done means the test keeps catching a hook that waits on the lock, without depending on how loaded the runner is.
+
+Plan: (1) run the test alone under nextest (`threads-required`, `.config/nextest.toml`), as T237 did for the skill digest test; (2) derive the wall bound from the holder instead of the platform: the hook must return within half the hold (`HOLD / 2`, 250 ms everywhere), so it cannot have waited for the release; (3) move the few-ms precision to where it is exact: a compile-time assert in `src/hooks/mod.rs` that each `LOCK_WAIT` wait stays within half the 10 ms hook budget (D1).
+
+Check: `mise exec -- cargo nextest run -p rtok --test latency`, repeated; mutations on `LOCK_WAIT.busy`.
+
+Result: the test runs alone and asserts `took < HOLD / 2` (250 ms) on every platform next to the unchanged `calls` check; `src/hooks/mod.rs` has `const _: () = assert!(...)` holding `LOCK_WAIT.busy` and `.migrate` at ≤ 5 ms. Six local runs green (hook test 0.55–0.65 s including the 500 ms hold). Mutations: `busy` 200 ms fails to compile; with the assert commented out, `busy` 100 ms fails the wall bound ("hook waited 258 ms" — the per-statement waits add up) and 300 ms fails the `calls` assert ("outwaited … 532 ms"). The hot path and `LOCK_WAIT` values are unchanged.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-opus-5-5
+
 ### T118.2. Gemini CLI host module: registration, config keys, e2e
 
 T118.1 (done.md) shipped the `--host gemini` hook I/O adapter (`src/hooks/types.rs::adapt_gemini`, `src/hooks/mod.rs::gemini_output`) with no host module yet — `--host` is a free string, not validated against a registry. This task adds the host itself: `src/agents/gemini/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()` (`src/agents/mod.rs`), `[setup.gemini]` config keys (mirror an existing host's `dir`/override shape — see `copilot`/`devin`). Verify current `gemini` CLI detection (binary name, version flag, config home) against https://geminicli.com/docs/ before writing `installed()`/`support()`.
@@ -6365,6 +6520,17 @@ Result: `tests/fixtures/replay/session.jsonl` (30 hand-written events: 23 Bash, 
 
 Model: Claude Code / opus-5.5 (first draft, abandoned unpushed in another session's worktree), claude-opus-5-5 (re-landed, reviewed)
 
+### T298. Proxy replay bench with a saving floor
+
+`tests/replay_bench.rs` put a floor under `cmd` and `read` only. The proxy methods (`archive`, `toon`, `compress`) had unit checks that output shrinks but no floor over a realistic request.
+
+Result: `tests/proxy_bench.rs` sends `tests/fixtures/proxy/messages.json` (10-turn Messages request: a 200-line CI log, a 150-line `ls -la` listing and a postmortem as old tool results, two JSON arrays, one short body, four live turns) through the real proxy against an `httpmock` upstream. The floor is end to end, per `tool_use_id`: original content vs what upstream received, so an `archive` → `compress` chain on one block counts once. Measured 91.4 % (10,054 → 867 est. tokens), floor 86.4; per plugin (information only): `archive` 90.4 %, `toon` 50.9 %, `compress` 26.6 %. It also checks each plugin shrank at least one block, the short body arrives byte-identical, every archived id expands to the original bytes, terminal rows' `after_bytes` match the sent bytes, and that `archive` off drops below the floor. `Server`/`proxy_server` moved from `tests/proxy.rs` into `tests/common/proxy.rs` for both binaries. Noted: an `archive` row's `after_bytes` is the intermediate pointer when `compress` shrinks that block further; saved tokens (`before − after`) still add up across the chain, only a ratio of summed `before`/`after` would be skewed.
+
+Check: `cargo nextest run -p rtok --test proxy_bench --test proxy` 34/34; clippy on both targets clean.
+
+Status: done 2026-09-27
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
 ### T240. Golden files for rule families without one
 
 `rules/default.toml` has families with no pair in `tests/cmd_golden`: `curl`, `node`, `pnpm`, `sed` (re-list at claim time — any rule `match_cmd` or Rust formatter with no `.in`/`.out`). Their output shape is untested.
@@ -6376,6 +6542,17 @@ Do (2026-09-24): re-listed the families at claim time via the same `settings.pic
 Result: goldens added for `curl` (measured 22%, floor 19%), `node` (16% → 13%), `pnpm` (15% → 12%), `sed` (49% → 46%), and `gradle_bare` (29% → 26%, closing a pre-existing `gradle`-rule coverage gap); floors are `max(0, measured% − 3)` per T238. `cargo test -q --lib plugins::cmd::formatters`: 16/16 green. `just check` green (fmt, clippy, 1627 nextest tests, 3 skipped) — one run hit a 180s timeout in the unrelated `graph_model::graph_page_matches_dead_json_on_the_fixture_index` test under heavy concurrent CPU load from other sessions sharing the machine (confirmed environmental: passed standalone in 121.45s); a clean re-run was green. Files: `tests/cmd_golden/{curl,node,pnpm,sed,gradle_bare}.{in,out}` (10 files), `src/plugins/cmd/formatters.rs` (new `every_builtin_rule_family_has_a_golden` test).
 
 Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T296. Every Rust formatter has a golden with a saving floor
+
+`tests/cmd_golden` guards every `rules/default.toml` family (T240) but not the Rust formatters in `src/plugins/cmd/formatters.rs` `format()`: `jest`, `vitest`, `tree`, `cargo clippy` and `go test` had no golden, so a regression in them saved nothing and failed nothing.
+
+Result: goldens `jest` (measured 80 %, floor 75), `vitest` (78 → 73), `tree` (71 → 66), `cargo_clippy` (68 → 63), `go_test` (43 → 38); floors are the measured saving minus 5. New unit test `every_formatter_arm_has_a_golden`: a list mirroring the `format()` arms, tied to `FORMATTER_STEMS`, fails when an arm has no golden that reaches it through `family_argv` and gets `Some` from `format()` (checked by hiding `tree.in`).
+
+Check: `cargo nextest run -p rtok --lib cmd::formatters` 17/17; `cargo clippy -p rtok --lib --tests -- -D warnings` clean.
+
+Status: done 2026-09-27
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
 ### T244. No surface sees rtok twice after `agents install`
@@ -6493,6 +6670,28 @@ Check: `cargo nextest --test plugins_e2e`; `just check`.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+
+### T299. Saving checks for guard and the read modes
+
+`guard` records denied repeats with `est_after: 0`, but no test checked that the row's `before` is the size of what was denied. The `read` modes had no minimum saving.
+
+Result: guard unit test `deny_measurement_before_bytes_and_est_before_match_the_avoided_payload` — `before_bytes` equals the archived body the repeat would have returned, `est_before` the documented `bytes / 4` heuristic, `after` 0. `tests/plugins_e2e.rs` `read_modes_keep_a_saving_floor` over `tests/fixtures/read_modes_sample.rs` (1350 tokens): `read` `map` measured 95.1 % (floor 90.1), `read` `signatures` 88.8 % (83.8), `search` 88.9 % (83.9). Found: only `mode = "stripped"` records a `Measurement`; `map`, `signatures`, `search` and `tree` record none, so their saving never reaches `rtok stats` — filed as I-100.
+
+Check: `cargo nextest run -p rtok --test plugins_e2e -E 'test(read_modes_keep_a_saving_floor) | test(read_stripped)'` 2/2; the guard test 1/1; `cargo clippy -p rtok --lib --test plugins_e2e -- -D warnings` clean.
+
+Status: done 2026-09-27
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T300. `read` map, signatures, search and tree record their saving
+
+I-100 (found by T299): only `mode = "stripped"` recorded a `Measurement`, so the saving of `map`, `signatures`, `search` and `tree` never reached `rtok stats`. Creator's choice (2026-09-27): `map`/`signatures` measure against the whole file they replace; `search`/`tree` record only when `max_chars` cuts their output, against their own full output — there is no honest "before" for them beyond that.
+
+Result: `read_with` records kind `map` / `signatures` (raw file vs returned text) on the fresh-render path only; the `cache::hit` and `identical_result` paths return earlier with their own `delta`/`dedup` row, so one call writes at most one row. `cap_recording` (a recording variant of `cap`) writes `search_cap` / `tree_cap` with the archive id as `ref_id` when it cuts; plain `cap` (full reads, `stripped`) records nothing, so no double count. Tests in `tests/plugins_e2e.rs`: `read_modes_keep_a_saving_floor` also checks one row per `map`/`signatures` call with bytes matching the file and the returned text, and none for an uncut `search`; `search_and_tree_cap_measurement_matches_full_and_returned_text` checks the cut rows against the archived full output.
+
+Check: `cargo nextest run -p rtok --lib plugins::read` and `--test plugins_e2e` green; `cargo clippy -p rtok --lib --tests -- -D warnings` clean.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
 ### T246.2. MCP entries of the remaining hosts
 
@@ -6768,6 +6967,19 @@ Result: `CachePrompt` gains `params`: every top-level request field except `mess
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
+### T303. Semantic-cache key covers tool_use input, unknown blocks and OpenAI tool_calls
+
+Found in a review of `src/proxy/semantic_cache.rs`: `block_text`'s `tool_use` arm hashed only `id` and `name`, never `input`, so two requests differing solely in an earlier tool call's arguments hashed equal; its `_ => String::new()` fallback made every other block kind (`thinking`, `redacted_thinking`, `server_tool_use`, `web_search_tool_result`, …) contribute nothing; and `messages_text` dropped an OpenAI Chat assistant message's `tool_calls` (a sibling of `content`, not covered by it) and any message with no `content` key at all (the `?` on `m.get("content")` discarded the whole message, `tool_call_id` on `tool` messages too). Two different conversations could collide on the cache key and the proxy would replay a wrong cached answer.
+
+Plan: fold `canonical_json(input)` into the `tool_use` contribution; make the fallback arm serialize `canonical_json(b)` for unknown block kinds instead of an empty string; in `messages_text`, treat a missing `content` as empty text and append the canonicalized `tool_calls` and `tool_call_id` when present.
+
+Check: `tool_use_input_joins_the_cache_key`, `thinking_block_joins_the_cache_key`, `openai_tool_calls_join_the_cache_key` — bodies differing only there hash differently, key order inside `tool_use` input does not; existing `tool_use_ids_join_the_cache_key` and the rest of `mod tests` stay green; `just test` green.
+
+Result: `block_text`'s `tool_use` arm now appends `canonical_json(input)`, serialized; its fallback arm serializes `canonical_json(b)` for any other block kind instead of returning an empty string. `messages_text` defaults a missing `content` to empty text rather than dropping the message via `?`, and appends the canonicalized `tool_calls` and the `tool_call_id` string when either is present. Tests: `tool_use_input_joins_the_cache_key` (differing input, and identical input under different key order), `thinking_block_joins_the_cache_key`, `openai_tool_calls_join_the_cache_key`; `cargo test --lib semantic_cache` and `cargo clippy --lib --tests -- -D warnings` green.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5
+
 ### T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 
 Found 2026-09-22 in the docs pass (all confirmed against the files): T126 appears as three table rows and three identical cards (plan.md `### T126` ×3); T123 has two full cards; `todo.md` carries T126 twice; T183's Check sits under T184's card (the `Check: dry-run with \`all\`…` paragraph after T184's own Check) so T183 has none and T184 appears to have two; three blank lines split the task table into four markdown tables that render as raw pipes on GitHub and the site; T122 still carries the fix scope handed to T127; and T122/T123/T125 — all `src/` code cards — are claimed by `claude-haiku-4-5`, the exact models AGENTS.md forbids for code ("on T122–T125 every Haiku code diff had a defect its report called green"). "One task = one card with a Check" is broken throughout.
@@ -6927,3 +7139,90 @@ Check: `config_page_exists_on_both_surfaces`; a `tests/web.rs` case on a temp co
 
 Result: New Config page ("config","config") on both surfaces: model::config_page_text renders config_entries rows as key = value (source) each tick; TUI tab with a / filter, Slint page with a filter box; read-only. config get gained --json {key,value,source}; config show/get moved from EXEMPT to COMMAND_PAGES/JSON_READERS. Tests: config_page_exists_on_both_surfaces, config_page_source_reflects_an_env_override (RTOK_PROXY_PORT → source env), webui snapshot parse.
 
+### T178. Hook wall-clock time as Claude Code sees it
+
+Found in the 2026-09-22 audit: in-process hook time is p50 0.3 ms, but Claude Code records p50 18–19 ms and p95 206–255 ms for PreToolUse/PostToolUse — process start of a 27 MB binary dominates and the ≤ 10 ms rule is broken on every call without rtok noticing. Ten hooks were cancelled at Claude Code's 5 s timeout (5 PreToolUse, 5 UserPromptSubmit with p50 5.6 s — no UserPromptSubmit rows exist in the store, so the owner is unconfirmed). SessionEnd (p50 18.9 ms) and PreCompact (p50 15.0 ms) are over budget in-process.
+
+Plan: research first — measure cold/warm start (`hyperfine`), find what runs before `main` dispatches (config parse, DB open, migrations), confirm who owns the UserPromptSubmit timeouts; then pick: lazy store open, a smaller hook path, or a resident process (`rtok demon`) the hook talks to. Record findings in `research.md`.
+
+Execution plan: (1) `hyperfine` `rtok hook PreToolUse`/`PostToolUse` with recorded payloads against `rtok --version`, release build, cold and warm; (2) trace what runs before dispatch (config load, store open, migrations, plugin registry) and the binary's load/page-in cost; (3) read the `~/.claude` hook config to name the owner of the `UserPromptSubmit` timeouts; (4) fix the largest cost at the responsible layer (lazy store open, no migrations on the hook path, lighter hook entry) — a resident process only if the rest cannot reach 10 ms, and then as its own proposed task; (5) dated `research.md` section with before/after.
+
+Step 2 plan (D32): (a) `crates/rtok-hook`, the std-only wire format; (b) `rtok hook --serve`, one resident per home that runs `hooks::run` for each request in the client's cwd and refuses another version or config environment; (c) the `demon` service `hook`; (d) the `rtok-hook` client: connect, 50 ms answer timeout, fallback to `rtok hook`, detached autostart; (e) `hooks.json` order `rtok-hook` → `rtok` → `hook.sh`, shipping, before/after as Claude Code sees it. One PR each.
+
+Check: a dated `research.md` row with measured start time before/after; hook p50 as seen by Claude Code under 10 ms on this machine; `just test` green.
+
+Progress (research.md §19): the plugin launcher (a second `/bin/sh` per call) was the largest cost; `hooks.json` now execs `rtok` from PATH directly, p50 as Claude Code sees it 20.9 → 14.6 ms (PreToolUse) and 19.0 → 13.3 ms (PostToolUse). Remaining: the node + `/bin/sh` floor (5 ms) plus `rtok --version` (5.6 ms) already exceed 10 ms, so the Check needs a resident process with a small hook client — proposed as its own task. Locked store (§19.6): the hook now waits 5 ms on another writer, not 1 s per statement, and fails open with the input unchanged — 1.06–2.13 s → ~20 ms. Remaining: the resident process and hook client.
+
+Measured (Cursor / grok 4.7, 2026-09-26): shipped `hooks.json` order `rtok-hook` → `rtok` → `hook.sh`. §19.2 node harness (`spawn` `{shell: true}`, isolated `RTOK_HOME`, resident up, release `6e608af2`, 300 rounds, load 46.23 → 39.18): `true` floor p50 5.63 ms; PreToolUse p50 **12.28** / p95 25.18 ms; PostToolUse p50 **12.54** / p95 29.22 ms. Numbers in `research.md` §19.7.
+
+Result: The creator raised the Check (2026-09-26) to hook p50 as Claude Code sees it under **20 ms** on the §19.2 harness. §19.7 already meets it (PreToolUse p50 12.28 ms, PostToolUse p50 12.54 ms). No new measurement. Cutting further toward 10 ms stays on the roadmap (Later), not a plan card.
+
+Status: done 2026-09-26
+Model: Cursor / grok 4.7
+
+### T302. `--ai` report leaks NaN/inf and report charts wrap huge u64 counts to -1
+
+Found by a bug-hunt pass over `src/report/**`. Two verified correctness bugs, both in code that formats measured data for a human or a downstream model to read:
+
+1. `report::ai::expand()` formatted `100.0 * exp.rate` with a raw `{:.1}` instead of routing it through `markdown::dec()` like `markdown.rs`/`html.rs` already do for the same value. A non-finite `rate` (a corrupted/legacy DB row — exactly the case `report::fixtures::hostile()` exists to cover for the other two renderers) printed the literal string `rate=NaN%` or `rate=inf%` into the `--ai` report, which is read by a model/parser downstream; the other two renderers correctly print `—` for the same input (T105).
+2. `html.rs` and `pdf.rs` each cast a `u64` call/bust count to `i64` with a plain `as i64` when building chart data (`r.calls as i64`, `*n as i64`). For a count exceeding `i64::MAX` this bit-reinterprets instead of saturating, producing `-1` in the chart while the adjacent table (fed from the same `u64`) correctly showed the huge count — a self-contradictory report, reproduced verbatim in the `html::tests::one_row_snapshot` fixture before the fix.
+
+Also tightened, same module, same theme (unchecked arithmetic on store-derived `i64` values in `advice.rs`): `retire_plugin`'s `-r.saved` and `inject_budget`'s `budget * r.rows as i64` now use `saturating_neg`/`saturating_mul` instead of an operator that panics in debug and wraps in release on an extreme stored value; and `top_sinks` now ranks by an estimated token count (`before_bytes` divided by `[estimator] code`) instead of a raw byte count, so its sort key is denominated the same way as every other rule feeding `recommendations()`'s single `Reverse(tokens)` sort (the module's own doc comment: ordered "by the tokens it would recover").
+
+Fix: `ai::expand()` now calls `super::markdown::dec(Some(100.0 * exp.rate))`; `html.rs`/`pdf.rs` use `i64::try_from(..).unwrap_or(i64::MAX)` for both chart-data casts.
+
+Check: new `report::ai::tests::non_finite_rate_never_leaks_into_the_document` (NaN and infinity, mirrors markdown.rs/html.rs's T105 `holds()`); the html `one_row_snapshot` fixture re-blessed to show the correct huge count instead of `-1` in the chart; new `report::advice::tests::top_sinks_ranks_by_estimated_tokens_not_raw_bytes`. `cargo test --lib report::`, `cargo fmt`, `cargo clippy --lib -- -D warnings` all green.
+
+Status: done 2026-09-28
+Model: Claude Code / sonnet-5
+
+### T282. Agent registry: an rtok agent id for every host session
+
+Depends on nothing; blocks T283–T290. Today a session is keyed by the host's own `session_id` (`src/store/schema.rs:151`, `sessions.id`), which collides across hosts, is missing on several (`research.md` §26), and has no status. `agent_id` in `HookInput` (`src/hooks/types.rs:18`) means a sub-agent's context inside one host session, a different thing. D34 defines the rtok agent id.
+
+Done means: every host session rtok sees has exactly one row with a UUIDv7 id, the host, the host's session id, parent agent (for sub-agents), cwd, start, last seen, end, and the last activity; ids resolve from any unique prefix of 4+ hex chars.
+
+Plan:
+1. Worktree `_worktrees/rtok-T282`, branch `t282-agent-registry`.
+2. Diesel migration `agents`: `id TEXT PRIMARY KEY` (UUIDv7, hyphenated), `host_id`, `host_session_id`, `parent_id NULL` (a sub-agent's parent agent), `cwd`, `started_at`, `last_seen`, `ended_at NULL`, `activity TEXT NULL` (≤ 120 chars, e.g. `Bash: cargo nextest run`, `Edit: src/worktree/add.rs`), `status_text NULL` (set by the agent itself in T284); unique index on `(host_id, host_session_id, parent_key)`. Schema regenerated, no raw SQL.
+3. `store::agents`: `register(host, host_session, parent, cwd) -> AgentId` (upsert, returns the existing id on repeat), `touch(id, activity)`, `end(id)`, `resolve(prefix) -> Result<AgentId>` with the errors `unknown` and `ambiguous: <ids>`, `live(idle)`: rows with no end and `last_seen` inside `[agents] idle` (default `30m`, new config key through the one config module, T238).
+4. `rtok hook`: every event registers or touches the agent (one indexed upsert, prepared statement); SessionEnd ends it; a sub-agent's events (`agent_id` present) register a child row with `parent_id`. Activity is the tool name plus the first 60 chars of its main argument (command, path, pattern), never file contents or prompt text.
+5. Crate `uuid` with `v7` (maintained; add rows to `toolchain.md` and the shared `rust.md` if missing).
+6. Hook budget: measure the hot path with the existing hook bench before and after; the upsert must keep `rtok hook` inside its 10 ms budget (D32 resident process included). If it does not, write through the resident hook process or batch.
+
+Check: store unit tests (register is idempotent, sub-agent row, resolve prefix / ambiguous / unknown, idle cut-off); hook fixture tests per hooked host with the session-id field names from §26 (fakes only, `RTOK_HOST_SANDBOX`); hook bench row before/after in the PR; `just check`.
+
+Status: done 2026-09-27 (#439; hook bench p95 9.10 ms PreToolUse, 9.51 ms PostToolUse)
+Model: Claude Code / claude-opus-5-5
+
+### T272. ketch.toml syncs with the live registry entry, plus the rtok-hook hazard note
+
+Found 2026-09-26, from `rtok agents install claude` hanging on Windows: `ketch install listepo/rtok` had linked `rtok-hook.exe` (the 390 KB std-only hook client dist ships beside the 34 MB `rtok.exe`) into `~/.ketch/bin/rtok.exe`, so every `rtok` invocation — `--version` included — hung reading stdin for a hook payload that never came. Chain: the registry entry pins `bin = [{ path = "rtok*", name = "rtok" }];` ketch resolves a glob to the first payload match; NTFS lists `rtok-hook.exe` before `rtok.exe`, so Windows takes the stub (Unix readdir order keeps `rtok` first, which is why only Windows hung). No `*`/`?` pattern matches `rtok`+`rtok.exe` while excluding `rtok-hook.exe`, so the entry's spelling is the best ketch's matcher allows; the durable fix — prefer the candidate whose stem is the link name — belongs to ketch (its B62). Meanwhile this repo's `ketch.toml`, the file `ketch push` sends, still predated registry commit 9b73cae: no `bin` pin and no Windows zip in `[asset] include`. A push from it would have dropped the pin and returned Windows installs to linking `plugins/cursor/scripts/mcp.cmd` — the exact regression 9b73cae fixed.
+
+Plan: sync `ketch.toml` with the live registry entry (bin pin, `*-pc-windows-msvc.zip` include) and extend its comment to record the rtok-hook first-match hazard, why no tighter glob exists, and that the fix is ketch-side.
+
+Check: the file matches the live registry entry (`git -C ../packages/ketch-registry show origin/main:rtok/ketch.toml`) apart from the extended comment, verified by diff. No code changed. On this Windows machine fmt and clippy passed (after T273/T274, separate branches) and one clean nextest run put 1295/1296 green with the single failure the local-only dart LSP gate (`docs/windows.md`, roadmap W1); the remaining suite runs in CI on the branch (the creator's call, 2026-09-26).
+
+Result: ketch.toml now carries the pin and the note verbatim; no code changed. The machine that hit the hang was repaired by copying the store's real `rtok.exe` over `~/.ketch/bin/rtok.exe`; until ketch's B62 lands, fresh Windows `ketch install rtok` of the v0.9.0 archive still links the stub — ketch B62 is the fix to watch.
+
+### T273. Windows clippy: `permissions_set_readonly_false` in the cfg(windows) `clear_readonly`
+
+Found 2026-09-26 running `just check` locally on Windows (rust 1.97.1, the mise pin): the new clippy lint `permissions_set_readonly_false` fires on `rtok-agent-sdk`'s `clear_readonly` and, under `-D warnings`, fails the whole `lint` recipe. CI never sees it — the function is `#[cfg(windows)]`, compiled out on the Linux/macOS runners.
+
+Plan: a scoped `#[allow(clippy::permissions_set_readonly_false)]` with a comment — the lint's world-writable rationale is Unix-only and this function exists only on Windows, where `MOVEFILE_REPLACE_EXISTING` needs the read-only bit gone.
+
+Check: `cargo clippy -p rtok-agent-sdk --all-targets --all-features -- -D warnings` green on Windows (2026-09-26). The full gate runs in CI on the branch — the creator's call; this lint is invisible to CI's ubuntu jobs, which analyze no cfg(windows) code.
+
+Status: done 2026-09-26
+Model: ZCode / glm-5.3
+
+### T274. Windows clippy: test code that only Unix compiles cleanly
+
+Found 2026-09-26 continuing the local Windows `just check` from T273: `-D warnings` also fails on test code CI never lints this way — the `read` symlink-escape test returns early under `#[cfg(not(unix))]` leaving the rest unreachable and `link` unused on Windows; the `otel.rs` flush-trace helpers and Cursor's `MISSING_RTOK_NOTE` serve Unix-gated tests only; and two `assert_eq!(.., true/false)` in `read` now trip `bool_assert_comparison`.
+
+Plan: move the unix body of the escape test into one `#[cfg(unix)]` block (non-unix keeps only the outside-file cleanup), gate the four trace helpers and the note const `#[cfg(unix)]`, and spell the two boolean asserts as `assert!` / `assert!(!..)`.
+
+Check: `cargo clippy --workspace --all-targets --all-features --exclude rtok-wasm-demo-guest -- -D warnings` green on Windows (twice, 2026-09-26). The rest of the gate runs in CI on the branch — the creator's call, local time is not spent re-running it; this lint class is invisible to CI anyway, since the ubuntu lint jobs analyze no cfg(windows) code.
+
+Status: done 2026-09-26
+Model: ZCode / glm-5.3

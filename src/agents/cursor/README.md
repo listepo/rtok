@@ -4,7 +4,7 @@
 read the same `~/.cursor` tree, so one install covers both; `--cli` / `--desktop` only pick
 which app the report shows.
 
-Files: `~/.cursor/hooks.json` (hooks) and `~/.cursor/mcp.json` (MCP without the plugin).
+Files: `~/.cursor/hooks.json` (hooks) and `~/.cursor/mcp.json` (MCP).
 Plugin link: `~/.cursor/plugins/local/rtok` → `plugins/cursor/` from the rtok install (D21).
 
 ## Modules
@@ -12,14 +12,14 @@ Plugin link: `~/.cursor/plugins/local/rtok` → `plugins/cursor/` from the rtok 
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | yes | `beforeShellExecution` → PreToolUse, `afterShellExecution` → PostToolUse, `preCompact` → PreCompact; all `--host cursor`; in `hooks.json` only without the plugin — the linked plugin carries the same events, so setup strips ours there (T244) |
-| mcp | yes | `mcpServers.rtok` in `mcp.json`, or served by the linked plugin (then `mcp.json` is left alone: one MCP per store) |
-| plugin | yes | links `plugins/cursor` (hooks + MCP as one unit) by default, once Cursor itself is detected; a stale or foreign destination is never overwritten |
+| mcp | yes | `mcpServers.rtok` in `mcp.json` (off with `[setup] mcp = false`); independent of the plugin (T275/D33): written on every install/update regardless of plugin state, only remove takes it out |
+| plugin | yes | links `plugins/cursor` (hooks only: T275/D33) by default, once Cursor itself is detected; a stale or foreign destination is never overwritten |
 | proxy | no | Cursor has no base-URL setting to point at the proxy |
 
 ## rtok plugins this host reaches
 
-Hooks carry the `hook` and `cli` surfaces, MCP carries `mcp`; the linked plugin serves both.
-Nothing carries `proxy`.
+Hooks carry the `hook` and `cli` surfaces; the linked plugin serves them. MCP carries `mcp`,
+served by `mcp.json` on its own. Nothing carries `proxy`.
 
 Reachable: measure, cmd, read, archive, inject, guard, memory, graph, toon
 Not reachable: proxy, compress
@@ -29,7 +29,7 @@ Not reachable: proxy, compress
 Host documentation setup writes against; re-check the links when this host changes.
 
 - Plugins (manifest `.cursor-plugin/plugin.json`, local install `~/.cursor/plugins/local/<name>`): https://cursor.com/docs/plugins
-- Manifest reference (`hooks`, `mcpServers` fields): https://cursor.com/docs/reference/plugins
+- Manifest reference (`hooks` field): https://cursor.com/docs/reference/plugins
 - Hooks (`~/.cursor/hooks.json`, `"version": 1`, `beforeShellExecution`, `afterShellExecution`, `preCompact`): https://cursor.com/docs/agent/hooks
 - MCP (`~/.cursor/mcp.json`, `mcpServers.<name>.command` / `args`): https://cursor.com/docs/context/mcp
 - Skills (`~/.cursor/skills/<name>/`): https://cursor.com/docs/skills

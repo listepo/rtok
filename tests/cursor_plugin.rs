@@ -1,8 +1,10 @@
-//! T10.5 + D21: Cursor host plugin is one MCP, a singleton, desktop+CLI, ketch if missing.
+//! T10.5 + D21: Cursor host plugin is hooks only (T275/D33 dropped its MCP server),
+//! desktop+CLI, ketch if missing.
 //!
 //! Check: `rtok agents install cursor --dry-run` names `plugins/cursor` and
-//! `~/.cursor/plugins/local`; `--yes` links the plugin and does not add a second
-//! `rtok` entry to `mcp.json`; second apply is `no changes`.
+//! `~/.cursor/plugins/local`; `--yes` links the plugin and `~/.cursor/mcp.json`'s
+//! `mcpServers.rtok` is written independently, plugin linked or not; second apply is `no
+//! changes`.
 
 mod common;
 
@@ -70,18 +72,20 @@ fn setup(args: &[&str], cfg: &Path, home: &Path) -> (String, String, i32) {
 }
 
 #[test]
-fn d21_plugin_and_mcp_are_one_unit() {
+fn d21_manifest_carries_hooks_and_no_mcp() {
     let dir = root();
     let cursor = fs::read_to_string(dir.join(".cursor-plugin/plugin.json")).unwrap();
     let agent = fs::read_to_string(dir.join("plugin.json")).unwrap();
-    let mcp: Value =
-        serde_json::from_str(&fs::read_to_string(dir.join("mcp.json")).unwrap()).unwrap();
-    let servers = mcp["mcpServers"].as_object().expect("mcpServers");
-    assert_eq!(servers.len(), 1, "singleton: one MCP server");
-    assert!(servers.contains_key("rtok"), "{mcp}");
-    assert!(cursor.contains("\"mcpServers\""), "{cursor}");
-    assert!(cursor.contains("./mcp.json"), "{cursor}");
+    assert!(cursor.contains("\"hooks\""), "{cursor}");
     assert!(agent.contains("\"name\": \"rtok\""), "{agent}");
+    assert!(
+        !cursor.contains("mcpServers"),
+        "T275/D33: the plugin no longer ships an MCP server: {cursor}"
+    );
+    assert!(
+        !dir.join("mcp.json").exists(),
+        "T275/D33: the plugin no longer ships an MCP server"
+    );
 }
 
 #[test]
@@ -104,28 +108,14 @@ fn d21_no_duplicate_call_paths() {
         !cmd.contains("rtok read") && !cmd.contains("rtok search"),
         "hooks must not duplicate MCP read/search: {cmd}"
     );
-    let mcp: Value =
-        serde_json::from_str(&fs::read_to_string(root().join("mcp.json")).unwrap()).unwrap();
-    let rtok = &mcp["mcpServers"]["rtok"];
-    assert_eq!(rtok["command"], "rtok", "{mcp}");
-    assert_eq!(rtok["args"], serde_json::json!(["mcp"]), "{mcp}");
-}
-
-#[test]
-fn d21_mcp_json_invokes_rtok_directly() {
-    let mcp: Value =
-        serde_json::from_str(&fs::read_to_string(root().join("mcp.json")).unwrap()).unwrap();
-    let rtok = &mcp["mcpServers"]["rtok"];
-    assert_eq!(rtok["command"], "rtok", "cross-platform: no sh wrapper");
-    assert_eq!(rtok["args"], serde_json::json!(["mcp"]));
 }
 
 #[test]
 fn d21_no_launcher_scripts_rtok_must_be_on_path() {
-    // T197 (T85/I-37): Cursor's `mcp.json` spawns `rtok mcp` directly through a
+    // T197 (T85/I-37): rtok's own `~/.cursor/mcp.json` spawns `rtok mcp` directly through a
     // single `command`/`args` pair with no per-OS slot, so launcher scripts could
-    // never run — the deleted `scripts/mcp.*` were dead code with green tests.
-    // The ketch hint lives in the README instead (Kimi-style), not in a script.
+    // never run — the deleted `scripts/mcp.*` were dead code with green tests. The plugin
+    // itself ships no MCP server at all now (T275/D33).
     assert!(
         !root().join("scripts").exists(),
         "no scripts/ in plugins/cursor: mcp.json spawns rtok directly"
@@ -160,7 +150,7 @@ fn setup_cursor_dry_run_offers_plugin() {
 }
 
 #[test]
-fn setup_cursor_yes_links_plugin_without_mcp_json() {
+fn setup_cursor_yes_links_plugin_and_still_registers_mcp() {
     let home = tmp("yes");
     let cfg = write_cfg(&home);
     let (stdout, stderr, code) = setup(&["agents", "install", "cursor", "--yes"], &cfg, &home);
@@ -168,25 +158,32 @@ fn setup_cursor_yes_links_plugin_without_mcp_json() {
     let dest = home.join(".cursor/plugins/local/rtok");
     let meta = fs::symlink_metadata(&dest).unwrap_or_else(|e| panic!("{}: {e}", dest.display()));
     assert!(meta.file_type().is_symlink() || dest.is_dir(), "{dest:?}");
+    // T275/D33: mcp.json gets rtok's entry even with the plugin linked.
     let mcp_path = home.join(".cursor/mcp.json");
-    if mcp_path.is_file() {
-        let body = fs::read_to_string(&mcp_path).unwrap();
-        assert!(
-            !body.contains("\"rtok\""),
-            "plugin is the MCP; no second registration: {body}"
-        );
-    }
+    let body =
+        fs::read_to_string(&mcp_path).unwrap_or_else(|e| panic!("{}: {e}", mcp_path.display()));
+    assert!(body.contains("\"rtok\""), "{body}");
     let (again, stderr2, code2) = setup(&["agents", "install", "cursor", "--yes"], &cfg, &home);
     assert_eq!(code2, 0, "stderr={stderr2}");
     assert!(again.contains("already installed"), "second apply: {again}");
+    assert!(
+        fs::read_to_string(&mcp_path).unwrap().contains("\"rtok\""),
+        "a repeat install must not strip the mcp entry"
+    );
     let (rm, stderr3, code3) = setup(&["agents", "install", "cursor", "--remove"], &cfg, &home);
     assert_eq!(code3, 0, "stderr={stderr3}");
     assert!(!dest.exists(), "remove must unlink plugin; stdout={rm}");
+    assert!(
+        !fs::read_to_string(&mcp_path)
+            .unwrap_or_default()
+            .contains("\"rtok\""),
+        "remove takes the mcp entry out too"
+    );
     let _ = fs::remove_dir_all(&home);
 }
 
 #[test]
-fn setup_cursor_clears_leftover_mcp_when_plugin_already_linked() {
+fn setup_cursor_keeps_mcp_entry_while_plugin_already_linked() {
     let home = tmp("leftover-mcp");
     let cfg = write_cfg(&home);
     let (stdout, stderr, code) = setup(&["agents", "install", "cursor", "--yes"], &cfg, &home);
@@ -199,13 +196,12 @@ fn setup_cursor_clears_leftover_mcp_when_plugin_already_linked() {
         r#"{"mcpServers":{"rtok":{"type":"stdio","command":"rtok","args":["mcp"]},"other":{"command":"x"}}}"#,
     )
     .unwrap();
+    // T275/D33: MCP is independent of the plugin — a repeat run keeps the entry (and the
+    // foreign one beside it), it never clears it just because the plugin is linked.
     let (again, stderr2, code2) = setup(&["agents", "install", "cursor"], &cfg, &home);
     assert_eq!(code2, 0, "stderr={stderr2} stdout={again}");
     let body = fs::read_to_string(&mcp_path).unwrap();
-    assert!(
-        !body.contains("\"rtok\""),
-        "already-linked setup must clear leftover mcpServers.rtok: {body}"
-    );
+    assert!(body.contains("\"rtok\""), "{body}");
     assert!(
         body.contains("other"),
         "foreign MCP servers must remain: {body}"

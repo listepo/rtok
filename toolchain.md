@@ -11,6 +11,7 @@ Project programs and direct packages from the manifests.
 | binaryen | brew (optional) | wasm-opt for the T60.7 webui bundle; wasm-pack downloads its own when it is not on PATH, with the same flags from `crates/rtok-webui/Cargo.toml` | https://github.com/WebAssembly/binaryen |
 | twiggy | optional (cargo install) | Per-function and per-crate size of the webui wasm when `tests/web_wasm.rs` reports growth (research.md, T60.7) | https://github.com/AlexEne/twiggy |
 | cargo-nextest | global (cargo install) | Parallel test runner | https://github.com/nextest-rs/nextest |
+| cargo-llvm-cov | mise | `just test-cov` (T301): coverage over the nextest suite; lcov for SonarCloud | https://github.com/taiki-e/cargo-llvm-cov |
 | codeql | mise | `just codeql` (T119): local run of the code scanning in `.github/workflows/codeql.yml` | https://github.com/github/codeql-cli-binaries |
 | git-cliff | mise | Changelog | https://github.com/orhun/git-cliff |
 | go | mise | hugo resolves the hextra theme as a Go module (site/go.mod) | https://github.com/golang/go |
@@ -29,9 +30,9 @@ Project programs and direct packages from the manifests.
 | jscpd | mise | `just dup` (T26.0): copy-paste detector, config in .jscpd.json | https://github.com/kucherenko/jscpd |
 | oxlint | mise (`npm:oxlint`) | `just js` (T110): lint for the TS host plugins and tests/node, `--deny-warnings` | https://github.com/oxc-project/oxc |
 | oxfmt | mise (`npm:oxfmt`) | `just js` / `just js-fmt` (T110): formatter for the same JS/TS files | https://github.com/oxc-project/oxc |
-| vitest | mise (`npm:vitest`) | T111: runs the TS host plugin tests (`vitest.config.mjs`, globals, inline snapshots); driven by `tests/filter.rs` and `tests/pi_plugin.rs` | https://github.com/vitest-dev/vitest |
+| vitest | mise (`npm:vitest`) | T111: runs the TS host plugin tests (`vitest.config.mjs`, globals, inline snapshots); driven by `tests/filter.rs` and `tests/pi_plugin.rs` (`--bail=1`), on Linux only (skipped on macOS and Windows) | https://github.com/vitest-dev/vitest |
 | vite | mise (`npm:vite`) | Peer of vitest 5 (`@vitest/mocker`); required so Windows CI can resolve `vite` when running host plugin tests | https://github.com/vitejs/vite |
-| rust | mise | CI otherwise installs the minimal profile | https://github.com/rust-lang/rust |
+| rust | mise | The one Rust version of the repo: local, ci.yml, verify.yml, sonarcloud.yml and release builds (build-setup.yml) all install it from mise.toml; `rustfmt,clippy` because CI otherwise installs the minimal profile | https://github.com/rust-lang/rust |
 | rustc | mise (pin rust) | Rust compiler | https://github.com/rust-lang/rust |
 | cargo | mise (pin rust) | Rust build and dependencies | https://github.com/rust-lang/cargo |
 | colima | mise | Container runtime that runs Docker (and others) inside a Lima VM — lightweight alternative to Docker Desktop for agents | https://github.com/abiosoft/colima |
@@ -58,6 +59,7 @@ Project programs and direct packages from the manifests.
 | console_error_panic_hook | local | https://crates.io/crates/console_error_panic_hook | WASM panic hook for the Slint web UI (T222) |
 | crossterm | local | https://crates.io/crates/crossterm | Terminal |
 | diesel | local | https://crates.io/crates/diesel | SQLite ORM |
+| diesel_migrations | local | https://crates.io/crates/diesel_migrations | Embedded SQLite migrations (T163.4) |
 | divan | local | https://crates.io/crates/divan | Divan benches in benches/ |
 | dotenvy | local | https://crates.io/crates/dotenvy | Rust dependency |
 | dunce | local | https://crates.io/crates/dunce | Canonicalize without Windows UNC prefixes |
@@ -65,6 +67,7 @@ Project programs and direct packages from the manifests.
 | figment | local | https://crates.io/crates/figment | Config |
 | futures-util | local | https://crates.io/crates/futures-util | Rust dependency |
 | httpmock | local | https://crates.io/crates/httpmock | Rust dependency |
+| humantime | local | https://crates.io/crates/humantime | T282: `[agents] idle` duration parsing; already in the lock as a transitive dep |
 | i-slint-backend-testing | local | https://crates.io/crates/i-slint-backend-testing | Headless backend for Slint UI e2e tests |
 | ignore | local | https://crates.io/crates/ignore | Rust dependency |
 | indicatif | local | https://crates.io/crates/indicatif | Rust dependency |
@@ -85,6 +88,7 @@ Project programs and direct packages from the manifests.
 | rustix | local | https://crates.io/crates/rustix | Rust dependency |
 | rustls | local | https://crates.io/crates/rustls | Preconfigured webpki TLS client config (T53.3) |
 | rustls-pemfile | local | https://crates.io/crates/rustls-pemfile | `SSL_CERT_FILE` bundle parsing (T53.3) |
+| semver | local | https://crates.io/crates/semver | T279: plugin version compare + `.rtok-plugin-version` (de)serialization |
 | serde | local | https://crates.io/crates/serde | Serialization |
 | serde_json | local | https://crates.io/crates/serde_json | JSON |
 | sha2 | local | https://crates.io/crates/sha2 | Rust dependency |
@@ -112,6 +116,7 @@ Project programs and direct packages from the manifests.
 | trycmd | local | https://crates.io/crates/trycmd | Full CLI command-output fixtures in tests/trycmd/ |
 | tokio-tungstenite | local | https://crates.io/crates/tokio-tungstenite | WebSocket client for the `rtok web` e2e (tests/web_e2e.rs) |
 | url | local | https://crates.io/crates/url | `file://` MCP roots → path (T263) |
+| uuid | local | https://crates.io/crates/uuid | T282: random UUIDv4 rtok agent id (D34); already in the lock as a transitive dep |
 | wasm-bindgen | local | https://crates.io/crates/wasm-bindgen | JS glue for the Slint web UI (T222) |
 | wasm-bindgen-futures | local | https://crates.io/crates/wasm-bindgen-futures | JS futures for the Slint web UI (T222) |
 | wasmi | local | https://crates.io/crates/wasmi | Rust dependency |

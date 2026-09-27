@@ -171,8 +171,9 @@ fn zcode_remove_keeps_foreign_events_and_servers() {
     .unwrap();
 
     // T164: no `--yes` — ZCode is detected by the explicit host name, so the plugin
-    // links by default and becomes the only call path, leaving the config-file hooks
-    // and mcp entries untouched (only the foreign ones were ever there).
+    // links by default and becomes the only call path for hooks, leaving the
+    // config-file hook entries untouched (only the foreign one was ever there). MCP is
+    // independent of the plugin (T275/D33): install writes `mcp.servers.rtok` anyway.
     rtok(&["agents", "install", "zcode"], &cfg, &home);
     // Built the same way `write_cfg` + `plugin_dest` derive it: the config path is one
     // all-forward-slash string (`write_cfg` normalizes `home` before embedding it), and
@@ -194,7 +195,10 @@ fn zcode_remove_keeps_foreign_events_and_servers() {
         "{installed}"
     );
     assert!(!installed.to_string().contains("PreToolUse"), "{installed}");
-    assert!(installed["mcp"]["servers"]["rtok"].is_null(), "{installed}");
+    assert_eq!(
+        installed["mcp"]["servers"]["rtok"]["args"][0], "mcp",
+        "T275/D33: mcp is independent of the plugin: {installed}"
+    );
     assert!(
         installed["mcp"]["servers"]["foreign"].is_object(),
         "{installed}"
@@ -213,6 +217,7 @@ fn zcode_remove_keeps_foreign_events_and_servers() {
             .is_some_and(|dirs| dirs.iter().any(|d| d.as_str() == Some(link_str.as_str()))),
         "{left}"
     );
+    assert!(left["mcp"]["servers"]["rtok"].is_null(), "{left}");
     assert!(left["mcp"]["servers"]["foreign"].is_object(), "{left}");
     assert_eq!(
         left["hooks"]["events"]["Stop"][0]["hooks"][0]["command"],
@@ -253,11 +258,12 @@ fn kimi_remove_keeps_comments_and_foreign_hooks() {
 
 /// T86 D21 singleton at the binary level: with the plugin installed
 /// (`plugins/managed/rtok/kimi.plugin.json` seeded, as Kimi's own
-/// `/plugins install` would write it), install strips rtok's own tables and
-/// `mcpServers.rtok` instead of adding them and reports `plugin`; remove leaves
-/// the managed copy alone with its own remove line.
+/// `/plugins install` would write it), install strips rtok's own hook tables
+/// instead of adding them and reports `plugin`. MCP is independent of the
+/// plugin (T275/D33): `mcpServers.rtok` is written and kept either way; remove
+/// leaves the managed copy alone with its own remove line.
 #[test]
-fn kimi_plugin_singleton_strips_own_tables_and_keeps_the_managed_copy() {
+fn kimi_plugin_singleton_strips_own_hooks_mcp_is_independent() {
     let home = tmp("kimi-singleton");
     let cfg = write_cfg(&home);
     let path = home.join(".kimi-code/config.toml");
@@ -277,16 +283,20 @@ fn kimi_plugin_singleton_strips_own_tables_and_keeps_the_managed_copy() {
     assert!(second.contains("plugin"), "{second}");
     assert!(
         !fs::read_to_string(&path).unwrap().contains("rtok hook"),
-        "own tables stripped while the plugin serves them"
+        "own hook tables stripped while the plugin serves them"
     );
     assert!(
-        json(&mcp)["mcpServers"]["rtok"].is_null(),
-        "own MCP entry stripped while the plugin serves it"
+        json(&mcp)["mcpServers"]["rtok"].is_object(),
+        "MCP entry is independent of the plugin (T275/D33)"
     );
 
     let rm = rtok(&["agents", "remove", "kimi"], &cfg, &home);
     assert!(rm.contains("/plugins remove rtok"), "{rm}");
     assert!(marker.is_file(), "remove leaves the managed copy alone");
+    assert!(
+        json(&mcp)["mcpServers"]["rtok"].is_null(),
+        "remove still takes the MCP entry out"
+    );
 }
 
 #[test]

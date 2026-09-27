@@ -64,6 +64,11 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Check plugin manifest versions
+        if: ${{ inputs.tag && inputs.tag != 'dry-run' }}
+        run: tools/plugin-versions.sh --check "${TAG#v}"
+        env:
+          TAG: ${{ inputs.tag }}
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0
@@ -134,6 +139,25 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
+      - name: "Install Rust from mise.toml"
+        uses: "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c"
+        with:
+          "cache_key_prefix": "mise-v1-release"
+          "install_args": "rust"
+      - name: "Add release targets to the mise toolchain"
+        run: |
+          set -euo pipefail
+          version="$(mise current rust)"
+          echo "RUSTUP_TOOLCHAIN=$version" >> "$GITHUB_ENV"
+          export RUSTUP_TOOLCHAIN="$version"
+          # shellcheck disable=SC2086
+          rustup target add $TARGETS
+          rustc --version
+          rustc --version | grep -q "^rustc $version " \
+            || { echo "rustc is not the mise.toml pin $version" >&2; exit 1; }
+        shell: "bash"
+        env:
+          "TARGETS": "${{ join(matrix.targets, ' ') }}"
       - name: "Cache Cargo build"
         uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
         with:

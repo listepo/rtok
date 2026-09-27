@@ -45,8 +45,10 @@ function spawnRtok(args: string[], stdin = ""): Spawn {
 }
 
 export function filterStdin(cmd: string, stdin: string): string {
-  const args = ["filter", "--stdin", "--cmd", cmd];
-  if (/^skill(\s|$)/i.test(cmd.trim())) args.push("--archive");
+  // Kilo 7 may hand a non-string through a mis-bound hook; coerce so load/run never throws.
+  const c = typeof cmd === "string" ? cmd : String(cmd ?? "");
+  const args = ["filter", "--stdin", "--cmd", c];
+  if (/^skill(\s|$)/i.test(c.trim())) args.push("--archive");
   const r = spawnRtok(args, stdin);
   if (r.failed) return stdin;
   return r.stdout;
@@ -138,7 +140,14 @@ function hookPayload(event: string, sessionID: string, extra: object = {}): stri
   return JSON.stringify({ hook_event_name: event, session_id: sessionID, ...extra });
 }
 
-/** OpenCode plugin: bash filter, guard check, compaction checkpoint (T70.6). */
+/** Single-quote for `rtok run -- '…'` (same shape as the Claude PreToolUse rewrite). */
+function shellQuote(cmd: string): string {
+  return `'${cmd.replace(/'/g, `'"'"'`)}'`;
+}
+
+/** OpenCode + Kilo plugin: bash → `rtok run`, guard, skill filter, compaction (T70.6 / T97).
+ * Kilo 7 (and current OpenCode) require `export default { id, server }` — a bare function
+ * default makes the host's plugin.config / dispose path throw (`w.config` undefined). */
 export function createPlugin(
   run: FilterFn = filterStdin,
   hook: HookFn = hookStdin,
@@ -150,12 +159,21 @@ export function createPlugin(
       input: { tool?: string; sessionID?: string },
       output: { args?: Record<string, unknown> },
     ) => {
-      const v = check(
-        String(input?.tool ?? ""),
-        output?.args ?? {},
-        String(input?.sessionID ?? ""),
-      );
+      const tool = String(input?.tool ?? "");
+      const v = check(tool, output?.args ?? {}, String(input?.sessionID ?? ""));
       if (!v.allow && v.reason) throw new Error(v.reason);
+      // Rewrite bash to `rtok run` before the host executes it (T97 live check; matches
+      // Claude/pi). Skip when already wrapped so a second before-hook cannot nest.
+      if (
+        tool.toLowerCase() === "bash" &&
+        output?.args &&
+        typeof output.args.command === "string"
+      ) {
+        const cmd = output.args.command;
+        if (!/^\s*rtok(\s|$)/.test(cmd)) {
+          output.args.command = `rtok run -- ${shellQuote(cmd)}`;
+        }
+      }
     },
     "tool.execute.after": async (input: AfterInput, output: AfterOutput) => {
       if (run === filterStdin) {
@@ -167,6 +185,8 @@ export function createPlugin(
         return;
       }
       if (tool !== "bash") return;
+      // `rtok run` already filtered; do not filter again.
+      if (/^\s*rtok\s+run\b/.test(String(input.args?.command ?? ""))) return;
       output.output = run(String(input.args?.command ?? ""), output.output);
     },
     "experimental.session.compacting": async (
@@ -193,4 +213,4 @@ export function createPlugin(
   });
 }
 
-export default createPlugin();
+export default { id: "rtok", server: createPlugin() };
