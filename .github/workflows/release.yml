@@ -64,6 +64,11 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Check plugin manifest versions
+        if: ${{ inputs.tag && inputs.tag != 'dry-run' }}
+        run: tools/plugin-versions.sh --check "${TAG#v}"
+        env:
+          TAG: ${{ inputs.tag }}
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0

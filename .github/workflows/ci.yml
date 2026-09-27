@@ -55,6 +55,9 @@ jobs:
       - run: just webui-check
       # T23.6: `rtok-plugin-sdk` is published on release; a broken manifest fails here.
       - run: just publish-dry
+      # T279: every plugin manifest and .rtok-plugin-version file must match Cargo.toml,
+      # so a host that caches a plugin by its manifest version sees a new build.
+      - run: tools/plugin-versions.sh --check "$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)"
 
   check:
     # Draft PRs still emit synchronize; skip until ready_for_review.
