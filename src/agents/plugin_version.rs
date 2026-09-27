@@ -387,32 +387,10 @@ pub fn decide(installed: Option<Installed>, available: &Available, force: bool) 
     }
 }
 
-/// `installed_at` for a fresh [`ReceiptEntry`]: UTC, second precision, no dependency.
+/// `installed_at` for a fresh [`ReceiptEntry`]: RFC 3339 UTC, second precision, from the same
+/// clock and calendar `rtok_log::stamp` uses for log lines.
 pub fn now_iso() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let (days, rem) = (secs / 86400, secs % 86400);
-    let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
-    let (y, mo, d) = civil_from_days(days as i64);
-    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
-}
-
-/// Days since the Unix epoch to a proleptic-Gregorian (year, month, day) — Howard Hinnant's
-/// `civil_from_days` (public domain), the same algorithm `chrono`/`time` use for UTC, so
-/// [`now_iso`] needs no extra dependency for one timestamp field.
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = (z - era * 146097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    (if m <= 2 { y + 1 } else { y }, m, d)
+    format!("{}Z", rtok_log::stamp(rtok_log::now()).replacen(' ', "T", 1))
 }
 
 #[cfg(test)]
@@ -854,17 +832,6 @@ mod tests {
     }
 
     // ── now_iso ──────────────────────────────────────────────────────────────
-
-    #[test]
-    fn civil_from_days_epoch_is_1970_01_01() {
-        assert_eq!(civil_from_days(0), (1970, 1, 1));
-    }
-
-    #[test]
-    fn civil_from_days_matches_a_known_date() {
-        // 2026-09-27 is 20723 days after the epoch.
-        assert_eq!(civil_from_days(20723), (2026, 9, 27));
-    }
 
     #[test]
     fn now_iso_looks_like_rfc3339_utc() {
