@@ -53,7 +53,7 @@ row once; a second import skips them all.
 
 ## Handoff
 
-`handoff` is an off-by-default MCP tool (`[plugins.memory] handoff = false`) that returns a budgeted session digest for sub-agents (T59.6).
+`handoff` is an MCP tool (`[plugins.memory] handoff = true`) that returns a budgeted session digest for sub-agents (T59.6). Set `handoff = false` to turn it off.
 
 ## Sync
 

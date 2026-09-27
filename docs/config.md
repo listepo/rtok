@@ -352,10 +352,14 @@ skill_max_bytes = 8192           # bodies at or under this load whole; so does a
 enabled        = true
 recall_titles  = 5                    # SessionStart: last N titles + ids
 recall_tokens  = 200
-prompt_recall  = 0                    # UserPromptSubmit: 0 = off; N = ranked titles per turn (T69.5; A/B gated)
-checkpoint_tokens = 400               # PreCompact → SessionStart(compact): prompts, skills loaded (name + KB, T62.2), paths, errors
+prompt_recall  = 5                    # UserPromptSubmit: 0 = off; N = ranked titles per turn (T69.5)
+checkpoint_tokens = 400               # PreCompact → SessionStart(compact)
 search_limit   = 5
 sync_tokens    = 300                  # rtok memory sync: CLAUDE.md / AGENTS.md block (T69.6)
+startup_recall = true                 # SessionStart(startup) restores newest session:* note (T71.2)
+handoff        = true                 # T59.6 sub-agent digest MCP tool
+spawn_brief        = true             # T130: SubagentStart pointer digest
+spawn_brief_tokens = 300              # T130: token budget for the spawn brief
 
 [plugins.memory.embed]
 enabled    = false                    # P29: FTS5-only when false; vector search is opt-in
