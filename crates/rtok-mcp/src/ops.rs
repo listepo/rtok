@@ -230,6 +230,23 @@ mod tests {
         }
     }
 
+    /// TOML entries are written as `[<key_path>.rtok]` tables, the shape Codex and Grok already
+    /// hold, and a created parent (`mcp` above `mcp.servers`) prints no empty header.
+    #[test]
+    fn toml_entry_is_a_standard_table_under_implicit_parents() {
+        for (key_path, header) in [
+            ("mcp_servers", "[mcp_servers.rtok]"),
+            ("mcp.servers", "[mcp.servers.rtok]"),
+        ] {
+            let spec = spec(Format::Toml, key_path);
+            let mut fs = MemFs::default();
+            apply(&spec, Mode::Install, &mut fs).unwrap();
+            let body = String::from_utf8(fs.read(&spec.config_path).unwrap()).unwrap();
+            assert!(body.starts_with(header), "{body}");
+            assert!(!body.contains("rtok = {"), "{body}");
+        }
+    }
+
     #[test]
     fn remove_leaves_an_entry_the_user_edited() {
         let spec = spec(Format::Json, "mcpServers");

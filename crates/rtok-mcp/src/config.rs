@@ -274,9 +274,12 @@ fn write_toml(fs: &mut impl Fs, spec: &McpSpec, entry: Option<&Value>) -> Result
     };
     let mut table: &mut dyn toml_edit::TableLike = doc.as_table_mut();
     for k in &spec.key_path {
+        // Implicit: a created `[mcp]` above `[mcp.servers.rtok]` prints no empty header of its own.
+        let mut created = toml_edit::Table::new();
+        created.set_implicit(true);
         table = table
             .entry(k)
-            .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+            .or_insert(toml_edit::Item::Table(created))
             .as_table_like_mut()
             .with_context(|| format!("{}: {k} is not a table", spec.config_path.display()))?;
     }
@@ -334,8 +337,19 @@ fn toml_value_to_json(v: &toml_edit::Value) -> Value {
     }
 }
 
+/// The entry itself as a standard table (`[mcp_servers.rtok]`, the shape Codex and Grok write
+/// today), not an inline `rtok = { … }`; values inside it stay inline.
 fn json_to_toml_item(v: &Value) -> toml_edit::Item {
-    toml_edit::Item::Value(json_to_toml_value(v))
+    match v {
+        Value::Object(m) => {
+            let mut t = toml_edit::Table::new();
+            for (k, x) in m {
+                t.insert(k, toml_edit::Item::Value(json_to_toml_value(x)));
+            }
+            toml_edit::Item::Table(t)
+        }
+        _ => toml_edit::Item::Value(json_to_toml_value(v)),
+    }
 }
 
 fn json_to_toml_value(v: &Value) -> toml_edit::Value {
