@@ -1,7 +1,7 @@
 bin.name = "rtok"
 args = "--config tests/trycmd/input/json-readers.toml agents sessions"
 stdout = """
-agent provider model input output cache_read cache_create started run
+agent host provider model input output cache_read cache_create started run seen state worktree activity
 nothing is running
 """
 

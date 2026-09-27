@@ -108,18 +108,16 @@ fn seed(home: &Path) {
         .unwrap();
 }
 
-/// Last column is live duration (`0s`/`1s`); it can tick between two CLI runs.
+/// Every line cut at the header's `started` column: `run` and `seen` tick between two CLI
+/// runs, and everything before `started` lines up the same when the rows match.
 fn without_run_col(s: &str) -> String {
+    let at = s
+        .lines()
+        .next()
+        .and_then(|h| h.find("started"))
+        .unwrap_or(0);
     s.lines()
-        .map(|line| {
-            let mut parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.last().is_some_and(|p| {
-                p.ends_with('s') && p[..p.len() - 1].bytes().all(|b| b.is_ascii_digit())
-            }) {
-                parts.pop();
-            }
-            parts.join(" ")
-        })
+        .map(|line| line.get(..at).unwrap_or(line).trim_end())
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -131,7 +129,7 @@ fn token_columns(line: &str, header: &str) -> Vec<i64> {
     let at = header.find("started").expect("header names started");
     line[..at]
         .split_whitespace()
-        .skip(3) // agent, provider, model
+        .skip(4) // agent, host, provider, model
         .map(|n| n.parse().expect("numbers before started"))
         .collect()
 }
@@ -406,5 +404,110 @@ fn watch_shows_a_session_started_mid_run_and_repeats_plain_tables() {
     );
     assert!(!got.contains("watch-gone"), "ended never shown: {got}");
     assert!(headers() >= 3, "header repeats per table: {got}");
+    let _ = fs::remove_dir_all(&h);
+}
+
+fn rtok_as(args: &[&str], home: &Path, agent: &str) -> std::process::Output {
+    Command::new(bin())
+        .args(args)
+        .env("RTOK_HOME", home)
+        .env("HOME", home)
+        .env("RTOK_AGENT_ID", agent)
+        .output()
+        .unwrap()
+}
+
+/// T284: `sessions` carries each session's agent (short id in the table, full id and
+/// paths in `--json`) with sub-agents indented under it; `show` finds an agent by id and
+/// rejects an ambiguous prefix; `status` sets the caller's own status text. Ids are fresh
+/// UUIDv7s per run, so this asserts rather than pins a golden.
+#[test]
+fn sessions_show_and_status_carry_the_agent_tree() {
+    let h = home("t284");
+    seed(&h);
+    let repo = h.join("repo");
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::create_dir_all(repo.join("src")).unwrap();
+    let cwd = repo.join("src").to_string_lossy().into_owned();
+    let (main, sub, gone) = {
+        let cfg = rtok::config::Config::load_from(&h).expect("config");
+        let store = rtok::store::Store::open(&cfg.core.db_path).expect("store");
+        let claude = store.host_id("claude").unwrap().unwrap();
+        let main = store
+            .register_agent(claude, "live-a", None, Some(&cwd), Some("Bash: cargo test"))
+            .unwrap();
+        let sub = store
+            .register_agent(
+                claude,
+                "live-a",
+                Some("sub-1"),
+                Some(&cwd),
+                Some("Read: a.rs"),
+            )
+            .unwrap();
+        let gone = store
+            .register_agent(claude, "live-a", Some("sub-2"), None, None)
+            .unwrap();
+        store.end_agent(&gone, rtok::log::now() as i64).unwrap();
+        (main, sub, gone)
+    };
+
+    let out = rtok(&["agents", "sessions"], &h);
+    let lines: Vec<&str> = out.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| l.starts_with(&main[..8]))
+        .unwrap_or_else(|| panic!("main agent row:\n{out}"));
+    assert!(
+        lines[at].contains("repo/src") && lines[at].contains("Bash: cargo test"),
+        "{out}"
+    );
+    assert!(lines[at].contains(" live "), "{out}");
+    assert!(
+        lines[at + 1].starts_with(&format!("  {}", &sub[..8])),
+        "sub indented:\n{out}"
+    );
+    assert!(
+        !out.contains(&format!("  {}", &gone[..8])),
+        "ended sub hidden:\n{out}"
+    );
+    assert!(
+        lines.iter().any(|l| l.starts_with("- ")),
+        "a session without an agent row still shows:\n{out}"
+    );
+    let all = rtok(&["agents", "sessions", "--all"], &h);
+    assert!(all.contains(&format!("  {}", &gone[..8])), "{all}");
+
+    let json: serde_json::Value =
+        serde_json::from_str(&rtok(&["agents", "sessions", "--json"], &h)).unwrap();
+    let row = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == "live-a")
+        .expect("live-a");
+    assert_eq!(row["agent"]["id"], main.as_str());
+    assert_eq!(row["agent"]["cwd"], cwd.as_str());
+    assert_eq!(row["agent"]["state"], "live");
+    assert_eq!(row["agent"]["sub_agents"][0]["id"], sub.as_str());
+
+    let set = rtok_as(&["agents", "status", "fixing\u{7} T284 "], &h, &main);
+    assert!(
+        set.status.success(),
+        "{}",
+        String::from_utf8_lossy(&set.stderr)
+    );
+    let shown: serde_json::Value =
+        serde_json::from_str(&rtok(&["agents", "show", &main, "--json"], &h)).unwrap();
+    assert_eq!(shown["status_text"], "fixing T284");
+    assert_eq!(shown["model"], "claude-x");
+    assert_eq!(shown["worktree"], "repo/src");
+    let text = rtok(&["agents", "show", &sub], &h);
+    assert!(text.contains(&format!("parent: {main}")), "{text}");
+
+    // Three ids minted within one second share their first 4 hex chars (UUIDv7's clock).
+    let amb = rtok_as(&["agents", "show", &main[..4]], &h, "");
+    assert_eq!(amb.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&amb.stderr).contains("ambiguous"));
     let _ = fs::remove_dir_all(&h);
 }

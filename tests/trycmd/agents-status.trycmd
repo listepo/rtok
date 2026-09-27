@@ -1,0 +1,8 @@
+# `rtok agents status` (T284): no `RTOK_AGENT_ID` set → exit 1, nothing written.
+
+```console
+$ HOME=target/tmp/t284-status RTOK_HOME=target/tmp/t284-status rtok agents status "fixing T284"
+? 1
+Error: not inside an agent session
+
+```

@@ -5,6 +5,11 @@
 //! surface *or* a reading command touches `Store` / `stats` / `doctor`, so a page cannot
 //! grow a query of its own and two windows cannot disagree about the same session.
 
+mod agents;
+pub use agents::{
+    AgentState, AgentView, SessionView, agent_sessions, agent_show, session_views, set_status,
+};
+
 use anyhow::Result;
 use serde::Serialize;
 use serde_json::{Value, json};

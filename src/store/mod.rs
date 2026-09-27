@@ -2,7 +2,7 @@
 
 // Agent registry (T282, D34): one row per host session rtok sees, one per sub-agent.
 mod agents;
-pub use agents::AgentDetail;
+pub use agents::{AgentDetail, idle_secs};
 pub mod embed;
 mod migrations;
 pub mod models;
