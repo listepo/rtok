@@ -48,8 +48,8 @@ pub fn hash_embed(text: &str, dims: u32) -> Vec<f32> {
         .filter(|t| t.chars().nth(1).is_some())
     {
         let digest = Sha256::digest(token.to_lowercase().as_bytes());
-        for chunk in digest.chunks_exact(8) {
-            let h = u64::from_le_bytes(chunk.try_into().expect("8 bytes"));
+        for chunk in digest.as_chunks::<8>().0 {
+            let h = u64::from_le_bytes(*chunk);
             v[(h % dims) as usize] += if h >> 63 == 0 { 1.0 } else { -1.0 };
         }
     }
@@ -80,8 +80,8 @@ fn blob_to_embed(blob: &[u8], dims: u32) -> Option<Vec<f32>> {
         return None;
     }
     let mut out = Vec::with_capacity(dims);
-    for c in blob.chunks_exact(4) {
-        out.push(f32::from_le_bytes(c.try_into().ok()?));
+    for c in blob.as_chunks::<4>().0 {
+        out.push(f32::from_le_bytes(*c));
     }
     Some(out)
 }

@@ -247,7 +247,7 @@ impl WasmPlugin {
                 "rtok_on_mcp_tool",
             )?
             .call(&mut inner.store, (0, 0, 0, 0, 0, 0))?;
-        let staged = inner.store.data_mut().staged.drain(..).collect::<Vec<_>>();
+        let staged = std::mem::take(&mut inner.store.data_mut().staged);
         for m in staged {
             cx.record(&m).map_err(|e| Error::new(e.to_string()))?;
         }

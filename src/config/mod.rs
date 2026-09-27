@@ -837,7 +837,7 @@ impl Config {
     /// `$RTOK_HOME` or `$HOME/.rtok`; always absolute (T184).
     ///
     /// Unlike [`env_user_home`], this falls all the way to `std::env::home_dir()` (Unix:
-    /// `getpwuid_r` when `HOME` is unset too; not deprecated on the pinned 1.97.1) before
+    /// `getpwuid_r` when `HOME` is unset too; not deprecated on the pinned 1.98.1) before
     /// giving up on a user home — scoped to *this* one lookup so it does not also widen every
     /// other `~/x` config default's fallback (see [`env_user_home`]'s doc).
     pub fn home_dir() -> PathBuf {

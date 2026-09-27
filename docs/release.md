@@ -73,7 +73,9 @@ installer and `rtok-update` both read.
 
 Intel macOS (`x86_64-apple-darwin`) is intentionally omitted: GitHub's
 `macos-15-intel` runners queue and usually dominate release wall-clock. Release
-jobs restore a Cargo cache via [`.github/build-setup.yml`](../.github/build-setup.yml).
+jobs install Rust from the `rust` pin in `mise.toml` (via `jdx/mise-action`, the same
+toolchain ci.yml tests), add the matrix targets to it, and restore a Cargo cache via
+[`.github/build-setup.yml`](../.github/build-setup.yml).
 
 Each build job prints archive sizes into the Actions step summary; the GitHub
 Release notes get a **Download sizes** table (MiB) so you do not have to open Assets.
