@@ -31,9 +31,9 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             vec!["--yes", "--cli"],
             Some(home.join(".claude.json")),
         ),
-        // The linked plugin carries hooks and MCP, so `hooks.json` and `mcp.json` stay
-        // unwritten (D21, T244).
-        ("cursor", vec!["--yes"], None),
+        // The linked plugin carries hooks only (D21, T244), so `hooks.json` stays unwritten;
+        // MCP is independent of it (T275/D33) and `mcp.json` is written and backed up here.
+        ("cursor", vec!["--yes"], Some(home.join(".cursor/mcp.json"))),
         ("codex", vec![], Some(home.join(".codex/config.toml"))),
         (
             "opencode",
