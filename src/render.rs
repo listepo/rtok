@@ -310,13 +310,13 @@ pub fn sessions_tick(
 
 /// `rtok agents whoami` (T283): the store's [`crate::store::AgentDetail`] as `key: value`
 /// lines — one call's worth of identity, not a table (there is exactly one row: this
-/// session's own).
+/// session's own). The host's own session id stays in `--json` only: it is the host's key,
+/// not rtok's identity (D34), and CodeQL treats a printed session id as a leaked secret.
 pub fn agent_whoami_text(d: &crate::store::AgentDetail) -> String {
     format!(
         "id: {}\n\
          short: {}\n\
          host: {}\n\
-         host session: {}\n\
          cwd: {}\n\
          started: {}\n\
          last seen: {}\n\
@@ -324,7 +324,6 @@ pub fn agent_whoami_text(d: &crate::store::AgentDetail) -> String {
         d.id,
         d.short,
         d.host,
-        d.host_session_id,
         d.cwd.as_deref().unwrap_or("-"),
         crate::log::stamp(d.started_at.max(0) as u64),
         crate::log::stamp(d.last_seen.max(0) as u64),
