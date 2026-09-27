@@ -3703,6 +3703,7 @@ dependencies = [
  "tree-sitter-typescript",
  "trycmd",
  "url",
+ "uuid",
  "wasmi",
  "watchman_client",
  "webpki-roots",

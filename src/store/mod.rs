@@ -1,5 +1,7 @@
 //! One SQLite file (plan T0.3, T13.1, decision D8): WAL mode, FTS5, migrations keyed by filename.
 
+// Agent registry (T282, D34): one row per host session rtok sees, one per sub-agent.
+mod agents;
 pub mod embed;
 mod migrations;
 pub mod models;
