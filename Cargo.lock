@@ -3726,6 +3726,14 @@ name = "rtok-log"
 version = "0.0.1"
 
 [[package]]
+name = "rtok-mcp"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "serde_json",
+]
+
+[[package]]
 name = "rtok-plugin-sdk"
 version = "0.0.1"
 dependencies = [
