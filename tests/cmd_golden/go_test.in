@@ -1,0 +1,42 @@
+argv: go test ./...
+exit: 0
+min_saving: 38
+---
+=== RUN   TestFormatDate
+--- PASS: TestFormatDate (0.00s)
+=== RUN   TestFormatDate/iso
+--- PASS: TestFormatDate/iso (0.00s)
+=== RUN   TestFormatDate/relative
+--- PASS: TestFormatDate/relative (0.00s)
+=== RUN   TestTruncate
+--- PASS: TestTruncate (0.00s)
+=== RUN   TestTruncate/short
+--- PASS: TestTruncate/short (0.00s)
+=== RUN   TestTruncate/long
+--- PASS: TestTruncate/long (0.00s)
+=== RUN   TestUserFetch
+--- PASS: TestUserFetch (0.01s)
+=== RUN   TestUserFetch/found
+--- PASS: TestUserFetch/found (0.00s)
+=== RUN   TestUserFetch/missing
+--- PASS: TestUserFetch/missing (0.00s)
+=== RUN   TestButtonRender
+    button_test.go:22: rendering button with label "Submit"
+--- FAIL: TestButtonRender (0.00s)
+    button_test.go:25: got "submit", want "Submit"
+=== RUN   TestModalOpen
+--- PASS: TestModalOpen (0.00s)
+=== RUN   TestModalClose
+--- PASS: TestModalClose (0.00s)
+=== RUN   TestNavRender
+--- PASS: TestNavRender (0.00s)
+=== RUN   TestTableSort
+--- PASS: TestTableSort (0.01s)
+=== RUN   TestTableFilter
+--- PASS: TestTableFilter (0.00s)
+FAIL
+FAIL	example.com/foo/ui	0.034s
+ok  	example.com/foo/api	0.021s
+ok  	example.com/foo/db	0.045s
+ok  	example.com/foo/util	0.009s
+FAIL

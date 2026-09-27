@@ -1,0 +1,40 @@
+src
+├── api
+│   ├── client.ts
+│   ├── endpoints.ts
+│   ├── types.ts
+│   └── user.test.ts
+├── components
+│   ├── Button.test.ts
+│   ├── Button.tsx
+│   ├── Input.test.ts
+│   ├── Input.tsx
+│   ├── Modal.test.ts
+│   ├── Modal.tsx
+│   ├── Nav.test.ts
+│   ├── Nav.tsx
+│   ├── Table.test.ts
+│   └── Table.tsx
+├── hooks
+│   ├── useAuth.test.ts
+│   ├── useAuth.ts
+│   ├── useTheme.test.ts
+│   └── useTheme.ts
+├── pages
+│   ├── About.tsx
+│   ├── Home.tsx
+│   ├── Settings.tsx
+│   └── index.ts
+├── utils
+│   ├── date.test.ts
+│   ├── date.ts
+│   ├── string.test.ts
+│   └── string.ts
+├── db
+│   ├── migrations
+│   │   ├── 0001_init.sql
+│   │   ├── 0002_users.sql
+│   │   ├── 0003_sessions.sql
+│   │   └── 0004_tokens.sql
+│   ├── schema.ts
+│   └── setup.test.ts
