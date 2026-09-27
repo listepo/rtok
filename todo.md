@@ -25,5 +25,4 @@
 - T288. Push unread messages to hooked agents
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
-- T297. Saving floors that catch a regression
 - T298. Proxy replay bench with a saving floor

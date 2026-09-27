@@ -1,0 +1,25 @@
+npm warn deprecated lodash@4.17.15: this package is no longer supported
+npm warn deprecated request@2.88.2: this package is no longer supported
+npm warn deprecated uuid@3.4.0: this package is no longer supported
+npm warn deprecated querystring@0.2.0: this package is no longer supported
+npm warn deprecated domexception@1.0.1: this package is no longer supported
+npm warn deprecated har-validator@5.1.5: this package is no longer supported
+npm warn deprecated core-js@2.6.12: this package is no longer supported
+npm warn deprecated sourcemap-codec@1.4.8: this package is no longer supported
+… 27 lines omitted (expand deadbeef)
+npm http fetch GET 200 https://registry.npmjs.org/pkg22 2200ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg23 2300ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg24 2400ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg25 2500ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg26 2600ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg27 2700ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg28 2800ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg29 2900ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg30 3000ms (cache miss)
+
+added 842 packages, and audited 843 packages in 12s
+
+128 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
