@@ -92,11 +92,14 @@ pub struct AgentDetail {
     pub short: String,
     pub host: String,
     pub host_session_id: String,
+    pub parent_id: Option<String>,
     pub cwd: Option<String>,
     pub started_at: i64,
     pub last_seen: i64,
     pub ended_at: Option<i64>,
     pub activity: Option<String>,
+    /// What the agent says it is busy with (`rtok agents status`, T284).
+    pub status_text: Option<String>,
 }
 
 type AgentDetailTuple = (
@@ -104,9 +107,11 @@ type AgentDetailTuple = (
     String,
     String,
     Option<String>,
+    Option<String>,
     i64,
     i64,
     Option<i64>,
+    Option<String>,
     Option<String>,
 );
 
@@ -117,12 +122,42 @@ fn agent_detail_from(t: AgentDetailTuple) -> AgentDetail {
         short,
         host: t.1,
         host_session_id: t.2,
-        cwd: t.3,
-        started_at: t.4,
-        last_seen: t.5,
-        ended_at: t.6,
-        activity: t.7,
+        parent_id: t.3,
+        cwd: t.4,
+        started_at: t.5,
+        last_seen: t.6,
+        ended_at: t.7,
+        activity: t.8,
+        status_text: t.9,
     }
+}
+
+/// `agents ⋈ hosts` rows in the [`AgentDetailTuple`] order — the one select every
+/// [`AgentDetail`] reader shares.
+macro_rules! agent_details {
+    () => {
+        agents::table.inner_join(hosts::table).select((
+            agents::id,
+            hosts::slug,
+            agents::host_session_id,
+            agents::parent_id,
+            agents::cwd,
+            agents::started_at,
+            agents::last_seen,
+            agents::ended_at,
+            agents::activity,
+            agents::status_text,
+        ))
+    };
+}
+
+/// `[agents] idle` (e.g. `"30m"`) in whole seconds, the one parser of that key.
+pub fn idle_secs(idle: &str) -> Result<i64> {
+    humantime::parse_duration(idle)
+        .map_err(|e| anyhow::anyhow!("bad [agents] idle {idle:?}: {e}"))?
+        .as_secs()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("[agents] idle {idle:?} is out of range"))
 }
 
 impl Store {
@@ -228,23 +263,47 @@ impl Store {
     /// first, so this is always looked up by the canonical id it returned.
     pub fn agent_detail(&self, id: &str) -> Result<Option<AgentDetail>> {
         let mut conn = self.lock()?;
-        agents::table
-            .inner_join(hosts::table)
+        agent_details!()
             .filter(agents::id.eq(id))
-            .select((
-                agents::id,
-                hosts::slug,
-                agents::host_session_id,
-                agents::cwd,
-                agents::started_at,
-                agents::last_seen,
-                agents::ended_at,
-                agents::activity,
-            ))
             .first::<AgentDetailTuple>(&mut *conn)
             .optional()
             .map(|o| o.map(agent_detail_from))
             .map_err(Into::into)
+    }
+
+    /// Every agent (main rows and sub-agents) of these host sessions, oldest first — the
+    /// rows `rtok agents sessions` (T284) nests under the session they belong to.
+    pub fn agents_of_sessions(&self, sessions: &[String]) -> Result<Vec<AgentDetail>> {
+        let mut conn = self.lock()?;
+        Ok(agent_details!()
+            .filter(agents::host_session_id.eq_any(sessions))
+            .order((agents::started_at, agents::id))
+            .load::<AgentDetailTuple>(&mut *conn)?
+            .into_iter()
+            .map(agent_detail_from)
+            .collect())
+    }
+
+    /// The sub-agents whose `parent_id` is `id`, oldest first (`rtok agents show`, T284).
+    pub fn agent_children(&self, id: &str) -> Result<Vec<AgentDetail>> {
+        let mut conn = self.lock()?;
+        Ok(agent_details!()
+            .filter(agents::parent_id.eq(id))
+            .order((agents::started_at, agents::id))
+            .load::<AgentDetailTuple>(&mut *conn)?
+            .into_iter()
+            .map(agent_detail_from)
+            .collect())
+    }
+
+    /// Set (or, with `None`, clear) the agent's own status text (T284); `false` when no
+    /// row has this id.
+    pub fn set_agent_status(&self, id: &str, text: Option<&str>) -> Result<bool> {
+        let mut conn = self.lock()?;
+        let n = diesel::update(agents::table.filter(agents::id.eq(id)))
+            .set(agents::status_text.eq(text))
+            .execute(&mut *conn)?;
+        Ok(n > 0)
     }
 
     /// Every agent with no `ended_at` and a `last_seen` within `idle` (`[agents] idle`'s raw
@@ -252,11 +311,7 @@ impl Store {
     /// computed in SQL — `unixepoch() - secs`, not `SystemTime::now()` — so it shares
     /// SQLite's own clock with the `last_seen` values it is compared against.
     pub fn live_agents(&self, idle: &str) -> Result<Vec<AgentRow>> {
-        let secs: i64 = humantime::parse_duration(idle)
-            .map_err(|e| anyhow::anyhow!("bad [agents] idle {idle:?}: {e}"))?
-            .as_secs()
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("[agents] idle {idle:?} is out of range"))?;
+        let secs = idle_secs(idle)?;
         let mut conn = self.lock()?;
         Ok(agents::table
             .filter(agents::ended_at.is_null())

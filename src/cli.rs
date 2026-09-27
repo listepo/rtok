@@ -614,6 +614,19 @@ enum AgentCmd {
         #[arg(long)]
         json: bool,
     },
+    /// One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status
+    Show {
+        /// Agent id or any unique prefix of it
+        id: String,
+        /// JSON instead of the text lines
+        #[arg(long)]
+        json: bool,
+    },
+    /// Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars
+    Status {
+        /// The status text; empty clears it
+        text: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1199,7 +1212,7 @@ pub fn run() -> Result<()> {
                     let run =
                         crate::log::watch_loop(&mut out, tty, crate::log::WATCH_POLL, move || {
                             let now = crate::log::now() as i64;
-                            match model::sessions(&cfg, 0) {
+                            match model::agent_sessions(&cfg, all, now) {
                                 Ok(rows) => {
                                     Some(crate::render::sessions_tick(&mut prev, &rows, all, now))
                                 }
@@ -1221,18 +1234,12 @@ pub fn run() -> Result<()> {
                     }
                     return Ok(());
                 }
-                let rows = model::sessions(&cfg, 0)?;
+                let now = crate::log::now() as i64;
+                let rows = model::agent_sessions(&cfg, all, now)?;
                 if json {
-                    let rows: Vec<_> = rows
-                        .into_iter()
-                        .filter(|r| all || r.ended_at.is_none())
-                        .collect();
                     print_json(&rows)?;
                 } else {
-                    print!(
-                        "{}",
-                        crate::render::sessions_table(&rows, all, crate::log::now() as i64)
-                    );
+                    print!("{}", crate::render::sessions_table(&rows, all, now));
                 }
             }
             AgentCmd::Junk {
@@ -1265,6 +1272,24 @@ pub fn run() -> Result<()> {
                     print_json(&detail)?;
                 } else {
                     print!("{}", crate::render::agent_whoami_text(&detail));
+                }
+            }
+            AgentCmd::Show { id, json } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let now = crate::log::now() as i64;
+                let agent = model::agent_show(&cfg, &id, now)?;
+                if json {
+                    print_json(&agent)?;
+                } else {
+                    print!("{}", crate::render::agent_show_text(&agent, now));
+                }
+            }
+            AgentCmd::Status { text } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let me = std::env::var("RTOK_AGENT_ID").ok();
+                match model::set_status(&cfg, me.as_deref(), &text)? {
+                    Some(text) => println!("status: {text}"),
+                    None => println!("status cleared"),
                 }
             }
         },

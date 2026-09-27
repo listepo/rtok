@@ -451,6 +451,8 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     // the Sessions page rides the snapshot since T25.1, so the command renders a
     // real page, not an on-demand call
     ("agents sessions", "sessions"),
+    // T284: one agent out of the same Sessions-page model (`model::agent_show`)
+    ("agents show", "sessions"),
     // the Doctor page rides the snapshot since T15.6, so `rtok doctor` renders it
     ("doctor", "doctor"),
     // the Logs page rides the snapshot since T15.7, so `rtok logs` renders it
@@ -525,6 +527,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "refreshes or reinstalls what rtok installed in a host",
     ),
     ("setup", "deprecated spelling of `rtok agents install`"),
+    (
+        "agents status",
+        "writes the calling agent's own status text into the store (T284)",
+    ),
     ("config init", "writes the annotated reference file"),
     ("config set", "edits one key in the user file"),
     ("bench", "runs the A/B schedule and writes Measurement rows"),
@@ -684,6 +690,7 @@ const JSON_READERS: &[&str] = &[
     "agents info",
     "agents sessions",
     "agents whoami",
+    "agents show",
     "logs",
     "demon status",
     "otel status",
