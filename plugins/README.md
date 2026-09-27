@@ -27,8 +27,9 @@ See [`src/agents/claude/README.md`](../src/agents/claude/README.md) and [`docs/a
 ## Writing a new host plugin
 
 1. **Read an existing peer** closest to the host’s model:
-   - Manifest + hooks.json + mcp.json/scripts → start from `cursor/` or `zcode/`
-   - Single JSON manifest (hooks + MCP) → `kimi/`
+   - Manifest + hooks.json (no MCP: T275) → start from `cursor/` or `zcode/`; a plugin that
+     does ship its own MCP → `gemini/` or `grok/`
+   - Single JSON manifest (hooks only, no MCP: T275) → `kimi/`
    - TypeScript extension API → `opencode/` or `pi/`
    - MCP-only (hooks cannot rewrite) → `antigravity/`
 2. **Keep D21**: one unit that owns hooks and MCP together when the host supports both; one `rtok mcp` process per store.
@@ -67,7 +68,7 @@ See [`src/agents/claude/README.md`](../src/agents/claude/README.md) and [`docs/a
 | [`kimi/`](kimi/) | Kimi Code | single `kimi.plugin.json` |
 | [`opencode/`](opencode/) | OpenCode (+ Kilo) | `rtok.ts` plugin |
 | [`pi/`](pi/) | pi | extension + skill (no MCP by default) |
-| [`zcode/`](zcode/) | ZCode | hooks + MCP + launchers |
+| [`zcode/`](zcode/) | ZCode | hooks + launcher (no MCP: T275) |
 
 ## Further reading
 

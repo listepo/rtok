@@ -570,6 +570,11 @@ const EXEMPT: &[(&str, &str)] = &[
     // helpers: a location or a verdict, not model data
     ("config path", "prints where the config file is"),
     (
+        "agents whoami",
+        "prints this session's own rtok agent id from RTOK_AGENT_ID (T283); a one-row \
+         identity call, not a shared model page",
+    ),
+    (
         "info",
         "prints version, paths, disk usage, error count and proxy status",
     ),
@@ -674,6 +679,7 @@ const JSON_READERS: &[&str] = &[
     "agents list",
     "agents info",
     "agents sessions",
+    "agents whoami",
     "logs",
     "demon status",
     "otel status",

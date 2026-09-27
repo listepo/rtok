@@ -6,9 +6,9 @@ Agent rules for the **ZCode** host package. Humans: [`README.md`](README.md). Sh
 
 | Item | Location / rule |
 | --- | --- |
-| Manifest / entry | `.zcode-plugin/plugin.json`, `hooks/hooks.json`, `.mcp.json` |
+| Manifest / entry | `.zcode-plugin/plugin.json`, `hooks/hooks.json` |
 | Hooks | `scripts/hook.sh` → `rtok hook` (Claude I/O; no `--host`) |
-| MCP | `scripts/mcp.sh` / `mcp.cmd` with `${ZCODE_PLUGIN_ROOT}` |
+| MCP | none in the plugin (T275/D33): `mcp.servers.rtok` is written by `rtok agents install zcode` into `config.json` directly, plugin linked or not |
 | Installer | [`../src/agents/zcode/README.md`](../src/agents/zcode/README.md) |
 | Root human guide | [`../README.md`](../README.md) |
 

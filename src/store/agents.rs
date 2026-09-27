@@ -7,9 +7,10 @@
 
 use anyhow::{Result, bail};
 use diesel::prelude::*;
+use serde::Serialize;
 
 use super::Store;
-use super::schema::agents;
+use super::schema::{agents, hosts};
 use super::{coalesce, substr, unixepoch};
 
 /// One `agents` row.
@@ -81,6 +82,47 @@ fn agent_cols() -> (
         agents::ended_at,
         agents::activity,
     )
+}
+
+/// One agent joined to its host's slug — [`Store::agent_detail`], the shape `rtok agents
+/// whoami` (T283) prints and serializes for `--json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AgentDetail {
+    pub id: String,
+    pub short: String,
+    pub host: String,
+    pub host_session_id: String,
+    pub cwd: Option<String>,
+    pub started_at: i64,
+    pub last_seen: i64,
+    pub ended_at: Option<i64>,
+    pub activity: Option<String>,
+}
+
+type AgentDetailTuple = (
+    String,
+    String,
+    String,
+    Option<String>,
+    i64,
+    i64,
+    Option<i64>,
+    Option<String>,
+);
+
+fn agent_detail_from(t: AgentDetailTuple) -> AgentDetail {
+    let short = t.0.chars().take(8).collect();
+    AgentDetail {
+        id: t.0,
+        short,
+        host: t.1,
+        host_session_id: t.2,
+        cwd: t.3,
+        started_at: t.4,
+        last_seen: t.5,
+        ended_at: t.6,
+        activity: t.7,
+    }
 }
 
 impl Store {
@@ -179,6 +221,30 @@ impl Store {
             1 => Ok(matches.into_iter().next().expect("len == 1")),
             _ => bail!("ambiguous: {}", matches.join(", ")),
         }
+    }
+
+    /// One agent by its exact id, host slug instead of `hosts.id` — the shape `rtok agents
+    /// whoami` (T283) prints. The caller resolves a prefix through [`Store::resolve_agent`]
+    /// first, so this is always looked up by the canonical id it returned.
+    pub fn agent_detail(&self, id: &str) -> Result<Option<AgentDetail>> {
+        let mut conn = self.lock()?;
+        agents::table
+            .inner_join(hosts::table)
+            .filter(agents::id.eq(id))
+            .select((
+                agents::id,
+                hosts::slug,
+                agents::host_session_id,
+                agents::cwd,
+                agents::started_at,
+                agents::last_seen,
+                agents::ended_at,
+                agents::activity,
+            ))
+            .first::<AgentDetailTuple>(&mut *conn)
+            .optional()
+            .map(|o| o.map(agent_detail_from))
+            .map_err(Into::into)
     }
 
     /// Every agent with no `ended_at` and a `last_seen` within `idle` (`[agents] idle`'s raw
@@ -281,6 +347,29 @@ mod tests {
         store.end_agent(&id, 1_800_000_000).unwrap();
         let row = store.agent_row(&id).unwrap().unwrap();
         assert_eq!(row.ended_at, Some(1_800_000_000));
+    }
+
+    #[test]
+    fn agent_detail_joins_the_host_slug_and_short_id() {
+        let store = Store::open_in_memory().unwrap();
+        let claude = store.host_id("claude").unwrap().unwrap();
+        let id = store
+            .register_agent(claude, "sess-detail", None, Some("/repo"), Some("Bash: ls"))
+            .unwrap();
+        let detail = store.agent_detail(&id).unwrap().unwrap();
+        assert_eq!(detail.id, id);
+        assert_eq!(detail.short, id[..8]);
+        assert_eq!(detail.host, "claude");
+        assert_eq!(detail.host_session_id, "sess-detail");
+        assert_eq!(detail.cwd.as_deref(), Some("/repo"));
+        assert_eq!(detail.activity.as_deref(), Some("Bash: ls"));
+        assert_eq!(detail.ended_at, None);
+        assert!(
+            store
+                .agent_detail("ffffffff-0000-7000-8000-000000000000")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

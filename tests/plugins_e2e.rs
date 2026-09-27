@@ -486,6 +486,38 @@ fn read_stripped_measurement_matches_returned_text() {
     );
 }
 
+/// T299: `map`, `signatures` (outline) and `search` over one realistic fixture must keep
+/// saving at least `floor` percent of the raw file's tokens (same estimator the code uses).
+/// Floors are the saving measured at authoring time minus 5 points. These modes record no
+/// `Measurement` row yet (only `stripped` does), so the saving is computed here directly.
+#[test]
+fn read_modes_keep_a_saving_floor() {
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/read_modes_sample.rs"
+    ))
+    .unwrap();
+    // (tool, args, floor %): measured 95.1 / 88.8 / 88.9 (1350 -> 66 / 151 / 150 tokens).
+    let cases = [
+        ("read", r#"{"path":"sample.rs","mode":"map"}"#, 90.1),
+        ("read", r#"{"path":"sample.rs","mode":"signatures"}"#, 83.8),
+        ("search", r#"{"pattern":"pub fn","path":"sample.rs"}"#, 83.9),
+    ];
+    for (name, args, floor) in cases {
+        let home = tmp("read-modes");
+        std::fs::write(home.0.join("sample.rs"), &src).unwrap();
+        let out = tool(&home, &home.0, name, args);
+        let cfg = Config::load_from(&home.0).unwrap();
+        let before = tokens::estimate(&src, Class::Code, &cfg.estimator);
+        let after = tokens::estimate(&out, Class::Code, &cfg.estimator);
+        let pct = 100.0 * (1.0 - f64::from(after) / f64::from(before));
+        assert!(
+            pct >= floor,
+            "{name} {args}: saved {pct:.1}% < floor {floor}% ({before} -> {after} tokens): {out}"
+        );
+    }
+}
+
 /// Proxy surface: `compress` mode archives a `tool_result` older than `keep_turns`
 /// (`src/plugins/archive/mod.rs::rewrite_block`), which records `before`/`after` from the
 /// same `text`/`live` strings it substitutes into the request — so the row is checked

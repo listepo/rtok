@@ -171,8 +171,9 @@ fn zcode_remove_keeps_foreign_events_and_servers() {
     .unwrap();
 
     // T164: no `--yes` — ZCode is detected by the explicit host name, so the plugin
-    // links by default and becomes the only call path, leaving the config-file hooks
-    // and mcp entries untouched (only the foreign ones were ever there).
+    // links by default and becomes the only call path for hooks, leaving the
+    // config-file hook entries untouched (only the foreign one was ever there). MCP is
+    // independent of the plugin (T275/D33): install writes `mcp.servers.rtok` anyway.
     rtok(&["agents", "install", "zcode"], &cfg, &home);
     // Built the same way `write_cfg` + `plugin_dest` derive it: the config path is one
     // all-forward-slash string (`write_cfg` normalizes `home` before embedding it), and
@@ -194,7 +195,10 @@ fn zcode_remove_keeps_foreign_events_and_servers() {
         "{installed}"
     );
     assert!(!installed.to_string().contains("PreToolUse"), "{installed}");
-    assert!(installed["mcp"]["servers"]["rtok"].is_null(), "{installed}");
+    assert_eq!(
+        installed["mcp"]["servers"]["rtok"]["args"][0], "mcp",
+        "T275/D33: mcp is independent of the plugin: {installed}"
+    );
     assert!(
         installed["mcp"]["servers"]["foreign"].is_object(),
         "{installed}"
@@ -213,6 +217,7 @@ fn zcode_remove_keeps_foreign_events_and_servers() {
             .is_some_and(|dirs| dirs.iter().any(|d| d.as_str() == Some(link_str.as_str()))),
         "{left}"
     );
+    assert!(left["mcp"]["servers"]["rtok"].is_null(), "{left}");
     assert!(left["mcp"]["servers"]["foreign"].is_object(), "{left}");
     assert_eq!(
         left["hooks"]["events"]["Stop"][0]["hooks"][0]["command"],
