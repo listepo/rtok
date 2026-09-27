@@ -1537,6 +1537,27 @@ Conclusion: every non-interactive reader on this machine opens a relative-link w
 
 No host accounts for build output. Claude Code exposes `WorktreeCreate`/`WorktreeRemove` hooks that replace the default create/remove (https://code.claude.com/docs/en/hooks) → T156. The same four complaints are filed upstream: anthropics/claude-code#46098 (names), #24207 (unbounded growth), #56639 (archive deletes uncommitted work).
 
+#### `WorktreeCreate`/`WorktreeRemove` contract (T156, docs checked 2026-09-27)
+
+This table records what Claude Code's docs promise. The "probe" column is for the creator's live run; the probe kit is a scratch file and is not committed (T280: agents never run a real host). Sources, all checked 2026-09-27: https://code.claude.com/docs/en/hooks (`#worktreecreate`, `#worktreeremove`, `#common-input-fields`, `#common-fields`, `#matcher-patterns`), /worktrees, /desktop, and https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md (top entry 2.1.283).
+
+| Question | Documented | Source | Probe |
+| --- | --- | --- | --- |
+| Which entry points fire `WorktreeCreate` | `claude --worktree`, a sub-agent with `isolation: "worktree"`, a background session isolated in its own worktree | hooks `#worktreecreate` | pending: CLI, sub-agent |
+| Desktop app | Its **worktree** option makes Git worktrees in `<project-root>/.claude/worktrees/` or in the folder set by the "Worktree location" setting. Neither page says the desktop app fires the hooks — **unverified** | desktop `#work-in-parallel-with-sessions` | pending |
+| Replaces default creation | Yes, "entirely"; `.worktreeinclude` is not processed | hooks `#worktreecreate`, worktrees | pending |
+| Create input | The common fields plus `name`, a slug the user gave or one that was generated (`bold-oak-a3f2`). The docs' example shows `session_id`, `transcript_path`, `cwd`, `hook_event_name` and `name`. `agent_id`/`agent_type` are sent "only when the hook fires inside a subagent call"; the docs do not say whether a sub-agent's create counts as that | hooks `#worktreecreate-input`, `#common-input-fields` | pending: fields per entry point, the generated name for a sub-agent |
+| Create output | Command hook: the path is the last non-empty line of stdout (ANSI stripped), so the hook cannot return JSON. HTTP hook: `hookSpecificOutput.worktreePath`. Any non-zero exit or a missing path fails the creation; there is no fail-open | hooks `#worktreecreate-output`, `#exit-code-2-behavior-per-event` | pending |
+| Path rules | A relative path is resolved against the hook's cwd. An absolute path with `.`/`..`, or one that goes through a symlink below the repo root, is refused (since 2.1.216). If the path is not a directory the session can enter, the session exits with code 1 | hooks `#worktreecreate-output`, worktrees | — |
+| Which entry points fire `WorktreeRemove` | Exiting a `--worktree` session and choosing remove; a sub-agent with `isolation: "worktree"` finishing; deleting a background session whose worktree the hook made | hooks `#worktreeremove` | pending |
+| Remove input / output | The common fields plus `worktree_path` (the path create returned). Only the exit code counts; JSON is discarded. A non-zero exit while the directory still exists fails the removal and keeps the directory | hooks `#worktreeremove-input` | pending |
+| Default removal of a hook-made git worktree | The docs say "for git-based worktrees, Claude Code handles cleanup automatically with `git worktree remove`". They do not say whether it still does this when both hooks are set | hooks `#worktreeremove` | pending |
+| Lock and sweep | Claude Code holds a `git worktree lock` while an agent runs. The cleanup sweep keeps every worktree without Claude Code's marker, including hook-made ones | worktrees | pending: is a hook-made worktree locked |
+| Timeout, matcher | 600 s default timeout for command hooks. No matcher: the hook fires every time | hooks `#common-fields`, `#matcher-patterns` | — |
+| History | Events added in 2.1.50; plugin hooks fixed in 2.1.69; HTTP form in 2.1.84; path screening in 2.1.216; `/batch` on hook-made worktrees in 2.1.281 | CHANGELOG | — |
+
+What this means for T159: the hook does not just observe creation, it is the only thing that creates the worktree. When `rtok worktree add` fails, the hook itself must still print a usable path. It also has to do the work of `.worktreeinclude`.
+
 ### 18.4 Libraries and tools
 
 - `git2` 0.21: add, list, lock, prune — no `move`, `repair`, or dirty-checked `remove`; adds libgit2. `gix` 0.87: worktrees read-only (create/move/remove/repair open in its `crate-status.md`). worktrunk and `git-worktree-runner` shell out to `git`. rtok already shells out to `git` (`git_changed_files`, `src/plugins/graph/mod.rs`) and has no shared git helper; `git_root` exists twice (`src/config/layers.rs`, `src/doctor.rs`). **Decision: `git worktree list --porcelain -z` through one helper, no new dependency.**
@@ -1562,6 +1583,16 @@ No host accounts for build output. Claude Code exposes `WorktreeCreate`/`Worktre
   | `target/` logical size at the end | 6.4 GiB | 10.9 GiB |
 
   Seeding worked as the first data point said — no dependency rebuilt — but saved only ≈ 23 s of compile here: on 16 cores the dependency graph builds fast, and the workspace crates rebuild at a new path either way. The loss came from T236's `dunnage` pass after `test`: in the seeded tree it compressed 13,539 files (8.1 GB planned, 5.36 GB applied) and deduplicated 15,503 (433 MB), against 76 files in the cold tree. Rewriting a cloned file un-shares it from the source, which is the likely source of the seeded tree's +3.35 GiB against +34 MiB right after the clone. As `just check` stands, seeding is slower (371 s against 185 s) and saves under half the disk. Seeding without that pass was not measured, so no number is claimed for it. No `reflink-copy` from these numbers; the conflict is parked as I-99 in `ideas.md`.
+- Third data point for T156 (2026-09-27): this run was meant to measure seeding without the `dunnage` pass. It stopped early because the disk ran low. Setup: two worktrees of `origin/main` (`1ccba28c`) made with `wt.sh new`. The seeded one got `cp -c -R ../rtok-t283/target target && rm -rf target/tmp`: 37 GB logical, of which `debug/` was 35 GB in 164k files. Then the `just check` recipes ran one at a time, **without `dunnage`**, and the test build was split out as `cargo nextest run --workspace --no-run`. Disk was measured as the used blocks of `df -k /System/Volumes/Data`, as in the second data point. Machine: Mac15,9, 16 CPUs, with three other agents building at the same time (load average 28 → 55). The disk deltas therefore include their writes and are upper bounds, not the seeded tree's own cost. Scratch script, not committed.
+
+  | Step (seeded) | Wall | Data-volume used, delta | `Compiling`/`Checking` |
+  | --- | ---: | ---: | --- |
+  | clone | 44 s | +1.33 GiB | — |
+  | `just fmt-check` | 2 s | 0 | — |
+  | `just lint` | 47 s | +1.69 GiB | workspace crates only |
+  | `cargo nextest run --workspace --no-run` | 105 s (cargo: "Finished in 54.56 s") | +4.38 GiB | workspace crates only, no dependency |
+
+  The run stopped at that point with 4.4 GiB free, below the 5 GiB floor. The test run, `build-min`, `dup`, `js`, `python` and `dunnage` did not run. The cold worktree was skipped: it needs ≥ 30 GiB free and only 13 GiB were free at the start. `wt.sh clean` on the seeded tree removed its `target/` (41 GB logical) and raised free space by only 1.8 GiB while the other builds kept writing. What the run confirms: with a clone, no dependency rebuilds, and the workspace crates rebuild at the new path. That rebuild alone still wrote several GiB here, which fits the second data point's +3.35 GiB. The seeded-without-`dunnage` total and a cold comparison are still unmeasured: both need a quiet machine with ≥ 30 GiB free. The installed `dunnage` 0.1.0 has its own `seed` and `worktree` subcommands (`dunnage --help`); they are a lead for I-99 and were not measured.
 
 ### 18.5 What follows for rtok
 
@@ -1817,7 +1848,7 @@ Hosts = `src/agents/*` (21): aider, antigravity, claude, cline, codewhale, codex
 
 | Host | Native worktrees | Interception mechanism | Session id exposure | Start/end hooks | Source |
 |---|---|---|---|---|---|
-| Claude Code | yes — `.claude/worktrees/<name>`, `--worktree`, subagent `isolation:"worktree"` | `WorktreeCreate`/`WorktreeRemove` hooks *replace* default create/remove; nonzero exit aborts create, or fails remove if dir still exists; exact stdout-carries-path contract not shown in fetched excerpt (**unverified**) | `session_id` in every hook's JSON stdin (common field); subagents carry parent's `session_id` + own `agentId` | `SessionStart`/`SessionEnd`, matchers `startup/resume/clear/compact/fork` and `clear/resume/logout/prompt_input_exit/other` | https://code.claude.com/docs/en/hooks, /worktrees |
+| Claude Code | yes — `.claude/worktrees/<name>`, `--worktree`, subagent `isolation:"worktree"` | `WorktreeCreate`/`WorktreeRemove` hooks *replace* default create/remove; nonzero exit aborts create, or fails remove if dir still exists; a command hook returns the path as its last stdout line (§18.3, T156) | `session_id` in every hook's JSON stdin (common field); subagents carry parent's `session_id` + own `agentId` | `SessionStart`/`SessionEnd`, matchers `startup/resume/clear/compact/fork` and `clear/resume/logout/prompt_input_exit/other` | https://code.claude.com/docs/en/hooks, /worktrees |
 | Cursor | yes, `~/.cursor/worktrees/`, cap 25, 6h sweep | none for create/remove itself — only `.cursor/worktrees.json` keys `setup-worktree[-unix\|-windows]` run a script *after* creation; no block/replace | `sessionStart` payload has `session_id` (= `conversation_id`); all hooks carry `conversation_id`, `generation_id` | `sessionStart`/`sessionEnd` documented | https://cursor.com/docs/hooks, /configuration/worktrees |
 | Codex (OpenAI) | yes, `$CODEX_HOME/worktrees`, `thread-N`, detached HEAD, keeps 15 newest | none documented | `session_id` common field; turn-scoped adds `turn_id` | `SessionStart`(`source`)/`SessionEnd`(`reason`) | https://learn.chatgpt.com/docs/hooks, /environments/git-worktrees |
 | Copilot CLI/desktop (`~/.copilot`, rtok's target) | not documented for this surface (the VS Code "Agents window" worktree feature is a separate product surface, not `~/.copilot`) | none found; app "does not document hooks" per rtok's own install-code comment | `sessionId` in `sessionStart`/`sessionEnd` payload (camelCase) | `sessionStart`(`source`)/`sessionEnd`(`reason`) documented for the CLI | https://docs.github.com/en/copilot/reference/hooks-reference |
