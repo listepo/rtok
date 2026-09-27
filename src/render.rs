@@ -388,7 +388,7 @@ pub fn agent_whoami_text(d: &crate::store::AgentDetail) -> String {
 }
 
 /// `rtok agents show` (T284): one [`AgentView`] as `key: value` lines, sub-agents by
-/// short id and state.
+/// short id and state. The host session id stays in `--json` only, as in [`agent_whoami_text`].
 pub fn agent_show_text(a: &AgentView, now: i64) -> String {
     let d = &a.detail;
     let or_dash = |o: &Option<String>| o.clone().unwrap_or_else(|| "-".into());
@@ -398,13 +398,12 @@ pub fn agent_show_text(a: &AgentView, now: i64) -> String {
         .map(|s| format!("{} ({})", s.detail.short, s.state.as_str()))
         .collect();
     format!(
-        "id: {}\nhost: {}\nmodel: {}\nhost session: {}\nparent: {}\nsub-agents: {}\n\
+        "id: {}\nhost: {}\nmodel: {}\nparent: {}\nsub-agents: {}\n\
          cwd: {}\nworktree: {}\nstate: {}\nactivity: {}\nstatus: {}\nstarted: {}\n\
          last seen: {} ({})\n",
         d.id,
         d.host,
         or_dash(&a.model),
-        d.host_session_id,
         or_dash(&d.parent_id),
         if subs.is_empty() {
             "-".into()
