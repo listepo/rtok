@@ -10,7 +10,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use rtok_agent_sdk::{KETCH_INSTALL, NO_CHANGES, edit_json, object_at};
+use rtok_agent_sdk::{Apply, KETCH_INSTALL, NO_CHANGES, edit_json, object_at};
+use serde_json::json;
 use toml_edit::{Array, DocumentMut, Item, Table, value};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -299,14 +300,14 @@ impl Agent for Codex {
     }
 
     fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
-        let s = super::read(&cfg.setup.codex.config_path);
-        // The enabled plugin serves the hooks and the MCP itself (D21).
+        // The enabled plugin serves the hooks itself (D21); MCP is independent of it
+        // (T275/D33): only the config's own `[mcp_servers.rtok]` table counts.
         let plugin = plugin_installed(cfg);
         let mut out = Vec::new();
-        if s.contains("[mcp_servers.rtok]") || plugin {
+        if super::mcp::has_toml_entry(&cfg.setup.codex.config_path, "mcp_servers", NAME) {
             out.push("mcp");
         }
-        if s.contains("[model_providers.rtok]") {
+        if super::read(&cfg.setup.codex.config_path).contains("[model_providers.rtok]") {
             out.push("proxy");
         }
         if super::read(&hooks_path(cfg)).contains(" hook PreCompact") || plugin {
@@ -321,8 +322,10 @@ impl Agent for Codex {
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
         let remove = mode == Mode::Remove;
         // Offer first: once the plugin is enabled it is the only call path (D21 singleton),
-        // so the config.toml/hooks.json copies are stripped, not added — judged by Codex's
-        // own record, so a dry run or a declined offer still gets the file-based install.
+        // so hooks.json is stripped, not added — judged by Codex's own record, so a dry run
+        // or a declined offer still gets the file-based hooks install. MCP is independent of
+        // the plugin (T275/D33): `[mcp_servers.rtok]` is written on every install/update
+        // regardless of plugin state, only remove takes it out.
         let update = mode == Mode::Update
             && plugin_installed(cfg)
             && marketplace_state(cfg) == MarketplaceState::Github;
@@ -331,13 +334,8 @@ impl Agent for Codex {
         } else {
             plugin(cfg, remove)?
         }];
-        if remove || plugin_installed(cfg) {
-            lines.push(run(cfg, true)?);
-            lines.push(run_hooks(cfg, true)?);
-        } else {
-            lines.push(run(cfg, false)?);
-            lines.push(run_hooks(cfg, false)?);
-        }
+        lines.push(run(cfg, remove)?);
+        lines.push(run_hooks(cfg, remove || plugin_installed(cfg))?);
         // On the way out the provider block goes whether or not `--proxy` asked for it.
         if remove || cfg.setup.proxy {
             lines.push(register_proxy(cfg, remove)?);
@@ -351,7 +349,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     let path = &cfg.setup.codex.config_path;
     let mut doc = load(path)?;
     let report = if remove {
-        strip_ours(&mut doc)
+        strip_ours(&apply(cfg), path, &mut doc)
     } else {
         insert_ours(&mut doc, path.display())?
     };
@@ -420,7 +418,31 @@ fn insert_ours(doc: &mut DocumentMut, path: impl std::fmt::Display) -> Result<St
     ))
 }
 
-fn strip_ours(doc: &mut DocumentMut) -> String {
+/// The `[mcp_servers.rtok]` table [`insert_ours`] writes, as JSON: the shape
+/// [`rtok_agent_sdk::judge_owned`] compares a live table against (T246.5, T275/D33). The
+/// literal command never matters — `judge_owned` folds every rtok binary string to one.
+fn mcp_entry() -> serde_json::Value {
+    json!({"command": "rtok", "args": ["mcp"]})
+}
+
+/// Take the `rtok` slot back only as far as rtok wrote it (T246, T246.5, T275/D33):
+/// [`rtok_agent_sdk::judge_owned`] leaves a slot that does not run the rtok binary, or one the
+/// user changed from [`mcp_entry`], unless `--yes` (or an accepted prompt) says remove. A
+/// missing slot is already the goal.
+fn strip_ours(apply: &Apply, path: &Path, doc: &mut DocumentMut) -> String {
+    let have = doc
+        .get("mcp_servers")
+        .and_then(|s| s.get(NAME))
+        .map(super::mcp::toml_item_to_json);
+    let Some(have) = have else {
+        return NO_CHANGES.into();
+    };
+    let at = format!("mcp_servers.{NAME} in {}", path.display());
+    if let Some(leave) =
+        rtok_agent_sdk::judge_owned(apply, &at, &have, &mcp_entry(), super::is_rtok_bin)
+    {
+        return leave;
+    }
     let removed = doc
         .get_mut("mcp_servers")
         .and_then(Item::as_table_mut)
@@ -679,6 +701,25 @@ mod tests {
             .unwrap_or("")
             .to_string();
         assert!(text.contains("checkpoint"), "{text}");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// T275/D33: install/update always write `[mcp_servers.rtok]`, plugin enabled or not;
+    /// only remove takes it out; a user-edited entry is left with a `leave` line.
+    #[test]
+    fn t275_mcp_entry_always_written_except_on_remove() {
+        let (c, path) = cfg("t275-mcp", false);
+        fs::write(&path, "[plugins.\"rtok@rtok\"]\nenabled = true\n").unwrap();
+        assert!(plugin_installed(&c));
+
+        crate::agents::mcp::assert_toml_entry_lifecycle(
+            &Codex,
+            &c,
+            Kind::Cli,
+            &path,
+            "mcp_servers",
+            || run(&c, false),
+        );
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 

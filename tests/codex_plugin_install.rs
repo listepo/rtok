@@ -37,8 +37,9 @@ fn dry_run_offers_the_codex_commands_and_touches_nothing() {
 
 /// A fake `codex` on PATH (`rtok`, unlike `rtok_without_claude`, keeps the whole real PATH plus
 /// the fakes) records the calls: install goes straight through the plugin, no `--yes` needed,
-/// and while it is installed the plugin is the only call path — `[mcp_servers.rtok]` is never
-/// written. Mirrors `claude_plugin.rs`'s
+/// and while it is installed the plugin is the only call path for hooks (D21). MCP is
+/// independent of it (T275/D33): `[mcp_servers.rtok]` is written on the same run regardless,
+/// and taken out again on remove. Mirrors `claude_plugin.rs`'s
 /// `installs_the_plugin_by_default_as_the_only_call_path_and_remove_uninstalls`.
 #[test]
 fn installs_the_plugin_by_default_as_the_only_call_path_and_remove_uninstalls() {
@@ -57,11 +58,20 @@ fn installs_the_plugin_by_default_as_the_only_call_path_and_remove_uninstalls() 
     assert_eq!(calls[0], "plugin marketplace add listepo/rtok");
     assert_eq!(calls[1], "plugin add rtok@rtok");
     let config = fs::read_to_string(&config_path).unwrap_or_default();
-    assert!(!config.contains("[mcp_servers.rtok]"), "{config}");
+    assert!(
+        config.contains("[mcp_servers.rtok]"),
+        "T275/D33: config.toml gets rtok's mcp entry even with the plugin installed: {config}"
+    );
 
     let again = rtok(&["agents", "install", "codex"], &cfg, &home);
     assert!(again.contains("already installed"), "{again}");
     assert_eq!(codex_log(&home).lines().count(), 2, "no second install");
+    assert!(
+        fs::read_to_string(&config_path)
+            .unwrap_or_default()
+            .contains("[mcp_servers.rtok]"),
+        "a repeat install must not strip the mcp entry"
+    );
 
     let removed = rtok(&["agents", "remove", "codex"], &cfg, &home);
     assert!(removed.contains("- plugin rtok@rtok"), "{removed}");
@@ -70,6 +80,12 @@ fn installs_the_plugin_by_default_as_the_only_call_path_and_remove_uninstalls() 
     assert_eq!(
         tail,
         ["plugin remove rtok@rtok", "plugin marketplace remove rtok"]
+    );
+    assert!(
+        !fs::read_to_string(&config_path)
+            .unwrap_or_default()
+            .contains("[mcp_servers.rtok]"),
+        "remove takes the mcp entry out too"
     );
     let _ = fs::remove_dir_all(&home);
 }

@@ -58,7 +58,7 @@ See [`src/agents/claude/README.md`](../src/agents/claude/README.md) and [`docs/a
 | Directory | Host | Shape |
 | --- | --- | --- |
 | [`antigravity/`](antigravity/) | Antigravity | MCP-only plugin dir |
-| [`codex/`](codex/) | Codex (CLI + app) | `.codex-plugin` manifest + hooks + MCP + local marketplace |
+| [`codex/`](codex/) | Codex (CLI + app) | `.codex-plugin` manifest + hooks + local marketplace (no MCP: T275) |
 | [`copilot/`](copilot/) | GitHub Copilot CLI | legacy `plugin.json` + camelCase hooks (no MCP: T275) |
 | [`cursor/`](cursor/) | Cursor | hooks + MCP + launchers |
 | [`devin/`](devin/) | Devin (CLI + Desktop) | `.devin-plugin` manifest + root `hooks.json` + MCP |
