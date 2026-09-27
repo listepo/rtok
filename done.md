@@ -144,6 +144,16 @@ Plan (creator chose the nextest route 2026-09-24): cargo `[env]` also reaches `c
 
 Result: `.config/nextest.toml` has `test-home-unix` (`sh -c`) and `test-home-windows` (PowerShell) setup scripts, one per host platform. Each empties and recreates `target/test-home` on every run. The canary `testutil::tests::nextest_runs_under_the_test_home` passes under nextest and skips under `cargo test`. The first full run left 294 files in the fake home, written by real host CLIs that host tests spawn (codex `~/.codex/tmp`, cursor `~/.cursor/cli-config.json`, kilo and opencode XDG dirs, omp logs, the Dart analysis server) and one `~/.rtok/config.toml`; before, all of them went to the developer's real home. `just check` green (1730 tests).
 
+### T280. Tests never touch real agents; a hung host CLI cannot stall `agents list`
+
+`app_version()` ran `<bin> --version` through `Command::output`, which waits for EOF on the pipes. `cursor --version` under an empty `$HOME` (nextest's `target/test-home`) with stdout on a pipe never prints and leaves a helper holding the pipe for ~5 minutes, so `agents list`, the hosts page and every test that renders a block hit the 180 s nextest timeout on a machine with Cursor installed. Done: each probe is time-limited and never waits for a descendant's EOF; and no test finds or runs an agent installed on the machine (creator: real agents are for manual debugging only).
+
+Plan: move `rtok run`'s `capture` (T235.1) into `src/proc.rs` with an optional limit (kill at the limit, keep what was printed); `app_version` uses it with a 3 s limit; unit tests for the limit and for a stub CLI that never answers. `RTOK_HOST_SANDBOX` (set by `.config/nextest.toml`): host CLIs resolve only from PATH entries under `HOME`, absolute app paths are re-rooted under it, and host CLIs are spawned by the resolved path; the rule goes into `AGENTS.md` and `CONTRIBUTING.md`.
+
+Check: `cargo nextest run --workspace` on the dev box with real `cursor`/`claude`/`codex` on PATH: no test hits the nextest timeout, `tests_run_inside_the_host_sandbox` passes, and the tests named in the report take a couple of seconds.
+
+Result (Claude Code / claude-opus-5-5, 2026-09-27): `cursor --version` was the only hang (empty output, pipe held ~285 s). `src/proc.rs` holds the shared `capture` (T235.1) with an optional limit; `app_version` gives each probe 3 s. `RTOK_HOST_SANDBOX` lives in `src/agents/mod.rs` (`find_on_path`, `expand_app` via `under`, `host_program` for `run_cli` and `app_version`) and both nextest setup scripts export it. Full suite on the dev box with every host CLI installed: 1825 tests, none slow, 100 s wall (was 305 s with 180 s timeouts); `list_reports_installed_modules_per_host` 5.8 s (was >120 s); the tests named in the report run in 0.04-7 s. Rule added to `AGENTS.md` ("No real agents in tests (debug only)") and `CONTRIBUTING.md`.
+
 ### T254. Unit tests read the real `~/.claude*`, `~/.codex` and agent configs
 
 Creator request 2026-09-24, after T252. Tests still reach the developer's real home through `Config` paths nobody redirected:

@@ -105,6 +105,10 @@ Reference / Working agreement.
 Prefer `crate::testutil::Vfs` (in-memory path → bytes) over host `TempDir`
 for unit tests that only need path/content/size. See plan D29 / T56.
 
+Tests never touch a real agent installed on the machine (its CLI, its app bundle): use
+fakes under the test `HOME` (`tests/common/agents.rs`). nextest sets `RTOK_HOST_SANDBOX`,
+which hides every host outside `HOME` (T280). Real agents are for manual debugging only.
+
 JS/TS tests (host plugins) use vitest (`vitest.config.mjs`, globals, no
 `vitest` import); never `node:test`/`node:assert`. Prefer
 `toMatchInlineSnapshot` for structured output. See T111. They run on Linux
