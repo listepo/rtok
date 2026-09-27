@@ -1788,3 +1788,21 @@ Follow-ups: T262.3 (Codex) and T262.4 (Copilot CLI). Grok and Antigravity rest o
 ## 24. Cloud MCP mode for the Grok API (2026-09-26)
 
 The Grok API has no hooks and reaches MCP only over Streamable HTTP or SSE, from xAI's servers. Findings, sources and the proposed stdio/http split live in [`docs/research/grok-cloud-mcp.md`](docs/research/grok-cloud-mcp.md).
+
+## 25. Same-name MCP servers: plugin vs config entry, per host (T275) (2026-09-27)
+
+What each agent does when rtok's MCP server is declared both in its own config file and by an rtok plugin it loads. Checked 2026-09-27 against the agent's docs and, where installed here, `<cli> --version`.
+
+| Host | Version checked | Behaviour | Source |
+| --- | --- | --- | --- |
+| Claude Code | 2.1.267 | Plugin servers are namespaced (`plugin:rtok:rtok`, tools `mcp__plugin_rtok_rtok__*`), so they never merge with a config `rtok`: two servers. Same-name entries across local/project/user scopes resolve by precedence. | https://code.claude.com/docs/en/mcp |
+| Claude Desktop, Code tab | Claude Code 2.1.267 | Two servers (`mcp__rtok__*` from `claude_desktop_config.json` plus the plugin's), observed by the creator on 2026-09-26 (T271). Whether it merges a desktop `rtok` with a `~/.claude.json` `rtok` is **unverified**; the T275 Check confirms it on the creator's machine. | plan.md T271 |
+| Gemini CLI | not installed | settings.json wins over an extension's same-name server: one server. | https://geminicli.com/docs/extensions/reference |
+| Codex CLI | 0.155.1 | Plugin servers live under `plugins.<plugin>.mcp_servers.<server>`, a separate table: likely two servers (**unverified**, no literal quote). | https://learn.chatgpt.com/docs/extend/mcp?surface=cli |
+| Cursor | cursor-agent 2026.09.23 | Docs silent on duplicates: **unknown**. | https://cursor.com/docs/context/mcp |
+| Copilot CLI | 1.0.83 | Docs silent: **unknown**. | https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/extend-copilot-chat-with-mcp |
+| VS Code / Insiders | not checked | Docs silent: **unknown**. | https://code.visualstudio.com/docs/copilot/customization/mcp-servers |
+| ZCode, Kimi (0.39.1), Grok Build (1.0.34) | as listed | No public docs found: **unknown**. | — |
+| omp, pi, Antigravity | — | No conflict: omp's and pi's plugins serve no MCP; Antigravity's plugin is its only MCP path. | repo `src/agents/<host>/mod.rs` |
+
+Decision (D33): Claude and every host marked unknown or two servers drop MCP from the rtok plugin and keep the config entry `rtok`; Gemini keeps both, since settings.json wins.
