@@ -9,6 +9,10 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0.104"
 serde_json = "1.0.151"
+# `cst`: lossless edit (comments, formatting) of a JSONC document; `serde_json`: read a CST
+# node back out as a `serde_json::Value` to compare against the entry rtok wants (T277 config.rs).
+jsonc-parser = { version = "0.33.2", features = ["cst", "serde_json"] }
+toml_edit = "0.25"
 
 [lints.rust]
 unsafe_code = "forbid"

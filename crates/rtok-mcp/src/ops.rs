@@ -127,9 +127,9 @@ mod tests {
         existing: &'static str,
     }
 
-    // Jsonc and Toml rows join this table in the crate's second commit, once `config` grows
-    // their format support; the dotted-key case (ZCode's real `mcp.servers` shape is Toml) is
-    // covered here against Json first, since the dotted-path walk itself is format-agnostic.
+    // The dotted-key case is ZCode's real shape (`mcp.servers`, Toml); the same path is also
+    // proven against Json (`mcp.servers` is a made-up shape there) since the dotted-path walk
+    // in `config::set_json_at`/`walk_json` is otherwise untested past one level.
     const CASES: &[Case] = &[
         Case {
             format: Format::Json,
@@ -138,6 +138,21 @@ mod tests {
         },
         Case {
             format: Format::Json,
+            key_path: "mcp.servers",
+            existing: "",
+        },
+        Case {
+            format: Format::Jsonc,
+            key_path: "mcpServers",
+            existing: "{\n  // keep me\n  \"other\": 1,\n}\n",
+        },
+        Case {
+            format: Format::Toml,
+            key_path: "mcp_servers",
+            existing: "",
+        },
+        Case {
+            format: Format::Toml,
             key_path: "mcp.servers",
             existing: "",
         },
