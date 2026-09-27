@@ -10,6 +10,7 @@ use crate::config::Config;
 use crate::plugin::{Ctx, PreToolDecision, Runtime, SessionStart};
 use crate::plugins::Registry;
 use crate::tokens::Class;
+use serde_json::Value;
 use std::io::{Read, Write};
 use std::panic::{self, AssertUnwindSafe};
 use std::time::Instant;
@@ -97,6 +98,44 @@ fn resolve_session(
         }
     }
     "unknown".into()
+}
+
+/// T282: the sub-agent key `register_agent`/`end_agent` upsert against — the host's own
+/// `agent_id` (`HookInput`, `research.md` §17.2), or `None` for the main window. An empty
+/// string round-trips from a host that sends the field but leaves it blank, so it is treated
+/// the same as absent.
+fn agent_parent_key(input: &HookInput) -> Option<&str> {
+    input.agent_id.as_deref().filter(|s| !s.is_empty())
+}
+
+/// T282 (D34): "Bash: cargo nextest run", "Edit: src/worktree/add.rs" — the tool name plus
+/// the first 60 chars of its main argument, truncated again to 120 total. Never file
+/// contents or prompt text: `tool_input` is scanned only for a short handful of well-known
+/// argument keys, never serialized whole.
+fn agent_activity(input: &HookInput) -> Option<String> {
+    let tool = input.tool_name.as_deref()?;
+    let arg = input.tool_input.as_ref().and_then(tool_main_argument);
+    let activity = match arg {
+        Some(a) => format!("{tool}: {}", first_chars(&a, 60)),
+        None => tool.to_string(),
+    };
+    Some(first_chars(&activity, 120))
+}
+
+/// The one field, among a tool's several, that names what it acts on — never the body of a
+/// `Write`/`Edit` or the text of a prompt.
+fn tool_main_argument(input: &Value) -> Option<String> {
+    ["command", "file_path", "path", "pattern", "query", "url"]
+        .iter()
+        .find_map(|key| input.get(key).and_then(Value::as_str))
+        .map(str::to_string)
+}
+
+fn first_chars(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        return s.to_string();
+    }
+    s.chars().take(n).collect()
 }
 
 /// `Some(message)` when `[hook] max_ms` is non-zero and the event ran over budget.
@@ -368,6 +407,18 @@ pub fn cline_output(out: &HookOutput) -> Vec<u8> {
 pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     let start = Instant::now();
     let registry = Registry::new(&cx.config);
+    // T282 (D34): every event registers or touches this session's rtok agent id — one
+    // indexed upsert (two when `agent_id` names a sub-agent, so its `parent_id` is set from
+    // the row's first insert). Never lets a store error reach the fail-open hook (D1).
+    if cx.config.agents.enabled {
+        let _ = cx.store.register_agent(
+            cx.host_id(),
+            &cx.session,
+            agent_parent_key(input),
+            cx.cwd.as_deref(),
+            agent_activity(input).as_deref(),
+        );
+    }
     let parent = match cx.record_call("hook", "hook", Some(&input.hook_event_name)) {
         Ok(id) => Some(id),
         // T178: another process held the writer lock past `LOCK_WAIT`. Every later write would
@@ -421,6 +472,19 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
+            // T282: end this event's own agent row (the main window, or the sub-agent named
+            // by its `agent_id`) — `register_agent` above already ensured it exists.
+            if cx.config.agents.enabled
+                && let Ok(id) = cx.store.register_agent(
+                    cx.host_id(),
+                    &cx.session,
+                    agent_parent_key(input),
+                    cx.cwd.as_deref(),
+                    None,
+                )
+            {
+                let _ = cx.store.end_agent(&id, now);
+            }
             if cx
                 .store
                 .end_session(&cx.session, now)
@@ -1499,5 +1563,169 @@ mod tests {
             0,
             "the plugin that did not panic must not be logged"
         );
+    }
+
+    // ── T282 (D34): the rtok agent registry ────────────────────────────────────
+
+    #[test]
+    fn dispatch_registers_and_touches_the_agent_with_truncated_activity() {
+        let dir = std::env::temp_dir().join(format!("rtok-hooks-t282-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
+        let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        v["session_id"] = serde_json::Value::String("agent-sess-1".into());
+        v["tool_input"]["command"] = serde_json::Value::String(
+            "cargo nextest run --no-fail-fast --release --workspace --all-targets --verbose".into(),
+        );
+        let stdin = serde_json::to_vec(&v).unwrap();
+        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
+        let mut cx = Runtime::in_memory(input.session_id.clone()).unwrap();
+        cx.cwd = input.cwd.clone();
+        let _ = dispatch(&stdin, &input, &cx);
+
+        let id = cx
+            .store
+            .register_agent(cx.host_id(), &cx.session, None, None, None)
+            .unwrap();
+        let row = cx.store.agent_row(&id).unwrap().unwrap();
+        assert_eq!(row.host_session_id, "agent-sess-1");
+        assert_eq!(row.parent_id, None);
+        assert_eq!(
+            row.activity.as_deref(),
+            Some("Bash: cargo nextest run --no-fail-fast --release --workspace --all"),
+            "tool name plus the first 60 chars of its main argument"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_sub_agent_hook_event_registers_a_child_row_under_its_parent() {
+        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
+        let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        v["session_id"] = serde_json::Value::String("agent-sess-2".into());
+        let stdin = serde_json::to_vec(&v).unwrap();
+        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
+        let cx = Runtime::in_memory(input.session_id.clone()).unwrap();
+        let _ = dispatch(&stdin, &input, &cx); // the main window's own row
+
+        let mut child = v.clone();
+        child["agent_id"] = serde_json::Value::String("sub-1".into());
+        let child_stdin = serde_json::to_vec(&child).unwrap();
+        let child_input: HookInput = serde_json::from_slice(&child_stdin).unwrap();
+        let _ = dispatch(&child_stdin, &child_input, &cx);
+
+        let parent_id = cx
+            .store
+            .register_agent(cx.host_id(), &cx.session, None, None, None)
+            .unwrap();
+        let child_id = cx
+            .store
+            .register_agent(cx.host_id(), &cx.session, Some("sub-1"), None, None)
+            .unwrap();
+        assert_ne!(parent_id, child_id);
+        let child_row = cx.store.agent_row(&child_id).unwrap().unwrap();
+        assert_eq!(child_row.parent_id.as_deref(), Some(parent_id.as_str()));
+        assert_eq!(child_row.host_session_id, "agent-sess-2");
+    }
+
+    #[test]
+    fn session_end_ends_the_agent_row() {
+        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
+        let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        v["session_id"] = serde_json::Value::String("agent-sess-3".into());
+        let stdin = serde_json::to_vec(&v).unwrap();
+        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
+        let cx = Runtime::in_memory(input.session_id.clone()).unwrap();
+        let _ = dispatch(&stdin, &input, &cx);
+        let id = cx
+            .store
+            .register_agent(cx.host_id(), &cx.session, None, None, None)
+            .unwrap();
+        assert_eq!(cx.store.agent_row(&id).unwrap().unwrap().ended_at, None);
+
+        let mut end = v.clone();
+        end["hook_event_name"] = serde_json::Value::String("SessionEnd".into());
+        let end_stdin = serde_json::to_vec(&end).unwrap();
+        let end_input: HookInput = serde_json::from_slice(&end_stdin).unwrap();
+        let _ = dispatch(&end_stdin, &end_input, &cx);
+        assert!(cx.store.agent_row(&id).unwrap().unwrap().ended_at.is_some());
+    }
+
+    #[test]
+    fn agents_enabled_false_skips_registration() {
+        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
+        let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        v["session_id"] = serde_json::Value::String("agent-sess-off".into());
+        let stdin = serde_json::to_vec(&v).unwrap();
+        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
+        let mut cx = Runtime::in_memory(input.session_id.clone()).unwrap();
+        cx.config.agents.enabled = false;
+        let _ = dispatch(&stdin, &input, &cx);
+        assert!(
+            cx.store
+                .resolve_agent("agent-sess-off")
+                .is_err_and(|e| e.to_string() == "unknown"),
+            "no id looks like the session string, so this only proves the table stayed empty \
+             for it — real proof follows"
+        );
+        // `register_agent` on an empty table always mints a fresh id: two calls disagreeing
+        // means the first `dispatch` never wrote a row (`enabled = false` held).
+        let a = cx
+            .store
+            .register_agent(cx.host_id(), &cx.session, None, None, None)
+            .unwrap();
+        let b = cx
+            .store
+            .register_agent(cx.host_id(), &cx.session, None, None, None)
+            .unwrap();
+        assert_eq!(
+            a, b,
+            "the second call finds the row the first one just made"
+        );
+    }
+
+    /// research.md §26: Cursor sends `conversation_id`, Cline sends `taskId` — neither is
+    /// `session_id`, so this proves each host's adapter feeds its own field into the same
+    /// `agents.host_session_id` the Claude-shaped hosts write directly.
+    #[test]
+    fn cursor_and_cline_register_under_their_own_session_id_field() {
+        let dir = unique_dir("rtok-hook-t282-cursor");
+        let cfg = cursor_cfg(&dir);
+        let stdin = serde_json::to_vec(&serde_json::json!({
+            "hook_event_name": "beforeShellExecution",
+            "conversation_id": "sess-cursor-282",
+            "cwd": dir.to_string_lossy(),
+            "command": "ls -la",
+        }))
+        .unwrap();
+        dispatch_owned_strict(&stdin, "PreToolUse", &cfg).unwrap();
+        let store = crate::store::Store::open(&cfg.core.db_path).unwrap();
+        let host_id = store.host_id(&cfg.hook.host).unwrap().or(Some(6));
+        let id = store
+            .register_agent(host_id, "sess-cursor-282", None, None, None)
+            .unwrap();
+        let row = store.agent_row(&id).unwrap().unwrap();
+        assert_eq!(row.host_session_id, "sess-cursor-282");
+        assert_eq!(row.activity.as_deref(), Some("Bash: ls -la"));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let dir = unique_dir("rtok-hook-t282-cline");
+        let cfg = cline_cfg(&dir);
+        let stdin = serde_json::to_vec(&serde_json::json!({
+            "hookName": "tool_call",
+            "taskId": "cline-sess-282",
+            "workspaceRoots": ["/tmp"],
+            "tool_call": {"id": "tc-1", "name": "run_commands", "input": {"commands": ["git status"]}}
+        }))
+        .unwrap();
+        dispatch_owned_strict(&stdin, "PreToolUse", &cfg).unwrap();
+        let store = crate::store::Store::open(&cfg.core.db_path).unwrap();
+        let host_id = store.host_id(&cfg.hook.host).unwrap().or(Some(6));
+        let id = store
+            .register_agent(host_id, "cline-sess-282", None, None, None)
+            .unwrap();
+        let row = store.agent_row(&id).unwrap().unwrap();
+        assert_eq!(row.host_session_id, "cline-sess-282");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
