@@ -189,6 +189,12 @@ fn raw_with_path(args: &[&str], cfg: &Path, home: &Path, path: std::ffi::OsStrin
         .env("USERPROFILE", home)
         .env("APPDATA", home)
         .env("RTOK_HOME", home.join(".rtok"))
+        // T279: `plugin_version::default_receipt_path`'s own fallback for each OS, pinned
+        // explicitly rather than left to whatever the test machine happens to have set — a
+        // real `XDG_STATE_HOME`/`LOCALAPPDATA` on the runner would otherwise send the T279
+        // receipt outside `home` and into that user's actual state directory.
+        .env("XDG_STATE_HOME", home.join(".local/state"))
+        .env("LOCALAPPDATA", home.join("AppData/Local"))
         .output()
         .expect("rtok")
 }
