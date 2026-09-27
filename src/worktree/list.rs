@@ -132,11 +132,61 @@ pub struct Row {
     pub locked: bool,
     /// T150's state, or `orphan`.
     pub state: &'static str,
+    /// The rtok agent (T282) the worktree is bound to: the lock's, else a claim row (T285).
+    pub agent: Option<Bound>,
     /// The newest session the hooks saw working here (T154); never set on the main checkout.
     pub session: Option<Seen>,
     pub source_bytes: u64,
     pub cache_bytes: u64,
     pub modified_unix: Option<u64>,
+}
+
+/// T285: a bound agent as the store knows it. `host` is `None` and `state` `unknown` when
+/// the store has no such agent (a lost store; the lock survives it).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Bound {
+    pub id: String,
+    pub host: Option<String>,
+    /// `live`, `idle`, `ended` or `unknown`.
+    pub state: &'static str,
+}
+
+impl Bound {
+    fn new(id: String) -> Self {
+        Self {
+            id,
+            host: None,
+            state: "unknown",
+        }
+    }
+}
+
+/// Fill [`Row::agent`] from the store: an unlocked worktree's open claim row, then every
+/// bound agent's host and state — `live` within `[agents] idle`, else `ended` or `idle`.
+pub fn bind(rows: &mut [Row], store: &crate::store::Store, idle: &str) -> anyhow::Result<()> {
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let claims = store.open_worktree_claims()?;
+    let live: HashSet<String> = store.live_agents(idle)?.into_iter().map(|a| a.id).collect();
+    for row in rows.iter_mut().filter(|r| r.state != "main") {
+        if row.agent.is_none() && !row.locked {
+            let dir = real(&row.path);
+            let claim = claims.iter().find(|(p, _)| real(Path::new(p)) == dir);
+            row.agent = claim.map(|(_, id)| Bound::new(id.clone()));
+        }
+        let Some(bound) = row.agent.as_mut() else {
+            continue;
+        };
+        let Some(detail) = store.agent_detail(&bound.id)? else {
+            continue;
+        };
+        bound.host = Some(detail.host);
+        bound.state = match detail.ended_at {
+            _ if live.contains(&bound.id) => "live",
+            Some(_) => "ended",
+            None => "idle",
+        };
+    }
+    Ok(())
 }
 
 /// Ownership without agent discipline: every hook upserts `sessions.cwd`, so the store knows
@@ -160,6 +210,7 @@ impl Row {
             owner: None,
             locked: false,
             state,
+            agent: None,
             session: None,
             source_bytes: used.source,
             cache_bytes: used.cache,
@@ -196,11 +247,15 @@ pub fn attribute(rows: &mut [Row], sessions: &[crate::store::SessionSeen]) {
 /// Every worktree of the repository `cwd` belongs to, then the orphans.
 pub fn rows(cwd: &Path) -> anyhow::Result<Vec<Row>> {
     let entries = inventory(cwd)?;
-    let listed = entries.iter().map(|e| Row {
-        branch: e.record.branch.clone(),
-        owner: e.record.owner().map(|o| o.owner),
-        locked: e.record.locked.is_some(),
-        ..Row::new(e.record.path.clone(), e.state.label())
+    let listed = entries.iter().map(|e| {
+        let owner = e.record.owner();
+        Row {
+            branch: e.record.branch.clone(),
+            agent: owner.as_ref().and_then(|o| o.agent.clone()).map(Bound::new),
+            owner: owner.map(|o| o.owner),
+            locked: e.record.locked.is_some(),
+            ..Row::new(e.record.path.clone(), e.state.label())
+        }
     });
     let mut rows: Vec<Row> = listed.collect();
     rows.extend(orphans(&entries).into_iter().map(|p| Row::new(p, "orphan")));
@@ -212,20 +267,35 @@ pub fn to_table(rows: &[Row], now: SystemTime) -> String {
     let dash = || "-".to_string();
     let mut lines = vec![
         [
-            "path", "branch", "owner", "state", "seen", "modified", "source", "cache",
+            "path",
+            "branch",
+            "owner",
+            "agent",
+            "agent state",
+            "state",
+            "seen",
+            "modified",
+            "source",
+            "cache",
         ]
         .map(String::from)
         .to_vec(),
     ];
     lines.extend(rows.iter().map(|r| {
-        let owner = match (&r.owner, r.locked, &r.session) {
-            (Some(owner), ..) => owner.clone(),
-            (None, true, _) => "locked, owner unknown".into(),
-            (None, false, Some(s)) => {
-                let id: String = s.session.chars().take(8).collect();
-                format!("{} session {id}", s.host.as_deref().unwrap_or("?"))
-            }
-            (None, false, None) => dash(),
+        let owner = match (&r.owner, r.locked) {
+            (Some(owner), _) => owner.clone(),
+            (None, true) => "locked, owner unknown".into(),
+            (None, false) => dash(),
+        };
+        let id8 = |id: &str| id.chars().take(8).collect::<String>();
+        let host = |h: &Option<String>| h.clone().unwrap_or_else(|| "?".into());
+        let (agent, agent_state) = match (&r.agent, &r.session) {
+            (Some(a), _) => (format!("{} {}", id8(&a.id), host(&a.host)), a.state.into()),
+            (None, Some(s)) => (
+                format!("seen {} {}", host(&s.host), id8(&s.session)),
+                dash(),
+            ),
+            (None, None) => (dash(), dash()),
         };
         let ago = |t: i64| duration(now as i64 - t);
         let seen = r.session.as_ref().map(|s| ago(s.seen_unix));
@@ -234,6 +304,8 @@ pub fn to_table(rows: &[Row], now: SystemTime) -> String {
             r.path.display().to_string(),
             r.branch.clone().unwrap_or_else(dash),
             owner,
+            agent,
+            agent_state,
             r.state.into(),
             seen.unwrap_or_else(dash),
             age.unwrap_or_else(dash),
@@ -241,7 +313,7 @@ pub fn to_table(rows: &[Row], now: SystemTime) -> String {
             human_bytes(r.cache_bytes),
         ]
     }));
-    let cols = [0, 0, 0, 0, 0, 0].map(Col::left).into_iter();
+    let cols = [0; 8].map(Col::left).into_iter();
     let cols: Vec<Col> = cols.chain([Col::right(0), Col::right(0)]).collect();
     let (source, cache) = rows
         .iter()
@@ -300,6 +372,7 @@ mod tests {
             owner: owner.map(Into::into),
             locked,
             state,
+            agent: None,
             session,
             source_bytes: 1024,
             cache_bytes: cache,
@@ -322,16 +395,25 @@ mod tests {
             row("dirty", None, true, None, 0),
             row("unmerged", None, false, Some(seen), 0),
             row("orphan", None, false, None, 0),
+            Row {
+                agent: Some(Bound {
+                    id: "0193ab12-0000-7000-8000-000000000000".into(),
+                    host: Some("claude".into()),
+                    state: "live",
+                }),
+                ..row("unmerged", Some("claude / sonnet"), true, None, 0)
+            },
         ];
         let now = UNIX_EPOCH + std::time::Duration::from_secs(1_000 + 3 * 86_400 + 4 * 3_600);
         insta::assert_snapshot!(to_table(&rows, now), @r"
-        path branch owner                   state    seen  modified source  cache
-        /w/x t1     Cursor / grok           merged   4h00m 3d04h    1.0 KB 2.0 KB
-        /w/x t1     locked, owner unknown   dirty    -     3d04h    1.0 KB    0 B
-        /w/x t1     claude session b1e2c3d4 unmerged 4h00m 3d04h    1.0 KB    0 B
-        /w/x t1     -                       orphan   -     3d04h    1.0 KB    0 B
+        path branch owner                 agent                agent state state    seen  modified source  cache
+        /w/x t1     Cursor / grok         seen claude b1e2c3d4 -           merged   4h00m 3d04h    1.0 KB 2.0 KB
+        /w/x t1     locked, owner unknown -                    -           dirty    -     3d04h    1.0 KB    0 B
+        /w/x t1     -                     seen claude b1e2c3d4 -           unmerged 4h00m 3d04h    1.0 KB    0 B
+        /w/x t1     -                     -                    -           orphan   -     3d04h    1.0 KB    0 B
+        /w/x t1     claude / sonnet       0193ab12 claude      live        unmerged -     3d04h    1.0 KB    0 B
 
-        4 worktrees: 4.0 KB source, 2.0 KB build cache (logical bytes; clones and hard links count in full)
+        5 worktrees: 5.0 KB source, 2.0 KB build cache (logical bytes; clones and hard links count in full)
         ");
     }
 

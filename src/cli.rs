@@ -444,9 +444,25 @@ enum WorktreeCmd {
         task: String,
         /// Optional branch suffix
         slug: Option<String>,
-        /// Who holds it, as `<provider> / <model>`; written into the lock reason
+        /// Who holds it, as `<provider> / <model>`; written into the lock reason. Defaults to
+        /// `<host> / <model>` of the agent
         #[arg(long)]
-        owner: String,
+        owner: Option<String>,
+        /// The rtok agent id (any unique prefix) to bind it to; defaults to `RTOK_AGENT_ID`
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours
+    Claim {
+        /// The worktree
+        path: PathBuf,
+        /// The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`
+        #[arg(long)]
+        agent: Option<String>,
+        /// The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> / <model>`
+        /// of the agent
+        #[arg(long)]
+        owner: Option<String>,
     },
     /// Every worktree and orphan with its owner, state, source and build-cache bytes
     List {
@@ -975,12 +991,41 @@ pub fn run() -> Result<()> {
             }
         }
         Cmd::Worktree {
-            action: WorktreeCmd::Add { task, slug, owner },
+            action:
+                WorktreeCmd::Add {
+                    task,
+                    slug,
+                    owner,
+                    agent,
+                },
         } => {
+            use crate::worktree::claim;
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let root = Some(cfg.worktree.root.as_path()).filter(|r| !r.as_os_str().is_empty());
             let id = (task.as_str(), slug.as_deref());
-            let path = crate::worktree::add::run(&std::env::current_dir()?, root, id, &owner)?;
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            let agent = claim::caller(store.as_ref(), agent.as_deref())?;
+            let owner = claim::owner(owner, agent.as_ref(), store.as_ref())?;
+            let agent_id = agent.as_ref().map(|a| a.id.as_str());
+            let cwd = std::env::current_dir()?;
+            let plan = crate::worktree::add::run(&cwd, root, id, (&owner, agent_id))?;
+            if let Some(agent) = agent_id {
+                claim::remember(store.as_ref(), &plan.path, agent, &plan.task);
+            }
+            println!("{}", plan.path.display());
+        }
+        Cmd::Worktree {
+            action: WorktreeCmd::Claim { path, agent, owner },
+        } => {
+            use crate::worktree::claim;
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            let Some(agent) = claim::caller(store.as_ref(), agent.as_deref())? else {
+                bail!("no agent to bind: pass --agent or set RTOK_AGENT_ID");
+            };
+            let owner = claim::owner(owner, Some(&agent), store.as_ref())?;
+            let (path, task) = claim::run(&path, &owner, &agent.id)?;
+            claim::remember(store.as_ref(), &path, &agent.id, &task);
             println!("{}", path.display());
         }
         Cmd::Worktree {
@@ -994,6 +1039,8 @@ pub fn run() -> Result<()> {
                 && let Ok(seen) = store.sessions_by_cwd()
             {
                 crate::worktree::list::attribute(&mut rows, &seen);
+                // T285: the bound agent's host and state; a store error leaves the ids bare.
+                let _ = crate::worktree::list::bind(&mut rows, &store, &cfg.agents.idle);
             }
             if json {
                 print_json(&rows)?;
@@ -1013,10 +1060,17 @@ pub fn run() -> Result<()> {
         } => {
             use crate::worktree::gc;
             use anyhow::Context as _;
+            // T285: a live agent's worktree is never removed; no store, no live agents.
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let live = crate::store::Store::open(&cfg.core.db_path)
+                .and_then(|s| s.live_agents(&cfg.agents.idle))
+                .map(|agents| agents.into_iter().map(|a| a.id).collect())
+                .unwrap_or_default();
             let policy = gc::Policy {
                 owner: owner.as_deref(),
                 idle: crate::measure::stats::parse_since(&idle).context("--idle")?,
                 now: std::time::SystemTime::now(),
+                live,
             };
             let outcomes = gc::run(&std::env::current_dir()?, &policy, yes)?;
             if json {

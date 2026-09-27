@@ -25,6 +25,8 @@ pub struct Policy<'a> {
     pub owner: Option<&'a str>,
     pub idle: Duration,
     pub now: SystemTime,
+    /// Live rtok agents (T282): a worktree bound to one is never removed (T285).
+    pub live: std::collections::HashSet<String>,
 }
 
 /// `modified` is the newest mtime under the worktree (T151) and `current` says the
@@ -37,6 +39,11 @@ pub fn decide(entry: &Entry, modified: Option<SystemTime>, current: bool, p: &Po
     }
     if current {
         return keep("the worktree this command runs from");
+    }
+    let agent = record.owner().and_then(|o| o.agent);
+    if let Some(agent) = agent.filter(|a| p.live.contains(a)) {
+        let short: String = agent.chars().take(8).collect();
+        return keep(&format!("agent {short} is live"));
     }
     if record.held_against(p.owner) {
         let owner = record.owner().map(|o| o.owner);
@@ -176,6 +183,20 @@ mod tests {
         990,
         "keep:modified within the idle window"
     )]
+    #[case::live_agent(
+        State::Merged,
+        Some("Claude Code / sonnet | t1 | 2026-09-22 | agent 0193ab12-live"),
+        false,
+        0,
+        "keep:agent 0193ab12 is live"
+    )]
+    #[case::ended_agent(
+        State::Merged,
+        Some("Claude Code / sonnet | t1 | 2026-09-22 | agent 0193ab12-gone"),
+        false,
+        0,
+        "remove"
+    )]
     #[case::dirty(State::Dirty, None, false, 0, "keep:uncommitted changes")]
     #[case::unmerged(
         State::Unmerged,
@@ -209,6 +230,7 @@ mod tests {
             owner: Some(ME),
             idle: Duration::from_secs(100),
             now: at(1_000),
+            live: ["0193ab12-live".to_string()].into(),
         };
         let got = match decide(&entry, Some(at(modified)), current, &policy) {
             Verdict::Remove => "remove".to_string(),
@@ -233,6 +255,7 @@ mod tests {
             owner: None,
             idle: Duration::ZERO,
             now: at(1_000),
+            live: Default::default(),
         };
         let verdict = decide(&entry, None, false, &policy);
         assert_eq!(verdict, Verdict::Keep(format!("locked by {ME}")));

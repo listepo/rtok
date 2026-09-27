@@ -842,6 +842,8 @@ Usage: rtok worktree [OPTIONS] <COMMAND>
 
 Commands:
   add    Create the worktree for a task: one location, one name, one locked owner; prints its path
+  claim  Bind an existing worktree to an agent: rewrites its lock only when unlocked or already
+         yours
   list   Every worktree and orphan with its owner, state, source and build-cache bytes
   gc     Remove merged, clean, idle worktrees with their branches; drop records of deleted ones
   clean  Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without
@@ -894,7 +896,7 @@ Options:
 $ rtok worktree add --help
 Create the worktree for a task: one location, one name, one locked owner; prints its path
 
-Usage: rtok worktree add [OPTIONS] --owner <OWNER> <TASK> [SLUG]
+Usage: rtok worktree add [OPTIONS] <TASK> [SLUG]
 
 Arguments:
   <TASK>  Task id, e.g. `t158`; directory `<repo>-<task>`, branch `<task>[-<slug>]`
@@ -902,7 +904,25 @@ Arguments:
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
-      --owner <OWNER>  Who holds it, as `<provider> / <model>`; written into the lock reason
+      --owner <OWNER>  Who holds it, as `<provider> / <model>`; written into the lock reason.
+                       Defaults to `<host> / <model>` of the agent
+      --agent <AGENT>  The rtok agent id (any unique prefix) to bind it to; defaults to
+                       `RTOK_AGENT_ID`
+  -h, --help           Print help
+
+$ rtok worktree claim --help
+Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours
+
+Usage: rtok worktree claim [OPTIONS] <PATH>
+
+Arguments:
+  <PATH>  The worktree
+
+Options:
+      --agent <AGENT>  The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --owner <OWNER>  The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> /
+                       <model>` of the agent
   -h, --help           Print help
 
 ```
