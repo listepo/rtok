@@ -592,6 +592,12 @@ enum AgentCmd {
         #[command(subcommand)]
         action: JunkCmd,
     },
+    /// This session's own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store
+    Whoami {
+        /// JSON instead of the text lines
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1188,6 +1194,23 @@ pub fn run() -> Result<()> {
                 }
                 if failed {
                     bail!("some junk could not be removed");
+                }
+            }
+            AgentCmd::Whoami { json } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let store = crate::store::Store::open(&cfg.core.db_path)?;
+                let detail = std::env::var("RTOK_AGENT_ID")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .and_then(|raw| store.resolve_agent(&raw).ok())
+                    .and_then(|id| store.agent_detail(&id).ok().flatten());
+                let Some(detail) = detail else {
+                    bail!("not inside an agent session");
+                };
+                if json {
+                    print_json(&detail)?;
+                } else {
+                    print!("{}", crate::render::agent_whoami_text(&detail));
                 }
             }
         },

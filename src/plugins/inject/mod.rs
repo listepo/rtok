@@ -305,7 +305,27 @@ mod tests {
         let (once, twice) = (run(), run());
         assert_eq!(once, twice);
         let cx = crate::plugin::Runtime::in_memory("t188").unwrap();
-        assert!(cx.estimate(&once, Class::Prose) <= budget, "{once}");
+        // T283: SessionStart also offers this session's own rtok agent id, a small line
+        // ahead of `inject`'s own (priority 5) content — `apply`'s documented behavior is
+        // that a candidate under budget on its own is emitted even if the combination
+        // overshoots, so the true ceiling here is the mode budget plus that line's own
+        // cost. Measured rather than hardcoded, so a wording change can't desync this.
+        let mut bare_cfg = cfg.clone();
+        bare_cfg.plugins.inject.modes.clear();
+        let mut bare_out = Vec::new();
+        crate::hooks::run(
+            "SessionStart",
+            start.to_string().as_bytes(),
+            &mut bare_out,
+            &bare_cfg,
+        );
+        let agent_line = serde_json::from_slice::<serde_json::Value>(&bare_out).unwrap()
+            ["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        let slack = cx.estimate(&agent_line, Class::Prose);
+        assert!(cx.estimate(&once, Class::Prose) <= budget + slack, "{once}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
