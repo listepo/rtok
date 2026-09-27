@@ -14,7 +14,9 @@ accent: "#5CE1FF"
 ---
 
 <!-- Website copy for the listepo project site. The sync-docs workflow copies this file to
-listepo/shop-mvp as content/projects/rtok.md on every change to main and on every v* tag. -->
+listepo/shop-mvp as content/projects/rtok.md on every change to main and on every v* tag.
+Sources (checked 2026-09-27): README.md and the clap CLI in src/cli.rs; version from the latest
+GitHub release (v0.10.0); accent from site/assets/css/custom.css (--rtok-accent). -->
 
 ## Overview
 
