@@ -59,10 +59,7 @@ impl Agent for Grok {
     }
 
     fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
-        &[
-            rtok_plugin_sdk::Surface::Hook,
-            rtok_plugin_sdk::Surface::Mcp,
-        ]
+        &[rtok_plugin_sdk::Surface::Hook]
     }
 
     fn files(&self, cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
@@ -83,7 +80,9 @@ impl Agent for Grok {
         if covered(cfg, "hooks") {
             out.push("hooks");
         }
-        if covered(cfg, "mcp") || own_mcp(cfg) {
+        if covered(cfg, "mcp")
+            || super::mcp::has_toml_entry(&cfg.setup.grok.config_path, "mcp_servers", "rtok")
+        {
             out.push("mcp");
         }
         out
@@ -94,13 +93,11 @@ impl Agent for Grok {
         if remove {
             return Ok(vec![offer_plugin(cfg, true)?, unregister_mcp(cfg)?]);
         }
-        if plugin_detected(cfg) {
-            // D21: the plugin is the unit — its hooks and `rtok mcp` serve already, so no
-            // `[mcp_servers.rtok]` table is added (and an earlier one is taken back).
-            return Ok(vec![offer_plugin(cfg, false)?, unregister_mcp(cfg)?]);
-        }
-        // Plain path: the hooks note first (covered → say so, never a second set), then the
-        // MCP table — skipped for the same reason while the Claude import serves rtok.
+        // The hooks note first (covered by the plugin or the Claude import → say so, never a
+        // second set), then the MCP table. MCP is independent of the plugin (T275/D33):
+        // install/update always try to write `[mcp_servers.rtok]`, plugin installed or not —
+        // `register_mcp` skips it only while the Claude import already covers rtok's MCP
+        // ([compat.claude], unchanged); only remove takes a written entry out.
         let mut lines = vec![hooks_note(cfg)];
         if cfg.setup.mcp {
             lines.push(register_mcp(cfg)?);
@@ -139,7 +136,7 @@ pub fn plugin_detected(cfg: &Config) -> bool {
 /// Grok runs Claude's hooks (`~/.claude/settings.json`) and MCP servers (`~/.claude.json`)
 /// while `[compat.claude]` is on (the default) — the files the import reads, never Claude's
 /// own plugin (T100). `covered` is that import serving rtok already: the D21 say-so state.
-fn covered(cfg: &Config, module: &str) -> bool {
+pub(crate) fn covered(cfg: &Config, module: &str) -> bool {
     let key = match module {
         "hooks" => "hooks",
         "mcp" => "mcps",
@@ -158,14 +155,6 @@ fn compat_claude(cfg: &Config, key: &str) -> bool {
                 .and_then(|v| v.as_bool())
         })
         .unwrap_or(true)
-}
-
-fn own_mcp(cfg: &Config) -> bool {
-    load(&cfg.setup.grok.config_path).ok().is_some_and(|doc| {
-        doc.get("mcp_servers")
-            .and_then(|s| s.get("rtok"))
-            .is_some_and(|_| true)
-    })
 }
 
 /// D21: while the Claude import already fires rtok's hooks here, say so instead of adding a
@@ -259,7 +248,7 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     let have = doc
         .get("mcp_servers")
         .and_then(|s| s.get("rtok"))
-        .map(toml_item_to_json);
+        .map(super::mcp::toml_item_to_json);
     let Some(have) = have else {
         return Ok(NO_CHANGES.into());
     };
@@ -281,38 +270,6 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     }
     rtok_agent_sdk::write(&apply(cfg), path, &doc.to_string(), "- mcp_servers.rtok")?;
     Ok("- mcp_servers.rtok".into())
-}
-
-/// `item` as a [`serde_json::Value`], so a TOML entry can run through
-/// [`rtok_agent_sdk::judge_owned`] the same way the JSON hosts' entries do (T246.5). Covers the
-/// shapes an `[mcp_servers.rtok]` table can hold.
-fn toml_item_to_json(item: &toml_edit::Item) -> Value {
-    match item {
-        toml_edit::Item::None => Value::Null,
-        toml_edit::Item::Value(v) => toml_value_to_json(v),
-        toml_edit::Item::Table(t) => t
-            .iter()
-            .map(|(k, v)| (k.to_string(), toml_item_to_json(v)))
-            .collect(),
-        toml_edit::Item::ArrayOfTables(_) => Value::Null,
-    }
-}
-
-fn toml_value_to_json(v: &toml_edit::Value) -> Value {
-    match v {
-        toml_edit::Value::String(s) => Value::String(s.value().clone()),
-        toml_edit::Value::Integer(i) => Value::Number((*i.value()).into()),
-        toml_edit::Value::Float(f) => {
-            serde_json::Number::from_f64(*f.value()).map_or(Value::Null, Value::Number)
-        }
-        toml_edit::Value::Boolean(b) => Value::Bool(*b.value()),
-        toml_edit::Value::Datetime(d) => Value::String(d.value().to_string()),
-        toml_edit::Value::Array(a) => a.iter().map(toml_value_to_json).collect(),
-        toml_edit::Value::InlineTable(t) => t
-            .iter()
-            .map(|(k, v)| (k.to_string(), toml_value_to_json(v)))
-            .collect(),
-    }
 }
 
 fn load(path: &Path) -> Result<DocumentMut> {
@@ -402,10 +359,11 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// D21: while the plugin serves, no `[mcp_servers.rtok]` table is added and an earlier
-    /// one is taken back.
+    /// T275/D33: MCP is independent of the plugin — while it is installed, install/update
+    /// still keeps `[mcp_servers.rtok]` (and would still write one from scratch); only
+    /// remove takes it out. `[mcp_servers.other]` is never touched either way.
     #[test]
-    fn the_plugin_is_the_singleton_no_second_mcp_table() {
+    fn plugin_installed_keeps_mcp_table_remove_takes_it_out() {
         let dir = tmp("single");
         let c = cfg(&dir, false, true);
         fs::create_dir_all(plugin_marker(&c)).unwrap();
@@ -414,7 +372,13 @@ mod tests {
             "[mcp_servers.rtok]\ncommand = \"rtok\"\nargs = [\"mcp\"]\n\n[mcp_servers.other]\ncommand = \"x\"\n",
         )
         .unwrap();
-        let lines = Grok.apply(&c, Kind::Cli, Mode::Install).unwrap();
+        Grok.apply(&c, Kind::Cli, Mode::Install).unwrap();
+        let text = fs::read_to_string(c.setup.grok.config_path.clone()).unwrap();
+        assert!(text.contains("[mcp_servers.rtok]"), "{text}");
+        assert!(text.contains("[mcp_servers.other]"), "{text}");
+        assert!(Grok.installed(&c, Kind::Cli).contains(&"mcp"));
+
+        let lines = Grok.apply(&c, Kind::Cli, Mode::Remove).unwrap();
         assert!(
             lines.contains(&"- mcp_servers.rtok".to_string()),
             "{lines:?}"
@@ -456,6 +420,45 @@ mod tests {
         );
         let text = fs::read_to_string(&c.setup.grok.config_path).unwrap_or_default();
         assert!(!text.contains("[mcp_servers"), "{text}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T275/D33: install/update always try to write `[mcp_servers.rtok]`, plugin installed or
+    /// not (skipped only while the Claude import already covers it, tested above); only
+    /// remove takes a written entry out; a user-edited entry is left with a `leave` line.
+    #[test]
+    fn t275_mcp_entry_always_written_except_on_remove() {
+        let dir = tmp("t275-mcp");
+        // `--yes` only gates the plugin-offer line here (T275/D33); leaving it unset keeps
+        // (e)'s user-edited entry declined ("leave"), while (a)-(c) write/remove the MCP
+        // entry regardless, since `register_mcp`/`unregister_mcp` never check it themselves.
+        let c = cfg(&dir, false, false);
+        fs::create_dir_all(plugin_marker(&c)).unwrap();
+        assert!(plugin_detected(&c));
+
+        let path = c.setup.grok.config_path.clone();
+        crate::agents::mcp::assert_toml_entry_lifecycle(
+            &Grok,
+            &c,
+            Kind::Cli,
+            &path,
+            "mcp_servers",
+            || {
+                // Unlike the JSON hosts' `register_server`, `register_mcp` here is a plain
+                // no-op once any `rtok` table exists, edited or not — so reseeding after
+                // (e) left an edited one first clears it, matching what a user actually
+                // removing the file's `[mcp_servers.rtok]` by hand would leave behind.
+                let mut doc = load(&path).unwrap();
+                if let Some(t) = doc
+                    .get_mut("mcp_servers")
+                    .and_then(toml_edit::Item::as_table_mut)
+                {
+                    t.remove("rtok");
+                }
+                rtok_agent_sdk::write(&apply(&c), &path, &doc.to_string(), "reset").unwrap();
+                register_mcp(&c)
+            },
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }

@@ -1,0 +1,134 @@
+argv: tree src
+exit: 0
+min_saving: 66
+---
+src
+├── api
+│   ├── client.ts
+│   ├── endpoints.ts
+│   ├── types.ts
+│   └── user.test.ts
+├── components
+│   ├── Button.test.ts
+│   ├── Button.tsx
+│   ├── Input.test.ts
+│   ├── Input.tsx
+│   ├── Modal.test.ts
+│   ├── Modal.tsx
+│   ├── Nav.test.ts
+│   ├── Nav.tsx
+│   ├── Table.test.ts
+│   └── Table.tsx
+├── hooks
+│   ├── useAuth.test.ts
+│   ├── useAuth.ts
+│   ├── useTheme.test.ts
+│   └── useTheme.ts
+├── pages
+│   ├── About.tsx
+│   ├── Home.tsx
+│   ├── Settings.tsx
+│   └── index.ts
+├── utils
+│   ├── date.test.ts
+│   ├── date.ts
+│   ├── string.test.ts
+│   └── string.ts
+├── db
+│   ├── migrations
+│   │   ├── 0001_init.sql
+│   │   ├── 0002_users.sql
+│   │   ├── 0003_sessions.sql
+│   │   └── 0004_tokens.sql
+│   ├── schema.ts
+│   └── setup.test.ts
+├── styles
+│   ├── base.css
+│   ├── theme.css
+│   └── variables.css
+├── ui
+│   ├── Button
+│   │   ├── Button.tsx
+│   │   ├── Button.test.tsx
+│   │   └── index.ts
+│   ├── Card
+│   │   ├── Card.tsx
+│   │   ├── Card.test.tsx
+│   │   └── index.ts
+│   ├── Dialog
+│   │   ├── Dialog.tsx
+│   │   ├── Dialog.test.tsx
+│   │   └── index.ts
+│   ├── Dropdown
+│   │   ├── Dropdown.tsx
+│   │   ├── Dropdown.test.tsx
+│   │   └── index.ts
+│   ├── Form
+│   │   ├── Form.tsx
+│   │   ├── Form.test.tsx
+│   │   └── index.ts
+│   ├── Header
+│   │   ├── Header.tsx
+│   │   ├── Header.test.tsx
+│   │   └── index.ts
+│   ├── Footer
+│   │   ├── Footer.tsx
+│   │   ├── Footer.test.tsx
+│   │   └── index.ts
+│   ├── Input
+│   │   ├── Input.tsx
+│   │   ├── Input.test.tsx
+│   │   └── index.ts
+│   ├── Modal
+│   │   ├── Modal.tsx
+│   │   ├── Modal.test.tsx
+│   │   └── index.ts
+│   ├── Navbar
+│   │   ├── Navbar.tsx
+│   │   ├── Navbar.test.tsx
+│   │   └── index.ts
+│   ├── Pagination
+│   │   ├── Pagination.tsx
+│   │   ├── Pagination.test.tsx
+│   │   └── index.ts
+│   ├── Select
+│   │   ├── Select.tsx
+│   │   ├── Select.test.tsx
+│   │   └── index.ts
+│   ├── Sidebar
+│   │   ├── Sidebar.tsx
+│   │   ├── Sidebar.test.tsx
+│   │   └── index.ts
+│   ├── Spinner
+│   │   ├── Spinner.tsx
+│   │   ├── Spinner.test.tsx
+│   │   └── index.ts
+│   ├── Table
+│   │   ├── Table.tsx
+│   │   ├── Table.test.tsx
+│   │   └── index.ts
+│   ├── Tabs
+│   │   ├── Tabs.tsx
+│   │   ├── Tabs.test.tsx
+│   │   └── index.ts
+│   ├── Toast
+│   │   ├── Toast.tsx
+│   │   ├── Toast.test.tsx
+│   │   └── index.ts
+│   ├── Tooltip
+│   │   ├── Tooltip.tsx
+│   │   ├── Tooltip.test.tsx
+│   │   └── index.ts
+│   ├── Avatar
+│   │   ├── Avatar.tsx
+│   │   ├── Avatar.test.tsx
+│   │   └── index.ts
+│   └── Badge
+│       ├── Badge.tsx
+│       ├── Badge.test.tsx
+│       └── index.ts
+├── App.tsx
+├── index.tsx
+└── vite-env.d.ts
+
+29 directories, 94 files

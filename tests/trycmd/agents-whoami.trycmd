@@ -1,0 +1,10 @@
+# `rtok agents whoami` (T283): no `RTOK_AGENT_ID` set → exit 1. The success/`--json`
+# path is not deterministic here (a fresh UUID and timestamps per run) and is covered
+# by an integration test instead.
+
+```console
+$ HOME=target/tmp/t283-whoami RTOK_HOME=target/tmp/t283-whoami rtok agents whoami
+? 1
+Error: not inside an agent session
+
+```

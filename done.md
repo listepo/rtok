@@ -80,6 +80,14 @@ Check: the unit tests above; `rtok agents list` shows `devin`; `agents_doc`, `ho
 
 Result: `installed()` never reports `plugin`. Devin's plugins overview (fetched 2026-09-25) does not name a store path, `devin plugins list` is a live command rather than a file, and this machine's `~/.config/devin/` has no plugin store — guessing would either double-fire hooks or delete entries the plugin still needs. Setup always writes the user files (the path without the plugin) and, behind `--yes`, prints `devin plugins install --local <plugins/devin>` only when something else changed, so a second install is all `NO_CHANGES`. Remove strips our hooks and `mcpServers.rtok` and leaves the plugin. `hooks_doc()` equals `plugins/devin/hooks.json`. Foreign hooks in the real `~/.config/devin/config.json` survive install and remove (`devin_keeps_the_real_config_and_mcp_json`). `agents list` shows Devin CLI and Devin. `agents::devin` (4), `agents_doc`, `agents_list_content`, `host_docs`, `config_coverage`, `readme_tables_match_support`, and `default_toml_is_the_defaults` passed; clippy `-D warnings` on `--lib --tests` passed.
 
+### T295. Claude Code rejects rtok's PostCompact output
+
+Seen live 2026-09-27 after `/compact` (Claude Code 2.1.x): `rtok hook PostCompact` printed `hookSpecificOutput` with `hookEventName: "PostCompact"`, and Claude Code failed validation ("expected one of PreToolUse | UserPromptSubmit | …"). Its hooks docs (https://code.claude.com/docs/en/hooks, checked 2026-09-27) list PostCompact under "No decision control" (its `systemMessage` and `continue` are discarded), and SessionStart `source: "compact"` accepts `hookSpecificOutput.additionalContext`. So the T2.5 checkpoint belongs on SessionStart source=compact, which already injects it.
+
+Do: `src/hooks/mod.rs` `dispatch` answers a PostCompact with host `claude` and a `compact_summary` field (Claude's own input field) with `{}`. Codex's PostCompact (`turn_id`, no `compact_summary`; https://developers.openai.com/codex/hooks, checked 2026-09-27) and Devin's `PostCompaction` (`--host devin`) keep injecting.
+
+Check: `hooks::tests::claude_post_compact_prints_empty_and_session_start_carries_the_checkpoint` with `tests/fixtures/hooks/post_compact.json`: PostCompact bytes are exactly `{}`; SessionStart source=compact carries the checkpoint; the same PostCompact without `compact_summary` still injects it. Fails on the old code with the live bytes. `codex::tests::compact_hooks_save_and_post_restores` and `graph_post_compaction_devin_reaches_post_compact_plugins` stay green.
+
 ### T267. Normalized dedupe treats `1src` as a duration and never matches `d:d:d`
 
 `duration_at` scanned only digits and `.`, then treated any following `s` as a duration. `copied 1src/a.rs` and `copied 2src/a.rs` collapsed to the same key. The `d:d:d` branch (`1:2:3`) required five digits after a scan that stops at `:`, so it never matched. `s` and `ms` now match only at a token boundary, and `d:d:d` is recognized before that scan.
@@ -979,6 +987,17 @@ Done when:
 
 **Check:** cargo test relevant areas pass (700/702 lib; skill_listing, memory_status, web_wasm pass)
 
+### T308. Regression test: `memory status` aggregates skip `session:` and `checkpoint:` kinds
+
+T304 (PR #480) made `Store::memory_note_aggs` skip `session:%` and tightened `checkpoint%` to `checkpoint:%`, the same filters as `list_notes` / `list_note_titles`. Its test `memory_status_excludes_session_handoff_notes` covers the `session:` row; nothing covered the tightened `checkpoint:` pattern, which used to drop any real kind that merely starts with `checkpoint`.
+
+Result: `tests/memory_status.rs::note_aggs_skip_session_and_checkpoint_kinds` stores `decision`, `session:s1`, `session:s2`, `checkpoint:c1` and `checkpointer` notes and asserts the aggregates list only `checkpointer` and `decision`: it fails on the old `checkpoint%` pattern and on a missing `session:%` filter.
+
+Check: fails before T304 (lists `session:s1` / `session:s2`, drops `checkpointer`); `cargo nextest run --test memory_status` on `main` after #480: 4 passed.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-opus-5-5
+
 ---
 
 ## T68.10 — `[plugins.graph]` exclude, include and extension map
@@ -1426,6 +1445,15 @@ Done when:
 
 **Result (2026-09-18).** Commits `6333958` `2d08e2a` `954a612` `ac50d96` `ac97b9c` `76e1d3c` on `t58.2` (not merged). `rtok stats` prints `sessions N  compact N` by counting transcript `subtype=compact_boundary` (30d: 923 sessions, 271 compacts, 75 sessions with at least one). T2.5 fixture checkpoint body is 144 B before archive-id lines (`checkpoint_tokens` = 400). `Checkpoint.ids` lists live `archive_decisions` newest first as `id <id> <tool> <bytes>`, capped by the existing budget. Hosts: Cursor `preCompact` → `pre_compact` (no post event); Copilot `preCompact` → `pre_compact` (no post); Codex `PreCompact`/`PostCompact` via `~/.codex/hooks.json`. Gemini is not a host. Kimi already installed both via Claude `ENTRIES` (docs confirm `PreCompact`/`PostCompact`) — left untouched. ZCode has none. pi/OpenCode stay with T70.6. `PreCompact` without `transcript_path` still saves (Cursor/Copilot). `docs/agents.md` blessed.
 
+### T306. checkpoint archive ids ordered by this session's decision time, once each
+
+`store::session_live_archives` (T58.2), consumed by `checkpoint::attach_ids`, ordered live archive ids by `archive::ts` — the time a body's bytes were first archived, never re-stamped since `archive` rows dedupe by sha256 — instead of `archive_decisions::ts`, the time this session's own pointer to that body was created. A later turn re-archiving an identical, unchanged body (e.g. re-reading a file) then ranked as the oldest entry, so `attach_ids`'s token budget could drop a genuinely recent archive in its place; the same archive id could also come back twice when two decisions named it.
+
+Check: `store::tests::session_live_archives_orders_by_decision_time_once_each` (new); `cargo test --lib store::` and `--lib checkpoint` pass; workspace clippy (`-D warnings`) and `cargo fmt --check` clean.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5
+
 ## T48.8 — VS Code Copilot Chat host
 
 **T48.8 VS Code Copilot Chat host** · P2, 3/5 · `src/agents/vscode/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `docs/agents.md` (blessed), `src/cli.rs`, `README.md`, `tests/agents_install.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
@@ -1547,6 +1575,18 @@ Done when `rtok memory export [--project <name>]` prints one `{kind,title,body,p
 Execution plan: `Store::list_notes(project)` in `src/store/mod.rs`; `plugins/memory/export.rs` writes JSONL to a `Write`; `MemoryCmd::Export` in `cli.rs`; docs rows. Verify: fmt, clippy, `nextest -p rtok memory`.
 
 **Result (2026-09-18).** `Store::list_notes(project)` (`kind NOT LIKE 'checkpoint:%'`, id ascending), `plugins/memory/export.rs::run(cfg, project, out)` writes `serde_json` objects one per line and returns the count, `rtok memory export [--project]` on the CLI. Test `export_round_trips_through_import_without_checkpoints`: three notes + one checkpoint → three lines, `--project q` → none, import into a second store inserts 3 then skips 3. README CLI row and plugin README section added; no config key (no flag beyond `--project`). Verified with T66.1 above.
+
+---
+
+### T304. memory export skips retired notes; memory status skips session handoff notes
+
+Bug 1: `Store::list_notes` (used by `memory export`) did not filter `notes::retired.is_null()`, and the export/import JSONL line shape carries no `retired` field, so an export piped into another store's `memory import` resurrected a note the user had retired there as a live note. `memory import`'s topic-key dedup (`list_notes(None, ..)`) still needs retired rows — the `notes_topic` unique index covers a retired row too, so a local key must block an imported line whether or not it is retired — so the filter could not simply move into the shared query. Fix: `list_notes` takes an `include_retired` flag; `memory export` passes `false`, `memory import`'s dedup and its own tests pass `true`.
+Bug 2: `Store::memory_note_aggs` (used by `memory status`) filtered `checkpoint%` but not `session:%`, unlike its siblings `list_notes` / `list_note_titles`. `session:<id>` kinds (`src/plugins/checkpoint.rs`'s per-session handoff note) are unique per session, so `memory status` grew one aggregate row per historical session forever. Fix: filter `session:%` alongside `checkpoint:%`, matching the siblings.
+
+Check: new tests `plugins::memory::export::tests::retired_note_is_not_exported` and `rtok::memory_status memory_status_excludes_session_handoff_notes`; `cargo test --lib store::` (67 passed) and `--lib memory::` (30 passed), `cargo nextest run -E 'binary(memory_status)'` (3 passed) and `-E 'binary(cli_trycmd)'` / `-E 'binary(p29_memory)'` unaffected, clippy `--lib --tests -D warnings` and `fmt --check` clean.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5
 
 ---
 
@@ -4441,6 +4481,15 @@ Do: in `compress` mode: for `tool_result` blocks that are (a) older than `archiv
 Check: fixture request with 6 turns → only turns 1–2 large results rewritten; sending the same request twice yields byte-identical rewritten bodies; unit test proves the prefix up to the first rewritten block is unchanged.
 Status: done 2026-09-02 · Check: `only_turns_older_than_keep_turns_are_rewritten` (6-turn fixture → exactly turns 1–2 rewritten, `system`/`tools`/turns 3–6 byte-equal), `same_request_twice_is_byte_identical_and_prefix_unchanged` (two runs serialise identically; bytes before the first rewritten block equal the original), `proxy_compress_rewrites_old_tool_results_identically` (same request twice through the live axum server in `compress` mode → identical `call_io` request bodies, 2 `plugin_run` rows, 4 `archive` measurements). `make check` green (119 tests). Deviation: the module is `src/plugins/archive/mod.rs` (T0.4 layout), not `archive.rs`; `Ctx` gained `call_id: Option<i32>` + `record_plugin_run` so the child row nests under the API request; `Store::spill` now ignores a duplicate archive id (the second identical request used to fail `call_io`). Pointer text is `[archived <id12>: N lines · T tokens · expand(<id>)]` + head/tail lines. Over the 200 LOC / 3 files budget: rewrite, store decisions, migration `0004.sql`, proxy wiring and tests are one unit.
 
+### T305. stats archive replay no longer double-counts short bodies
+
+`replay_ctt` (`src/measure/stats.rs`), which estimates what `rtok stats` calls `archive replay (estimate)` — the CTT the `archive` plugin (T5.3) leaves behind once a tool result ages past `keep_turns` — modelled the kept lines as `lines.iter().take(head_lines)` chained with `lines.iter().rev().take(tail_lines)`. When a result had fewer lines than `head_lines + tail_lines` (a single huge line, for example) the two slices overlapped, so `kept` counted those lines up to 2x and the estimate could land above not archiving at all. Fixed to mirror `archive::pointer`'s own guard: when `lines.len() <= head + tail`, sum each line once — through `archive::clip`, the same per-line truncation `pointer` applies — instead of taking overlapping head/tail slices; every shown line (head and tail too) goes through `archive::clip`, as `pointer` does. Also: the stats tests' `tempfile_dir` named directories by pid + nanos only, and macOS clocks tick in microseconds, so two parallel tests could share one directory (`compact_boundary_counts_once_per_event` failed intermittently); a counter now keeps them apart.
+
+Check: `mise exec -- cargo test --lib stats` — new `archive_replay_never_doubles_short_bodies` (a single-line body never yields a replay above `tokens * remain`; multi-line, non-overlapping content keeps its prior result) plus the existing `archive_replay_keeps_young_turns_and_shrinks_old_ones` unchanged; `cargo clippy --lib --tests -- -D warnings` and `cargo fmt --check` clean.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5, Claude Code / claude-opus-5-5
+
 **T5.4 `expand` through the proxy** · T5.3, T4.1 · `src/plugins/archive.rs`
 Do: MCP `expand(id, lines?)` returns the archived original (from T5.3 store); mark id as expanded → T5.3 stops rewriting it from the next request on. Track expand rate.
 Check: expand → next fixture request contains the original block again.
@@ -5773,6 +5822,17 @@ Model: Claude Code / claude-opus-5-5
 ### T236. Clean up target dirs with dunnage after tests
 
 `just test` and `just test-changed` now end with `just dunnage` (a just post-dependency; `just check` gets it through `test`). `dunnage run target` compresses and dedupes `./target` losslessly — it never deletes and keeps mtimes, so nothing rebuilds. Exit code 2 (a build held the lock) counts as success; a checkout with no `target/` yet or a machine without `dunnage` is a no-op with an install hint. dunnage is installed with `ketch install dunnage`; `toolchain.md` lists ketch and dunnage and gains a `ketch` package table.
+### T301. `just test-cov`: the test suite under coverage, `just test` stays without
+
+Creator request (2026-09-27): a separate command for tests with coverage; the plain one without. Coverage lived only inline in `.github/workflows/sonarcloud.yml`, with `cargo-llvm-cov` installed by a CI action, so it could not be run the same way locally.
+
+Result: `just test-cov` (`justfile`) adds `llvm-tools-preview`, runs `cargo llvm-cov nextest --workspace` with the same thread count as `just test`, writes `coverage/lcov.info` (ignored by git), prints a per-file summary, then runs `dunnage`; extra args go to nextest (`just test-cov -E 'test(formatters)'`). `just test` is unchanged and has no coverage. `cargo-llvm-cov` 0.9.1 is pinned in `mise.toml`; the SonarCloud job calls `just test-cov` instead of its own install steps and command. `toolchain.md`, `CONTRIBUTING.md`, `docs/sonarcloud-setup.md` and the shared `rust.md` updated.
+
+Check: `just test-cov -E 'test(every_formatter_arm_has_a_golden) | test(ten_families)'` — 2 passed, `coverage/lcov.info` written, TOTAL row printed; `cargo nextest run -p rtok --test toolchain_rows --test plugin_plans` green.
+
+Status: done 2026-09-27
+Model: Claude Code / claude-opus-5-5
+
 ### T226. A modern look for `rtok tui`
 
 Why: the TUI drew every page in the terminal's default colour — bare tables, a `>` cursor, plain text hints — so the operator model (D23) read like a log dump. Done means one palette and one set of frames across every page, with the tests still pinning the model's text, not the chrome.
@@ -6201,6 +6261,19 @@ Result: `hook_returns_despite_exclusive_lock` now proves the fail-open by work: 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
+### T304. Latency lock test: prove fail-open without a runner-speed bound
+
+`tests/latency.rs` `hook_returns_despite_exclusive_lock` flaked on unrelated PRs on 2026-09-27: `ci / check (macos-latest)` for listepo/rtok#461 ("hook waited 102.74ms", 100 ms bound, job 108701481370) and `ci / windows (2/2)` for listepo/rtok#466 ("313.66ms", 250 ms bound, job 108706221829); both green on rerun. The `calls` assert (T237) is the proof that the hook gave up instead of waiting; the wall bound is a fixed guess at runner speed and shares the CPUs with the whole suite. Done means the test keeps catching a hook that waits on the lock, without depending on how loaded the runner is.
+
+Plan: (1) run the test alone under nextest (`threads-required`, `.config/nextest.toml`), as T237 did for the skill digest test; (2) derive the wall bound from the holder instead of the platform: the hook must return within half the hold (`HOLD / 2`, 250 ms everywhere), so it cannot have waited for the release; (3) move the few-ms precision to where it is exact: a compile-time assert in `src/hooks/mod.rs` that each `LOCK_WAIT` wait stays within half the 10 ms hook budget (D1).
+
+Check: `mise exec -- cargo nextest run -p rtok --test latency`, repeated; mutations on `LOCK_WAIT.busy`.
+
+Result: the test runs alone and asserts `took < HOLD / 2` (250 ms) on every platform next to the unchanged `calls` check; `src/hooks/mod.rs` has `const _: () = assert!(...)` holding `LOCK_WAIT.busy` and `.migrate` at ≤ 5 ms. Six local runs green (hook test 0.55–0.65 s including the 500 ms hold). Mutations: `busy` 200 ms fails to compile; with the assert commented out, `busy` 100 ms fails the wall bound ("hook waited 258 ms" — the per-statement waits add up) and 300 ms fails the `calls` assert ("outwaited … 532 ms"). The hot path and `LOCK_WAIT` values are unchanged.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-opus-5-5
+
 ### T118.2. Gemini CLI host module: registration, config keys, e2e
 
 T118.1 (done.md) shipped the `--host gemini` hook I/O adapter (`src/hooks/types.rs::adapt_gemini`, `src/hooks/mod.rs::gemini_output`) with no host module yet — `--host` is a free string, not validated against a registry. This task adds the host itself: `src/agents/gemini/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()` (`src/agents/mod.rs`), `[setup.gemini]` config keys (mirror an existing host's `dir`/override shape — see `copilot`/`devin`). Verify current `gemini` CLI detection (binary name, version flag, config home) against https://geminicli.com/docs/ before writing `installed()`/`support()`.
@@ -6447,6 +6520,17 @@ Result: `tests/fixtures/replay/session.jsonl` (30 hand-written events: 23 Bash, 
 
 Model: Claude Code / opus-5.5 (first draft, abandoned unpushed in another session's worktree), claude-opus-5-5 (re-landed, reviewed)
 
+### T298. Proxy replay bench with a saving floor
+
+`tests/replay_bench.rs` put a floor under `cmd` and `read` only. The proxy methods (`archive`, `toon`, `compress`) had unit checks that output shrinks but no floor over a realistic request.
+
+Result: `tests/proxy_bench.rs` sends `tests/fixtures/proxy/messages.json` (10-turn Messages request: a 200-line CI log, a 150-line `ls -la` listing and a postmortem as old tool results, two JSON arrays, one short body, four live turns) through the real proxy against an `httpmock` upstream. The floor is end to end, per `tool_use_id`: original content vs what upstream received, so an `archive` → `compress` chain on one block counts once. Measured 91.4 % (10,054 → 867 est. tokens), floor 86.4; per plugin (information only): `archive` 90.4 %, `toon` 50.9 %, `compress` 26.6 %. It also checks each plugin shrank at least one block, the short body arrives byte-identical, every archived id expands to the original bytes, terminal rows' `after_bytes` match the sent bytes, and that `archive` off drops below the floor. `Server`/`proxy_server` moved from `tests/proxy.rs` into `tests/common/proxy.rs` for both binaries. Noted: an `archive` row's `after_bytes` is the intermediate pointer when `compress` shrinks that block further; saved tokens (`before − after`) still add up across the chain, only a ratio of summed `before`/`after` would be skewed.
+
+Check: `cargo nextest run -p rtok --test proxy_bench --test proxy` 34/34; clippy on both targets clean.
+
+Status: done 2026-09-27
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
 ### T240. Golden files for rule families without one
 
 `rules/default.toml` has families with no pair in `tests/cmd_golden`: `curl`, `node`, `pnpm`, `sed` (re-list at claim time — any rule `match_cmd` or Rust formatter with no `.in`/`.out`). Their output shape is untested.
@@ -6458,6 +6542,17 @@ Do (2026-09-24): re-listed the families at claim time via the same `settings.pic
 Result: goldens added for `curl` (measured 22%, floor 19%), `node` (16% → 13%), `pnpm` (15% → 12%), `sed` (49% → 46%), and `gradle_bare` (29% → 26%, closing a pre-existing `gradle`-rule coverage gap); floors are `max(0, measured% − 3)` per T238. `cargo test -q --lib plugins::cmd::formatters`: 16/16 green. `just check` green (fmt, clippy, 1627 nextest tests, 3 skipped) — one run hit a 180s timeout in the unrelated `graph_model::graph_page_matches_dead_json_on_the_fixture_index` test under heavy concurrent CPU load from other sessions sharing the machine (confirmed environmental: passed standalone in 121.45s); a clean re-run was green. Files: `tests/cmd_golden/{curl,node,pnpm,sed,gradle_bare}.{in,out}` (10 files), `src/plugins/cmd/formatters.rs` (new `every_builtin_rule_family_has_a_golden` test).
 
 Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T296. Every Rust formatter has a golden with a saving floor
+
+`tests/cmd_golden` guards every `rules/default.toml` family (T240) but not the Rust formatters in `src/plugins/cmd/formatters.rs` `format()`: `jest`, `vitest`, `tree`, `cargo clippy` and `go test` had no golden, so a regression in them saved nothing and failed nothing.
+
+Result: goldens `jest` (measured 80 %, floor 75), `vitest` (78 → 73), `tree` (71 → 66), `cargo_clippy` (68 → 63), `go_test` (43 → 38); floors are the measured saving minus 5. New unit test `every_formatter_arm_has_a_golden`: a list mirroring the `format()` arms, tied to `FORMATTER_STEMS`, fails when an arm has no golden that reaches it through `family_argv` and gets `Some` from `format()` (checked by hiding `tree.in`).
+
+Check: `cargo nextest run -p rtok --lib cmd::formatters` 17/17; `cargo clippy -p rtok --lib --tests -- -D warnings` clean.
+
+Status: done 2026-09-27
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
 ### T244. No surface sees rtok twice after `agents install`
@@ -6575,6 +6670,28 @@ Check: `cargo nextest --test plugins_e2e`; `just check`.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+
+### T299. Saving checks for guard and the read modes
+
+`guard` records denied repeats with `est_after: 0`, but no test checked that the row's `before` is the size of what was denied. The `read` modes had no minimum saving.
+
+Result: guard unit test `deny_measurement_before_bytes_and_est_before_match_the_avoided_payload` — `before_bytes` equals the archived body the repeat would have returned, `est_before` the documented `bytes / 4` heuristic, `after` 0. `tests/plugins_e2e.rs` `read_modes_keep_a_saving_floor` over `tests/fixtures/read_modes_sample.rs` (1350 tokens): `read` `map` measured 95.1 % (floor 90.1), `read` `signatures` 88.8 % (83.8), `search` 88.9 % (83.9). Found: only `mode = "stripped"` records a `Measurement`; `map`, `signatures`, `search` and `tree` record none, so their saving never reaches `rtok stats` — filed as I-100.
+
+Check: `cargo nextest run -p rtok --test plugins_e2e -E 'test(read_modes_keep_a_saving_floor) | test(read_stripped)'` 2/2; the guard test 1/1; `cargo clippy -p rtok --lib --test plugins_e2e -- -D warnings` clean.
+
+Status: done 2026-09-27
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T300. `read` map, signatures, search and tree record their saving
+
+I-100 (found by T299): only `mode = "stripped"` recorded a `Measurement`, so the saving of `map`, `signatures`, `search` and `tree` never reached `rtok stats`. Creator's choice (2026-09-27): `map`/`signatures` measure against the whole file they replace; `search`/`tree` record only when `max_chars` cuts their output, against their own full output — there is no honest "before" for them beyond that.
+
+Result: `read_with` records kind `map` / `signatures` (raw file vs returned text) on the fresh-render path only; the `cache::hit` and `identical_result` paths return earlier with their own `delta`/`dedup` row, so one call writes at most one row. `cap_recording` (a recording variant of `cap`) writes `search_cap` / `tree_cap` with the archive id as `ref_id` when it cuts; plain `cap` (full reads, `stripped`) records nothing, so no double count. Tests in `tests/plugins_e2e.rs`: `read_modes_keep_a_saving_floor` also checks one row per `map`/`signatures` call with bytes matching the file and the returned text, and none for an uncut `search`; `search_and_tree_cap_measurement_matches_full_and_returned_text` checks the cut rows against the archived full output.
+
+Check: `cargo nextest run -p rtok --lib plugins::read` and `--test plugins_e2e` green; `cargo clippy -p rtok --lib --tests -- -D warnings` clean.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
 ### T246.2. MCP entries of the remaining hosts
 
@@ -6850,6 +6967,19 @@ Result: `CachePrompt` gains `params`: every top-level request field except `mess
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
+### T303. Semantic-cache key covers tool_use input, unknown blocks and OpenAI tool_calls
+
+Found in a review of `src/proxy/semantic_cache.rs`: `block_text`'s `tool_use` arm hashed only `id` and `name`, never `input`, so two requests differing solely in an earlier tool call's arguments hashed equal; its `_ => String::new()` fallback made every other block kind (`thinking`, `redacted_thinking`, `server_tool_use`, `web_search_tool_result`, …) contribute nothing; and `messages_text` dropped an OpenAI Chat assistant message's `tool_calls` (a sibling of `content`, not covered by it) and any message with no `content` key at all (the `?` on `m.get("content")` discarded the whole message, `tool_call_id` on `tool` messages too). Two different conversations could collide on the cache key and the proxy would replay a wrong cached answer.
+
+Plan: fold `canonical_json(input)` into the `tool_use` contribution; make the fallback arm serialize `canonical_json(b)` for unknown block kinds instead of an empty string; in `messages_text`, treat a missing `content` as empty text and append the canonicalized `tool_calls` and `tool_call_id` when present.
+
+Check: `tool_use_input_joins_the_cache_key`, `thinking_block_joins_the_cache_key`, `openai_tool_calls_join_the_cache_key` — bodies differing only there hash differently, key order inside `tool_use` input does not; existing `tool_use_ids_join_the_cache_key` and the rest of `mod tests` stay green; `just test` green.
+
+Result: `block_text`'s `tool_use` arm now appends `canonical_json(input)`, serialized; its fallback arm serializes `canonical_json(b)` for any other block kind instead of returning an empty string. `messages_text` defaults a missing `content` to empty text rather than dropping the message via `?`, and appends the canonicalized `tool_calls` and the `tool_call_id` string when either is present. Tests: `tool_use_input_joins_the_cache_key` (differing input, and identical input under different key order), `thinking_block_joins_the_cache_key`, `openai_tool_calls_join_the_cache_key`; `cargo test --lib semantic_cache` and `cargo clippy --lib --tests -- -D warnings` green.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5
+
 ### T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 
 Found 2026-09-22 in the docs pass (all confirmed against the files): T126 appears as three table rows and three identical cards (plan.md `### T126` ×3); T123 has two full cards; `todo.md` carries T126 twice; T183's Check sits under T184's card (the `Check: dry-run with \`all\`…` paragraph after T184's own Check) so T183 has none and T184 appears to have two; three blank lines split the task table into four markdown tables that render as raw pipes on GitHub and the site; T122 still carries the fix scope handed to T127; and T122/T123/T125 — all `src/` code cards — are claimed by `claude-haiku-4-5`, the exact models AGENTS.md forbids for code ("on T122–T125 every Haiku code diff had a defect its report called green"). "One task = one card with a Check" is broken throughout.
@@ -7029,6 +7159,22 @@ Result: The creator raised the Check (2026-09-26) to hook p50 as Claude Code see
 
 Status: done 2026-09-26
 Model: Cursor / grok 4.7
+
+### T302. `--ai` report leaks NaN/inf and report charts wrap huge u64 counts to -1
+
+Found by a bug-hunt pass over `src/report/**`. Two verified correctness bugs, both in code that formats measured data for a human or a downstream model to read:
+
+1. `report::ai::expand()` formatted `100.0 * exp.rate` with a raw `{:.1}` instead of routing it through `markdown::dec()` like `markdown.rs`/`html.rs` already do for the same value. A non-finite `rate` (a corrupted/legacy DB row — exactly the case `report::fixtures::hostile()` exists to cover for the other two renderers) printed the literal string `rate=NaN%` or `rate=inf%` into the `--ai` report, which is read by a model/parser downstream; the other two renderers correctly print `—` for the same input (T105).
+2. `html.rs` and `pdf.rs` each cast a `u64` call/bust count to `i64` with a plain `as i64` when building chart data (`r.calls as i64`, `*n as i64`). For a count exceeding `i64::MAX` this bit-reinterprets instead of saturating, producing `-1` in the chart while the adjacent table (fed from the same `u64`) correctly showed the huge count — a self-contradictory report, reproduced verbatim in the `html::tests::one_row_snapshot` fixture before the fix.
+
+Also tightened, same module, same theme (unchecked arithmetic on store-derived `i64` values in `advice.rs`): `retire_plugin`'s `-r.saved` and `inject_budget`'s `budget * r.rows as i64` now use `saturating_neg`/`saturating_mul` instead of an operator that panics in debug and wraps in release on an extreme stored value; and `top_sinks` now ranks by an estimated token count (`before_bytes` divided by `[estimator] code`) instead of a raw byte count, so its sort key is denominated the same way as every other rule feeding `recommendations()`'s single `Reverse(tokens)` sort (the module's own doc comment: ordered "by the tokens it would recover").
+
+Fix: `ai::expand()` now calls `super::markdown::dec(Some(100.0 * exp.rate))`; `html.rs`/`pdf.rs` use `i64::try_from(..).unwrap_or(i64::MAX)` for both chart-data casts.
+
+Check: new `report::ai::tests::non_finite_rate_never_leaks_into_the_document` (NaN and infinity, mirrors markdown.rs/html.rs's T105 `holds()`); the html `one_row_snapshot` fixture re-blessed to show the correct huge count instead of `-1` in the chart; new `report::advice::tests::top_sinks_ranks_by_estimated_tokens_not_raw_bytes`. `cargo test --lib report::`, `cargo fmt`, `cargo clippy --lib -- -D warnings` all green.
+
+Status: done 2026-09-28
+Model: Claude Code / sonnet-5
 
 ### T282. Agent registry: an rtok agent id for every host session
 

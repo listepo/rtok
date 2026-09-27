@@ -159,10 +159,22 @@ pub(crate) fn read_with(
     }
     let _ = cache::remember(cx, &key, payload);
     let out = cap(cx, body)?;
-    if stripped_src.is_some() && (out.len() as u64) < (raw.len() as u64) {
+    // T300: `map`/`signatures` measure the same way `stripped` already does — raw file vs
+    // the text actually returned — but only on this fresh-render path; `cache::hit` and
+    // `identical_result` above already recorded their own row (kind `dedup`/`delta`) and
+    // returned early, so at most one row is written per call.
+    let render_kind = match mode {
+        "map" => Some("map"),
+        "signatures" => Some("signatures"),
+        _ if stripped_src.is_some() => Some("stripped"),
+        _ => None,
+    };
+    if let Some(kind) = render_kind
+        && (out.len() as u64) < (raw.len() as u64)
+    {
         let _ = cx.record(&Measurement {
             plugin: "read",
-            kind: "stripped",
+            kind,
             before_bytes: raw.len() as u64,
             after_bytes: out.len() as u64,
             est_before: cx.estimate(&raw, Class::Code),
@@ -255,18 +267,42 @@ pub(crate) fn walk_root_ok(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Cap at `plugins.read.max_chars`; an oversized text is archived and the cut carries its id.
-pub(crate) fn cap(cx: &Ctx, text: String) -> Result<String> {
+/// Shared body of [`cap`] / [`cap_recording`]: cap at `plugins.read.max_chars`, archiving an
+/// oversized text so the cut carries its id. `kind` is `Some` only for callers whose entire
+/// "before" is this cap (`search`/`tree` have no other honest before), so a `Measurement` row
+/// is written exactly when the cap actually cuts something.
+fn cap_impl(cx: &Ctx, text: String, kind: Option<&'static str>) -> Result<String> {
     let max = cx.plugin_config::<crate::config::Read>("read").max_chars as usize;
     if text.chars().count() <= max {
         return Ok(text);
     }
     let id = cx.put_archive(text.as_bytes())?;
-    Ok(crate::expand::cut(
-        &text,
-        &format!("\n… archived {id} …\n"),
-        max,
-    ))
+    let out = crate::expand::cut(&text, &format!("\n… archived {id} …\n"), max);
+    if let Some(kind) = kind {
+        let _ = cx.record(&Measurement {
+            plugin: "read",
+            kind,
+            before_bytes: text.len() as u64,
+            after_bytes: out.len() as u64,
+            est_before: cx.estimate(&text, Class::Code),
+            est_after: cx.estimate(&out, Class::Code),
+            ref_id: Some(id),
+            call_id: None,
+        });
+    }
+    Ok(out)
+}
+
+/// Cap at `plugins.read.max_chars`; an oversized text is archived and the cut carries its id.
+pub(crate) fn cap(cx: &Ctx, text: String) -> Result<String> {
+    cap_impl(cx, text, None)
+}
+
+/// `cap`, plus a `Measurement` row (`kind`) when it actually truncated. For `search`/`tree`:
+/// there is no honest "before" beyond their own full output, so nothing is recorded unless
+/// `cap` cut something.
+pub(crate) fn cap_recording(cx: &Ctx, text: String, kind: &'static str) -> Result<String> {
+    cap_impl(cx, text, Some(kind))
 }
 
 #[cfg(test)]

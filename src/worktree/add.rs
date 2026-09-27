@@ -12,7 +12,9 @@ use super::{Owner, git};
 pub struct Plan {
     pub path: PathBuf,
     pub branch: String,
-    /// The lock reason, `<owner> | <task-id> | <date>` — what [`Owner::parse`] reads back.
+    pub task: String,
+    /// The lock reason, `<owner> | <task-id> | <date>[ | agent <uuid>]` — what
+    /// [`Owner::parse`] reads back.
     pub reason: String,
 }
 
@@ -63,7 +65,7 @@ pub fn plan(
     root: Option<&Path>,
     temp: &[PathBuf],
     (task, slug): (&str, Option<&str>),
-    owner: &str,
+    (owner, agent): (&str, Option<&str>),
     date: &str,
 ) -> Result<Plan> {
     let task = ident("task id", task)?;
@@ -71,7 +73,13 @@ pub fn plan(
         Some(slug) => format!("{task}-{}", ident("slug", slug)?),
         None => task.clone(),
     };
-    let reason = format!("{owner} | {task} | {date}");
+    let reason = Owner {
+        owner: owner.into(),
+        task: task.clone(),
+        date: date.into(),
+        agent: agent.map(Into::into),
+    }
+    .reason();
     // ASCII: `git worktree list --porcelain` C-quotes anything else.
     let round_trips = Owner::parse(&reason).is_some_and(|o| o.owner == owner);
     ensure!(
@@ -102,24 +110,29 @@ pub fn plan(
     Ok(Plan {
         path,
         branch,
+        task,
         reason,
     })
 }
 
-/// Creates the worktree and returns its path. A failed fetch is an error: branching
+/// `YYYY-MM-DD`, UTC: the lock reason's date.
+pub(super) fn today() -> Result<String> {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
+    Ok(crate::log::stamp(now.as_secs())[..10].to_string())
+}
+
+/// Creates the worktree and returns its plan. A failed fetch is an error: branching
 /// from a stale base is how a finished task gets rebuilt on old code.
 pub fn run(
     cwd: &Path,
     root: Option<&Path>,
     id: (&str, Option<&str>),
-    owner: &str,
-) -> Result<PathBuf> {
+    owner: (&str, Option<&str>),
+) -> Result<Plan> {
     let worktrees = git::list(cwd)?;
     let main = &worktrees.first().context("git lists no worktree")?.path;
     let temp = [std::env::temp_dir(), "/tmp".into()];
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
-    let date = &crate::log::stamp(now.as_secs())[..10];
-    let plan = plan(main, root, &temp, id, owner, date)?;
+    let plan = plan(main, root, &temp, id, owner, &today()?)?;
     let base = git::default_base(main);
     git::fetch(main, &base)?;
     if let Some(root) = plan.path.parent() {
@@ -127,7 +140,7 @@ pub fn run(
             .with_context(|| format!("cannot create {}", root.display()))?;
     }
     git::add_locked(main, &plan.path, &plan.branch, &plan.reason, &base)?;
-    Ok(plan.path)
+    Ok(plan)
 }
 
 #[cfg(test)]
@@ -144,7 +157,14 @@ mod tests {
         id: (&str, Option<&str>),
         owner: &str,
     ) -> Result<Plan> {
-        plan(main, root, &["/purged".into()], id, owner, "2026-09-22")
+        plan(
+            main,
+            root,
+            &["/purged".into()],
+            id,
+            (owner, None),
+            "2026-09-22",
+        )
     }
 
     #[test]
@@ -181,6 +201,22 @@ mod tests {
             taken.to_string().contains("one worktree per task"),
             "{taken}"
         );
+    }
+
+    #[test]
+    fn a_known_agent_is_the_fourth_field_of_the_lock() {
+        let agent = "an-agent-id";
+        let p = plan(
+            Path::new("/r/rtok"),
+            None,
+            &[],
+            ("t1", None),
+            (OWNER, Some(agent)),
+            "d",
+        );
+        let reason = p.unwrap().reason;
+        assert_eq!(reason, format!("{OWNER} | t1 | d | agent {agent}"));
+        assert_eq!(Owner::parse(&reason).unwrap().agent.as_deref(), Some(agent));
     }
 
     #[rstest]

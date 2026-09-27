@@ -451,6 +451,8 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     // the Sessions page rides the snapshot since T25.1, so the command renders a
     // real page, not an on-demand call
     ("agents sessions", "sessions"),
+    // T284: one agent out of the same Sessions-page model (`model::agent_show`)
+    ("agents show", "sessions"),
     // the Doctor page rides the snapshot since T15.6, so `rtok doctor` renders it
     ("doctor", "doctor"),
     // the Logs page rides the snapshot since T15.7, so `rtok logs` renders it
@@ -525,6 +527,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "refreshes or reinstalls what rtok installed in a host",
     ),
     ("setup", "deprecated spelling of `rtok agents install`"),
+    (
+        "agents status",
+        "writes the calling agent's own status text into the store (T284)",
+    ),
     ("config init", "writes the annotated reference file"),
     ("config set", "edits one key in the user file"),
     ("bench", "runs the A/B schedule and writes Measurement rows"),
@@ -560,6 +566,14 @@ const EXEMPT: &[(&str, &str)] = &[
         "creates a locked git worktree and prints its path (T158)",
     ),
     (
+        "worktree claim",
+        "rewrites one git worktree lock and its claim row (T285)",
+    ),
+    (
+        "worktree remove",
+        "removes one git worktree, its merged branch and its claim row (T286)",
+    ),
+    (
         "worktree clean",
         "deletes tagged build caches on the checkout's file system, not the store (T152)",
     ),
@@ -569,6 +583,20 @@ const EXEMPT: &[(&str, &str)] = &[
     ),
     // helpers: a location or a verdict, not model data
     ("config path", "prints where the config file is"),
+    (
+        "agents whoami",
+        "prints this session's own rtok agent id from RTOK_AGENT_ID (T283); a one-row \
+         identity call, not a shared model page",
+    ),
+    (
+        "agents send",
+        "writes message rows for one agent or this project's live agents (T287)",
+    ),
+    (
+        "agents inbox",
+        "one agent's framed message queue, marked read when the agent reads its own (T287); \
+         not a shared model page",
+    ),
     (
         "info",
         "prints version, paths, disk usage, error count and proxy status",
@@ -674,6 +702,9 @@ const JSON_READERS: &[&str] = &[
     "agents list",
     "agents info",
     "agents sessions",
+    "agents whoami",
+    "agents show",
+    "agents inbox",
     "logs",
     "demon status",
     "otel status",

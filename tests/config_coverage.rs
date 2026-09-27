@@ -76,6 +76,12 @@ const ALLOW_KEYS: &[&str] = &[
     "worktree.gc.idle",
     // `worktree add --owner` (T158): who holds this one worktree; `[worktree] root` is the setting.
     "worktree.add.owner",
+    // `worktree claim --owner` (T285): the name an old lock carries, per call like `add --owner`.
+    "worktree.claim.owner",
+    // `worktree remove` (T286): per call like `claim` — whose old lock, and whether an
+    // unmerged branch survives this one removal.
+    "worktree.remove.owner",
+    "worktree.remove.keep_branch",
     // `worktree clean` (T152): same per-call rule as `gc` — a stored `yes` would delete
     // without anyone typing it; `--idle` is T153's flag with T153's default.
     "worktree.clean.yes",
@@ -84,6 +90,10 @@ const ALLOW_KEYS: &[&str] = &[
     // stored value would delete without anyone typing it, and it must not share `setup.yes`,
     // which confirms a different destructive action (`agents install --replace`).
     "junk.yes",
+    // `agents send --all-live` / `agents inbox --unread` (T287): who gets one message and
+    // which rows one read shows; `agents` flags map onto `setup.*`, which they are not.
+    "setup.all_live",
+    "setup.unread",
 ];
 
 #[test]

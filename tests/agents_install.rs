@@ -77,9 +77,9 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
         ),
         (
             // T117: the plugin needs `--yes` to link (no `default_install`, since it also
-            // edits the user's own settings.json); once accepted, D21 strips the plain
-            // `mcp.json` entry, so `settings.json` (`chat.pluginLocations`) is the file that
-            // actually stays written and backed up.
+            // edits the user's own settings.json); `settings.json` (`chat.pluginLocations`)
+            // is the file that stays written and backed up — its own `mcp.servers.rtok` entry
+            // is independent of the plugin (T275/D33) and is written there too.
             "vscode",
             vec!["--yes"],
             Some(home.join("Library/Application Support/Code/User/settings.json")),
@@ -341,7 +341,7 @@ fn claude_desktop_installs_mcp_with_the_absolute_binary_under_a_temp_home() {
     let out = rtok(&["agents", "install", "claude", "--desktop"], &cfg, &home);
     assert!(out.contains("Desktop: Claude Desktop"), "{out}");
     assert!(!out.contains("CLI: Claude Code"), "{out}");
-    assert!(out.contains("✓ mcp     installed"), "{out}");
+    assert!(out.contains("✓ mcp     desktop  entry "), "{out}");
     assert!(
         out.contains("− hooks   not supported: Claude Desktop has no hook events"),
         "{out}"

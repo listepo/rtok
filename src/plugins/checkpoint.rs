@@ -555,7 +555,18 @@ mod tests {
         });
         let mut off = Vec::new();
         crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut off, &cfg);
-        assert_eq!(off, b"{}", "startup_recall off injects nothing");
+        // T283: SessionStart always offers this session's own rtok agent id; `startup_recall`
+        // off means checkpoint itself contributes nothing beyond that one line.
+        let off_ctx = serde_json::from_slice::<serde_json::Value>(&off).unwrap()
+            ["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        assert!(off_ctx.starts_with("rtok agent id: "), "{off_ctx}");
+        assert!(
+            !off_ctx.contains("checkpoint"),
+            "startup_recall off injects nothing from checkpoint: {off_ctx}"
+        );
 
         cfg.plugins.memory.startup_recall = true;
         let mut on1 = Vec::new();
@@ -659,8 +670,17 @@ mod tests {
         let pi = restore("pi");
         let opencode = restore("opencode");
         assert!(!claude.is_empty(), "{claude}");
-        assert_eq!(claude, pi);
-        assert_eq!(claude, opencode);
+        // T283: each host registers its own rtok agent id under the same session_id text (a
+        // fresh UUID per `(host, session)` row), so the leading `rtok agent id: ...` line
+        // differs by design — the claim is about the checkpoint body that follows it.
+        fn after_first_line(s: &str) -> &str {
+            s.split_once('\n').map_or("", |(_, rest)| rest)
+        }
+        for text in [&claude, &pi, &opencode] {
+            assert!(text.starts_with("rtok agent id: "), "{text}");
+        }
+        assert_eq!(after_first_line(&claude), after_first_line(&pi));
+        assert_eq!(after_first_line(&claude), after_first_line(&opencode));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

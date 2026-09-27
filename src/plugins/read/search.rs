@@ -144,7 +144,7 @@ pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<S
             hits.push(format!("{rel}:{}: {snippet}", i + 1));
         }
     }
-    super::cap(cx, hits.join("\n"))
+    super::cap_recording(cx, hits.join("\n"), "search_cap")
 }
 
 /// Compact listing `path size` down to `depth` (default `plugins.read.tree_depth`).
@@ -179,7 +179,7 @@ pub fn tree(cx: &Ctx, path: &str, depth: Option<u32>) -> Result<String> {
         rows.push(format!("{rel} {size}"));
     }
     rows.sort();
-    super::cap(cx, rows.join("\n"))
+    super::cap_recording(cx, rows.join("\n"), "tree_cap")
 }
 
 #[cfg(test)]

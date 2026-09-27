@@ -9,8 +9,9 @@
 //! and its hook event names (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
 //! `PreCompact`, `SubagentStart`, `SubagentStop`, `Stop`) match rtok's own, so setup links that
 //! tree instead of shipping a separate `plugins/vscode/` copy (T117 doc research, fetched
-//! 2026-09-24 — see `## Docs` below). D21: while the plugin is registered, its hooks and MCP
-//! are the unit — a plain `mcp.json` entry is stripped instead of written.
+//! 2026-09-24 — see `## Docs` below). D21: while the plugin is registered, it is the hooks
+//! unit. MCP is independent of it (T275/D33): the profile `mcp.json`'s `servers.rtok` entry is
+//! written on every install/update regardless of plugin state, only remove takes it out.
 //!
 //! The plugin lands at a fixed `<user-dir>/plugins/rtok` per profile (a symlink to
 //! `plugins/claude/`, like every other linked host plugin) rather than directly at the
@@ -87,10 +88,7 @@ impl Agent for Vscode {
     }
 
     fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
-        &[
-            rtok_plugin_sdk::Surface::Hook,
-            rtok_plugin_sdk::Surface::Mcp,
-        ]
+        &[rtok_plugin_sdk::Surface::Hook]
     }
 
     fn files(&self, cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
@@ -110,12 +108,14 @@ impl Agent for Vscode {
     }
 
     fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
-        let stable_mcp = super::read(&mcp_path(cfg, false)).contains("\"rtok\"");
-        let insiders_mcp = super::read(&mcp_path(cfg, true)).contains("\"rtok\"");
+        // MCP is independent of the plugin now (T275/D33): only the profile `mcp.json`'s own
+        // entry counts.
+        let stable_mcp = super::mcp::has_entry(&mcp_path(cfg, false), "servers", NAME);
+        let insiders_mcp = super::mcp::has_entry(&mcp_path(cfg, true), "servers", NAME);
         // T75: a foreign directory at either dest must not hold the green mark.
         let plugin = PLUGIN_STABLE.ours(cfg) || PLUGIN_INSIDERS.ours(cfg);
         let mut out = Vec::new();
-        if stable_mcp || insiders_mcp || plugin {
+        if stable_mcp || insiders_mcp {
             out.push("mcp");
         }
         if plugin {
@@ -133,18 +133,11 @@ impl Agent for Vscode {
                 lines.push(line);
             }
         }
+        // MCP is independent of the plugin (T275/D33): every install/update writes the
+        // profile `mcp.json`'s `servers.rtok` regardless of plugin state; only remove takes
+        // it out.
         for insiders in [false, true] {
-            let plugin = if insiders {
-                &PLUGIN_INSIDERS
-            } else {
-                &PLUGIN_STABLE
-            };
             let line = if remove {
-                unregister_mcp(cfg, insiders)?
-            } else if plugin.ours(cfg) {
-                // D21: the plugin is the unit — cleared on every run while it serves, not
-                // only the run that linked it (a declined-then-later-accepted offer, or a
-                // hand-reverted settings edit, must not leave the two out of sync — T196).
                 unregister_mcp(cfg, insiders)?
             } else if cfg.setup.mcp {
                 register_mcp(cfg, insiders)?
@@ -428,11 +421,11 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// Full `apply`: `--yes` links the plugin, registers `chat.pluginLocations`, and D21
-    /// strips a leftover plain `mcp.json` entry; `remove` takes both back and leaves the
-    /// dest a foreign directory would have kept untouched.
+    /// Full `apply`: `--yes` links the plugin, registers `chat.pluginLocations`, and MCP is
+    /// written independently of it (T275/D33); `remove` takes the plugin and the mcp entry
+    /// both back.
     #[test]
-    fn yes_links_plugin_registers_settings_and_strips_leftover_mcp() {
+    fn yes_links_plugin_registers_settings_and_keeps_independent_mcp() {
         let dir = tmp("yes");
         let mut c = cfg(dir.clone(), false);
         c.setup.yes = true;
@@ -452,12 +445,12 @@ mod tests {
         let dest = plugin_dest(&c, false).display().to_string();
         assert_eq!(root["chat.pluginLocations"][dest.clone()], json!(true));
 
-        // D21: the plugin now serves MCP — the leftover plain entry is gone.
+        // T275/D33: MCP is independent of the plugin — the entry stays, not cleared.
         assert!(
-            !fs::read_to_string(mcp_path(&c, false))
+            fs::read_to_string(mcp_path(&c, false))
                 .unwrap_or_default()
                 .contains("rtok"),
-            "leftover mcp.json entry must be cleared once the plugin is ours"
+            "mcp.json entry must survive once the plugin is linked too"
         );
         assert_eq!(Vscode.installed(&c, Kind::Desktop), ["mcp", "plugin"]);
 
@@ -475,7 +468,39 @@ mod tests {
                 .is_some(),
             "{settings}"
         );
+        assert!(
+            !fs::read_to_string(mcp_path(&c, false))
+                .unwrap_or_default()
+                .contains("rtok"),
+            "remove takes the mcp entry out too"
+        );
         assert!(Vscode.installed(&c, Kind::Desktop).is_empty());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T275/D33: install/update always write the profile `mcp.json`'s `servers.rtok`, plugin
+    /// linked or not; only remove takes it out; a user-edited entry is left with a `leave`
+    /// line.
+    #[test]
+    fn t275_mcp_entry_always_written_except_on_remove() {
+        let dir = tmp("t275-mcp");
+        let mut c = cfg(dir.clone(), false);
+        c.setup.yes = true;
+        PLUGIN_STABLE.offer(&c, false).unwrap();
+        assert!(PLUGIN_STABLE.ours(&c));
+        // (e)'s user-edited entry must be declined ("leave"), which needs `--yes` off; the
+        // plugin is already linked above, so install/update stay unaffected.
+        c.setup.yes = false;
+
+        let path = mcp_path(&c, false);
+        crate::agents::mcp::assert_json_entry_lifecycle(
+            &Vscode,
+            &c,
+            Kind::Desktop,
+            &path,
+            "servers",
+            || register_mcp(&c, false),
+        );
         let _ = fs::remove_dir_all(dir);
     }
 

@@ -128,15 +128,22 @@ fn hook_dispatches_a_5mb_post_tool_body_under_50ms() {
 
 /// T200: a second connection holding `BEGIN EXCLUSIVE` for 500 ms must not stall
 /// the hook. `hooks::run` fails open through its few-ms lock bound and still
-/// prints valid JSON, well under 100 ms.
+/// prints valid JSON, well before the holder lets go.
 ///
 /// T237: the proof that it gave up rather than waited is the ledger — a hook that
 /// outwaited the holder would have written its `calls` row. The wall bound stays as
 /// the second check; on Windows it is 250 ms (still half the hold): the 5 ms busy
 /// handler sleeps 1 + 2 + 2 ms and each Windows `Sleep` rounds up to the 15.6 ms
 /// timer tick, so the `windows-latest` debug run took 107 ms (ci run 35947867095).
+///
+/// T304: a fixed ms bound measured the runner, not the hook: 102.7 ms on `macos-latest` and
+/// 313.7 ms on `windows-latest` under suite load (2026-09-27), both green on rerun. The bound is
+/// now half the hold on every platform — a hook that returns in `HOLD / 2` cannot have waited
+/// for the release — and the test runs alone (`.config/nextest.toml`). The few-ms bound on the
+/// wait itself is a compile-time assert on `LOCK_WAIT` in `src/hooks/mod.rs`.
 #[test]
 fn hook_returns_despite_exclusive_lock() {
+    const HOLD: Duration = Duration::from_millis(500);
     use diesel::Connection;
     use diesel::connection::SimpleConnection;
 
@@ -169,7 +176,7 @@ fn hook_returns_despite_exclusive_lock() {
             .unwrap();
         conn.batch_execute("BEGIN EXCLUSIVE;").unwrap();
         held.send(()).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        std::thread::sleep(HOLD);
         conn.batch_execute("COMMIT;").unwrap();
     });
     held_ack.recv().unwrap();
@@ -188,10 +195,9 @@ fn hook_returns_despite_exclusive_lock() {
         before,
         "the hook outwaited the exclusive lock instead of failing open ({took:?})"
     );
-    let bound = if cfg!(windows) { 250 } else { 100 };
     assert!(
-        took < std::time::Duration::from_millis(bound),
-        "hook waited {took:?} under an exclusive lock"
+        took < HOLD / 2,
+        "hook waited {took:?} under a {HOLD:?} exclusive lock"
     );
 
     let _ = std::fs::remove_dir_all(&tmp);

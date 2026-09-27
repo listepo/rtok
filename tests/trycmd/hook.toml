@@ -10,7 +10,7 @@ stdin = """
   "source": "startup"
 }
 """
-stdout = "{}"
+stdout = '''{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok agent id: [..] (full: [..]). Use it with rtok's agent_* and worktree_* MCP tools."}}'''
 
 # Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
 [env]

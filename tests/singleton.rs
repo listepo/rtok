@@ -17,14 +17,15 @@ use std::path::Path;
 /// The tree under `plugins/` a host links, and whether it ships an MCP server: the OpenCode
 /// plugin (shared by Kilo) filters bash output and carries none; OMP links Pi's extension,
 /// which leaves `registerTool` off there (the tools come from `mcp.json`). Cline's plugin
-/// (T95: the per-event hook links) is hooks only — unlike cursor/kimi, MCP there is never
-/// folded into the plugin, so both `mcpServers.rtok` files (CLI + VS Code extension, T96.1)
-/// are meant to carry it at once and neither is a duplicate of the plugin. The Claude plugin
-/// carries hooks and the scout sub-agent only (T275): its `.mcp.json` is gone, so it never
-/// counts here either. Copilot's plugin lost its `.mcp.json` the same way (T275). VS Code
-/// links the Claude tree, not a `plugins/vscode` folder, so it walks that one too. Gemini is
-/// the T275/D33 exception: its extension keeps `mcpServers.rtok` alongside the always-written
-/// `settings.json` entry, so it stays on the default arm below.
+/// (T95: the per-event hook links) is hooks only, and both `mcpServers.rtok` files (CLI + VS
+/// Code extension, T96.1) are meant to carry it at once, so neither is a duplicate of the
+/// plugin. The Claude plugin carries hooks and the scout sub-agent only (T275): its
+/// `.mcp.json` is gone, so it never counts here either. Copilot's, Cursor's, Codex's,
+/// ZCode's, Kimi's and Grok's plugins lost their `.mcp.json` / `mcpServers` the same way
+/// (T275/D33) — `mcp.servers.rtok` (or the host's equivalent) is now written by setup itself,
+/// plugin linked or not. VS Code links the Claude tree, not a `plugins/vscode` folder, so it
+/// walks that one too. Gemini is the T275/D33 exception: its extension keeps `mcpServers.rtok`
+/// alongside the always-written `settings.json` entry, so it stays on the default arm below.
 fn plugin_tree(host: &str) -> (&str, bool) {
     match host {
         "opencode" | "kilo" => ("opencode", false),
@@ -35,6 +36,9 @@ fn plugin_tree(host: &str) -> (&str, bool) {
         "vscode" => ("claude", false),
         "cursor" => ("cursor", false),
         "codex" => ("codex", false),
+        "zcode" => ("zcode", false),
+        "kimi" => ("kimi", false),
+        "grok" => ("grok", false),
         _ => (host, true),
     }
 }

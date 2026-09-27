@@ -77,6 +77,17 @@ fn brief_of(v: &Value) -> Option<&str> {
     v["hookSpecificOutput"]["additionalContext"].as_str()
 }
 
+/// T283: `SubagentStart` now always leads with the sub-agent's own `rtok agent id: ...`
+/// line ahead of any spawn brief. Strips it so these cases can still assert on the brief's
+/// own text — empty when nothing fired, exactly as before that line existed.
+fn brief_body(v: &Value) -> String {
+    let ctx = brief_of(v).unwrap_or("");
+    match ctx.strip_prefix("rtok agent id: ") {
+        Some(rest) => rest.split_once('\n').map_or("", |(_, r)| r).to_string(),
+        None => ctx.to_string(),
+    }
+}
+
 /// T131: the `memory`/`brief` row from [`rtok::store::Store::measurement_totals`], if the
 /// home's store has ever recorded one. Opened after the `rtok hook` subprocess exits, from
 /// the same `<home>/config.toml` it wrote through (`Config::load_from` resolves the same
@@ -97,7 +108,7 @@ fn flag_off_is_a_passthrough() {
     let session = "s-off";
     let _ = hook(&home, "PreToolUse", &read_tool(session, "/repo/a.rs"));
     let out = hook(&home, "SubagentStart", &subagent_start(session));
-    assert_eq!(out, json!({}), "spawn_brief defaults to off");
+    assert_eq!(brief_body(&out), "", "spawn_brief defaults to off");
 }
 
 #[test]
@@ -105,7 +116,7 @@ fn empty_ledger_is_a_passthrough() {
     let home = tmp("empty");
     enable_spawn_brief(&home);
     let out = hook(&home, "SubagentStart", &subagent_start("s-empty"));
-    assert_eq!(out, json!({}), "nothing read or edited yet");
+    assert_eq!(brief_body(&out), "", "nothing read or edited yet");
 }
 
 #[test]
@@ -152,7 +163,7 @@ fn no_brief_leaves_no_cost_measurement() {
     // Empty ledger: nothing read or edited before `SubagentStart`, so `build_brief` returns
     // `None` and never reaches `cx.record`.
     let out = hook(&home, "SubagentStart", &subagent_start("s-unmeasured"));
-    assert!(brief_of(&out).is_none());
+    assert!(brief_body(&out).is_empty());
     assert!(brief_measurement(&home).is_none(), "no brief, no row");
 }
 

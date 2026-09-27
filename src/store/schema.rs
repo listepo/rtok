@@ -290,10 +290,36 @@ diesel::table! {
     }
 }
 
+// 0025 (T285): the agent a worktree is bound to; the git lock reason is the source of truth.
+diesel::table! {
+    worktree_claims (path) {
+        path -> Text,
+        agent_id -> Text,
+        task -> Text,
+        claimed_at -> BigInt,
+        released_at -> Nullable<BigInt>,
+    }
+}
+
+// 0026 (T287): messages between agents and the user. `from_agent` NULL = the user at a
+// terminal; `body` is capped and cleaned by `Store::send_message`.
+diesel::table! {
+    messages (id) {
+        id -> Integer,
+        from_agent -> Nullable<Text>,
+        to_agent -> Text,
+        body -> Text,
+        created_at -> BigInt,
+        delivered_at -> Nullable<BigInt>,
+        read_at -> Nullable<BigInt>,
+    }
+}
+
 diesel::joinable!(archive_decisions -> archive (archive_id));
 diesel::joinable!(models -> providers (provider_id));
 diesel::joinable!(sessions -> hosts (host_id));
 diesel::joinable!(agents -> hosts (host_id));
+diesel::joinable!(worktree_claims -> agents (agent_id));
 diesel::joinable!(calls -> hosts (host_id));
 diesel::joinable!(calls -> providers (provider_id));
 diesel::joinable!(calls -> models (model_id));
@@ -326,4 +352,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     extractor,
     symbol_stale,
     agents,
+    worktree_claims,
+    messages,
 );

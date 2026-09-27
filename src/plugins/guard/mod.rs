@@ -586,6 +586,51 @@ mod tests {
         assert!(rows.iter().any(|r| r.before_bytes > 0), "{rows:?}");
     }
 
+    /// T299: the denial row claims exactly the payload the repeat would have returned:
+    /// `before_bytes` is the archived body's length and `est_before` the `bytes / 4`
+    /// heuristic (the hook never loads the body back to estimate it — T55.16).
+    #[test]
+    fn deny_measurement_before_bytes_and_est_before_match_the_avoided_payload() {
+        let cx = setup();
+        let g = Guard;
+        let path = json!({"file_path": "/Users/dev/proj/src/inventory.rs"});
+        let read = PreToolUse {
+            tool_name: "Read",
+            tool_input: &path,
+        };
+        assert!(g.pre_tool(&read, &Ctx::new(&cx)).is_none());
+        // Not a multiple of 4, so the truncating division is exercised.
+        let body = "x".repeat(4097);
+        let resp = json!({"content": body.clone()});
+        assert!(
+            g.post_tool(
+                &PostToolUse {
+                    tool_name: "Read",
+                    tool_input: &path,
+                    tool_response: &resp,
+                },
+                &Ctx::new(&cx),
+            )
+            .is_none()
+        );
+        assert!(matches!(
+            g.pre_tool(&read, &Ctx::new(&cx)),
+            Some(PreToolDecision::Deny { .. })
+        ));
+        let rows = cx.store.list_measurements("guard").unwrap();
+        let row = rows
+            .iter()
+            .find(|r| r.kind == "guard" && r.before_bytes > 0)
+            .expect("deny row");
+        // `payload()` for `{"content": body}` is `body.as_bytes()`, archived verbatim by
+        // `post_tool` — so `before_bytes` is exactly the denied payload's byte length.
+        assert_eq!(row.before_bytes as usize, body.len());
+        let heuristic_est = (body.len() / 4).max(1) as i32;
+        assert_eq!(row.est_before, heuristic_est);
+        assert_eq!(row.after_bytes, 0);
+        assert_eq!(row.est_after, 0);
+    }
+
     /// T201: a body over `ARCHIVE_CAP_BYTES` is never archived, so the key stays uncached —
     /// the repeat must be allowed, not denied with a pointer nothing wrote.
     #[test]

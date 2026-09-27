@@ -1,0 +1,21 @@
+--- PASS: TestFormatDate (0.00s)
+--- PASS: TestFormatDate/iso (0.00s)
+--- PASS: TestFormatDate/relative (0.00s)
+--- PASS: TestTruncate (0.00s)
+--- PASS: TestTruncate/short (0.00s)
+--- PASS: TestTruncate/long (0.00s)
+--- PASS: TestUserFetch (0.01s)
+--- PASS: TestUserFetch/found (0.00s)
+--- PASS: TestUserFetch/missing (0.00s)
+--- FAIL: TestButtonRender (0.00s)
+--- PASS: TestModalOpen (0.00s)
+--- PASS: TestModalClose (0.00s)
+--- PASS: TestNavRender (0.00s)
+--- PASS: TestTableSort (0.01s)
+--- PASS: TestTableFilter (0.00s)
+FAIL
+FAIL	example.com/foo/ui	0.034s
+ok  	example.com/foo/api	0.021s
+ok  	example.com/foo/db	0.045s
+ok  	example.com/foo/util	0.009s
+FAIL

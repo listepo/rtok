@@ -221,10 +221,10 @@ fn expand(doc: &Document) -> String {
     }
     let _ = writeln!(
         s,
-        "decisions={} expanded={} rate={:.1}% expanded_ids={}",
+        "decisions={} expanded={} rate={}% expanded_ids={}",
         exp.decisions,
         exp.expanded,
-        100.0 * exp.rate,
+        super::markdown::dec(Some(100.0 * exp.rate)),
         if exp.expanded_ids.is_empty() {
             "none".to_string()
         } else {
@@ -523,5 +523,23 @@ mod tests {
         assert!(out.contains("[1]{plugin,rows,est_before,est_after,saved}:"));
         assert!(out.contains("total_saved=15tok rows=1"));
         assert!(out.contains("units:"));
+    }
+
+    /// T105 Check, same as markdown.rs/html.rs (T302): a non-finite `rate` (a
+    /// corrupted/legacy DB row) must never leak `NaN`/`inf` into the `--ai` rendering —
+    /// this surface is read by a model/parser downstream.
+    #[test]
+    fn non_finite_rate_never_leaks_into_the_document() {
+        let mut d = doc();
+        d.ledgers.expand.rate = f64::NAN;
+        let out = render(&d, &cfg_with_budget(8000));
+        assert!(!out.contains("NaN"), "no NaN: {out}");
+        assert!(!out.to_lowercase().contains("inf"), "no inf: {out}");
+
+        let mut d = doc();
+        d.ledgers.expand.rate = f64::INFINITY;
+        let out = render(&d, &cfg_with_budget(8000));
+        assert!(!out.contains("NaN"), "no NaN: {out}");
+        assert!(!out.to_lowercase().contains("inf"), "no inf: {out}");
     }
 }

@@ -1,5 +1,5 @@
 //! T282 (D34): the rtok agent id. The host's own session id collides across hosts and is
-//! missing on several (`research.md` §26), so rtok issues its own UUIDv7 per host session,
+//! missing on several (`research.md` §26), so rtok issues its own random UUIDv4 per host session,
 //! shown as its first 8 hex chars and resolved from any unique prefix of 4+ hex chars.
 //! `parent_key` is `""` for the main window or the host's own sub-agent `agent_id`
 //! (`HookInput::agent_id`, `research.md` §17.2); `parent_id` is the resolved rtok id of a
@@ -7,9 +7,10 @@
 
 use anyhow::{Result, bail};
 use diesel::prelude::*;
+use serde::Serialize;
 
 use super::Store;
-use super::schema::agents;
+use super::schema::{agents, hosts};
 use super::{coalesce, substr, unixepoch};
 
 /// One `agents` row.
@@ -83,10 +84,86 @@ fn agent_cols() -> (
     )
 }
 
+/// One agent joined to its host's slug — [`Store::agent_detail`], the shape `rtok agents
+/// whoami` (T283) prints and serializes for `--json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AgentDetail {
+    pub id: String,
+    pub short: String,
+    pub host: String,
+    pub host_session_id: String,
+    pub parent_id: Option<String>,
+    pub cwd: Option<String>,
+    pub started_at: i64,
+    pub last_seen: i64,
+    pub ended_at: Option<i64>,
+    pub activity: Option<String>,
+    /// What the agent says it is busy with (`rtok agents status`, T284).
+    pub status_text: Option<String>,
+}
+
+type AgentDetailTuple = (
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    i64,
+    i64,
+    Option<i64>,
+    Option<String>,
+    Option<String>,
+);
+
+fn agent_detail_from(t: AgentDetailTuple) -> AgentDetail {
+    let short = t.0.chars().take(8).collect();
+    AgentDetail {
+        id: t.0,
+        short,
+        host: t.1,
+        host_session_id: t.2,
+        parent_id: t.3,
+        cwd: t.4,
+        started_at: t.5,
+        last_seen: t.6,
+        ended_at: t.7,
+        activity: t.8,
+        status_text: t.9,
+    }
+}
+
+/// `agents ⋈ hosts` rows in the [`AgentDetailTuple`] order — the one select every
+/// [`AgentDetail`] reader shares.
+macro_rules! agent_details {
+    () => {
+        agents::table.inner_join(hosts::table).select((
+            agents::id,
+            hosts::slug,
+            agents::host_session_id,
+            agents::parent_id,
+            agents::cwd,
+            agents::started_at,
+            agents::last_seen,
+            agents::ended_at,
+            agents::activity,
+            agents::status_text,
+        ))
+    };
+}
+
+/// `[agents] idle` (e.g. `"30m"`) in whole seconds, the one parser of that key.
+pub fn idle_secs(idle: &str) -> Result<i64> {
+    humantime::parse_duration(idle)
+        .map_err(|e| anyhow::anyhow!("bad [agents] idle {idle:?}: {e}"))?
+        .as_secs()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("[agents] idle {idle:?} is out of range"))
+}
+
 impl Store {
     /// Ensure the row for this host session (or, when `parent_key` names one, its sub-agent)
     /// exists and is fresh; returns its rtok id (existing on repeat, else a freshly minted
-    /// UUIDv7). One indexed upsert on the hot path (`parent_key: None`); a sub-agent first
+    /// UUIDv4). One indexed upsert on the hot path (`parent_key: None`); a sub-agent first
     /// resolves its parent's id with one extra indexed read, so `parent_id` is set from the
     /// row's very first insert. `activity` follows [`Store::touch_agent`]'s rule: `None`
     /// leaves whatever is already stored untouched (`register_agent` never blanks a hook
@@ -112,7 +189,7 @@ impl Store {
                 .first(&mut *conn)
                 .optional()?
         };
-        let id = uuid::Uuid::now_v7().to_string();
+        let id = uuid::Uuid::new_v4().to_string();
         let row_id: String = diesel::insert_into(agents::table)
             .values((
                 agents::id.eq(&id),
@@ -163,8 +240,11 @@ impl Store {
     }
 
     /// The one id whose text starts with `prefix`. `Err("unknown")` for zero matches,
-    /// `Err("ambiguous: <ids>")` for more than one — never guesses.
+    /// `Err("ambiguous: <ids>")` for more than one — never guesses. D34: at least 4 chars.
     pub fn resolve_agent(&self, prefix: &str) -> Result<String> {
+        if prefix.chars().count() < 4 {
+            bail!("an agent id prefix needs at least 4 characters");
+        }
         let mut conn = self.lock()?;
         let len = i32::try_from(prefix.len()).unwrap_or(i32::MAX);
         let matches: Vec<String> = agents::table
@@ -178,16 +258,60 @@ impl Store {
         }
     }
 
+    /// One agent by its exact id, host slug instead of `hosts.id` — the shape `rtok agents
+    /// whoami` (T283) prints. The caller resolves a prefix through [`Store::resolve_agent`]
+    /// first, so this is always looked up by the canonical id it returned.
+    pub fn agent_detail(&self, id: &str) -> Result<Option<AgentDetail>> {
+        let mut conn = self.lock()?;
+        agent_details!()
+            .filter(agents::id.eq(id))
+            .first::<AgentDetailTuple>(&mut *conn)
+            .optional()
+            .map(|o| o.map(agent_detail_from))
+            .map_err(Into::into)
+    }
+
+    /// Every agent (main rows and sub-agents) of these host sessions, oldest first — the
+    /// rows `rtok agents sessions` (T284) nests under the session they belong to.
+    pub fn agents_of_sessions(&self, sessions: &[String]) -> Result<Vec<AgentDetail>> {
+        let mut conn = self.lock()?;
+        Ok(agent_details!()
+            .filter(agents::host_session_id.eq_any(sessions))
+            .order((agents::started_at, agents::id))
+            .load::<AgentDetailTuple>(&mut *conn)?
+            .into_iter()
+            .map(agent_detail_from)
+            .collect())
+    }
+
+    /// The sub-agents whose `parent_id` is `id`, oldest first (`rtok agents show`, T284).
+    pub fn agent_children(&self, id: &str) -> Result<Vec<AgentDetail>> {
+        let mut conn = self.lock()?;
+        Ok(agent_details!()
+            .filter(agents::parent_id.eq(id))
+            .order((agents::started_at, agents::id))
+            .load::<AgentDetailTuple>(&mut *conn)?
+            .into_iter()
+            .map(agent_detail_from)
+            .collect())
+    }
+
+    /// Set (or, with `None`, clear) the agent's own status text (T284); `false` when no
+    /// row has this id.
+    pub fn set_agent_status(&self, id: &str, text: Option<&str>) -> Result<bool> {
+        let mut conn = self.lock()?;
+        let n = diesel::update(agents::table.filter(agents::id.eq(id)))
+            .set(agents::status_text.eq(text))
+            .execute(&mut *conn)?;
+        Ok(n > 0)
+    }
+
     /// Every agent with no `ended_at` and a `last_seen` within `idle` (`[agents] idle`'s raw
     /// string, e.g. `"30m"`, parsed by `humantime::parse_duration`) of now. The cutoff is
     /// computed in SQL — `unixepoch() - secs`, not `SystemTime::now()` — so it shares
     /// SQLite's own clock with the `last_seen` values it is compared against.
     pub fn live_agents(&self, idle: &str) -> Result<Vec<AgentRow>> {
-        let secs: i64 = humantime::parse_duration(idle)
-            .map_err(|e| anyhow::anyhow!("bad [agents] idle {idle:?}: {e}"))?
-            .as_secs()
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("[agents] idle {idle:?} is out of range"))?;
+        let secs = idle_secs(idle)?;
         let mut conn = self.lock()?;
         Ok(agents::table
             .filter(agents::ended_at.is_null())
@@ -281,16 +405,37 @@ mod tests {
     }
 
     #[test]
+    fn agent_detail_joins_the_host_slug_and_short_id() {
+        let store = Store::open_in_memory().unwrap();
+        let claude = store.host_id("claude").unwrap().unwrap();
+        let id = store
+            .register_agent(claude, "sess-detail", None, Some("/repo"), Some("Bash: ls"))
+            .unwrap();
+        let detail = store.agent_detail(&id).unwrap().unwrap();
+        assert_eq!(detail.id, id);
+        assert_eq!(detail.short, id[..8]);
+        assert_eq!(detail.host, "claude");
+        assert_eq!(detail.host_session_id, "sess-detail");
+        assert_eq!(detail.cwd.as_deref(), Some("/repo"));
+        assert_eq!(detail.activity.as_deref(), Some("Bash: ls"));
+        assert_eq!(detail.ended_at, None);
+        assert!(
+            store
+                .agent_detail("ffffffff-0000-7000-8000-000000000000")
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn resolve_prefix_exact_ambiguous_and_unknown() {
         let store = Store::open_in_memory().unwrap();
         let claude = store.host_id("claude").unwrap().unwrap();
         let a = store
             .register_agent(claude, "sess-a", None, None, None)
             .unwrap();
-        // A hand-picked second id sharing `a`'s first 8 chars, so a short prefix is
-        // ambiguous — UUIDv7's own leading bytes are a millisecond timestamp, so two ids
-        // minted close together already share a prefix this long in practice.
-        let shared = format!("{}-0000-7000-8000-000000000000", &a[..8]);
+        // A hand-picked second id sharing `a`'s first 8 chars, so that prefix is ambiguous.
+        let shared = format!("{}-0000-4000-8000-000000000000", &a[..8]);
         diesel::insert_into(agents::table)
             .values((
                 agents::id.eq(&shared),
@@ -307,6 +452,8 @@ mod tests {
         assert!(ambiguous.contains(&a) && ambiguous.contains(&shared));
         let unknown = store.resolve_agent("ffffffff").unwrap_err().to_string();
         assert_eq!(unknown, "unknown");
+        let short = store.resolve_agent(&a[..3]).unwrap_err().to_string();
+        assert!(short.contains("at least 4"), "{short}");
     }
 
     #[test]

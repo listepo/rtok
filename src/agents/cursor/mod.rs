@@ -178,7 +178,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
 }
 
 /// `~/.cursor/mcp.json` — the sibling of `hooks.json`.
-fn mcp_path(cfg: &Config) -> PathBuf {
+pub(crate) fn mcp_path(cfg: &Config) -> PathBuf {
     cfg.setup.cursor.hooks_path.with_file_name("mcp.json")
 }
 

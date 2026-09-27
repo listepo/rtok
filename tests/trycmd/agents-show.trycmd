@@ -1,0 +1,10 @@
+# `rtok agents show` (T284): an id prefix no agent has → exit 1. The success/`--json`
+# path is not deterministic here (fresh UUIDs and timestamps per run) and is covered by
+# `tests/agents.rs` instead.
+
+```console
+$ HOME=target/tmp/t284-show RTOK_HOME=target/tmp/t284-show rtok agents show ffff
+? 1
+Error: no agent id starts with "ffff"
+
+```

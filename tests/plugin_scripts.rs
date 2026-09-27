@@ -1,18 +1,16 @@
 //! T197: every file under `plugins/*/scripts/` must be reachable — referenced by a
 //! manifest/hooks file in its own tree, or allowlisted by name in that tree's
-//! `README.md` — and `plugins/zcode/scripts/mcp.cmd` must forward `rtok mcp`'s
-//! exit code instead of masking it to 0.
+//! `README.md`.
 //!
-//! Wire-vs-delete decision (documented here and in the READMEs): Cursor's
-//! launchers are deleted — `plugins/cursor/mcp.json` spawns `rtok mcp`
+//! Wire-vs-delete decision (documented here and in the READMEs): Cursor's MCP
+//! launchers were deleted first — `plugins/cursor/mcp.json` spawned `rtok mcp`
 //! directly through a single `command`/`args` pair with no per-OS slot, so no
 //! launcher could ever run (the T85/I-37 decision; Kimi is the precedent: the
-//! ketch hint lives in the README). ZCode's launchers are kept —
-//! `plugins/zcode/.mcp.json` wires `scripts/mcp.sh` via
-//! `${ZCODE_PLUGIN_ROOT}`, and `scripts/mcp.cmd` stays as the
-//! README-allowlisted Windows counterpart (`.mcp.json` has one `command` slot
-//! and no per-OS branch, so on Windows the config-file install carrying the
-//! absolute `rtok mcp` is the path).
+//! ketch hint lives in the README). T275/D33 then dropped MCP from every
+//! plugin except Gemini's, so ZCode's `scripts/mcp.sh` and `scripts/mcp.cmd`
+//! (and its `.mcp.json`) went with it — `mcp.servers.rtok` is now written by
+//! `rtok agents install zcode` directly, plugin linked or not; only
+//! `scripts/hook.sh` remains.
 
 use std::fs;
 use std::path::PathBuf;
@@ -71,73 +69,4 @@ fn every_plugin_script_is_referenced_or_readme_allowlisted() {
         unreferenced.is_empty(),
         "scripts no manifest/hooks file references and no README allowlists: {unreferenced:?}"
     );
-}
-
-/// T197.1 (static, runs everywhere): `mcp.cmd` must forward `rtok mcp`'s exit
-/// code with a bare `exit /b`. `exit /b %ERRORLEVEL%` inside the parenthesized
-/// `if` block expands at parse time, so every failure exited 0.
-#[test]
-fn zcode_mcp_cmd_forwards_the_exit_code() {
-    let text = fs::read_to_string(plugins().join("zcode/scripts/mcp.cmd")).expect("zcode mcp.cmd");
-    assert!(
-        !text.contains("exit /b %"),
-        "parse-time %ERRORLEVEL% masks failures to 0: {text}"
-    );
-    assert!(
-        text.lines().any(|l| l.trim() == "exit /b"),
-        "want a bare `exit /b` after each `rtok mcp` call: {text}"
-    );
-}
-
-/// T197 check, Windows runtime, mirroring `d21_missing_rtok_names_ketch_cmd`:
-/// a stub `rtok` exiting 7 → `mcp.cmd` exits 7; a missing `rtok` still exits 1
-/// with the ketch hint. Written here so Windows CI executes it; macOS/Linux
-/// can only run the static test above.
-#[cfg(windows)]
-#[test]
-fn zcode_mcp_cmd_preserves_failure_and_names_ketch_when_missing() {
-    use std::process::Command;
-
-    let script = plugins().join("zcode/scripts/mcp.cmd");
-    let dir = std::env::temp_dir().join(format!(
-        "rtok-t197-zcode-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-
-    // Stub `rtok` that fails loudly: `mcp.cmd` must exit with its code.
-    fs::write(dir.join("rtok.bat"), "@echo off\r\nexit /b 7\r\n").unwrap();
-    let path = format!("{};C:\\Windows\\System32", dir.display());
-    let out = Command::new("cmd")
-        .args(["/C", script.to_str().unwrap()])
-        .env_clear()
-        .env("PATH", &path)
-        .output()
-        .expect("mcp.cmd with stub rtok");
-    assert_eq!(
-        out.status.code(),
-        Some(7),
-        "a failing `rtok mcp` must not exit 0: {out:?}"
-    );
-
-    // No `rtok` anywhere: exit 1 with the ketch hint (D21).
-    let out = Command::new("cmd")
-        .args(["/C", script.to_str().unwrap()])
-        .env_clear()
-        .env("PATH", "C:\\Windows\\System32")
-        .output()
-        .expect("mcp.cmd without rtok");
-    assert_eq!(out.status.code(), Some(1), "{out:?}");
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        err.contains("ketch install listepo/rtok"),
-        "want ketch install, got {err}"
-    );
-    assert!(err.contains("rtok is not installed"), "{err}");
-    let _ = fs::remove_dir_all(&dir);
 }
