@@ -1,0 +1,74 @@
+argv: jest --ci
+exit: 0
+min_saving: 75
+---
+Determining test suites to run...
+
+console.log
+  connecting to test db
+  at Object.<anonymous> (src/db/setup.test.js:9:3)
+
+PASS src/utils/date.test.js
+  formatDate
+    ✓ formats ISO date (3 ms)
+    ✓ formats relative date (1 ms)
+
+PASS src/utils/string.test.js
+  truncate
+    ✓ truncates long strings (2 ms)
+    ✓ leaves short strings alone (1 ms)
+
+PASS src/hooks/useAuth.test.js
+  useAuth
+    ✓ returns null when logged out (4 ms)
+    ✓ returns the user when logged in (2 ms)
+
+console.warn
+  deprecated: use useAuthV2 instead
+  at useAuth (src/hooks/useAuth.js:22:11)
+
+PASS src/hooks/useTheme.test.js
+  useTheme
+    ✓ defaults to light (1 ms)
+    ✓ toggles to dark (2 ms)
+
+FAIL src/components/Button.test.js
+  Button
+    ✓ renders children (2 ms)
+    ✕ renders label (5 ms)
+
+  ● Button › renders label
+
+    expect(received).toBe(expected)
+
+    Expected: "Submit"
+    Received: "submit"
+
+      10 |   render(<Button label="Submit" />);
+      11 |   const el = screen.getByText(/submit/i);
+    > 12 |   expect(el.textContent).toBe('Submit');
+         |                          ^
+      13 | });
+
+      at Object.<anonymous> (src/components/Button.test.js:12:26)
+
+PASS src/components/Input.test.js
+  Input
+    ✓ renders placeholder (2 ms)
+    ✓ calls onChange (3 ms)
+
+PASS src/components/Modal.test.js
+  Modal
+    ✓ opens on trigger (2 ms)
+    ✓ closes on escape (2 ms)
+
+PASS src/api/user.test.js
+  fetchUser
+    ✓ returns the user (6 ms)
+    ✓ throws on 404 (3 ms)
+
+Test Suites: 1 failed, 7 passed, 8 total
+Tests:       1 failed, 15 passed, 16 total
+Snapshots:   0 total
+Time:        3.184 s, estimated 4 s
+Ran all test suites.

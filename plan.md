@@ -31,7 +31,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T288 | todo | P2 | 3 | 0% | |
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
-| T296 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T297 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T298 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T299 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
@@ -543,14 +542,6 @@ Plan:
 4. `tests/agents_worktrees.rs`: table-driven over every host in `src/agents/*` with fakes only (`RTOK_HOST_SANDBOX`, T280): fake session start (hook payload or MCP initialize, per the host's surface) → agent registered → `worktree_add` → `worktree list` shows the id → `agent_send` from a second fake agent → inbox / push → `worktree_remove`. Every host must produce the same worktree path rule, lock format and list row.
 
 Check: `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where host tables change; the new test green on macOS, Linux and Windows CI; `just check`.
-
-### T296. Every Rust formatter has a golden with a saving floor
-
-`tests/cmd_golden` guards every `rules/default.toml` family (T240) but not the Rust formatters in `src/plugins/cmd/formatters.rs` `format()`: `jest`, `vitest`, `tree`, `cargo clippy` and `go test` have no golden, so a regression in them saves nothing and fails nothing.
-
-Plan: realistic `.in`/`.out` pairs for the five (the `min_saving:` floor is the measured saving minus 5 points); a unit test next to `every_builtin_rule_family_has_a_golden` that fails when a `format()` arm has no golden (reached through `compress`, the production path).
-
-Check: `cargo nextest run -p rtok --lib cmd::formatters`; the new completeness test fails with one golden removed.
 
 ### T297. Saving floors that catch a regression
 
