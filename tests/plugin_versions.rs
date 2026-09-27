@@ -4,9 +4,16 @@
 //! `Cargo.toml` in the same commit as the version bump (`tools/release.sh`); this test is the
 //! local half of the guarantee, alongside `tools/plugin-versions.sh --check` in `ci.yml` and
 //! `release.yml` (docs/plugin-versions.md has the full scheme).
+//!
+//! The file list is not duplicated here: it comes from `tools/plugin-versions.sh --files` (also
+//! how `tools/release.sh`'s `git add` gets it), so the test and the script can never disagree.
+//! Skips (does not fail) when `bash` is not on `PATH` — Windows CI images carry Git Bash, but a
+//! bare Windows box may not; once `--files` runs, a file it lists but that is missing on disk
+//! still fails the test.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use serde_json::Value;
 
@@ -14,32 +21,39 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// Every plugin tree that carries `plugins/<host>/.rtok-plugin-version` (T279 step 1). Not
-/// every directory under `plugins/` is here: `cline` has no manifest of its own (hooks only)
-/// and `antigravity`'s `plugin.json` carries no version field for its host to cache by.
-/// Mirrors `tools/plugin-versions.sh`'s `VERSION_HOSTS` list.
-const VERSION_FILE_HOSTS: &[&str] = &[
-    "claude", "codex", "copilot", "cursor", "devin", "gemini", "grok", "kimi", "opencode", "pi",
-    "zcode",
-];
+fn bash_on_path() -> bool {
+    Command::new("bash")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
 
-/// Every manifest with a top-level `"version"` field, raised in step with the hosts above.
-/// Mirrors `tools/plugin-versions.sh`'s `MANIFEST_FILES` list.
-const MANIFEST_FILES: &[&str] = &[
-    "plugins/claude/.claude-plugin/plugin.json",
-    "plugins/codex/.codex-plugin/plugin.json",
-    "plugins/cursor/plugin.json",
-    "plugins/cursor/.cursor-plugin/plugin.json",
-    "plugins/copilot/plugin.json",
-    "plugins/gemini/gemini-extension.json",
-    "plugins/devin/.devin-plugin/plugin.json",
-    "plugins/zcode/.zcode-plugin/plugin.json",
-    "plugins/grok/.grok-plugin/plugin.json",
-    "plugins/kimi/kimi.plugin.json",
-    "plugins/pi/package.json",
-];
+/// Every file `tools/plugin-versions.sh` touches, repo-root-relative, straight from its own
+/// `--files` mode.
+fn plugin_version_files() -> Vec<PathBuf> {
+    let script = root().join("tools/plugin-versions.sh");
+    let out = Command::new("bash")
+        .arg(&script)
+        .arg("--files")
+        .current_dir(root())
+        .output()
+        .unwrap_or_else(|e| panic!("{}: {e}", script.display()));
+    assert!(
+        out.status.success(),
+        "{}: {}",
+        script.display(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(PathBuf::from)
+        .collect()
+}
 
-fn read_json(path: &std::path::Path) -> Value {
+fn read_json(path: &Path) -> Value {
     let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&text)
         .unwrap_or_else(|e| panic!("{}: not valid JSON: {e}", path.display()))
@@ -47,14 +61,23 @@ fn read_json(path: &std::path::Path) -> Value {
 
 #[test]
 fn every_rtok_plugin_version_file_parses_with_schema_1_and_the_right_plugin_name() {
-    for host in VERSION_FILE_HOSTS {
-        let path = root()
-            .join("plugins")
-            .join(host)
-            .join(".rtok-plugin-version");
+    if !bash_on_path() {
+        eprintln!("skip: bash not on PATH");
+        return;
+    }
+    for rel in plugin_version_files() {
+        if rel.file_name().and_then(|n| n.to_str()) != Some(".rtok-plugin-version") {
+            continue;
+        }
+        let path = root().join(&rel);
+        let host = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or_else(|| panic!("{}: no host directory", path.display()));
         let json = read_json(&path);
         assert_eq!(json["schema"], 1, "{}: schema", path.display());
-        assert_eq!(json["plugin"], *host, "{}: plugin", path.display());
+        assert_eq!(json["plugin"], host, "{}: plugin", path.display());
         assert_eq!(
             json["version"],
             env!("CARGO_PKG_VERSION"),
@@ -66,8 +89,15 @@ fn every_rtok_plugin_version_file_parses_with_schema_1_and_the_right_plugin_name
 
 #[test]
 fn every_plugin_manifest_version_matches_cargo_pkg_version() {
-    for rel in MANIFEST_FILES {
-        let path = root().join(rel);
+    if !bash_on_path() {
+        eprintln!("skip: bash not on PATH");
+        return;
+    }
+    for rel in plugin_version_files() {
+        if rel.file_name().and_then(|n| n.to_str()) == Some(".rtok-plugin-version") {
+            continue;
+        }
+        let path = root().join(&rel);
         let json = read_json(&path);
         assert_eq!(
             json["version"],

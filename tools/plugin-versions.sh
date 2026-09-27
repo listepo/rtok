@@ -6,12 +6,16 @@
 #   tools/plugin-versions.sh --set <version>     write <version> into every file below
 #   tools/plugin-versions.sh --check <version>   print each file whose version differs,
 #                                                 exit 1 if any do, else exit 0
+#   tools/plugin-versions.sh --files             print every file this script touches,
+#                                                 one per line, repo-root-relative
 #
-# Called by tools/release.sh in the same commit that raises Cargo.toml/Cargo.lock, by
+# Called by tools/release.sh in the same commit that raises Cargo.toml/Cargo.lock (also for
+# --files, so the commit's `git add` list is not a second copy of these paths), by
 # .github/workflows/ci.yml (--check against the Cargo.toml version on every PR) and by
 # .github/workflows/release.yml (--check against the tag, `v` stripped, before building).
 # docs/plugin-versions.md documents the full scheme; the Rust test in
-# tests/plugin_versions.rs is the local half of the same guarantee (`just check`).
+# tests/plugin_versions.rs reads its own file list from `--files`, so the test and this
+# script can never disagree (`just check`).
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -49,21 +53,25 @@ plugins/pi/package.json
 "
 
 usage() {
-  echo "usage: $0 --set <version> | --check <version>" >&2
+  echo "usage: $0 --set <version> | --check <version> | --files" >&2
   exit 2
 }
 
-[ "$#" -eq 2 ] || usage
-mode="$1"
-version="$2"
-
-case "$version" in
-  [0-9]*.[0-9]*.[0-9]*) ;;
-  *)
-    echo "not a SemVer version: '$version'" >&2
-    exit 2
-    ;;
-esac
+if [ "$#" -eq 1 ] && [ "$1" = "--files" ]; then
+  mode="--files"
+elif [ "$#" -eq 2 ]; then
+  mode="$1"
+  version="$2"
+  case "$version" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *)
+      echo "not a SemVer version: '$version'" >&2
+      exit 2
+      ;;
+  esac
+else
+  usage
+fi
 
 version_file() {
   echo "plugins/$1/.rtok-plugin-version"
@@ -93,6 +101,14 @@ version_file_version() {
 }
 
 case "$mode" in
+  --files)
+    for host in $VERSION_HOSTS; do
+      version_file "$host"
+    done
+    for file in $MANIFEST_FILES; do
+      printf '%s\n' "$file"
+    done
+    ;;
   --set)
     for host in $VERSION_HOSTS; do
       printf '{"schema":1,"plugin":"%s","version":"%s"}\n' "$host" "$version" \

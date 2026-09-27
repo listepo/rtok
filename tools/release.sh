@@ -68,18 +68,9 @@ if [ "$version" != "$current" ]; then
   tools/plugin-versions.sh --set "$version"
   # Run before the commit, so the release commit itself is never in the notes it generates.
   $CLIFF --tag "v$version" -o CHANGELOG.md
-  git add Cargo.toml Cargo.lock CHANGELOG.md plugins/*/.rtok-plugin-version \
-    plugins/claude/.claude-plugin/plugin.json \
-    plugins/codex/.codex-plugin/plugin.json \
-    plugins/cursor/plugin.json \
-    plugins/cursor/.cursor-plugin/plugin.json \
-    plugins/copilot/plugin.json \
-    plugins/gemini/gemini-extension.json \
-    plugins/devin/.devin-plugin/plugin.json \
-    plugins/zcode/.zcode-plugin/plugin.json \
-    plugins/grok/.grok-plugin/plugin.json \
-    plugins/kimi/kimi.plugin.json \
-    plugins/pi/package.json
+  # T279: the file list lives once, in tools/plugin-versions.sh --files, not copied here too.
+  # shellcheck disable=SC2046 # --files prints repo-root-relative paths with no spaces.
+  git add Cargo.toml Cargo.lock CHANGELOG.md $(tools/plugin-versions.sh --files)
   git commit -m "release: v$version"
 fi
 

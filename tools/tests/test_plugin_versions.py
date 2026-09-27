@@ -108,3 +108,43 @@ def test_invalid_args_exit_nonzero():
     assert _run(REPO_ROOT, "--set").returncode != 0
     assert _run(REPO_ROOT, "--frobnicate", "1.2.3").returncode != 0
     assert _run(REPO_ROOT, "--set", "not-semver").returncode != 0
+
+
+def test_files_lists_every_version_file_and_manifest():
+    result = _run(REPO_ROOT, "--files")
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = result.stdout.splitlines()
+
+    version_hosts = [
+        "claude",
+        "codex",
+        "copilot",
+        "cursor",
+        "devin",
+        "gemini",
+        "grok",
+        "kimi",
+        "opencode",
+        "pi",
+        "zcode",
+    ]
+    for host in version_hosts:
+        assert f"plugins/{host}/.rtok-plugin-version" in lines
+
+    manifests = [
+        "plugins/claude/.claude-plugin/plugin.json",
+        "plugins/codex/.codex-plugin/plugin.json",
+        "plugins/cursor/plugin.json",
+        "plugins/cursor/.cursor-plugin/plugin.json",
+        "plugins/copilot/plugin.json",
+        "plugins/gemini/gemini-extension.json",
+        "plugins/devin/.devin-plugin/plugin.json",
+        "plugins/zcode/.zcode-plugin/plugin.json",
+        "plugins/grok/.grok-plugin/plugin.json",
+        "plugins/kimi/kimi.plugin.json",
+        "plugins/pi/package.json",
+    ]
+    for manifest in manifests:
+        assert manifest in lines
+
+    assert len(lines) == len(version_hosts) + len(manifests)
