@@ -6936,6 +6936,19 @@ Result: `CachePrompt` gains `params`: every top-level request field except `mess
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
+### T303. Semantic-cache key covers tool_use input, unknown blocks and OpenAI tool_calls
+
+Found in a review of `src/proxy/semantic_cache.rs`: `block_text`'s `tool_use` arm hashed only `id` and `name`, never `input`, so two requests differing solely in an earlier tool call's arguments hashed equal; its `_ => String::new()` fallback made every other block kind (`thinking`, `redacted_thinking`, `server_tool_use`, `web_search_tool_result`, …) contribute nothing; and `messages_text` dropped an OpenAI Chat assistant message's `tool_calls` (a sibling of `content`, not covered by it) and any message with no `content` key at all (the `?` on `m.get("content")` discarded the whole message, `tool_call_id` on `tool` messages too). Two different conversations could collide on the cache key and the proxy would replay a wrong cached answer.
+
+Plan: fold `canonical_json(input)` into the `tool_use` contribution; make the fallback arm serialize `canonical_json(b)` for unknown block kinds instead of an empty string; in `messages_text`, treat a missing `content` as empty text and append the canonicalized `tool_calls` and `tool_call_id` when present.
+
+Check: `tool_use_input_joins_the_cache_key`, `thinking_block_joins_the_cache_key`, `openai_tool_calls_join_the_cache_key` — bodies differing only there hash differently, key order inside `tool_use` input does not; existing `tool_use_ids_join_the_cache_key` and the rest of `mod tests` stay green; `just test` green.
+
+Result: `block_text`'s `tool_use` arm now appends `canonical_json(input)`, serialized; its fallback arm serializes `canonical_json(b)` for any other block kind instead of returning an empty string. `messages_text` defaults a missing `content` to empty text rather than dropping the message via `?`, and appends the canonicalized `tool_calls` and the `tool_call_id` string when either is present. Tests: `tool_use_input_joins_the_cache_key` (differing input, and identical input under different key order), `thinking_block_joins_the_cache_key`, `openai_tool_calls_join_the_cache_key`; `cargo test --lib semantic_cache` and `cargo clippy --lib --tests -- -D warnings` green.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5
+
 ### T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 
 Found 2026-09-22 in the docs pass (all confirmed against the files): T126 appears as three table rows and three identical cards (plan.md `### T126` ×3); T123 has two full cards; `todo.md` carries T126 twice; T183's Check sits under T184's card (the `Check: dry-run with \`all\`…` paragraph after T184's own Check) so T183 has none and T184 appears to have two; three blank lines split the task table into four markdown tables that render as raw pipes on GitHub and the site; T122 still carries the fix scope handed to T127; and T122/T123/T125 — all `src/` code cards — are claimed by `claude-haiku-4-5`, the exact models AGENTS.md forbids for code ("on T122–T125 every Haiku code diff had a defect its report called green"). "One task = one card with a Check" is broken throughout.
