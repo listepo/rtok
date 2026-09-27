@@ -331,14 +331,7 @@ pub fn page(cfg: &Config) -> Result<Report> {
                 sync_block_present(),
                 &detected_hosts(settings.as_ref()),
             );
-            let desktop = crate::agents::claude::desktop_path();
-            lines.extend(mcp_missing_lines(
-                cfg.setup.mcp,
-                crate::agents::claude::plugin_installed(cfg) || settings.is_some(),
-                (cfg.doctor.claude_json.as_path(), claude.as_ref()),
-                desktop.exists(),
-                (desktop.as_path(), read_json(&desktop).as_ref()),
-            ));
+            lines.extend(crate::agents::mcp::doctor_lines(cfg));
             lines
         },
         tools_rewrite_advice: tools_rewrite_adv,
@@ -423,41 +416,6 @@ fn overlap_lines(
             "duplicate: Cursor Dynamic Context prunes old context too — rtok side:              [plugins.archive] enabled = false"
                 .into(),
         );
-    }
-    out
-}
-
-/// T171 inverted (T275): install and update now always write `mcpServers.rtok`, so a Claude
-/// Code (plugin or CLI) or Claude Desktop installed without that entry means a write failed or
-/// was skipped by hand — not the singleton state the old T171 check policed. One line per
-/// surface that is present but missing the entry, naming the fix for that surface. Skipped
-/// entirely when `mcp_enabled` is false (`[setup] mcp = false`): a missing entry is then the
-/// intended state, not a problem to warn about.
-fn mcp_missing_lines(
-    mcp_enabled: bool,
-    cli_present: bool,
-    cli: (&Path, Option<&Value>),
-    desktop_present: bool,
-    desktop: (&Path, Option<&Value>),
-) -> Vec<String> {
-    if !mcp_enabled {
-        return Vec::new();
-    }
-    let has = |v: Option<&Value>| {
-        v.is_some_and(|v| crate::agents::mcp::entry_in(v, "mcpServers", "rtok"))
-    };
-    let mut out = Vec::new();
-    if cli_present && !has(cli.1) {
-        out.push(format!(
-            "missing: {} has no mcpServers.rtok — rtok side: rtok agents install claude",
-            cli.0.display()
-        ));
-    }
-    if desktop_present && !has(desktop.1) {
-        out.push(format!(
-            "missing: {} has no mcpServers.rtok — rtok side: rtok agents install claude --desktop",
-            desktop.0.display()
-        ));
     }
     out
 }
@@ -1332,76 +1290,6 @@ mod tests {
         );
         assert!(sync[0].starts_with("duplicate:"), "{sync:?}");
         assert!(!sync[0].contains("saves"), "{sync:?}");
-    }
-
-    /// T171 inverted (T275): a present-but-entryless surface is one `missing:` line naming
-    /// that surface's own fix; an absent surface, or one that already carries the entry, is
-    /// none.
-    #[test]
-    fn mcp_missing_entry_is_reported_per_surface() {
-        let (code, desktop) = (Path::new("/h/.claude.json"), Path::new("/h/desktop.json"));
-        let ours = json!({"mcpServers": {"rtok": {"command": "rtok", "args": ["mcp"]}}});
-        let other = json!({"mcpServers": {"serena": {"command": "uvx"}}});
-
-        // Both surfaces present, both missing the entry: two lines, each naming its own fix.
-        let lines = mcp_missing_lines(
-            true,
-            true,
-            (code, Some(&other)),
-            true,
-            (desktop, Some(&other)),
-        );
-        assert_eq!(lines.len(), 2, "{lines:?}");
-        for l in &lines {
-            assert!(l.starts_with("missing:"), "{l}");
-            assert!(!l.contains("saves"), "{l}");
-        }
-        assert!(lines[0].contains("/h/.claude.json"), "{lines:?}");
-        assert!(
-            lines[0].ends_with("rtok agents install claude"),
-            "{lines:?}"
-        );
-        assert!(lines[1].contains("/h/desktop.json"), "{lines:?}");
-        assert!(
-            lines[1].ends_with("rtok agents install claude --desktop"),
-            "{lines:?}"
-        );
-
-        // An entry present on one side silences that line alone.
-        let one = mcp_missing_lines(
-            true,
-            true,
-            (code, Some(&ours)),
-            true,
-            (desktop, Some(&other)),
-        );
-        assert_eq!(one.len(), 1, "{one:?}");
-        assert!(one[0].contains("/h/desktop.json"), "{one:?}");
-
-        // A surface that is not present (host absent) prints nothing for it either way.
-        assert!(mcp_missing_lines(true, false, (code, None), false, (desktop, None)).is_empty());
-        assert!(
-            mcp_missing_lines(
-                true,
-                false,
-                (code, Some(&other)),
-                true,
-                (desktop, Some(&ours))
-            )
-            .is_empty()
-        );
-
-        // `[setup] mcp = false`: a missing entry is then intended — no warning either way.
-        assert!(
-            mcp_missing_lines(
-                false,
-                true,
-                (code, Some(&other)),
-                true,
-                (desktop, Some(&other))
-            )
-            .is_empty()
-        );
     }
 
     /// The doctor text carries the section with the header total and per-row flags.
