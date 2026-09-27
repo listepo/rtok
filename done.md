@@ -1558,6 +1558,18 @@ Execution plan: `Store::list_notes(project)` in `src/store/mod.rs`; `plugins/mem
 
 ---
 
+### T304. memory export skips retired notes; memory status skips session handoff notes
+
+Bug 1: `Store::list_notes` (used by `memory export`) did not filter `notes::retired.is_null()`, and the export/import JSONL line shape carries no `retired` field, so an export piped into another store's `memory import` resurrected a note the user had retired there as a live note. `memory import`'s topic-key dedup (`list_notes(None, ..)`) still needs retired rows — the `notes_topic` unique index covers a retired row too, so a local key must block an imported line whether or not it is retired — so the filter could not simply move into the shared query. Fix: `list_notes` takes an `include_retired` flag; `memory export` passes `false`, `memory import`'s dedup and its own tests pass `true`.
+Bug 2: `Store::memory_note_aggs` (used by `memory status`) filtered `checkpoint%` but not `session:%`, unlike its siblings `list_notes` / `list_note_titles`. `session:<id>` kinds (`src/plugins/checkpoint.rs`'s per-session handoff note) are unique per session, so `memory status` grew one aggregate row per historical session forever. Fix: filter `session:%` alongside `checkpoint:%`, matching the siblings.
+
+Check: new tests `plugins::memory::export::tests::retired_note_is_not_exported` and `rtok::memory_status memory_status_excludes_session_handoff_notes`; `cargo test --lib store::` (67 passed) and `--lib memory::` (30 passed), `cargo nextest run -E 'binary(memory_status)'` (3 passed) and `-E 'binary(cli_trycmd)'` / `-E 'binary(p29_memory)'` unaffected, clippy `--lib --tests -D warnings` and `fmt --check` clean.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5
+
+---
+
 ## T62.2 — Compaction checkpoint lists the skills loaded so far
 
 From `research.md` §10.7–10.8 and T2.5 / T58.2. After auto-compaction the skill bodies are gone and nothing tells the model which skills it had loaded; it either re-invokes all of them (248 KB again) or none.
