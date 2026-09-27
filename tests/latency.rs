@@ -136,7 +136,7 @@ fn hook_dispatches_a_5mb_post_tool_body_under_50ms() {
 /// handler sleeps 1 + 2 + 2 ms and each Windows `Sleep` rounds up to the 15.6 ms
 /// timer tick, so the `windows-latest` debug run took 107 ms (ci run 35947867095).
 ///
-/// T304: a fixed ms bound measured the runner, not the hook: 102.7 ms on `macos-latest` and
+/// T309: a fixed ms bound measured the runner, not the hook: 102.7 ms on `macos-latest` and
 /// 313.7 ms on `windows-latest` under suite load (2026-09-27), both green on rerun. The bound is
 /// now half the hold on every platform — a hook that returns in `HOLD / 2` cannot have waited
 /// for the release — and the test runs alone (`.config/nextest.toml`). The few-ms bound on the
