@@ -1,0 +1,10 @@
+The retina PNG exports that lived here (hero shots, landing mock, favicons, apple-touch and
+android-chrome icons, app-icon logo, wordmark, feature icons @2x; 19 files) moved to the
+dedicated brand repo:
+
+  ~/GitHub/listepo/brand/sources/rtok/docs/assets/landing-retina/
+
+Logo and icon exports are also under ~/GitHub/listepo/brand/logo/png/ and
+~/GitHub/listepo/brand/icons/feature/. The images the docs site actually serves are in
+site/static/ and were not moved. README.md stays here because the sync-docs workflow publishes
+docs/**/*.md to listepo/landing. This note is a .txt file so that workflow does not publish it.
