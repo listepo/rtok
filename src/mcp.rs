@@ -16,6 +16,8 @@ use serde_json::{Value, json};
 #[cfg(feature = "cmd")]
 pub mod wrap;
 
+pub mod ping;
+
 use crate::config::Config;
 use crate::plugin::{Runtime, ToolDef};
 use crate::plugins::Registry;
@@ -26,6 +28,14 @@ fn expand_def() -> ToolDef {
         name: "expand",
         description: "Return archived payload by id; optional lines a-b, regex grep (hits as N:line), context N.",
         input_schema: json!({"type":"object","properties":{"id":{"type":"string"},"lines":{"type":"string"},"grep":{"type":"string"},"context":{"type":"integer"}},"required":["id"]}),
+    }
+}
+
+fn ping_def() -> ToolDef {
+    ToolDef {
+        name: "ping",
+        description: "Alive check. Returns MCP <agent> жив for the host display name.",
+        input_schema: json!({"type":"object","properties":{"agent":{"type":"string"}},"required":["agent"]}),
     }
 }
 
@@ -275,10 +285,18 @@ impl Server {
         // the literal "mcp" made every `rtok mcp` process answer `unchanged since <sha>` for a
         // file only another conversation had read. The surface stays "mcp" (see `record`).
         let cx = Runtime::open(cfg.clone(), format!("mcp-{}", std::process::id()))?;
-        let mut listed = vec![Listed {
-            plugin: "archive",
-            def: expand_def(),
-        }];
+        let mut listed = vec![
+            Listed {
+                plugin: "archive",
+                def: expand_def(),
+            },
+            // Stays listed when `[mcp] tools` is narrowed, same as `expand`: `rtok mcp ping`
+            // has to reach this tool or the liveness check can only fail.
+            Listed {
+                plugin: "mcp",
+                def: ping_def(),
+            },
+        ];
         let builtin: Vec<&str> = crate::plugins::all()
             .iter()
             .map(|p| p.manifest().id)
@@ -300,7 +318,9 @@ impl Server {
         if !cfg.mcp.tools.is_empty() {
             // `expand` stays listed whatever the allow-list says: D4 losslessness.
             listed.retain(|t| {
-                t.def.name == "expand" || cfg.mcp.tools.iter().any(|n| n.as_str() == t.def.name)
+                t.def.name == "expand"
+                    || t.def.name == "ping"
+                    || cfg.mcp.tools.iter().any(|n| n.as_str() == t.def.name)
             });
         }
         Ok(Self {
@@ -448,6 +468,7 @@ fn to_tool(def: &ToolDef) -> Tool {
 
 fn invoke(cx: &Runtime, name: &str, args: &Value) -> Result<String> {
     match name {
+        "ping" => Ok(ping::ping_text(args["agent"].as_str().unwrap_or(""))),
         "expand" => expand_text(cx, args),
         #[cfg(feature = "memory")]
         "mem_save" => mem_save(cx, args),
@@ -852,8 +873,23 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// T192: `cfg.mcp.tools` allow-list filters listing and calls; `expand` stays
-    /// listed unconditionally (D4 losslessness).
+    #[test]
+    fn ping_replies_with_the_display_name_and_writes_no_measurement() {
+        let (cfg, dir) = tmp("ping");
+        let server = Server::new(&cfg).unwrap();
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping","arguments":{"agent":"Claude Code"}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], false, "{v}");
+        assert_eq!(v["result"]["content"][0]["text"], "MCP Claude Code жив");
+        assert_eq!(server.cx.store.count_kind("mcp_call").unwrap(), 1);
+        assert_eq!(server.cx.store.count_call_io().unwrap(), 1);
+        assert_eq!(server.cx.store.count_tokens().unwrap(), 3);
+        assert_eq!(server.cx.store.count_measurements().unwrap(), 0);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T192: `cfg.mcp.tools` allow-list filters listing and calls; `expand` and `ping` stay
+    /// listed unconditionally (`expand` is D4 losslessness, `ping` is the liveness check).
     #[test]
     fn tools_allow_list_filters_listing_and_calls() {
         let (mut cfg, dir) = tmp("allow");
@@ -861,7 +897,7 @@ mod tests {
         let server = Server::new(&cfg).unwrap();
         let mut names: Vec<String> = server.tools().iter().map(|t| t.name.to_string()).collect();
         names.sort();
-        assert_eq!(names, ["expand", "read"]);
+        assert_eq!(names, ["expand", "ping", "read"]);
         let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"pattern":"x"}}}"#;
         let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
         assert_eq!(v["result"]["isError"], true, "{v}");

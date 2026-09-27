@@ -4,6 +4,9 @@
 
 Files: `~/.codex/config.toml` (MCP / proxy) and `~/.codex/hooks.json` (`PreCompact` / `PostCompact`).
 
+Headless ping (`rtok mcp ping codex`): `codex exec "<prompt>"`. `codex exec` runs
+non-interactively (https://developers.openai.com/codex/cli/reference, checked 2026-09-27).
+
 ## Modules
 
 | Module | Support | Why |
@@ -28,3 +31,4 @@ Host documentation setup writes against; re-check the links when this host chang
 - MCP (`[mcp_servers.<name>]` example): https://learn.chatgpt.com/docs/extend/mcp
 - Hooks (`hooks.json` / `[hooks]`: `PreCompact`, `PostCompact`, `transcript_path`): https://developers.openai.com/codex/hooks
 - Skills (`~/.codex/skills/<name>/`): https://agentskills.io
+- Non-interactive prompt (`codex exec "<prompt>"`; `rtok mcp ping codex`): https://developers.openai.com/codex/cli/reference

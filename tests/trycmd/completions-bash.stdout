@@ -517,6 +517,9 @@ _rtok() {
             rtok__subcmd__help__subcmd__logs,watch)
                 cmd="rtok__subcmd__help__subcmd__logs__subcmd__watch"
                 ;;
+            rtok__subcmd__help__subcmd__mcp,ping)
+                cmd="rtok__subcmd__help__subcmd__mcp__subcmd__ping"
+                ;;
             rtok__subcmd__help__subcmd__memory,export)
                 cmd="rtok__subcmd__help__subcmd__memory__subcmd__export"
                 ;;
@@ -576,6 +579,18 @@ _rtok() {
                 ;;
             rtok__subcmd__logs__subcmd__help,watch)
                 cmd="rtok__subcmd__logs__subcmd__help__subcmd__watch"
+                ;;
+            rtok__subcmd__mcp,help)
+                cmd="rtok__subcmd__mcp__subcmd__help"
+                ;;
+            rtok__subcmd__mcp,ping)
+                cmd="rtok__subcmd__mcp__subcmd__ping"
+                ;;
+            rtok__subcmd__mcp__subcmd__help,help)
+                cmd="rtok__subcmd__mcp__subcmd__help__subcmd__help"
+                ;;
+            rtok__subcmd__mcp__subcmd__help,ping)
+                cmd="rtok__subcmd__mcp__subcmd__help__subcmd__ping"
                 ;;
             rtok__subcmd__memory,export)
                 cmd="rtok__subcmd__memory__subcmd__export"
@@ -2858,8 +2873,22 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__mcp)
-            opts=""
+            opts="ping"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__help__subcmd__mcp__subcmd__ping)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -3402,7 +3431,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__mcp)
-            opts="-h --call --json --config --help"
+            opts="-h --call --json --config --help ping help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3413,6 +3442,70 @@ _rtok() {
                     return 0
                     ;;
                 --json)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__mcp__subcmd__help)
+            opts="ping help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__mcp__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__mcp__subcmd__help__subcmd__ping)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__mcp__subcmd__ping)
+            opts="-h --cli --desktop --timeout --json --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --timeout)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

@@ -42,6 +42,8 @@ enum Cmd {
     },
     /// Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead
     Mcp {
+        #[command(subcommand)]
+        action: Option<McpCmd>,
         /// Call one listed tool and print the text result (pi `registerTool` shim, T70.3)
         #[arg(long, value_name = "TOOL")]
         call: Option<String>,
@@ -553,6 +555,27 @@ enum GuardCmd {
 }
 
 #[derive(Subcommand)]
+enum McpCmd {
+    /// Prove the agent's rtok MCP server is alive and answering
+    Ping {
+        /// Host (`claude`, `cursor`, …); omitted checks every host with MCP installed
+        agent: Option<String>,
+        /// Only the CLI app
+        #[arg(long)]
+        cli: bool,
+        /// Only the desktop app
+        #[arg(long, alias = "gui")]
+        desktop: bool,
+        /// Seconds to wait for the agent or the server
+        #[arg(long, value_name = "SECS", default_value_t = 60)]
+        timeout: u64,
+        /// One JSON object per host
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum AgentCmd {
     /// Install hooks, MCP server and proxy into a host
     #[command(alias = "setup")]
@@ -569,6 +592,8 @@ enum AgentCmd {
         json: bool,
     },
     /// One host: the same block `agents list` prints, just for that app
+    ///
+    /// Whether that host's rtok MCP server answers: `rtok mcp ping <agent>`.
     Info {
         /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`)
         host: String,
@@ -1206,8 +1231,34 @@ pub fn run() -> Result<()> {
                 );
             }
         }
-        Cmd::Mcp { call, json, wrap } => {
+        Cmd::Mcp {
+            action,
+            call,
+            json,
+            wrap,
+        } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
+            if let Some(McpCmd::Ping {
+                agent,
+                cli,
+                desktop,
+                timeout,
+                json: as_json,
+            }) = action
+            {
+                let code = crate::mcp::ping::run(
+                    &cfg,
+                    crate::mcp::ping::PingOpts {
+                        agent: agent.as_deref(),
+                        cli,
+                        desktop,
+                        timeout: std::time::Duration::from_secs(timeout),
+                        json: as_json,
+                    },
+                )?;
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+                std::process::exit(code);
+            }
             if let Some(name) = call {
                 if !wrap.is_empty() {
                     bail!("rtok mcp --call does not wrap a foreign server");
@@ -1857,4 +1908,50 @@ fn show(rows: &[model::ConfigEntry], sources: bool, json: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn mcp_ping_is_not_parsed_as_a_wrap_argv() {
+        let ping = Cli::try_parse_from([
+            "rtok",
+            "mcp",
+            "ping",
+            "claude",
+            "--cli",
+            "--timeout",
+            "5",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            ping.cmd,
+            Cmd::Mcp {
+                action: Some(McpCmd::Ping {
+                    ref agent,
+                    cli: true,
+                    desktop: false,
+                    timeout: 5,
+                    json: true,
+                }),
+                call: None,
+                ref wrap,
+                ..
+            } if agent.as_deref() == Some("claude") && wrap.is_empty()
+        ));
+        let wrap = Cli::try_parse_from(["rtok", "mcp", "--", "npx", "some-server"]).unwrap();
+        assert!(matches!(
+            wrap.cmd,
+            Cmd::Mcp {
+                action: None,
+                call: None,
+                ref wrap,
+                ..
+            } if wrap.as_slice() == ["npx".to_string(), "some-server".to_string()]
+        ));
+    }
 }

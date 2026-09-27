@@ -16,7 +16,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T261 | in progress | P2 | 3 | 95% | Cursor / grok 4.7 |
 | T271 | todo | P1 | 2 | 40% | |
 | T275 | in progress | P1 | 4 | 0% | Claude Code / claude-opus-5-5 |
-| T275.1 | todo | P2 | 3 | 0% | |
+| T275.1 | in progress | P2 | 3 | 80% | Cursor / grok 4.7 |
 | T276 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T277 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T278 | todo | P1 | 3 | 0% | |
@@ -186,6 +186,13 @@ Success: the agent's chat reply (captured stdout for headless hosts) is exactly 
 Tests: unit test for the `ping` tool reply text; clap tests for `rtok mcp ping` vs `rtok mcp -- …`; a Vfs test that the server-only check reads `command` / `args` from each host's config (rtok's entry, not a hardcoded path); an e2e that spawns `rtok mcp` through a fake host config and gets `MCP Test жив`; headless hosts are covered by a fake agent binary on PATH that runs the MCP call and echoes the result.
 
 Check: on the creator's machine `rtok mcp ping claude --cli` prints `MCP Claude Code жив` from `claude -p`, `rtok mcp ping claude --desktop` checks the server from `claude_desktop_config.json` and prints the prompt, and after T275 both succeed; `just check`.
+
+Execution plan:
+1. `src/mcp.rs`: tool `ping`, always listed, reply `MCP <agent> жив`, logged through the existing call row (no measurement).
+2. `src/cli.rs`: `ping` subcommand of `rtok mcp` beside `--call`; wrap stays behind `--`. `agents info` long help points at `rtok mcp ping`.
+3. `src/mcp/ping.rs`: headless rows for claude (`-p`), codex (`exec`), cursor (`cursor-agent -p`), copilot (`-p`), gemini (`-p`), each recorded in that host README with the docs link. Every other variant is server-only: read `command` / `args` / `env` from `Agent::files`, spawn through `doctor`'s MCP round-trip (`initialize`, `tools/list`, `tools/call ping`).
+4. Tests: ping reply text; clap `mcp ping` vs `mcp --`; Vfs bodies for every host's MCP shape; e2e spawn of `rtok mcp` from a fake config (`MCP Test жив`); fake `claude` on PATH.
+5. Verify with `just check`. The creator-machine `claude --cli` / `--desktop` run stays open.
 
 ### T276. Spinner audit: every place rtok runs an external command and the user waits for its output
 

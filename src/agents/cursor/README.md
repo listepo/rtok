@@ -7,6 +7,11 @@ which app the report shows.
 Files: `~/.cursor/hooks.json` (hooks) and `~/.cursor/mcp.json` (MCP without the plugin).
 Plugin link: `~/.cursor/plugins/local/rtok` → `plugins/cursor/` from the rtok install (D21).
 
+Headless ping (`rtok mcp ping cursor --cli`): `cursor-agent -p "<prompt>"` (`agent -p` is the
+same flag). `-p` / `--print` is non-interactive mode
+(https://cursor.com/docs/cli/using, checked 2026-09-27; `agent -p` at
+https://cursor.com/docs/cli/overview). `--desktop` checks `mcp.json` and prints the prompt.
+
 ## Modules
 
 | Module | Support | Why |
@@ -33,4 +38,5 @@ Host documentation setup writes against; re-check the links when this host chang
 - Hooks (`~/.cursor/hooks.json`, `"version": 1`, `beforeShellExecution`, `afterShellExecution`, `preCompact`): https://cursor.com/docs/agent/hooks
 - MCP (`~/.cursor/mcp.json`, `mcpServers.<name>.command` / `args`): https://cursor.com/docs/context/mcp
 - Skills (`~/.cursor/skills/<name>/`): https://cursor.com/docs/skills
+- Non-interactive prompt (`cursor-agent -p` / `--print`; the docs' `agent -p` is the same flag; `rtok mcp ping cursor --cli`): https://cursor.com/docs/cli/using
 - The linked bundle: `plugins/cursor/README.md`

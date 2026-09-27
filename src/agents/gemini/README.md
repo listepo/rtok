@@ -4,6 +4,9 @@
 `[setup.gemini] dir` (default `~/.gemini`), carries both hooks and MCP in
 `settings.json`. No separate desktop app.
 
+Headless ping (`rtok mcp ping gemini`): `gemini -p "<prompt>"`. `-p` queries
+non-interactively (https://geminicli.com/docs/cli/cli-reference/, checked 2026-09-27).
+
 ## Modules
 
 | Module | Support | Why |
@@ -38,3 +41,4 @@ Host documentation setup writes against; re-check the links when this host chang
 - MCP (`mcpServers.<name>`, `command`/`args`/`env`/`timeout`/`trust`): https://geminicli.com/docs/tools/mcp-server/
 - Enterprise/base-URL configuration (no proxy-able model endpoint): https://geminicli.com/docs/cli/enterprise/
 - Extensions (`gemini-extension.json` fields, `hooks/hooks.json`, `~/.gemini/extensions/`, `gemini extensions link/install/uninstall`, T118.3, fetched 2026-09-24): https://geminicli.com/docs/extensions/reference/
+- Non-interactive prompt (`gemini -p` / `--prompt` forces non-interactive mode; `rtok mcp ping gemini`): https://geminicli.com/docs/cli/cli-reference
