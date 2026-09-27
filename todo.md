@@ -17,7 +17,6 @@
 - T279. One plugin version scheme for every install source (GitHub, local, marketplace), and `agents update` that skips an up-to-date plugin
 - T279.1. `rtok agents outdated`: list only the hosts whose rtok plugin is older than the running rtok
 - T281. Probe: tie a host session's hooks and its rtok MCP server to one agent
-- T282. Agent registry: an rtok agent id for every host session
 - T283. An agent learns its own rtok agent id
 - T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
 - T285. Worktree claims: `rtok worktree add` hands the worktree to the calling agent; MCP `worktree_add`

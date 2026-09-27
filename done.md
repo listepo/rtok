@@ -7020,6 +7020,25 @@ Result: The creator raised the Check (2026-09-26) to hook p50 as Claude Code see
 Status: done 2026-09-26
 Model: Cursor / grok 4.7
 
+### T282. Agent registry: an rtok agent id for every host session
+
+Depends on nothing; blocks T283–T290. Today a session is keyed by the host's own `session_id` (`src/store/schema.rs:151`, `sessions.id`), which collides across hosts, is missing on several (`research.md` §26), and has no status. `agent_id` in `HookInput` (`src/hooks/types.rs:18`) means a sub-agent's context inside one host session, a different thing. D34 defines the rtok agent id.
+
+Done means: every host session rtok sees has exactly one row with a UUIDv7 id, the host, the host's session id, parent agent (for sub-agents), cwd, start, last seen, end, and the last activity; ids resolve from any unique prefix of 4+ hex chars.
+
+Plan:
+1. Worktree `_worktrees/rtok-T282`, branch `t282-agent-registry`.
+2. Diesel migration `agents`: `id TEXT PRIMARY KEY` (UUIDv7, hyphenated), `host_id`, `host_session_id`, `parent_id NULL` (a sub-agent's parent agent), `cwd`, `started_at`, `last_seen`, `ended_at NULL`, `activity TEXT NULL` (≤ 120 chars, e.g. `Bash: cargo nextest run`, `Edit: src/worktree/add.rs`), `status_text NULL` (set by the agent itself in T284); unique index on `(host_id, host_session_id, parent_key)`. Schema regenerated, no raw SQL.
+3. `store::agents`: `register(host, host_session, parent, cwd) -> AgentId` (upsert, returns the existing id on repeat), `touch(id, activity)`, `end(id)`, `resolve(prefix) -> Result<AgentId>` with the errors `unknown` and `ambiguous: <ids>`, `live(idle)`: rows with no end and `last_seen` inside `[agents] idle` (default `30m`, new config key through the one config module, T238).
+4. `rtok hook`: every event registers or touches the agent (one indexed upsert, prepared statement); SessionEnd ends it; a sub-agent's events (`agent_id` present) register a child row with `parent_id`. Activity is the tool name plus the first 60 chars of its main argument (command, path, pattern), never file contents or prompt text.
+5. Crate `uuid` with `v7` (maintained; add rows to `toolchain.md` and the shared `rust.md` if missing).
+6. Hook budget: measure the hot path with the existing hook bench before and after; the upsert must keep `rtok hook` inside its 10 ms budget (D32 resident process included). If it does not, write through the resident hook process or batch.
+
+Check: store unit tests (register is idempotent, sub-agent row, resolve prefix / ambiguous / unknown, idle cut-off); hook fixture tests per hooked host with the session-id field names from §26 (fakes only, `RTOK_HOST_SANDBOX`); hook bench row before/after in the PR; `just check`.
+
+Status: done 2026-09-27 (#439; hook bench p95 9.10 ms PreToolUse, 9.51 ms PostToolUse)
+Model: Claude Code / claude-opus-5-5
+
 ### T272. ketch.toml syncs with the live registry entry, plus the rtok-hook hazard note
 
 Found 2026-09-26, from `rtok agents install claude` hanging on Windows: `ketch install listepo/rtok` had linked `rtok-hook.exe` (the 390 KB std-only hook client dist ships beside the 34 MB `rtok.exe`) into `~/.ketch/bin/rtok.exe`, so every `rtok` invocation — `--version` included — hung reading stdin for a hook payload that never came. Chain: the registry entry pins `bin = [{ path = "rtok*", name = "rtok" }];` ketch resolves a glob to the first payload match; NTFS lists `rtok-hook.exe` before `rtok.exe`, so Windows takes the stub (Unix readdir order keeps `rtok` first, which is why only Windows hung). No `*`/`?` pattern matches `rtok`+`rtok.exe` while excluding `rtok-hook.exe`, so the entry's spelling is the best ketch's matcher allows; the durable fix — prefer the candidate whose stem is the link name — belongs to ketch (its B62). Meanwhile this repo's `ketch.toml`, the file `ketch push` sends, still predated registry commit 9b73cae: no `bin` pin and no Windows zip in `[asset] include`. A push from it would have dropped the pin and returned Windows installs to linking `plugins/cursor/scripts/mcp.cmd` — the exact regression 9b73cae fixed.
