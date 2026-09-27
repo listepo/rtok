@@ -38,6 +38,7 @@
   const fmt = (n) => (n == null ? "—" : nf.format(n));
   const compact = (n) => {
     if (n == null) return "—";
+    n = Number(n); // wire values: never let a string through into HTML
     const a = Math.abs(n);
     if (a >= 1e9) return (n / 1e9).toFixed(a >= 1e10 ? 0 : 1) + "B";
     if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
@@ -1445,7 +1446,7 @@
           ${panel("hooks", `<div class="p-3 flex flex-col gap-1.5">${ev.map(([k, n]) => `<div class="flex items-center gap-2 text-xs"><span class="w-36 truncate text-ink-muted">${esc(k)}</span><div class="flex-1 h-1.5 rounded-full bg-surface-3"><div class="h-full rounded-full bg-accent-fg" style="width:${(n / mxE) * 100}%"></div></div><span class="w-6 text-right">${n}</span></div>`).join("") || '<p class="text-xs text-ink-muted">no hooks installed</p>'}</div>`, { sub: `${esc(d.hooks_total)} total`, id: "h-hk" })}
           ${panel("proxy chains", `<div class="p-3 flex flex-col gap-2 text-xs"><div class="flex flex-wrap items-center gap-1.5"><span class="w-16 text-ink-subtle">anthropic</span>${hops(d.proxy)}</div><div class="flex flex-wrap items-center gap-1.5"><span class="w-16 text-ink-subtle">openai</span>${hops(d.proxy_openai)}</div>${d.mcp_tool_search_disabled ? '<p class="text-2xs text-warn-fg">mcp_tool_search likely disabled (ANTHROPIC_BASE_URL is set)</p>' : ""}</div>`, { id: "h-px" })}
         </div>
-        ${panel("MCP servers", `<div class="overflow-x-auto"><table class="tbl"><thead><tr><th scope="col">name</th><th scope="col" class="text-right">tools</th><th scope="col" class="text-right">desc tokens</th><th scope="col">cmd</th></tr></thead><tbody>${d.mcp.map((s) => `<tr><td class="font-semibold">${esc(s.name)}</td><td class="text-right">${s.tools}</td><td class="text-right">~${fmt(s.desc_tokens)}</td><td class="text-ink-muted truncate max-w-[18rem]">${esc(s.cmd)}</td></tr>`).join("")}</tbody></table></div>`, { cls: "xl:col-span-7", sub: `${d.mcp.length} probed`, id: "h-mcp" })}
+        ${panel("MCP servers", `<div class="overflow-x-auto"><table class="tbl"><thead><tr><th scope="col">name</th><th scope="col" class="text-right">tools</th><th scope="col" class="text-right">desc tokens</th><th scope="col">cmd</th></tr></thead><tbody>${d.mcp.map((s) => `<tr><td class="font-semibold">${esc(s.name)}</td><td class="text-right">${esc(s.tools)}</td><td class="text-right">~${fmt(s.desc_tokens)}</td><td class="text-ink-muted truncate max-w-[18rem]">${esc(s.cmd)}</td></tr>`).join("")}</tbody></table></div>`, { cls: "xl:col-span-7", sub: `${d.mcp.length} probed`, id: "h-mcp" })}
         ${panel(
           "environment",
           `<div class="p-3">${kv([
