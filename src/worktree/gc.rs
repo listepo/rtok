@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use serde::Serialize;
 
 use super::list::usage;
-use super::{Entry, State, git, inventory};
+use super::{Entry, State, inventory};
 use crate::render::Col;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,29 +73,6 @@ pub struct Outcome {
     pub failed: bool,
 }
 
-/// Unlock, remove without `--force`, then delete the branch when it is merged. A failed
-/// removal puts the lock back, so a half-done run never strips another run's protection.
-fn apply(repo: &Path, entry: &Entry) -> anyhow::Result<String> {
-    let record = &entry.record;
-    if record.locked.is_some() {
-        git::unlock(repo, &record.path)?;
-    }
-    if let Err(e) = git::remove(repo, &record.path) {
-        if let Some(reason) = &record.locked {
-            git::lock(repo, &record.path, reason)?;
-        }
-        return Err(e);
-    }
-    let Some(branch) = record.branch.as_deref().filter(|_| entry.merged) else {
-        return Ok("removed; branch kept".into());
-    };
-    git::delete_branch(repo, branch)?;
-    Ok(match git::has_remote_branch(repo, branch) {
-        true => format!("removed with its branch; remote left: git push origin --delete {branch}"),
-        false => "removed with its branch".into(),
-    })
-}
-
 pub fn run(cwd: &Path, policy: &Policy, yes: bool) -> anyhow::Result<Vec<Outcome>> {
     let here = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
     let entries = inventory(cwd)?;
@@ -114,7 +91,8 @@ pub fn run(cwd: &Path, policy: &Policy, yes: bool) -> anyhow::Result<Vec<Outcome
             Verdict::DropRecord => ("drop-record", "directory is gone"),
             Verdict::Keep(why) => ("keep", why.as_str()),
         };
-        let done = (yes && action != "keep").then(|| apply(repo, entry));
+        let done = (yes && action != "keep")
+            .then(|| super::remove::detach(repo, &entry.record, entry.merged));
         Outcome {
             path: path.display().to_string(),
             branch: entry.record.branch.clone(),

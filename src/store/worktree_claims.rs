@@ -31,6 +31,18 @@ impl Store {
         Ok(())
     }
 
+    /// `rtok worktree remove` (T286): the open claim on `path`, if any, is released.
+    pub fn release_worktree_claim(&self, path: &str) -> Result<()> {
+        let mut conn = self.lock()?;
+        let open = worktree_claims::table
+            .filter(worktree_claims::path.eq(path))
+            .filter(worktree_claims::released_at.is_null());
+        diesel::update(open)
+            .set(worktree_claims::released_at.eq(unixepoch()))
+            .execute(&mut *conn)?;
+        Ok(())
+    }
+
     /// `(path, agent_id)` of every claim not yet released.
     pub fn open_worktree_claims(&self) -> Result<Vec<(String, String)>> {
         let mut conn = self.lock()?;
@@ -73,7 +85,9 @@ mod tests {
         store.claim_worktree("/w/x", &b, "t1").unwrap();
         let mut claims = store.open_worktree_claims().unwrap();
         claims.sort();
-        assert_eq!(claims, [("/w/x".into(), b), ("/w/y".into(), a)]);
+        assert_eq!(claims, [("/w/x".into(), b), ("/w/y".into(), a.clone())]);
+        store.release_worktree_claim("/w/x").unwrap();
+        assert_eq!(store.open_worktree_claims().unwrap(), [("/w/y".into(), a)]);
         assert_eq!(store.session_model("s-a").unwrap(), None);
     }
 }

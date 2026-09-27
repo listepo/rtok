@@ -150,6 +150,18 @@ _arguments "${_arguments_options[@]}" : /
 ':path -- The worktree:_files' /
 && ret=0
 ;;
+(remove)
+_arguments "${_arguments_options[@]}" : /
+'--agent=[The rtok agent id (any unique prefix); defaults to /`RTOK_AGENT_ID/`]:AGENT:_default' /
+'--owner=[The owner an old lock names, as /`<provider> / <model>/`. Defaults to /`<host> / <model>/` of the agent]:OWNER:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--keep-branch[Remove an unmerged worktree too and keep its branch (a merged branch is kept as well)]' /
+'--json[JSON instead of the text line]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':target -- The worktree'/''s path, or its task id (the lock'/''s task or the branch `<task>/[-<slug>/]`):_default' /
+&& ret=0
+;;
 (list)
 _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
@@ -197,6 +209,10 @@ _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
 (claim)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(remove)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -1689,6 +1705,10 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
+(remove)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
 (list)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
@@ -3120,6 +3140,7 @@ _rtok__subcmd__help__subcmd__worktree_commands() {
     local commands; commands=(
 'add:Create the worktree for a task/: one location, one name, one locked owner; prints its path' /
 'claim:Bind an existing worktree to an agent/: rewrites its lock only when unlocked or already yours' /
+'remove:Remove your own finished worktree/: unlock, /`git worktree remove/`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees' /
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
 'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
 'clean:Delete idle tagged build caches (/`CACHEDIR.TAG/`) and keep the worktrees; dry run without /`--yes/`' /
@@ -3150,6 +3171,11 @@ _rtok__subcmd__help__subcmd__worktree__subcmd__gc_commands() {
 _rtok__subcmd__help__subcmd__worktree__subcmd__list_commands() {
     local commands; commands=()
     _describe -t commands 'rtok help worktree list commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__worktree__subcmd__remove_commands] )) ||
+_rtok__subcmd__help__subcmd__worktree__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help worktree remove commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__hook_commands] )) ||
 _rtok__subcmd__hook_commands() {
@@ -3417,6 +3443,7 @@ _rtok__subcmd__worktree_commands() {
     local commands; commands=(
 'add:Create the worktree for a task/: one location, one name, one locked owner; prints its path' /
 'claim:Bind an existing worktree to an agent/: rewrites its lock only when unlocked or already yours' /
+'remove:Remove your own finished worktree/: unlock, /`git worktree remove/`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees' /
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
 'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
 'clean:Delete idle tagged build caches (/`CACHEDIR.TAG/`) and keep the worktrees; dry run without /`--yes/`' /
@@ -3449,6 +3476,7 @@ _rtok__subcmd__worktree__subcmd__help_commands() {
     local commands; commands=(
 'add:Create the worktree for a task/: one location, one name, one locked owner; prints its path' /
 'claim:Bind an existing worktree to an agent/: rewrites its lock only when unlocked or already yours' /
+'remove:Remove your own finished worktree/: unlock, /`git worktree remove/`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees' /
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
 'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
 'clean:Delete idle tagged build caches (/`CACHEDIR.TAG/`) and keep the worktrees; dry run without /`--yes/`' /
@@ -3486,10 +3514,20 @@ _rtok__subcmd__worktree__subcmd__help__subcmd__list_commands() {
     local commands; commands=()
     _describe -t commands 'rtok worktree help list commands' commands "$@"
 }
+(( $+functions[_rtok__subcmd__worktree__subcmd__help__subcmd__remove_commands] )) ||
+_rtok__subcmd__worktree__subcmd__help__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok worktree help remove commands' commands "$@"
+}
 (( $+functions[_rtok__subcmd__worktree__subcmd__list_commands] )) ||
 _rtok__subcmd__worktree__subcmd__list_commands() {
     local commands; commands=()
     _describe -t commands 'rtok worktree list commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__worktree__subcmd__remove_commands] )) ||
+_rtok__subcmd__worktree__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok worktree remove commands' commands "$@"
 }
 
 if [ "$funcstack[1]" = "_rtok" ]; then

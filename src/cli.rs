@@ -464,6 +464,25 @@ enum WorktreeCmd {
         #[arg(long)]
         owner: Option<String>,
     },
+    /// Remove your own finished worktree: unlock, `git worktree remove`, delete the branch
+    /// when merged, release the claim; refuses dirty, foreign-locked or current worktrees
+    Remove {
+        /// The worktree's path, or its task id (the lock's task or the branch `<task>[-<slug>]`)
+        target: String,
+        /// The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`
+        #[arg(long)]
+        agent: Option<String>,
+        /// The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> / <model>`
+        /// of the agent
+        #[arg(long)]
+        owner: Option<String>,
+        /// Remove an unmerged worktree too and keep its branch (a merged branch is kept as well)
+        #[arg(long)]
+        keep_branch: bool,
+        /// JSON instead of the text line
+        #[arg(long)]
+        json: bool,
+    },
     /// Every worktree and orphan with its owner, state, source and build-cache bytes
     List {
         /// JSON instead of the table
@@ -1027,6 +1046,41 @@ pub fn run() -> Result<()> {
             let (path, task) = claim::run(&path, &owner, &agent.id)?;
             claim::remember(store.as_ref(), &path, &agent.id, &task);
             println!("{}", path.display());
+        }
+        Cmd::Worktree {
+            action:
+                WorktreeCmd::Remove {
+                    target,
+                    agent,
+                    owner,
+                    keep_branch,
+                    json,
+                },
+        } => {
+            use crate::worktree::{claim, remove};
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            let agent = claim::caller(store.as_ref(), agent.as_deref())?;
+            // No agent and no `--owner`: no name to hold a lock by, so only an unlocked one goes.
+            let owner = match (owner, &agent) {
+                (None, None) => None,
+                (owner, agent) => Some(claim::owner(owner, agent.as_ref(), store.as_ref())?),
+            };
+            let who = remove::Caller {
+                agent: agent.as_ref().map(|a| a.id.as_str()),
+                owner: owner.as_deref(),
+            };
+            let cwd = std::env::current_dir()?;
+            let done = remove::run(&cwd, &target, &who, keep_branch)?;
+            let released = store.as_ref().map(|s| s.release_worktree_claim(&done.path));
+            if let Some(Err(e)) = released {
+                eprintln!("warning: claim not released: {e:#}");
+            }
+            if json {
+                print_json(&done)?;
+            } else {
+                println!("{}: {}", done.path, done.note);
+            }
         }
         Cmd::Worktree {
             action: WorktreeCmd::List { json },

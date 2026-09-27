@@ -8,6 +8,7 @@ pub mod clean;
 pub mod gc;
 pub mod git;
 pub mod list;
+pub mod remove;
 
 /// A `render::table` with one free-text note appended per line (after a `note` header),
 /// so the table itself still ends right-aligned. `gc` and `clean` print their verdicts this way.
