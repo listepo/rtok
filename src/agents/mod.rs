@@ -27,8 +27,10 @@ pub(crate) mod mcp;
 pub mod mimo;
 pub mod omp;
 pub mod opencode;
+mod outdated;
 pub mod pi;
 pub mod plugin;
+pub(crate) mod plugin_install;
 pub(crate) mod plugin_version;
 pub mod restart;
 pub mod skill;
@@ -820,6 +822,10 @@ fn carry_flags(cfg: &Config, have: &[&str]) -> Config {
     c.setup.yes |= have.contains(&"plugin");
     c
 }
+
+pub use outdated::{
+    EXIT_OUTDATED, Outdated, OutdatedReport, OutdatedSelection, outdated, print_human, report,
+};
 
 /// `rtok agents update` with no host named: every host with an rtok module in at least one
 /// variant on this machine, in [`HOSTS`] order.

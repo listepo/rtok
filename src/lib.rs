@@ -42,6 +42,7 @@ pub mod testutil;
 pub mod tls;
 pub mod tokens;
 pub mod tui;
+pub mod ui;
 pub mod web;
 pub mod worktree;
 

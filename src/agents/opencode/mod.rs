@@ -63,7 +63,7 @@ fn path_for(cfg: &Config, kind: Kind) -> PathBuf {
 
 /// The config with `config_path` pointed at this variant's file, so every step below reads
 /// one key.
-fn for_kind(cfg: &Config, kind: Kind) -> Config {
+pub(crate) fn for_kind(cfg: &Config, kind: Kind) -> Config {
     let mut c = cfg.clone();
     c.setup.opencode.config_path = path_for(cfg, kind);
     c
