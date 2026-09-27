@@ -318,6 +318,35 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
   -h, --help           Print help
 
+$ rtok agents send --help
+Send a message to an agent (T287): `send <id-prefix> <text|->` or `send --all-live <text|->`
+
+Usage: rtok agents send [OPTIONS] [TO] [TEXT]
+
+Arguments:
+  [TO]    Recipient's rtok agent id (any unique prefix); with `--all-live`, the text instead
+  [TEXT]  The message; `-` reads it from stdin (≤ 4 KiB, control characters stripped)
+
+Options:
+      --all-live       Every live agent of this project (same repository or cwd), except the sender
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok agents inbox --help
+Read messages (T287): your own inbox from `RTOK_AGENT_ID` (marks them read), or with an id that
+agent's queue (marks nothing)
+
+Usage: rtok agents inbox [OPTIONS] [ID]
+
+Arguments:
+  [ID]  An agent's rtok id (any unique prefix); omitted: `RTOK_AGENT_ID`
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --unread         Only messages not read yet
+      --json           JSON instead of the framed text
+  -h, --help           Print help
+
 $ rtok run --help
 Execute a command, archive its raw output, print the filtered version
 
