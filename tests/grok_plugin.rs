@@ -1,4 +1,6 @@
-//! T99 + D21: the Grok Build plugin tree is one unit — a manifest, rtok's hooks and one MCP server.
+//! T99: the Grok Build plugin tree ships a manifest and rtok's hooks. MCP is independent of the
+//! plugin (T275/D33): `rtok agents install grok` writes `[mcp_servers.rtok]` into
+//! `~/.grok/config.toml` itself, so the plugin carries no `.mcp.json` of its own.
 
 mod common;
 
@@ -27,14 +29,6 @@ fn hook_command(event: &str) -> String {
 #[test]
 fn manifest_is_rtok() {
     assert_eq!(read(".grok-plugin/plugin.json")["name"], "rtok");
-}
-
-#[test]
-fn mcp_is_exactly_rtok() {
-    assert_eq!(
-        read(".mcp.json"),
-        json!({"mcpServers": {"rtok": {"command": "rtok", "args": ["mcp"]}}})
-    );
 }
 
 /// Claude's installer entries (`agents::claude::ENTRIES`) minus `Read` and `Skill` (plan T98):

@@ -138,6 +138,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Create the worktree for a task: one location, one name, one locked owner; prints its path')
+            [CompletionResult]::new('claim', 'claim', [CompletionResultType]::ParameterValue, 'Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every worktree and orphan with its owner, state, source and build-cache bytes')
             [CompletionResult]::new('gc', 'gc', [CompletionResultType]::ParameterValue, 'Remove merged, clean, idle worktrees with their branches; drop records of deleted ones')
             [CompletionResult]::new('clean', 'clean', [CompletionResultType]::ParameterValue, 'Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`')
@@ -145,8 +147,27 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;worktree;add' {
-            [CompletionResult]::new('--owner', '--owner', [CompletionResultType]::ParameterName, 'Who holds it, as `<provider> / <model>`; written into the lock reason')
+            [CompletionResult]::new('--owner', '--owner', [CompletionResultType]::ParameterName, 'Who holds it, as `<provider> / <model>`; written into the lock reason. Defaults to `<host> / <model>` of the agent')
+            [CompletionResult]::new('--agent', '--agent', [CompletionResultType]::ParameterName, 'The rtok agent id (any unique prefix) to bind it to; defaults to `RTOK_AGENT_ID`')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;worktree;claim' {
+            [CompletionResult]::new('--agent', '--agent', [CompletionResultType]::ParameterName, 'The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`')
+            [CompletionResult]::new('--owner', '--owner', [CompletionResultType]::ParameterName, 'The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> / <model>` of the agent')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;worktree;remove' {
+            [CompletionResult]::new('--agent', '--agent', [CompletionResultType]::ParameterName, 'The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`')
+            [CompletionResult]::new('--owner', '--owner', [CompletionResultType]::ParameterName, 'The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> / <model>` of the agent')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--keep-branch', '--keep-branch', [CompletionResultType]::ParameterName, 'Remove an unmerged worktree too and keep its branch (a merged branch is kept as well)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the text line')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
@@ -179,6 +200,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         }
         'rtok;worktree;help' {
             [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Create the worktree for a task: one location, one name, one locked owner; prints its path')
+            [CompletionResult]::new('claim', 'claim', [CompletionResultType]::ParameterValue, 'Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every worktree and orphan with its owner, state, source and build-cache bytes')
             [CompletionResult]::new('gc', 'gc', [CompletionResultType]::ParameterValue, 'Remove merged, clean, idle worktrees with their branches; drop records of deleted ones')
             [CompletionResult]::new('clean', 'clean', [CompletionResultType]::ParameterValue, 'Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`')
@@ -186,6 +209,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;worktree;help;add' {
+            break
+        }
+        'rtok;worktree;help;claim' {
+            break
+        }
+        'rtok;worktree;help;remove' {
             break
         }
         'rtok;worktree;help;list' {
@@ -220,6 +249,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
+            [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -236,6 +267,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
+            [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -487,6 +520,32 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
+        'rtok;agents;show' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the text lines')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;show' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the text lines')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agents;status' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;status' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
         'rtok;agents;help' {
             [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
             [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
@@ -496,6 +555,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
+            [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -531,6 +592,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;agents;help;whoami' {
             break
         }
+        'rtok;agents;help;show' {
+            break
+        }
+        'rtok;agents;help;status' {
+            break
+        }
         'rtok;agents;help;help' {
             break
         }
@@ -543,6 +610,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
+            [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -576,6 +645,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agent;help;whoami' {
+            break
+        }
+        'rtok;agent;help;show' {
+            break
+        }
+        'rtok;agent;help;status' {
             break
         }
         'rtok;agent;help;help' {
@@ -1221,12 +1296,20 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         }
         'rtok;help;worktree' {
             [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Create the worktree for a task: one location, one name, one locked owner; prints its path')
+            [CompletionResult]::new('claim', 'claim', [CompletionResultType]::ParameterValue, 'Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every worktree and orphan with its owner, state, source and build-cache bytes')
             [CompletionResult]::new('gc', 'gc', [CompletionResultType]::ParameterValue, 'Remove merged, clean, idle worktrees with their branches; drop records of deleted ones')
             [CompletionResult]::new('clean', 'clean', [CompletionResultType]::ParameterValue, 'Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`')
             break
         }
         'rtok;help;worktree;add' {
+            break
+        }
+        'rtok;help;worktree;claim' {
+            break
+        }
+        'rtok;help;worktree;remove' {
             break
         }
         'rtok;help;worktree;list' {
@@ -1250,6 +1333,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
+            [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
             break
         }
         'rtok;help;agents;install' {
@@ -1282,6 +1367,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;help;agents;whoami' {
+            break
+        }
+        'rtok;help;agents;show' {
+            break
+        }
+        'rtok;help;agents;status' {
             break
         }
         'rtok;help;setup' {

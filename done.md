@@ -5781,6 +5781,17 @@ Model: Claude Code / claude-opus-5-5
 ### T236. Clean up target dirs with dunnage after tests
 
 `just test` and `just test-changed` now end with `just dunnage` (a just post-dependency; `just check` gets it through `test`). `dunnage run target` compresses and dedupes `./target` losslessly — it never deletes and keeps mtimes, so nothing rebuilds. Exit code 2 (a build held the lock) counts as success; a checkout with no `target/` yet or a machine without `dunnage` is a no-op with an install hint. dunnage is installed with `ketch install dunnage`; `toolchain.md` lists ketch and dunnage and gains a `ketch` package table.
+### T301. `just test-cov`: the test suite under coverage, `just test` stays without
+
+Creator request (2026-09-27): a separate command for tests with coverage; the plain one without. Coverage lived only inline in `.github/workflows/sonarcloud.yml`, with `cargo-llvm-cov` installed by a CI action, so it could not be run the same way locally.
+
+Result: `just test-cov` (`justfile`) adds `llvm-tools-preview`, runs `cargo llvm-cov nextest --workspace` with the same thread count as `just test`, writes `coverage/lcov.info` (ignored by git), prints a per-file summary, then runs `dunnage`; extra args go to nextest (`just test-cov -E 'test(formatters)'`). `just test` is unchanged and has no coverage. `cargo-llvm-cov` 0.9.1 is pinned in `mise.toml`; the SonarCloud job calls `just test-cov` instead of its own install steps and command. `toolchain.md`, `CONTRIBUTING.md`, `docs/sonarcloud-setup.md` and the shared `rust.md` updated.
+
+Check: `just test-cov -E 'test(every_formatter_arm_has_a_golden) | test(ten_families)'` — 2 passed, `coverage/lcov.info` written, TOTAL row printed; `cargo nextest run -p rtok --test toolchain_rows --test plugin_plans` green.
+
+Status: done 2026-09-27
+Model: Claude Code / claude-opus-5-5
+
 ### T226. A modern look for `rtok tui`
 
 Why: the TUI drew every page in the terminal's default colour — bare tables, a `>` cursor, plain text hints — so the operator model (D23) read like a log dump. Done means one palette and one set of frames across every page, with the tests still pinning the model's text, not the chrome.
@@ -6339,17 +6350,6 @@ Result: `tests/cmd_golden/*.in` all carry `min_saving: <percent>`, measured `202
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
-### T297. Saving floors that catch a regression
-
-Five goldens carried floors of 0–3 % (`cat`, `git_log`, `npm`, `make`, `mvn`) because their inputs were too short to save anything, and the `[script]` mixed-chain rule had no golden with a floor.
-
-Result: long inputs next to the short ones (which stay, `cat.in` keeps its secret-preservation role): `cat_long` (measured 79 %, floor 74), `git_log_long` (75 → 70), `npm_install` (57 → 52), `make_long` (62 → 57), `mvn_long` (83 → 78), and `script` (`npm run build && pytest -q`, 45 → 40). The golden harness's `argv:` header now takes a single-quoted command as one argv element, the shape the hook sends (`rtok run -- '<cmd>'`), which is the only way to reach the mixed-chain routing; unquoted headers split as before.
-
-Check: `cargo nextest run -p rtok --lib cmd::formatters` 16/16; `cargo clippy -p rtok --lib --tests -- -D warnings` clean.
-
-Status: done 2026-09-27
-Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
-
 ### T209. `upsert_note` select-then-insert races a duplicate past the topic key
 
 Found 2026-09-22 in the store/accounting pass: the "one row per (project, kind, title)" contract (T66.1) is enforced by SELECT-newest-then-UPDATE/INSERT (`src/store/mod.rs:835-869`) with the mutex even dropped before the insert (:867) and **no UNIQUE index** (migrations 0015/0017) making a lost race impossible across processes — and the store's own comments list concurrent writers (hooks, MCP, proxy, `otel flush`); no writer lease backs the "one writer per store" singleton either. Two writers saving the same title both insert: `mem_search` returns a stale duplicate beside the new body (the exact T66.1 defect) and recall shows stale titles.
@@ -6626,6 +6626,17 @@ Result: guard unit test `deny_measurement_before_bytes_and_est_before_match_the_
 Check: `cargo nextest run -p rtok --test plugins_e2e -E 'test(read_modes_keep_a_saving_floor) | test(read_stripped)'` 2/2; the guard test 1/1; `cargo clippy -p rtok --lib --test plugins_e2e -- -D warnings` clean.
 
 Status: done 2026-09-27
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T300. `read` map, signatures, search and tree record their saving
+
+I-100 (found by T299): only `mode = "stripped"` recorded a `Measurement`, so the saving of `map`, `signatures`, `search` and `tree` never reached `rtok stats`. Creator's choice (2026-09-27): `map`/`signatures` measure against the whole file they replace; `search`/`tree` record only when `max_chars` cuts their output, against their own full output — there is no honest "before" for them beyond that.
+
+Result: `read_with` records kind `map` / `signatures` (raw file vs returned text) on the fresh-render path only; the `cache::hit` and `identical_result` paths return earlier with their own `delta`/`dedup` row, so one call writes at most one row. `cap_recording` (a recording variant of `cap`) writes `search_cap` / `tree_cap` with the archive id as `ref_id` when it cuts; plain `cap` (full reads, `stripped`) records nothing, so no double count. Tests in `tests/plugins_e2e.rs`: `read_modes_keep_a_saving_floor` also checks one row per `map`/`signatures` call with bytes matching the file and the returned text, and none for an uncut `search`; `search_and_tree_cap_measurement_matches_full_and_returned_text` checks the cut rows against the archived full output.
+
+Check: `cargo nextest run -p rtok --lib plugins::read` and `--test plugins_e2e` green; `cargo clippy -p rtok --lib --tests -- -D warnings` clean.
+
+Status: done 2026-09-28
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
 ### T246.2. MCP entries of the remaining hosts

@@ -2,7 +2,7 @@
 
 // Agent registry (T282, D34): one row per host session rtok sees, one per sub-agent.
 mod agents;
-pub use agents::AgentDetail;
+pub use agents::{AgentDetail, idle_secs};
 pub mod embed;
 mod migrations;
 pub mod models;
@@ -13,6 +13,8 @@ mod sql_ext;
 // T163: shared Diesel extension for SQL the DSL cannot express (recursive CTEs, FTS5).
 // Symbol index (graph plugin) — SQLite only (D18 loser deleted; P39: Ladybug/Grafeo removed).
 mod symbols;
+// T285: which agent a worktree is bound to (the git lock stays the source of truth).
+mod worktree_claims;
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::ErrorKind;
