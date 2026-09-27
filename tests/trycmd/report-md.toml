@@ -47,6 +47,7 @@ Every effective key with its origin — the `config show --sources` page.
 | --- | --- | --- |
 | agents.enabled | true | default |
 | agents.idle | 30m | default |
+| agents.push_bytes | 1024 | default |
 | bench.configs.a | bench/configs/legacy.json | default |
 | bench.configs.b | bench/configs/rtok.json | default |
 | bench.dry_run | false | default |
@@ -265,7 +266,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-219 keys.
+220 keys.
 
 ## Doctor
 

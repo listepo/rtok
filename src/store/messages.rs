@@ -88,39 +88,8 @@ impl Store {
     /// were new. The user peeking at an agent's queue passes `mark_read: false`.
     pub fn inbox(&self, to: &str, unread_only: bool, mark_read: bool) -> Result<Vec<Message>> {
         let mut conn = self.lock()?;
-        let mut query = messages::table
-            .left_join(agents::table.on(agents::id.nullable().eq(messages::from_agent)))
-            .left_join(hosts::table.on(hosts::id.nullable().eq(agents::host_id.nullable())))
-            .filter(messages::to_agent.eq(to))
-            .select((
-                messages::id,
-                messages::from_agent,
-                hosts::slug.nullable(),
-                messages::to_agent,
-                messages::body,
-                messages::created_at,
-                messages::delivered_at,
-                messages::read_at,
-            ))
-            .order(messages::id.asc())
-            .into_boxed();
-        if unread_only {
-            query = query.filter(messages::read_at.is_null());
-        }
-        let rows: Vec<Message> = query
-            .load::<MessageTuple>(&mut *conn)?
-            .into_iter()
-            .map(|t| Message {
-                id: t.0,
-                from_agent: t.1,
-                from_host: t.2,
-                to_agent: t.3,
-                body: t.4,
-                created_at: t.5,
-                delivered_at: t.6,
-                read_at: t.7,
-            })
-            .collect();
+        let only = if unread_only { Only::Unread } else { Only::All };
+        let rows = load(&mut conn, to, only)?;
         if mark_read && !rows.is_empty() {
             let ids: Vec<i32> = rows.iter().map(|m| m.id).collect();
             diesel::update(messages::table.filter(messages::id.eq_any(ids)))
@@ -132,6 +101,73 @@ impl Store {
         }
         Ok(rows)
     }
+
+    /// T288: agent `to`'s messages no hook has pushed yet, in send order — one query on the
+    /// `messages_to_agent` index. Stamps nothing: the hook marks only what it pushed.
+    pub fn undelivered(&self, to: &str) -> Result<Vec<Message>> {
+        load(&mut *self.lock()?, to, Only::Undelivered)
+    }
+
+    /// T288: stamp `delivered_at` on exactly `ids` where it is unset; `read_at` is left alone,
+    /// so a pushed message still shows as unread in `rtok agents inbox`.
+    pub fn mark_delivered(&self, ids: &[i32]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        diesel::update(
+            messages::table
+                .filter(messages::id.eq_any(ids))
+                .filter(messages::delivered_at.is_null()),
+        )
+        .set(messages::delivered_at.eq(unixepoch()))
+        .execute(&mut *self.lock()?)?;
+        Ok(())
+    }
+}
+
+/// Which of an agent's messages [`load`] returns.
+enum Only {
+    All,
+    Unread,
+    Undelivered,
+}
+
+fn load(conn: &mut SqliteConnection, to: &str, only: Only) -> Result<Vec<Message>> {
+    let mut query = messages::table
+        .left_join(agents::table.on(agents::id.nullable().eq(messages::from_agent)))
+        .left_join(hosts::table.on(hosts::id.nullable().eq(agents::host_id.nullable())))
+        .filter(messages::to_agent.eq(to))
+        .select((
+            messages::id,
+            messages::from_agent,
+            hosts::slug.nullable(),
+            messages::to_agent,
+            messages::body,
+            messages::created_at,
+            messages::delivered_at,
+            messages::read_at,
+        ))
+        .order(messages::id.asc())
+        .into_boxed();
+    match only {
+        Only::All => {}
+        Only::Unread => query = query.filter(messages::read_at.is_null()),
+        Only::Undelivered => query = query.filter(messages::delivered_at.is_null()),
+    }
+    Ok(query
+        .load::<MessageTuple>(conn)?
+        .into_iter()
+        .map(|t| Message {
+            id: t.0,
+            from_agent: t.1,
+            from_host: t.2,
+            to_agent: t.3,
+            body: t.4,
+            created_at: t.5,
+            delivered_at: t.6,
+            read_at: t.7,
+        })
+        .collect())
 }
 
 /// The 8-char display form of an rtok agent id (D34).
@@ -185,6 +221,21 @@ mod tests {
             store.inbox(&a, false, false).unwrap().is_empty(),
             "a's own queue"
         );
+    }
+
+    #[test]
+    fn mark_delivered_stamps_only_the_given_ids_and_never_read() {
+        let store = Store::open_in_memory().unwrap();
+        let (a, b) = two_agents(&store);
+        let one = store.send_message(Some(&a), &b, "one").unwrap();
+        let two = store.send_message(None, &b, "two").unwrap();
+        store.mark_delivered(&[one]).unwrap();
+        let left = store.undelivered(&b).unwrap();
+        assert_eq!(left.iter().map(|m| m.id).collect::<Vec<_>>(), [two]);
+        let all = store.inbox(&b, true, false).unwrap();
+        assert_eq!(all.len(), 2, "delivered is not read");
+        assert!(all[0].delivered_at.is_some() && all[0].read_at.is_none());
+        assert!(all[1].delivered_at.is_none());
     }
 
     #[test]

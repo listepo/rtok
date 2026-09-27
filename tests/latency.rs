@@ -1,5 +1,5 @@
 //! T2.2: spawn `rtok hook PreToolUse` 200×; p95 < 10 ms (release).
-//! Gate P17 asks the same of `PostToolUse`; both print p50/p95/max under `--nocapture`.
+//! Gate P17 asks the same of `PostToolUse`, T288 of `UserPromptSubmit`; each prints p50/p95/max under `--nocapture`.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -79,6 +79,16 @@ fn latency_hook_post_tool_p95_under_10ms() {
     p95_under_10ms(
         "PostToolUse",
         include_bytes!("fixtures/hooks/post_tool.json"),
+    );
+}
+
+/// T288: `UserPromptSubmit` also reads the caller's undelivered messages (one indexed
+/// query); an empty inbox still prints `{}` inside the budget.
+#[test]
+fn latency_hook_user_prompt_submit_p95_under_10ms() {
+    p95_under_10ms(
+        "UserPromptSubmit",
+        include_bytes!("fixtures/hooks/user_prompt_submit.json"),
     );
 }
 
