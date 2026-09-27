@@ -28,4 +28,3 @@
 - T296. Every Rust formatter has a golden with a saving floor
 - T297. Saving floors that catch a regression
 - T298. Proxy replay bench with a saving floor
-- T299. Saving checks for guard and the read modes
