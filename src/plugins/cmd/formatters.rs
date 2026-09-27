@@ -438,12 +438,6 @@ mod tests {
     /// `min_saving: <percent>` (T238): the floor a family's saving must clear, checked in
     /// `ten_families_and_aws_key_unredacted`. `None` when the header line is absent — the
     /// golden test then fails so every `.in` must declare one.
-    ///
-    /// T297: `argv: 'a && b'` (single-quoted) parses as ONE argv element, the shape the
-    /// hook actually sends (`rtok run -- '<cmd>'`, see `family_argv`'s doc comment). Only
-    /// that shape can reach `compress`'s mixed-chain (`[script]`) routing, since `multi`
-    /// requires a one-element argv — plain `argv: a b c` still splits on whitespace like
-    /// every other golden.
     fn parse_in(s: &str) -> (Vec<String>, i32, Option<u32>, String) {
         let mut argv = Vec::new();
         let mut exit = 0;
@@ -451,10 +445,7 @@ mod tests {
         let mut rest = s;
         for line in s.lines() {
             if let Some(a) = line.strip_prefix("argv: ") {
-                argv = match a.strip_prefix('\'').and_then(|a| a.strip_suffix('\'')) {
-                    Some(quoted) => vec![quoted.to_string()],
-                    None => a.split_whitespace().map(str::to_string).collect(),
-                };
+                argv = a.split_whitespace().map(str::to_string).collect();
             } else if let Some(e) = line.strip_prefix("exit: ") {
                 exit = e.parse().unwrap_or(0);
             } else if let Some(m) = line.strip_prefix("min_saving: ") {
