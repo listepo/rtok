@@ -5,7 +5,7 @@
 use anyhow::Result;
 
 use crate::config::{self, Fs};
-use crate::spec::{McpSpec, Surface};
+use crate::spec::{Client, McpSpec};
 
 /// What a host's config file carries at `key_path.<server.name>`, compared with the entry
 /// [`McpSpec::entry`] would write there.
@@ -18,12 +18,12 @@ pub enum Entry {
     Stale(String),
 }
 
-/// The status of one host surface's MCP entry, plus whether a loaded plugin also serves rtok's
-/// name (D33: a plugin only counts for the surface it actually serves — the Claude Code plugin
+/// The status of one host client's MCP entry, plus whether a loaded plugin also serves rtok's
+/// name (D33: a plugin only counts for the client it actually serves — the Claude Code plugin
 /// must never make Claude Desktop read as installed).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct McpStatus {
-    pub surface: Surface,
+    pub client: Client,
     pub entry: Entry,
     pub plugin_serves: Option<String>,
 }
@@ -36,7 +36,7 @@ pub fn status(fs: &impl Fs, spec: &McpSpec) -> Result<McpStatus> {
         Some(have) => Entry::Stale(format!("have {have}, want {}", spec.entry())),
     };
     Ok(McpStatus {
-        surface: spec.surface,
+        client: spec.client,
         entry,
         plugin_serves: spec.plugin_serves.map(str::to_string),
     })

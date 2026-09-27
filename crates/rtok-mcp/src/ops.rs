@@ -79,7 +79,7 @@ mod tests {
 
     use super::*;
     use crate::registry;
-    use crate::spec::{DuplicateName, EntryShape, Format, Surface};
+    use crate::spec::{Client, DuplicateName, EntryShape, Format};
     use crate::status::{self, Entry};
 
     /// An in-memory [`Fs`] for tests: no host disk touched, `backups` counts every call so a
@@ -108,7 +108,7 @@ mod tests {
     fn spec(format: Format, key_path: &str) -> McpSpec {
         McpSpec {
             host: "test",
-            surface: Surface::Cli,
+            client: Client::Cli,
             config_path: PathBuf::from("/config"),
             format,
             key_path: McpSpec::key_path(key_path),

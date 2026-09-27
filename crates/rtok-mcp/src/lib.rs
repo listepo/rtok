@@ -10,7 +10,7 @@
 //! `### T277`) for the full migration order.
 //!
 //! Layout:
-//! - [`spec`]: `McpSpec`, the per-host-surface data (config path, [`spec::Format`], dotted key
+//! - [`spec`]: `McpSpec`, the per-host-client data (config path, [`spec::Format`], dotted key
 //!   path, entry shape, duplicate-name behaviour) that used to live in each host's own module.
 //! - [`registry`]: rtok's own MCP servers — the one list `McpSpec::entry` builds from.
 //! - [`config`]: read/write/remove one entry in a host's config file through the [`config::Fs`]

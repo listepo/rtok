@@ -1,4 +1,4 @@
-//! `McpSpec`: the static, per-host-surface data every host module repeats by hand today
+//! `McpSpec`: the static, per-host-client data every host module repeats by hand today
 //! (T277). One value says where rtok's MCP entry lives in a host's config, how the file is
 //! shaped, and what a same-named plugin server does next to it (decision D33, research.md §25).
 
@@ -17,11 +17,11 @@ pub enum Format {
     Toml,
 }
 
-/// A call path a host offers into its plugins: its CLI, its desktop app, or an editor
-/// extension host. Claude Code and Claude Desktop are two surfaces of one host, each with its
+/// Which client of a host an entry is for: its CLI, its desktop app, or an editor
+/// extension host. Claude Code and Claude Desktop are two clients of one host, each with its
 /// own [`McpSpec`] and [`crate::status::McpStatus`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Surface {
+pub enum Client {
     Cli,
     Desktop,
     Ide,
@@ -47,12 +47,12 @@ pub enum EntryShape {
     Command,
 }
 
-/// One host surface's MCP config: where it lives, how it is shaped, and the entry rtok writes
+/// One host client's MCP config: where it lives, how it is shaped, and the entry rtok writes
 /// into it. `ops::apply` is the only thing that should read one of these.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct McpSpec {
     pub host: &'static str,
-    pub surface: Surface,
+    pub client: Client,
     pub config_path: PathBuf,
     pub format: Format,
     /// Dotted path to the servers table (`mcpServers`, `mcp_servers`, `mcp.servers`).
