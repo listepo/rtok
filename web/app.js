@@ -571,7 +571,9 @@
     }));
     calls.forEach((c) => {
       const b = buckets[Math.min(N - 1, Math.floor((c.ts - t0) / step))];
-      if (c.surface === "hook" || c.surface === "mcp" || c.surface === "proxy") b[c.surface]++;
+      if (c.surface === "hook") b.hook++;
+      else if (c.surface === "mcp") b.mcp++;
+      else if (c.surface === "proxy") b.proxy++;
       if (!c.ok) b.err++;
     });
     const ms = calls
@@ -1596,16 +1598,25 @@
       return;
     }
     const D = derive(S.snap);
-    const views = {
-      overview: viewOverview,
-      plugins: viewPlugins,
-      calls: viewCalls,
-      sessions: viewSessions,
-      doctor: viewDoctor,
-      logs: viewLogs,
-    };
-    // `S.route` comes from the URL hash; only a known view may render.
-    const view = Object.hasOwn(views, S.route) ? views[S.route] : viewOverview;
+    // `S.route` comes from the URL hash: a fixed switch, no lookup keyed by it.
+    let view = viewOverview;
+    switch (S.route) {
+      case "plugins":
+        view = viewPlugins;
+        break;
+      case "calls":
+        view = viewCalls;
+        break;
+      case "sessions":
+        view = viewSessions;
+        break;
+      case "doctor":
+        view = viewDoctor;
+        break;
+      case "logs":
+        view = viewLogs;
+        break;
+    }
     main.innerHTML = view(D);
     if (keep) {
       const el = main.querySelector(`[data-filter="${keep.f}"]`);
