@@ -1762,6 +1762,13 @@ fn apply_hosts(cfg: &mut Config, req: &crate::agents::Request, no_restart: bool)
         })?
     };
     print!("{out}");
+    // T279 step 3/6 "Failure": a Claude reinstall that removed the old plugin and then failed
+    // to install the new one must not exit 0 like every other `claude` degrade — the host is
+    // left with nothing. Printed first, same as `worktree gc`/`clean`'s own "print the table,
+    // then bail if something in it failed" shape, so the line above is not lost.
+    if out.contains(crate::agents::claude::REINSTALL_FAILED) {
+        bail!("a plugin reinstall failed");
+    }
     Ok(())
 }
 

@@ -155,10 +155,10 @@ impl Receipt {
         self.0.insert(host.into(), entry);
     }
 
-    /// A reinstall failure deleting the receipt (plan T279 step 6, `--force`'s own path) is
-    /// out of PR 3's scope: this PR leaves the receipt untouched on any `claude` failure, so
-    /// the next `agents update` sees the same state and tries again.
-    #[allow(dead_code)]
+    /// A reinstall that already removed the old plugin before the install step failed (plan
+    /// T279 step 3/6 "Failure") calls this instead of [`Receipt::upsert`]: the host is really
+    /// not installed any more, so the next `agents update` must not compare against a row that
+    /// describes a copy that no longer exists (`claude::reinstall`).
     pub fn delete(&mut self, host: &str) -> Option<ReceiptEntry> {
         self.0.remove(host)
     }

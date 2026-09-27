@@ -203,7 +203,9 @@ fn raw_with_path(args: &[&str], cfg: &Path, home: &Path, path: std::ffi::OsStrin
 /// either real CLI: `claude` answers the detection probe (`--version`), appends every other
 /// argv to `<home>/claude.log` and keeps `<config dir>/plugins/installed_plugins.json` the way
 /// `claude plugin install` / `uninstall` / `update` do (`update` fails while
-/// `<home>/fake-claude-fail-update` exists, T242.3); `codex` answers `--version` and edits
+/// `<home>/fake-claude-fail-update` exists, T242.3; `install` fails while
+/// `<home>/fake-claude-fail-install` exists, T279 step 3/6 "Failure"); `codex` answers
+/// `--version` and edits
 /// `${CODEX_HOME:-$HOME/.codex}/config.toml`'s `[marketplaces.rtok]` / `[plugins."rtok@rtok"]`
 /// tables the way `codex plugin marketplace add|remove` / `plugin add|remove` do, including the
 /// real CLI's "already added from a different source" error on a second `marketplace add` with
@@ -349,7 +351,9 @@ pub fn fake_claude_path(home: &Path) -> std::ffi::OsString {
 echo "$*" >> "$HOME/claude.log"
 plugins="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins"
 case "$*" in
-  "plugin install rtok@rtok") mkdir -p "$plugins/cache/rtok/agents"
+  "plugin install rtok@rtok")
+    [ -f "$HOME/fake-claude-fail-install" ] && { echo "install failed" >&2; exit 1; }
+    mkdir -p "$plugins/cache/rtok/agents"
     cp "__SCOUT_SRC__" "$plugins/cache/rtok/agents/rtok-scout.md"
     printf '{"version":2,"plugins":{"rtok@rtok":[{"scope":"user"}]}}' > "$plugins/installed_plugins.json" ;;
   "plugin uninstall rtok@rtok") rm -f "$plugins/installed_plugins.json"
@@ -394,6 +398,11 @@ if defined CLAUDE_CONFIG_DIR (
   set "PLUGINS=%HOME%\.claude\plugins"
 )
 if "%ALLARGS%"=="plugin install rtok@rtok" (
+  rem `exit`, not `exit /b`: cmd /C loses a nested `exit /b` code and reports 0.
+  if exist "%HOME%\fake-claude-fail-install" (
+    echo install failed 1>&2
+    exit 1
+  )
   mkdir "%PLUGINS%" 2>nul
   >"%PLUGINS%\installed_plugins.json" echo {"version":2,"plugins":{"rtok@rtok":[{"scope":"user"}]}}
 )
