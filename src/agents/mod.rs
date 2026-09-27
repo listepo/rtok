@@ -28,6 +28,7 @@ pub mod omp;
 pub mod opencode;
 pub mod pi;
 pub mod plugin;
+pub(crate) mod plugin_version;
 pub mod restart;
 pub mod skill;
 pub mod vscode;

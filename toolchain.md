@@ -86,6 +86,7 @@ Project programs and direct packages from the manifests.
 | rustix | local | https://crates.io/crates/rustix | Rust dependency |
 | rustls | local | https://crates.io/crates/rustls | Preconfigured webpki TLS client config (T53.3) |
 | rustls-pemfile | local | https://crates.io/crates/rustls-pemfile | `SSL_CERT_FILE` bundle parsing (T53.3) |
+| semver | local | https://crates.io/crates/semver | T279: plugin version compare + `.rtok-plugin-version` (de)serialization |
 | serde | local | https://crates.io/crates/serde | Serialization |
 | serde_json | local | https://crates.io/crates/serde_json | JSON |
 | sha2 | local | https://crates.io/crates/sha2 | Rust dependency |
