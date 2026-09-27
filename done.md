@@ -6209,6 +6209,19 @@ Result: `hook_returns_despite_exclusive_lock` now proves the fail-open by work: 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
+### T304. Latency lock test: prove fail-open without a runner-speed bound
+
+`tests/latency.rs` `hook_returns_despite_exclusive_lock` flaked on unrelated PRs on 2026-09-27: `ci / check (macos-latest)` for listepo/rtok#461 ("hook waited 102.74ms", 100 ms bound, job 108701481370) and `ci / windows (2/2)` for listepo/rtok#466 ("313.66ms", 250 ms bound, job 108706221829); both green on rerun. The `calls` assert (T237) is the proof that the hook gave up instead of waiting; the wall bound is a fixed guess at runner speed and shares the CPUs with the whole suite. Done means the test keeps catching a hook that waits on the lock, without depending on how loaded the runner is.
+
+Plan: (1) run the test alone under nextest (`threads-required`, `.config/nextest.toml`), as T237 did for the skill digest test; (2) derive the wall bound from the holder instead of the platform: the hook must return within half the hold (`HOLD / 2`, 250 ms everywhere), so it cannot have waited for the release; (3) move the few-ms precision to where it is exact: a compile-time assert in `src/hooks/mod.rs` that each `LOCK_WAIT` wait stays within half the 10 ms hook budget (D1).
+
+Check: `mise exec -- cargo nextest run -p rtok --test latency`, repeated; mutations on `LOCK_WAIT.busy`.
+
+Result: the test runs alone and asserts `took < HOLD / 2` (250 ms) on every platform next to the unchanged `calls` check; `src/hooks/mod.rs` has `const _: () = assert!(...)` holding `LOCK_WAIT.busy` and `.migrate` at ≤ 5 ms. Six local runs green (hook test 0.55–0.65 s including the 500 ms hold). Mutations: `busy` 200 ms fails to compile; with the assert commented out, `busy` 100 ms fails the wall bound ("hook waited 258 ms" — the per-statement waits add up) and 300 ms fails the `calls` assert ("outwaited … 532 ms"). The hot path and `LOCK_WAIT` values are unchanged.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-opus-5-5
+
 ### T118.2. Gemini CLI host module: registration, config keys, e2e
 
 T118.1 (done.md) shipped the `--host gemini` hook I/O adapter (`src/hooks/types.rs::adapt_gemini`, `src/hooks/mod.rs::gemini_output`) with no host module yet — `--host` is a free string, not validated against a registry. This task adds the host itself: `src/agents/gemini/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()` (`src/agents/mod.rs`), `[setup.gemini]` config keys (mirror an existing host's `dir`/override shape — see `copilot`/`devin`). Verify current `gemini` CLI detection (binary name, version flag, config home) against https://geminicli.com/docs/ before writing `installed()`/`support()`.
