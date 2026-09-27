@@ -67,13 +67,12 @@ fn user_and_agent_send_then_peek_and_read() {
     let a = hook(&home, "SessionStart", "t287-a", &home);
     let b = hook(&home, "SessionStart", "t287-b", &home);
 
-    // 13 chars = UUIDv7's whole ms timestamp: unique for two sequential hook processes, where
-    // the 8-char display form can collide.
-    ok(rtok(&home, None, &["send", &b[..13], "from the user"], ""));
+    // The 8-char display form, as a user would type it (random UUIDv4 ids).
+    ok(rtok(&home, None, &["send", &b[..8], "from the user"], ""));
     ok(rtok(&home, Some(&a), &["send", &b, "-"], "from a\u{1b}\n"));
 
     // The user peeks at b's queue: framed, nothing marked read.
-    let peek = ok(rtok(&home, None, &["inbox", &b[..13], "--unread"], ""));
+    let peek = ok(rtok(&home, None, &["inbox", &b[..8], "--unread"], ""));
     assert!(peek.contains(" from user (terminal) at "), "{peek}");
     assert!(
         peek.contains(&format!(" from {} (claude) at ", &a[..8])),
