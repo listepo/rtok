@@ -32,7 +32,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
 | T296 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
-| T297 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T298 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T299 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
 
@@ -551,14 +550,6 @@ Check: `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where host tables
 Plan: realistic `.in`/`.out` pairs for the five (the `min_saving:` floor is the measured saving minus 5 points); a unit test next to `every_builtin_rule_family_has_a_golden` that fails when a `format()` arm has no golden (reached through `compress`, the production path).
 
 Check: `cargo nextest run -p rtok --lib cmd::formatters`; the new completeness test fails with one golden removed.
-
-### T297. Saving floors that catch a regression
-
-Five goldens carry floors of 0–3 % (`cat`, `git_log`, `npm`, `make`, `mvn`) because their inputs are too short to save anything, and the `[script]` mixed-chain rule has no golden with a floor.
-
-Plan: add realistic long inputs (`cat_long`, `git_log_long`, `npm_install`, `make_long`, `mvn_long`; the short ones stay, `cat.in` keeps its secret-preservation role) and a `[script]` golden; floors are the measured saving minus 5 points.
-
-Check: `cargo nextest run -p rtok --lib cmd::formatters`; lowering a rule's keep list in a scratch copy drops a floor.
 
 ### T298. Proxy replay bench with a saving floor
 

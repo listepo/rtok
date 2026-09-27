@@ -1,0 +1,94 @@
+argv: git log
+exit: 0
+min_saving: 70
+---
+commit 0000000000000000000000000000000000000000
+Author: Dev <dev@example.com>
+Date:   Wed Sep 20 00:00:00 2026
+
+    add retry to fetch client
+
+commit 0100000000000000000000000000000000000001
+Author: Dev <dev@example.com>
+Date:   Wed Sep 19 00:00:00 2026
+
+    fix off-by-one in pagination
+
+commit 0200000000000000000000000000000000000002
+Author: Dev <dev@example.com>
+Date:   Wed Sep 18 00:00:00 2026
+
+    T240: golden coverage for cargo rules
+
+commit 0300000000000000000000000000000000000003
+Author: Dev <dev@example.com>
+Date:   Wed Sep 17 00:00:00 2026
+
+    refactor: split settings loader
+
+commit 0400000000000000000000000000000000000004
+Author: Dev <dev@example.com>
+Date:   Wed Sep 16 00:00:00 2026
+
+    bump tokio to 1.38
+
+commit 0500000000000000000000000000000000000005
+Author: Dev <dev@example.com>
+Date:   Wed Sep 15 00:00:00 2026
+
+    docs: update README examples
+
+commit 0600000000000000000000000000000000000006
+Author: Dev <dev@example.com>
+Date:   Wed Sep 14 00:00:00 2026
+
+    T241: dedupe adjacent lines
+
+commit 0700000000000000000000000000000000000007
+Author: Dev <dev@example.com>
+Date:   Wed Sep 13 00:00:00 2026
+
+    fix flaky test in store::tests::lock
+
+commit 0800000000000000000000000000000000000008
+Author: Dev <dev@example.com>
+Date:   Wed Sep 12 00:00:00 2026
+
+    add cat rule golden
+
+commit 0900000000000000000000000000000000000009
+Author: Dev <dev@example.com>
+Date:   Wed Sep 11 00:00:00 2026
+
+    clippy: silence needless_return
+
+commit 100000000000000000000000000000000000000a
+Author: Dev <dev@example.com>
+Date:   Wed Sep 10 00:00:00 2026
+
+    T242: kubectl get formatter
+
+commit 110000000000000000000000000000000000000b
+Author: Dev <dev@example.com>
+Date:   Wed Sep 9 00:00:00 2026
+
+    fix panic on empty argv
+
+commit 120000000000000000000000000000000000000c
+Author: Dev <dev@example.com>
+Date:   Wed Sep 8 00:00:00 2026
+
+    add benchmark for compress()
+
+commit 130000000000000000000000000000000000000d
+Author: Dev <dev@example.com>
+Date:   Wed Sep 7 00:00:00 2026
+
+    T243: group diag rule
+
+commit 140000000000000000000000000000000000000e
+Author: Dev <dev@example.com>
+Date:   Wed Sep 6 00:00:00 2026
+
+    release v0.9.0
+

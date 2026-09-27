@@ -1,0 +1,65 @@
+argv: make
+exit: 0
+min_saving: 57
+---
+cc -c -O2 -Wall -Iinclude src/file1.c -o build/file1.o
+cc -c -O2 -Wall -Iinclude src/file2.c -o build/file2.o
+cc -c -O2 -Wall -Iinclude src/file3.c -o build/file3.o
+cc -c -O2 -Wall -Iinclude src/file4.c -o build/file4.o
+cc -c -O2 -Wall -Iinclude src/file5.c -o build/file5.o
+cc -c -O2 -Wall -Iinclude src/file6.c -o build/file6.o
+cc -c -O2 -Wall -Iinclude src/file7.c -o build/file7.o
+cc -c -O2 -Wall -Iinclude src/file8.c -o build/file8.o
+cc -c -O2 -Wall -Iinclude src/file9.c -o build/file9.o
+cc -c -O2 -Wall -Iinclude src/file10.c -o build/file10.o
+cc -c -O2 -Wall -Iinclude src/file11.c -o build/file11.o
+cc -c -O2 -Wall -Iinclude src/file12.c -o build/file12.o
+cc -c -O2 -Wall -Iinclude src/file13.c -o build/file13.o
+cc -c -O2 -Wall -Iinclude src/file14.c -o build/file14.o
+cc -c -O2 -Wall -Iinclude src/file15.c -o build/file15.o
+cc -c -O2 -Wall -Iinclude src/file16.c -o build/file16.o
+cc -c -O2 -Wall -Iinclude src/file17.c -o build/file17.o
+cc -c -O2 -Wall -Iinclude src/file18.c -o build/file18.o
+cc -c -O2 -Wall -Iinclude src/file19.c -o build/file19.o
+cc -c -O2 -Wall -Iinclude src/file20.c -o build/file20.o
+cc -c -O2 -Wall -Iinclude src/file21.c -o build/file21.o
+cc -c -O2 -Wall -Iinclude src/file22.c -o build/file22.o
+cc -c -O2 -Wall -Iinclude src/file23.c -o build/file23.o
+cc -c -O2 -Wall -Iinclude src/file24.c -o build/file24.o
+cc -c -O2 -Wall -Iinclude src/file25.c -o build/file25.o
+cc -c -O2 -Wall -Iinclude src/file26.c -o build/file26.o
+cc -c -O2 -Wall -Iinclude src/file27.c -o build/file27.o
+cc -c -O2 -Wall -Iinclude src/file28.c -o build/file28.o
+cc -c -O2 -Wall -Iinclude src/file29.c -o build/file29.o
+cc -c -O2 -Wall -Iinclude src/file30.c -o build/file30.o
+cc -c -O2 -Wall -Iinclude src/file31.c -o build/file31.o
+cc -c -O2 -Wall -Iinclude src/file32.c -o build/file32.o
+cc -c -O2 -Wall -Iinclude src/file33.c -o build/file33.o
+cc -c -O2 -Wall -Iinclude src/file34.c -o build/file34.o
+cc -c -O2 -Wall -Iinclude src/file35.c -o build/file35.o
+cc -c -O2 -Wall -Iinclude src/file36.c -o build/file36.o
+cc -c -O2 -Wall -Iinclude src/file37.c -o build/file37.o
+cc -c -O2 -Wall -Iinclude src/file38.c -o build/file38.o
+cc -c -O2 -Wall -Iinclude src/file39.c -o build/file39.o
+cc -c -O2 -Wall -Iinclude src/file40.c -o build/file40.o
+cc -c -O2 -Wall -Iinclude src/file41.c -o build/file41.o
+cc -c -O2 -Wall -Iinclude src/file42.c -o build/file42.o
+cc -c -O2 -Wall -Iinclude src/file43.c -o build/file43.o
+cc -c -O2 -Wall -Iinclude src/file44.c -o build/file44.o
+cc -c -O2 -Wall -Iinclude src/file45.c -o build/file45.o
+cc -c -O2 -Wall -Iinclude src/file46.c -o build/file46.o
+cc -c -O2 -Wall -Iinclude src/file47.c -o build/file47.o
+cc -c -O2 -Wall -Iinclude src/file48.c -o build/file48.o
+cc -c -O2 -Wall -Iinclude src/file49.c -o build/file49.o
+cc -c -O2 -Wall -Iinclude src/file50.c -o build/file50.o
+cc -c -O2 -Wall -Iinclude src/file51.c -o build/file51.o
+cc -c -O2 -Wall -Iinclude src/file52.c -o build/file52.o
+cc -c -O2 -Wall -Iinclude src/file53.c -o build/file53.o
+cc -c -O2 -Wall -Iinclude src/file54.c -o build/file54.o
+cc -c -O2 -Wall -Iinclude src/file55.c -o build/file55.o
+cc -O2 build/*.o -o bin/app
+build/file41.o: in function `worker_run`:
+file41.c:88: undefined reference to `queue_pop`
+collect2: error: ld returned 1 exit status
+*** [bin/app] Error 1
+make: *** [all] Error 2

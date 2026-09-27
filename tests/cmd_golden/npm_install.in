@@ -1,0 +1,55 @@
+argv: npm install
+exit: 0
+min_saving: 52
+---
+npm warn deprecated lodash@4.17.15: this package is no longer supported
+npm warn deprecated request@2.88.2: this package is no longer supported
+npm warn deprecated uuid@3.4.0: this package is no longer supported
+npm warn deprecated querystring@0.2.0: this package is no longer supported
+npm warn deprecated domexception@1.0.1: this package is no longer supported
+npm warn deprecated har-validator@5.1.5: this package is no longer supported
+npm warn deprecated core-js@2.6.12: this package is no longer supported
+npm warn deprecated sourcemap-codec@1.4.8: this package is no longer supported
+npm warn deprecated stable@0.1.8: this package is no longer supported
+npm warn deprecated rimraf@2.7.1: this package is no longer supported
+npm warn deprecated glob@7.2.0: this package is no longer supported
+npm warn deprecated inflight@1.0.6: this package is no longer supported
+npm warn deprecated abab@2.0.6: this package is no longer supported
+npm warn deprecated w3c-hr-time@1.0.2: this package is no longer supported
+npm http fetch GET 200 https://registry.npmjs.org/pkg1 100ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg2 200ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg3 300ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg4 400ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg5 500ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg6 600ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg7 700ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg8 800ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg9 900ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg10 1000ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg11 1100ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg12 1200ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg13 1300ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg14 1400ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg15 1500ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg16 1600ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg17 1700ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg18 1800ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg19 1900ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg20 2000ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg21 2100ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg22 2200ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg23 2300ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg24 2400ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg25 2500ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg26 2600ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg27 2700ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg28 2800ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg29 2900ms (cache miss)
+npm http fetch GET 200 https://registry.npmjs.org/pkg30 3000ms (cache miss)
+
+added 842 packages, and audited 843 packages in 12s
+
+128 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
