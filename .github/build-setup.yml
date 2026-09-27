@@ -12,6 +12,21 @@
 # a secret here — we import the cert into a throwaway keychain and read the
 # Developer ID Application identity out of it, matching ketch's release.yml.
 
+# Build releases with the Rust that ci.yml tests (the `rust` pin in mise.toml),
+# not whatever stable the runner image ships. Runs first so rust-cache keys on
+# this rustc. Keep the version in sync with mise.toml.
+- name: Pin Rust toolchain
+  shell: bash
+  env:
+    TARGETS: ${{ join(matrix.targets, ' ') }}
+  run: |
+    set -euo pipefail
+    rustup toolchain install 1.97.1 --profile minimal
+    rustup default 1.97.1
+    # shellcheck disable=SC2086
+    rustup target add $TARGETS
+    rustc --version
+
 - name: Cache Cargo build
   uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
   with:
