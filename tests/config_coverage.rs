@@ -90,6 +90,10 @@ const ALLOW_KEYS: &[&str] = &[
     // stored value would delete without anyone typing it, and it must not share `setup.yes`,
     // which confirms a different destructive action (`agents install --replace`).
     "junk.yes",
+    // `agents send --all-live` / `agents inbox --unread` (T287): who gets one message and
+    // which rows one read shows; `agents` flags map onto `setup.*`, which they are not.
+    "setup.all_live",
+    "setup.unread",
 ];
 
 #[test]

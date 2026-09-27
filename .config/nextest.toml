@@ -85,6 +85,13 @@ threads-required = "num-test-threads"
 filter = 'test(/oversized_body_is_denied_with_map_and_pointer_under_budget/)'
 threads-required = "num-test-threads"
 
+# T309: bounds the locked hook at half the holder's 500 ms hold. The shared suite stretched it to
+# 102 ms on `macos-latest` and 313 ms on `windows-latest` (2026-09-27, both green on rerun).
+# Alone, the time is the hook's.
+[[profile.default.overrides]]
+filter = 'test(/hook_returns_despite_exclusive_lock/)'
+threads-required = "num-test-threads"
+
 # trycmd spawns the real rtok binary for every case; under a full-suite parallel run its
 # output drifted 3x on 2026-09-20/21 (fast, load-only failures; green standalone and in
 # CI). Isolate the runner on the machine like the heavy benches above -- each case still

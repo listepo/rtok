@@ -436,7 +436,7 @@ Unset keeps Mozilla roots only. `rtok hook` never opens TLS.
 |-----------|------|-----|
 | global | `--config <path>` | (selects the file; not a key) |
 | global | `RTOK_HOME` | (selects the directory; env only, not a clap flag) |
-| reading | `--json` | `stats.format` on `stats`; otherwise an action (the `web::model` page as JSON, not a stored key). On `stats`, `info`, `config show`, `doctor`, `plugins`, `agents list`, `agents sessions`, `agents whoami`, `agents show`, `logs`, `demon status`, `otel status` |
+| reading | `--json` | `stats.format` on `stats`; otherwise an action (the `web::model` page as JSON, not a stored key). On `stats`, `info`, `config show`, `doctor`, `plugins`, `agents list`, `agents sessions`, `agents whoami`, `agents show`, `agents inbox`, `logs`, `demon status`, `otel status` |
 | `hook` | `--host` | `hook.host` |
 | `proxy` | `--port`, `--upstream`, `--mode`, `--dry-run` | `proxy.port`, `proxy.upstream`, `proxy.mode`, `proxy.dry_run` |
 | `web` | `--host`, `--port` | `web.host`, `web.port` (`rtok dashboard` is the deprecated spelling) |
@@ -452,6 +452,8 @@ Unset keeps Mozilla roots only. `rtok hook` never opens TLS.
 | `agents sessions` | `--all` | (action: also lists ended sessions; live vs idle follows `agents.idle`) |
 | `agents show` | — | resolves an id prefix through the store (T284); live vs idle follows `agents.idle` (`--json` is the reading row) |
 | `agents status` | — | writes the calling agent's (`RTOK_AGENT_ID`) status text, ≤ 120 chars (T284); no key |
+| `agents send` | `--all-live` | per call (no key, no `setup.*`): one message to every live agent of the caller's project (T287); `[agents] idle` decides "live" |
+| `agents inbox` | `--unread` | per call (no key, no `setup.*`): which rows one read shows (T287); `--json` is the reading row |
 | `expand` | `--lines`, `--grep` (regex, literal fallback; hits print as `N:line`), `--context N` (lines around each grep hit, windows merged with `--`) | per call (no key); `expand.max_lines` caps; `expand.max_rate` is the report ceiling (T22.5) |
 | `filter` | `--cmd` | `filter.cmd` |
 | `config init`, `config set`, `memory import`, `graph index` | `--dry-run` | (action: renders the change as a git diff and writes nothing) |

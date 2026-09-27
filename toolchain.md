@@ -11,6 +11,7 @@ Project programs and direct packages from the manifests.
 | binaryen | brew (optional) | wasm-opt for the T60.7 webui bundle; wasm-pack downloads its own when it is not on PATH, with the same flags from `crates/rtok-webui/Cargo.toml` | https://github.com/WebAssembly/binaryen |
 | twiggy | optional (cargo install) | Per-function and per-crate size of the webui wasm when `tests/web_wasm.rs` reports growth (research.md, T60.7) | https://github.com/AlexEne/twiggy |
 | cargo-nextest | global (cargo install) | Parallel test runner | https://github.com/nextest-rs/nextest |
+| cargo-llvm-cov | mise | `just test-cov` (T301): coverage over the nextest suite; lcov for SonarCloud | https://github.com/taiki-e/cargo-llvm-cov |
 | codeql | mise | `just codeql` (T119): local run of the code scanning in `.github/workflows/codeql.yml` | https://github.com/github/codeql-cli-binaries |
 | git-cliff | mise | Changelog | https://github.com/orhun/git-cliff |
 | go | mise | hugo resolves the hextra theme as a Go module (site/go.mod) | https://github.com/golang/go |

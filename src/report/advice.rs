@@ -57,7 +57,7 @@ pub fn recommendations(ledgers: &ReportLedgers, cfg: &Config) -> Vec<Recommendat
     idle_hooks(ledgers, &mut push);
     inject_budget(ledgers, cfg, &mut push);
     archive_window(ledgers, cfg, &mut push);
-    top_sinks(ledgers, &mut push);
+    top_sinks(ledgers, cfg, &mut push);
     // Stable: ties keep the rule order above.
     out.sort_by_key(|&(tokens, _)| std::cmp::Reverse(tokens));
     out.into_iter().map(|(_, r)| r).collect()
@@ -95,7 +95,7 @@ fn retire_plugin(ledgers: &ReportLedgers, push: Push<'_>) {
     for r in &ledgers.savings.rows {
         if r.saved <= 0 && (r.est_before != 0 || r.est_after != 0) {
             push(
-                -r.saved,
+                r.saved.saturating_neg(),
                 "retire-plugin",
                 format!(
                     "plugin {} net {} est tokens over {} (≤ 0) — D10 says retire, not stack",
@@ -200,9 +200,9 @@ fn inject_budget(ledgers: &ReportLedgers, cfg: &Config, push: Push<'_>) {
     let budget = i64::from(cfg.plugins.inject.budget_tokens);
     if let Some(r) = ledgers.savings.rows.iter().find(|r| r.plugin == "inject")
         && r.rows > 0
-        && r.est_after > budget * r.rows as i64
+        && r.est_after > budget.saturating_mul(r.rows as i64)
     {
-        let excess = r.est_after - budget * r.rows as i64;
+        let excess = r.est_after - budget.saturating_mul(r.rows as i64);
         push(
             excess,
             "inject-budget",
@@ -242,8 +242,11 @@ fn archive_window(ledgers: &ReportLedgers, cfg: &Config, push: Push<'_>) {
     }
 }
 
-/// (7) Top token sinks: which paths, stems or MCP tools cost the most bytes.
-fn top_sinks(ledgers: &ReportLedgers, push: Push<'_>) {
+/// (7) Top token sinks: which paths, stems or MCP tools cost the most bytes. Ranked by
+/// an estimated token count (bytes / chars-per-token, `[estimator] code`), not raw
+/// bytes, so it sorts on the same unit as every other rule (D24, `recommendations`'s
+/// doc comment: "ordered by the tokens it would recover").
+fn top_sinks(ledgers: &ReportLedgers, cfg: &Config, push: Push<'_>) {
     for s in &ledgers.sinks.rows {
         // Only the classes `sink_switch` can name a switch for (docs/report.md): an
         // `archive` or `inject` row is already shortened, so ranking it reads as advice
@@ -251,8 +254,11 @@ fn top_sinks(ledgers: &ReportLedgers, push: Push<'_>) {
         if s.before_bytes < 1 || !matches!(s.class.as_str(), "read" | "cmd" | "mcp") {
             continue;
         }
+        let est_tokens = ((s.before_bytes as f64) / f64::from(cfg.estimator.code.max(0.1)))
+            .ceil()
+            .max(1.0) as i64;
         push(
-            s.before_bytes,
+            est_tokens,
             "top-sinks",
             format!(
                 "{} {} cost {} bytes over {} — {}",
@@ -340,13 +346,79 @@ mod tests {
             },
         };
         let mut found = Vec::new();
-        super::top_sinks(&ledgers, &mut |tokens, rule, finding, _| {
-            found.push((tokens, rule.to_string(), finding));
-        });
+        super::top_sinks(
+            &ledgers,
+            &crate::config::Config::default(),
+            &mut |tokens, rule, finding, _| {
+                found.push((tokens, rule.to_string(), finding));
+            },
+        );
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].1, "top-sinks");
         assert!(found[0].2.contains("grep"), "{}", found[0].2);
         assert!(found[0].0 >= found[1].0);
+    }
+
+    /// The sort key is an estimated token count, not the raw byte count (T302): a
+    /// small-byte sink must still rank the same as before once bytes are divided down.
+    #[test]
+    fn top_sinks_ranks_by_estimated_tokens_not_raw_bytes() {
+        let ledgers = ReportLedgers {
+            window: crate::web::model::ReportWindow {
+                since: "30d".into(),
+                from_unix: 0,
+                to_unix: 1,
+                from_date: "1970-01-01".into(),
+                to_date: "1970-01-01".into(),
+                db_path: "x".into(),
+                calls_in_window: 0,
+                calls_total: 0,
+                measurements: 1,
+                usage: 0,
+            },
+            savings: crate::web::model::ReportSavingsSection {
+                rows: vec![],
+                total_rows: 0,
+                total_saved: 0,
+                kinds: vec![],
+            },
+            sinks: ReportSinksSection {
+                rows: vec![ReportSink {
+                    class: "cmd".into(),
+                    sink: "grep".into(),
+                    before_bytes: 700,
+                    rows: 1,
+                    switch: "[grep] rule".into(),
+                }],
+            },
+            calls: crate::web::model::ReportCallsSection {
+                rows: vec![],
+                in_window: 0,
+                total: 0,
+                hooks: vec![],
+            },
+            cache: ReportCache {
+                sessions: 0,
+                turns: 0,
+                busts: 0,
+                by_cause: vec![],
+                detail: vec![],
+            },
+            expand: crate::web::model::ReportExpand {
+                decisions: 0,
+                expanded: 0,
+                rate: 0.0,
+                expanded_ids: vec![],
+                cost: 0,
+                cost_rows: 0,
+            },
+        };
+        let cfg = crate::config::Config::default();
+        // Default `[estimator] code = 3.5` chars/token: 700 bytes -> 200 est tokens,
+        // not the raw 700-byte sort key the bug used.
+        let mut found = Vec::new();
+        super::top_sinks(&ledgers, &cfg, &mut |tokens, _, _, _| found.push(tokens));
+        assert_eq!(found, vec![200]);
     }
 
     /// A session busting on every turn is one finding with a count, not one per turn.

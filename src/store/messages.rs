@@ -1,0 +1,227 @@
+//! T287: messages between agents and the user — `rtok agents send` / `inbox` (MCP in PR 2).
+//! Local store only. `from_agent: None` is the user at a terminal. Rendering lives in one
+//! place, [`crate::render::agent_message_frame`], so every surface frames a body the same.
+
+use anyhow::{Result, bail};
+use diesel::prelude::*;
+use serde::Serialize;
+
+use super::schema::{agents, hosts, messages};
+use super::{Store, coalesce, unixepoch};
+
+/// The cap on a cleaned body, in bytes of UTF-8.
+pub const MAX_BODY: usize = 4096;
+
+/// One message with its sender's host slug (`None` for the user, or a sender row since gone).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Message {
+    pub id: i32,
+    pub from_agent: Option<String>,
+    pub from_host: Option<String>,
+    pub to_agent: String,
+    pub body: String,
+    pub created_at: i64,
+    pub delivered_at: Option<i64>,
+    pub read_at: Option<i64>,
+}
+
+type MessageTuple = (
+    i32,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    i64,
+    Option<i64>,
+    Option<i64>,
+);
+
+/// Control characters stripped (`\n` and `\t` kept); refused when empty or over [`MAX_BODY`]
+/// — refused, not truncated, so nothing a sender wrote is silently lost.
+pub fn clean_body(text: &str) -> Result<String> {
+    let body: String = text
+        .chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        .collect();
+    if body.trim().is_empty() {
+        bail!("empty message");
+    }
+    if body.len() > MAX_BODY {
+        bail!("message is {} bytes; the cap is {MAX_BODY}", body.len());
+    }
+    Ok(body)
+}
+
+impl Store {
+    /// Queue `text` for agent `to` (a canonical id from [`Store::resolve_agent`]); returns the
+    /// message id. Refused for an unknown or ended recipient and for a body [`clean_body`]
+    /// rejects.
+    pub fn send_message(&self, from: Option<&str>, to: &str, text: &str) -> Result<i32> {
+        let body = clean_body(text)?;
+        let mut conn = self.lock()?;
+        let ended: Option<Option<i64>> = agents::table
+            .filter(agents::id.eq(to))
+            .select(agents::ended_at)
+            .first(&mut *conn)
+            .optional()?;
+        match ended {
+            None => bail!("unknown agent {to}"),
+            Some(Some(_)) => bail!(
+                "agent {} has ended; it can no longer receive messages",
+                short_agent_id(to)
+            ),
+            Some(None) => {}
+        }
+        Ok(diesel::insert_into(messages::table)
+            .values((
+                messages::from_agent.eq(from),
+                messages::to_agent.eq(to),
+                messages::body.eq(&body),
+            ))
+            .returning(messages::id)
+            .get_result(&mut *conn)?)
+    }
+
+    /// Agent `to`'s messages in send order. `mark_read` is the recipient reading its own
+    /// inbox: every returned row gets `read_at` (and `delivered_at`, if unset) stamped. The
+    /// rows come back as they were before that stamp, so `read_at: None` still tells which
+    /// were new. The user peeking at an agent's queue passes `mark_read: false`.
+    pub fn inbox(&self, to: &str, unread_only: bool, mark_read: bool) -> Result<Vec<Message>> {
+        let mut conn = self.lock()?;
+        let mut query = messages::table
+            .left_join(agents::table.on(agents::id.nullable().eq(messages::from_agent)))
+            .left_join(hosts::table.on(hosts::id.nullable().eq(agents::host_id.nullable())))
+            .filter(messages::to_agent.eq(to))
+            .select((
+                messages::id,
+                messages::from_agent,
+                hosts::slug.nullable(),
+                messages::to_agent,
+                messages::body,
+                messages::created_at,
+                messages::delivered_at,
+                messages::read_at,
+            ))
+            .order(messages::id.asc())
+            .into_boxed();
+        if unread_only {
+            query = query.filter(messages::read_at.is_null());
+        }
+        let rows: Vec<Message> = query
+            .load::<MessageTuple>(&mut *conn)?
+            .into_iter()
+            .map(|t| Message {
+                id: t.0,
+                from_agent: t.1,
+                from_host: t.2,
+                to_agent: t.3,
+                body: t.4,
+                created_at: t.5,
+                delivered_at: t.6,
+                read_at: t.7,
+            })
+            .collect();
+        if mark_read && !rows.is_empty() {
+            let ids: Vec<i32> = rows.iter().map(|m| m.id).collect();
+            diesel::update(messages::table.filter(messages::id.eq_any(ids)))
+                .set((
+                    messages::read_at.eq(coalesce(messages::read_at, unixepoch())),
+                    messages::delivered_at.eq(coalesce(messages::delivered_at, unixepoch())),
+                ))
+                .execute(&mut *conn)?;
+        }
+        Ok(rows)
+    }
+}
+
+/// The 8-char display form of an rtok agent id (D34).
+pub fn short_agent_id(id: &str) -> &str {
+    id.get(..8).unwrap_or(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn two_agents(store: &Store) -> (String, String) {
+        let claude = store.host_id("claude").unwrap().unwrap();
+        let a = store
+            .register_agent(claude, "m-a", None, None, None)
+            .unwrap();
+        let b = store
+            .register_agent(claude, "m-b", None, None, None)
+            .unwrap();
+        (a, b)
+    }
+
+    #[test]
+    fn send_then_inbox_in_order_and_read_marks() {
+        let store = Store::open_in_memory().unwrap();
+        let (a, b) = two_agents(&store);
+        let first = store.send_message(Some(&a), &b, "one").unwrap();
+        let second = store.send_message(None, &b, "two").unwrap();
+        assert!(first < second);
+
+        // The user peeking marks nothing.
+        let peek = store.inbox(&b, true, false).unwrap();
+        assert_eq!(
+            peek.iter().map(|m| m.id).collect::<Vec<_>>(),
+            [first, second]
+        );
+        assert_eq!(peek[0].from_host.as_deref(), Some("claude"));
+        assert_eq!(peek[1].from_agent, None, "NULL sender = the user");
+        assert_eq!(store.inbox(&b, true, false).unwrap().len(), 2);
+
+        // The recipient reading marks both; the rows returned still show them as new.
+        let read = store.inbox(&b, true, true).unwrap();
+        assert!(read.iter().all(|m| m.read_at.is_none()));
+        assert!(store.inbox(&b, true, false).unwrap().is_empty());
+        let all = store.inbox(&b, false, false).unwrap();
+        assert!(
+            all.iter()
+                .all(|m| m.read_at.is_some() && m.delivered_at.is_some())
+        );
+        assert!(
+            store.inbox(&a, false, false).unwrap().is_empty(),
+            "a's own queue"
+        );
+    }
+
+    #[test]
+    fn body_is_cleaned_and_capped() {
+        let store = Store::open_in_memory().unwrap();
+        let (a, b) = two_agents(&store);
+        store
+            .send_message(Some(&a), &b, "a\u{1b}[31mb\r\n\tc\u{7}\u{0}")
+            .unwrap();
+        assert_eq!(
+            store.inbox(&b, false, false).unwrap()[0].body,
+            "a[31mb\n\tc"
+        );
+
+        let at_cap = "é".repeat(MAX_BODY / 2);
+        assert!(store.send_message(None, &b, &at_cap).is_ok());
+        let over = store
+            .send_message(None, &b, &format!("{at_cap}x"))
+            .unwrap_err();
+        assert!(over.to_string().contains("the cap is 4096"), "{over}");
+        assert!(
+            store.send_message(None, &b, "\u{1b}\u{7} \n").is_err(),
+            "empty after clean"
+        );
+    }
+
+    #[test]
+    fn an_ended_or_unknown_recipient_is_refused() {
+        let store = Store::open_in_memory().unwrap();
+        let (a, b) = two_agents(&store);
+        store.end_agent(&b, 1).unwrap();
+        let err = store
+            .send_message(Some(&a), &b, "hi")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("has ended"), "{err}");
+        assert!(store.send_message(None, "nope", "hi").is_err());
+        assert!(store.inbox(&b, false, false).unwrap().is_empty());
+    }
+}

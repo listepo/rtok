@@ -5,6 +5,7 @@
 pub mod agents;
 #[cfg(unix)]
 pub mod fake_lsp;
+pub mod proxy;
 
 use std::path::Path;
 use std::process::Command;

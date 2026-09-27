@@ -251,6 +251,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
             [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
+            [CompletionResult]::new('send', 'send', [CompletionResultType]::ParameterValue, 'Send a message to an agent (T287): `send <id-prefix> <text|->` or `send --all-live <text|->`')
+            [CompletionResult]::new('inbox', 'inbox', [CompletionResultType]::ParameterValue, 'Read messages (T287): your own inbox from `RTOK_AGENT_ID` (marks them read), or with an id that agent''s queue (marks nothing)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -269,6 +271,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
             [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
+            [CompletionResult]::new('send', 'send', [CompletionResultType]::ParameterValue, 'Send a message to an agent (T287): `send <id-prefix> <text|->` or `send --all-live <text|->`')
+            [CompletionResult]::new('inbox', 'inbox', [CompletionResultType]::ParameterValue, 'Read messages (T287): your own inbox from `RTOK_AGENT_ID` (marks them read), or with an id that agent''s queue (marks nothing)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -546,6 +550,36 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
+        'rtok;agents;send' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--all-live', '--all-live', [CompletionResultType]::ParameterName, 'Every live agent of this project (same repository or cwd), except the sender')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;send' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--all-live', '--all-live', [CompletionResultType]::ParameterName, 'Every live agent of this project (same repository or cwd), except the sender')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agents;inbox' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--unread', '--unread', [CompletionResultType]::ParameterName, 'Only messages not read yet')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the framed text')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;inbox' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--unread', '--unread', [CompletionResultType]::ParameterName, 'Only messages not read yet')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the framed text')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
         'rtok;agents;help' {
             [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
             [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
@@ -557,6 +591,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
             [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
+            [CompletionResult]::new('send', 'send', [CompletionResultType]::ParameterValue, 'Send a message to an agent (T287): `send <id-prefix> <text|->` or `send --all-live <text|->`')
+            [CompletionResult]::new('inbox', 'inbox', [CompletionResultType]::ParameterValue, 'Read messages (T287): your own inbox from `RTOK_AGENT_ID` (marks them read), or with an id that agent''s queue (marks nothing)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -598,6 +634,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;agents;help;status' {
             break
         }
+        'rtok;agents;help;send' {
+            break
+        }
+        'rtok;agents;help;inbox' {
+            break
+        }
         'rtok;agents;help;help' {
             break
         }
@@ -612,6 +654,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
             [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
+            [CompletionResult]::new('send', 'send', [CompletionResultType]::ParameterValue, 'Send a message to an agent (T287): `send <id-prefix> <text|->` or `send --all-live <text|->`')
+            [CompletionResult]::new('inbox', 'inbox', [CompletionResultType]::ParameterValue, 'Read messages (T287): your own inbox from `RTOK_AGENT_ID` (marks them read), or with an id that agent''s queue (marks nothing)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -651,6 +695,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agent;help;status' {
+            break
+        }
+        'rtok;agent;help;send' {
+            break
+        }
+        'rtok;agent;help;inbox' {
             break
         }
         'rtok;agent;help;help' {
@@ -1335,6 +1385,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
             [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
+            [CompletionResult]::new('send', 'send', [CompletionResultType]::ParameterValue, 'Send a message to an agent (T287): `send <id-prefix> <text|->` or `send --all-live <text|->`')
+            [CompletionResult]::new('inbox', 'inbox', [CompletionResultType]::ParameterValue, 'Read messages (T287): your own inbox from `RTOK_AGENT_ID` (marks them read), or with an id that agent''s queue (marks nothing)')
             break
         }
         'rtok;help;agents;install' {
@@ -1373,6 +1425,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;help;agents;status' {
+            break
+        }
+        'rtok;help;agents;send' {
+            break
+        }
+        'rtok;help;agents;inbox' {
             break
         }
         'rtok;help;setup' {

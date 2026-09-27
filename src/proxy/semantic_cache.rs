@@ -328,8 +328,24 @@ fn messages_text(body: &Value) -> Vec<(String, String)> {
             arr.iter()
                 .filter_map(|m| {
                     let role = m.get("role")?.as_str()?;
-                    let content = m.get("content")?;
-                    Some((role.to_string(), content_text(content)))
+                    // A missing `content` (OpenAI Chat: an assistant message that is only
+                    // `tool_calls`) is empty text, not a dropped message.
+                    let mut text = m.get("content").map(content_text).unwrap_or_default();
+                    // OpenAI Chat: an assistant message's `tool_calls` sits beside
+                    // `content`, not inside it (T303) — fold it in so two requests
+                    // differing only there don't collide.
+                    if let Some(calls) = m.get("tool_calls") {
+                        text.push_str(" tool_calls ");
+                        text.push_str(
+                            &serde_json::to_string(&canonical_json(calls)).unwrap_or_default(),
+                        );
+                    }
+                    // OpenAI Chat: a `tool` message's `tool_call_id` (T303).
+                    if let Some(id) = m.get("tool_call_id").and_then(Value::as_str) {
+                        text.push_str(" tool_call_id ");
+                        text.push_str(id);
+                    }
+                    Some((role.to_string(), text))
                 })
                 .collect()
         })
@@ -348,10 +364,14 @@ fn content_text(v: &Value) -> String {
     }
 }
 
-/// One content block's contribution to the cache key (T55.14): text as-is; a
-/// `tool_result`'s id plus nested content; a `tool_use`'s id and name; binary-bearing
-/// blocks (image/document source data, OpenAI `image_url`) contribute their sha256, so
-/// payloads never rendered as text still tell two requests apart.
+/// One content block's contribution to the cache key (T55.14, T303): text as-is; a
+/// `tool_result`'s id plus nested content; a `tool_use`'s id, name and canonicalized
+/// `input` (so two calls to the same tool with different arguments no longer collide);
+/// binary-bearing blocks (image/document source data, OpenAI `image_url`) contribute
+/// their sha256, so payloads never rendered as text still tell two requests apart; any
+/// other block kind (`thinking`, `redacted_thinking`, `server_tool_use`,
+/// `web_search_tool_result`, …) contributes the whole block canonicalized, so unknown
+/// kinds no longer contribute nothing.
 fn block_text(b: &Value) -> String {
     if let Some(text) = b.get("text").and_then(Value::as_str) {
         return text.to_string();
@@ -369,9 +389,11 @@ fn block_text(b: &Value) -> String {
             )
         }
         "tool_use" => format!(
-            "tool_use {} {}",
+            "tool_use {} {} {}",
             b.get("id").and_then(Value::as_str).unwrap_or(""),
-            b.get("name").and_then(Value::as_str).unwrap_or("")
+            b.get("name").and_then(Value::as_str).unwrap_or(""),
+            serde_json::to_string(&canonical_json(b.get("input").unwrap_or(&Value::Null)))
+                .unwrap_or_default()
         ),
         "image" | "document" => {
             let data = b
@@ -387,7 +409,10 @@ fn block_text(b: &Value) -> String {
                 .unwrap_or("");
             format!("image_url {}", crate::store::hex_sha256(url.as_bytes()))
         }
-        _ => String::new(),
+        // Unknown kind (thinking, redacted_thinking, server_tool_use,
+        // web_search_tool_result, …): canonicalize the whole block rather than
+        // contribute nothing, so it still tells two requests apart.
+        _ => serde_json::to_string(&canonical_json(b)).unwrap_or_default(),
     }
 }
 
@@ -571,6 +596,82 @@ mod tests {
         };
         let pa = build_prompt(wire, &body("t-1"), &cfg).unwrap();
         let pb = build_prompt(wire, &body("t-2"), &cfg).unwrap();
+        assert_ne!(canonical_hash(&pa), canonical_hash(&pb));
+    }
+
+    /// T303: a `tool_use` block's `input` (the call arguments) joins the key — two
+    /// calls to the same tool differing only in arguments must not share one cache
+    /// entry. Key order inside `input` alone must not split the cache.
+    #[test]
+    fn tool_use_input_joins_the_cache_key() {
+        let wire = crate::proxy::wire::for_path("/v1/messages").unwrap();
+        let cfg = SemanticCache::default();
+        let body = |input: Value| {
+            serde_json::json!({
+                "model": "m",
+                "messages": [
+                    {"role": "assistant", "content": [
+                        {"type": "tool_use", "id": "t", "name": "run", "input": input}
+                    ]},
+                    {"role": "user", "content": [
+                        {"type": "tool_result", "tool_use_id": "t", "content": "same output"}
+                    ]}
+                ]
+            })
+        };
+        let pa = build_prompt(wire, &body(serde_json::json!({"cmd": "ls"})), &cfg).unwrap();
+        let pb = build_prompt(wire, &body(serde_json::json!({"cmd": "rm -rf /"})), &cfg).unwrap();
+        assert_ne!(
+            canonical_hash(&pa),
+            canonical_hash(&pb),
+            "different tool_use input must not share one cache entry"
+        );
+
+        let pc = build_prompt(wire, &body(serde_json::json!({"a": 1, "b": 2})), &cfg).unwrap();
+        let pd = build_prompt(wire, &body(serde_json::json!({"b": 2, "a": 1})), &cfg).unwrap();
+        assert_eq!(
+            canonical_hash(&pc),
+            canonical_hash(&pd),
+            "key order inside tool_use input alone must not split the cache"
+        );
+    }
+
+    /// T303: an unknown block kind (`thinking` here) used to contribute nothing to the
+    /// key, so two requests differing only there hashed equal.
+    #[test]
+    fn thinking_block_joins_the_cache_key() {
+        let wire = crate::proxy::wire::for_path("/v1/messages").unwrap();
+        let cfg = SemanticCache::default();
+        let body = |thinking: &str| {
+            serde_json::json!({
+                "model": "m",
+                "messages": [{"role": "assistant", "content": [
+                    {"type": "thinking", "thinking": thinking, "signature": "sig"},
+                    {"type": "text", "text": "the answer"}
+                ]}]
+            })
+        };
+        let pa = build_prompt(wire, &body("maybe it's 4"), &cfg).unwrap();
+        let pb = build_prompt(wire, &body("maybe it's 5"), &cfg).unwrap();
+        assert_ne!(canonical_hash(&pa), canonical_hash(&pb));
+    }
+
+    /// T303: OpenAI Chat's assistant `tool_calls` sits beside `content`, not inside it,
+    /// and used to be dropped entirely — two different tool calls hashed equal.
+    #[test]
+    fn openai_tool_calls_join_the_cache_key() {
+        let wire = crate::proxy::wire::for_path("/v1/chat/completions").unwrap();
+        let cfg = SemanticCache::default();
+        let body = |args: &str| {
+            serde_json::json!({
+                "model": "m",
+                "messages": [{"role": "assistant", "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "run", "arguments": args}}
+                ]}]
+            })
+        };
+        let pa = build_prompt(wire, &body("{\"cmd\":\"ls\"}"), &cfg).unwrap();
+        let pb = build_prompt(wire, &body("{\"cmd\":\"rm -rf /\"}"), &cfg).unwrap();
         assert_ne!(canonical_hash(&pa), canonical_hash(&pb));
     }
 
