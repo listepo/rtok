@@ -5,8 +5,9 @@ keep separate files, so each selected app installs on its own (`--cli` / `--desk
 
 - CLI: `~/.claude/settings.json` (hooks, proxy) and `~/.claude.json` (MCP). By default, once
   `claude` is on PATH, the plugin (`plugins/claude`, from the GitHub marketplace `listepo/rtok`)
-  carries hooks and MCP instead; its installed state is read from
-  `~/.claude/plugins/installed_plugins.json`.
+  carries hooks instead; its installed state is read from
+  `~/.claude/plugins/installed_plugins.json`. MCP is independent of the plugin (T275): install
+  and update always write `mcpServers.rtok` to `~/.claude.json`, plugin or no plugin.
 - Desktop: `claude_desktop_config.json` under `~/Library/Application Support/Claude` on
   macOS, `%APPDATA%\Claude` on Windows, `~/.config/Claude` elsewhere. The app starts without a
   shell PATH, so the MCP entry carries the absolute `rtok` binary.
@@ -19,11 +20,11 @@ copied twice.
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | yes | `rtok hook <event>` on PreToolUse (Bash, Read), PostToolUse, UserPromptSubmit, SessionStart, PreCompact, PostCompact, SessionEnd, SubagentStart (the spawn brief, T130; inert while `[plugins.memory] spawn_brief` is off) |
-| mcp | yes | `mcpServers.rtok` → `rtok mcp` (off with `[setup] mcp = false`) |
+| mcp | yes | `mcpServers.rtok` → `rtok mcp` (off with `[setup] mcp = false`); always written on install/update, plugin or not — only `remove` takes it out (T275) |
 | proxy | `--proxy` | `env.ANTHROPIC_BASE_URL` → `http://<bind>:<port>`; opt-in because it routes every request through `rtok proxy` |
-| plugin | yes | runs `claude plugin marketplace add listepo/rtok` (skipped once Claude already knows the `rtok` marketplace) and `claude plugin install rtok@rtok` (remove: `uninstall` + `marketplace remove`); installed by default once `claude` is on PATH — no `--yes` needed; Claude Code loads it in the CLI and the desktop Code tab; while it is installed it is the only call path, so setup strips its own settings-file hooks and `mcpServers.rtok`; a missing or failing `claude` leaves the offer open instead of failing the install; `rtok agents update` runs `claude plugin marketplace update rtok` + `claude plugin update rtok@rtok` and reinstalls (`uninstall` + `install`) only when that fails |
+| plugin | yes | runs `claude plugin marketplace add listepo/rtok` (skipped once Claude already knows the `rtok` marketplace) and `claude plugin install rtok@rtok` (remove: `uninstall` + `marketplace remove`); installed by default once `claude` is on PATH — no `--yes` needed; Claude Code loads it in the CLI and the desktop Code tab; while it is installed it is the only call path for hooks, so setup strips its own settings-file hooks — `mcpServers.rtok` is unaffected, the plugin carries no MCP server of its own (T275); a missing or failing `claude` leaves the offer open instead of failing the install; `rtok agents update` runs `claude plugin marketplace update rtok` + `claude plugin update rtok@rtok` and reinstalls (`uninstall` + `install`) only when that fails |
 | hooks (desktop) | no | Claude Desktop has no hook events |
-| mcp (desktop) | yes | `mcpServers.rtok` → `<abs rtok> mcp` in `claude_desktop_config.json`; skipped (and a leftover entry removed) while Claude Code serves rtok MCP — the plugin or `mcpServers.rtok` in `~/.claude.json` — because the desktop Code tab loads this file and those both (T243, T244) |
+| mcp (desktop) | yes | `mcpServers.rtok` → `<abs rtok> mcp` in `claude_desktop_config.json`; always written on install/update, whether or not Claude Code's plugin or `~/.claude.json` also serves rtok — the two surfaces are independent (T275 amends T243/T244) |
 | proxy (desktop) | no | Claude Desktop has no base-URL setting; its requests do not pass through the proxy |
 | plugin (desktop) | no | Claude Desktop loads MCP from claude_desktop_config.json; there is no plugin directory to link |
 

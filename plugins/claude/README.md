@@ -1,7 +1,10 @@
 # rtok Claude Code plugin
 
 Claude Code's plugin form of rtok: the same hooks `rtok agents install claude` writes into
-`~/.claude/settings.json`, and one `rtok mcp`, as one unit (D21). Claude Code loads it in the CLI
+`~/.claude/settings.json`, plus the `rtok-scout` sub-agent. It carries no MCP server of its own
+(T275): `rtok mcp` reaches Claude Code and Claude Desktop only through `mcpServers.rtok`,
+written into `~/.claude.json` and `claude_desktop_config.json` by `rtok agents install claude`
+whether or not this plugin is installed. Claude Code loads the plugin in the CLI
 and in the desktop app's Code tab. `rtok agents install claude` installs it from the GitHub
 marketplace at the repo root (`.claude-plugin/marketplace.json`: `rtok`, plugin `rtok`, source
 `./plugins/claude`) — a local path broke across a ketch upgrade (T139). By hand:
@@ -14,15 +17,15 @@ claude plugin install rtok@rtok
 Remove with `claude plugin uninstall rtok@rtok` and `claude plugin marketplace remove rtok`.
 `rtok agents install claude` runs both commands by default — no `--yes` needed — once `claude`
 is on PATH, skipping `marketplace add` when Claude already knows the marketplace; while the
-plugin is installed it strips rtok's own hooks from `~/.claude/settings.json` and
-`mcpServers.rtok` from `~/.claude.json`, so every event fires once (D21). `rtok agents remove
-claude` uninstalls it. Installing by hand and then running a plain `rtok agents install claude`
-leaves that singleton rule in force too.
+plugin is installed it strips rtok's own hooks from `~/.claude/settings.json`, so every hook
+event fires once (D21) — `mcpServers.rtok` is unaffected, since MCP is no longer part of that
+singleton (T275). `rtok agents remove claude` uninstalls it and takes the MCP entries back out
+too.
 
 Files:
 
-- `.claude-plugin/plugin.json` — manifest (`name` `rtok`); `hooks/hooks.json` and `.mcp.json` are
-  found by convention. Claude copies the plugin into `~/.claude/plugins/cache/`, so the tree is
+- `.claude-plugin/plugin.json` — manifest (`name` `rtok`); `hooks/hooks.json` is found by
+  convention. Claude copies the plugin into `~/.claude/plugins/cache/`, so the tree is
   self-contained.
 - `.claude-plugin/marketplace.json` — this directory's own one-plugin marketplace (source `./`),
   kept for local/dev use (`claude plugin marketplace add plugins/claude`); the installer itself
@@ -34,18 +37,15 @@ Files:
   `rtok hook <event>`, `timeout` 5 s. The command execs `rtok` from PATH in Claude Code's own
   shell and runs `scripts/hook.sh` only when PATH has none: the second shell cost ~6 ms per call
   (`research.md` §19). A unit test in `src/agents/claude/mod.rs` keeps them equal.
-- `.mcp.json` — `mcpServers.rtok` → `scripts/mcp.sh`.
-- `scripts/hook.sh`, `scripts/mcp.sh` — resolve `rtok` from PATH or the ketch store; a missing
-  `rtok` fails the hook open (exit 0) and the MCP loudly (exit 1), both printing
-  `ketch install listepo/rtok`.
+- `scripts/hook.sh` — resolves `rtok` from PATH or the ketch store; a missing `rtok` fails the
+  hook open (exit 0), printing `ketch install listepo/rtok`.
 - `agents/rtok-scout.md` — a `model: haiku` sub-agent (T132) scoped to the rtok MCP's `read`,
-  `search`, `outline`, `explore`, `expand` tools (named `mcp__plugin_rtok_rtok__<tool>`, the
-  plugin-scoped form: plugin `rtok` + MCP server `rtok` from this directory's `.mcp.json`), so
+  `search`, `outline`, `explore`, `expand` tools (named `mcp__rtok__<tool>`, the plain form for
+  the `mcpServers.rtok` config entry — T275, this plugin ships no `.mcp.json` of its own), so
   code-lookup questions default to the cheap path instead of a full-price general-purpose agent.
   Discovered automatically from `agents/` — no manifest entry needed.
 
-Windows: Claude Code runs hook commands through Git Bash, so `hook.sh` works; the MCP launcher is
-POSIX too, so on Windows prefer the plain `rtok agents install claude`.
+Windows: Claude Code runs hook commands through Git Bash, so `hook.sh` works.
 
 ## Docs
 

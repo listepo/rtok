@@ -19,26 +19,42 @@ use std::path::Path;
 /// which leaves `registerTool` off there (the tools come from `mcp.json`). Cline's plugin
 /// (T95: the per-event hook links) is hooks only — unlike cursor/kimi, MCP there is never
 /// folded into the plugin, so both `mcpServers.rtok` files (CLI + VS Code extension, T96.1)
-/// are meant to carry it at once and neither is a duplicate of the plugin.
+/// are meant to carry it at once and neither is a duplicate of the plugin. The Claude plugin
+/// carries hooks and the scout sub-agent only (T275): its `.mcp.json` is gone, so it never
+/// counts here either.
 fn plugin_tree(host: &str) -> (&str, bool) {
     match host {
         "opencode" | "kilo" => ("opencode", false),
         "omp" => ("pi", false),
         "cline" => ("cline", false),
+        "claude" => ("claude", false),
         _ => (host, true),
     }
 }
 
 /// What a surface loads besides its own (host, kind) config — `(host, kind, with plugin)`:
-/// the desktop app's Code tab runs Claude Code, so it loads Claude Code's files and plugin
-/// too (T243); Grok imports Claude's settings-file hooks and `mcpServers` through
-/// `[compat.claude]` (on by default), not Claude's plugin.
+/// the desktop app's Code tab still runs Claude Code, so it loads Claude Code's files and
+/// plugin too (T243) — dropping that cross-load would also drop the Code-tab hook check. Since
+/// T275 both surfaces always carry their own `mcpServers.rtok` entry independently, so this
+/// cross-load used to look like the Code tab seeing rtok's MCP server twice; it doesn't,
+/// because Claude merges same-name servers across its own config sources (decision rule 2,
+/// `merges_same_name`) — the two entries are both named `rtok` and collapse into one live
+/// server. Grok imports Claude's settings-file hooks and `mcpServers` through `[compat.claude]`
+/// (on by default), not Claude's plugin.
 fn cross_loads(host: &str, kind: &str) -> &'static [(&'static str, &'static str, bool)] {
     match (host, kind) {
         ("claude", "desktop") => &[("claude", "cli", true)],
         ("grok", "cli") => &[("claude", "cli", false)],
         _ => &[],
     }
+}
+
+/// Whether `host`'s `kind` surface merges MCP server entries that share a name across all the
+/// config sources it reads, instead of running one process per source (T275 decision rule 2):
+/// true for Claude CLI and Claude Desktop, so a name seen from two sources (e.g. the desktop
+/// surface's own file plus the Claude Code file it cross-loads) still counts as one server.
+fn merges_same_name(host: &str, kind: &str) -> bool {
+    matches!((host, kind), ("claude", "cli") | ("claude", "desktop"))
 }
 
 /// VS Code and VS Code Insiders are two apps behind one variant, each with its own
@@ -49,7 +65,9 @@ fn one_surface_per_file(host: &str) -> bool {
 
 #[derive(Default)]
 struct Seen {
-    mcp: Vec<String>,
+    /// MCP server name (the parent key of its entry, e.g. `rtok`; a plugin's own server is
+    /// namespaced as `plugin_<host>`) → sources that install a server under that name.
+    mcp: BTreeMap<String, Vec<String>>,
     /// `event|matcher` → sources.
     hooks: BTreeMap<String, Vec<String>>,
 }
@@ -75,8 +93,18 @@ fn hook_event(argv: &[&str]) -> Option<String> {
 
 /// Walk one parsed config. `event` is the host's own event key (`hooks.<event>` or an
 /// `event` field), `matcher` the nearest `matcher`; one hook entry counts once even when it
-/// spells its command twice (Copilot's `bash` + `powershell`).
-fn walk(v: &Value, src: &str, event: Option<&str>, matcher: &str, seen: &mut Seen) {
+/// spells its command twice (Copilot's `bash` + `powershell`). `name` is the JSON key by which
+/// the current value was reached from its parent object — for an MCP server entry that is the
+/// server's name (`mcpServers.<name>`), whatever the surrounding nesting looks like, since it is
+/// always overwritten by the very next hop before the entry itself is examined.
+fn walk(
+    v: &Value,
+    src: &str,
+    event: Option<&str>,
+    matcher: &str,
+    name: Option<&str>,
+    seen: &mut Seen,
+) {
     match v {
         Value::Object(map) => {
             let event = map.get("event").and_then(Value::as_str).or(event);
@@ -104,7 +132,10 @@ fn walk(v: &Value, src: &str, event: Option<&str>, matcher: &str, seen: &mut See
                 .iter()
                 .any(|a| a.first().is_some_and(|b| is_rtok(b)) && a.get(1) == Some(&"mcp"))
             {
-                seen.mcp.push(src.into());
+                seen.mcp
+                    .entry(name.unwrap_or("rtok").into())
+                    .or_default()
+                    .push(src.into());
             }
             let hits: BTreeSet<String> = argvs.iter().filter_map(|a| hook_event(a)).collect();
             for e in hits {
@@ -115,15 +146,19 @@ fn walk(v: &Value, src: &str, event: Option<&str>, matcher: &str, seen: &mut See
                 match (k.as_str(), x) {
                     ("hooks", Value::Object(events)) => {
                         for (e, y) in events {
-                            walk(y, src, Some(e), matcher, seen);
+                            walk(y, src, Some(e), matcher, Some(e.as_str()), seen);
                         }
                     }
-                    (_, Value::Object(_) | Value::Array(_)) => walk(x, src, event, matcher, seen),
+                    (_, Value::Object(_) | Value::Array(_)) => {
+                        walk(x, src, event, matcher, Some(k.as_str()), seen)
+                    }
                     _ => {}
                 }
             }
         }
-        Value::Array(a) => a.iter().for_each(|x| walk(x, src, event, matcher, seen)),
+        Value::Array(a) => a
+            .iter()
+            .for_each(|x| walk(x, src, event, matcher, name, seen)),
         _ => {}
     }
 }
@@ -173,6 +208,7 @@ fn walk_file(path: &Path, seen: &mut Seen) {
         &path.display().to_string(),
         None,
         "",
+        None,
         seen,
     );
 }
@@ -181,7 +217,10 @@ fn walk_file(path: &Path, seen: &mut Seen) {
 fn walk_plugin(host: &str, seen: &mut Seen) {
     let (tree, mcp) = plugin_tree(host);
     if mcp {
-        seen.mcp.push(format!("plugin {host}"));
+        seen.mcp
+            .entry(format!("plugin_{host}"))
+            .or_default()
+            .push(format!("plugin {host}"));
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("plugins")
@@ -277,7 +316,15 @@ fn duplicates(run: impl Fn(&[&str]) -> String) -> Vec<String> {
     for (host, variants) in &infos {
         for kind in variants.iter().filter_map(|v| v["kind"].as_str()) {
             for (name, seen) in &surfaces(&infos, host, kind) {
-                if seen.mcp.len() > 1 {
+                // A surface that merges same-name servers only sees one live process per
+                // distinct name (T275 decision rule 2); elsewhere every source that installs
+                // one is a separate process, so count sources as before.
+                let mcp_count = if merges_same_name(host, kind) {
+                    seen.mcp.len()
+                } else {
+                    seen.mcp.values().map(Vec::len).sum::<usize>()
+                };
+                if mcp_count > 1 {
                     bad.push(format!(
                         "{host} {name}: rtok MCP servers from {:?}",
                         seen.mcp
