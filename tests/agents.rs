@@ -419,8 +419,8 @@ fn rtok_as(args: &[&str], home: &Path, agent: &str) -> std::process::Output {
 
 /// T284: `sessions` carries each session's agent (short id in the table, full id and
 /// paths in `--json`) with sub-agents indented under it; `show` finds an agent by id and
-/// rejects an ambiguous prefix; `status` sets the caller's own status text. Ids are fresh
-/// UUIDv7s per run, so this asserts rather than pins a golden.
+/// rejects a too-short prefix; `status` sets the caller's own status text. Ids are fresh
+/// UUIDv4s per run, so this asserts rather than pins a golden.
 #[test]
 fn sessions_show_and_status_carry_the_agent_tree() {
     let h = home("t284");
@@ -515,9 +515,9 @@ fn sessions_show_and_status_carry_the_agent_tree() {
     let text = rtok(&["agents", "show", &sub], &h);
     assert!(text.contains(&format!("parent: {main}")), "{text}");
 
-    // Three ids minted within one second share their first 4 hex chars (UUIDv7's clock).
-    let amb = rtok_as(&["agents", "show", &main[..4]], &h, "");
-    assert_eq!(amb.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&amb.stderr).contains("ambiguous"));
+    // Ids are random (UUIDv4); the store test pins ambiguity, this pins the refusal.
+    let short = rtok_as(&["agents", "show", &main[..3]], &h, "");
+    assert_eq!(short.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&short.stderr).contains("at least 4"));
     let _ = fs::remove_dir_all(&h);
 }

@@ -319,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn show_finds_by_prefix_and_rejects_unknown_and_ambiguous() {
+    fn show_finds_by_prefix_and_rejects_unknown_and_short() {
         let dir = std::env::temp_dir().join(format!("rtok-t284-show-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let cfg = Config::load_from(&dir).unwrap();
@@ -342,10 +342,10 @@ mod tests {
         assert_eq!(s.detail.parent_id.as_deref(), Some(main.as_str()));
         let unknown = agent_show(&cfg, "ffffffff", now).unwrap_err().to_string();
         assert!(unknown.contains("no agent id"), "{unknown}");
-        // `main` and `sub` were minted in the same millisecond window: a 4-char prefix
-        // of a UUIDv7 is its timestamp, shared.
-        let amb = agent_show(&cfg, &main[..4], now).unwrap_err().to_string();
-        assert!(amb.contains("ambiguous"), "{amb}");
+        // Ids are random (UUIDv4), so ambiguity is pinned in the store's own test; here
+        // the store's refusal must reach the caller.
+        let short = agent_show(&cfg, &main[..3], now).unwrap_err().to_string();
+        assert!(short.contains("at least 4"), "{short}");
 
         assert_eq!(
             set_status(&cfg, Some(&main), " busy\x07 on T284 ")
