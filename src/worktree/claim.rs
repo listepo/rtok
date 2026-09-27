@@ -21,7 +21,7 @@ pub fn caller(store: Option<&Store>, flag: Option<&str>) -> Result<Option<AgentD
     };
     let found = store
         .context("no store")
-        .and_then(|s| Ok(s.agent_detail(&s.resolve_agent(&raw)?)?));
+        .and_then(|s| s.agent_detail(&s.resolve_agent(&raw)?));
     match found {
         Ok(Some(detail)) => Ok(Some(detail)),
         Ok(None) if !explicit => Ok(None),

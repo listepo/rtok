@@ -205,21 +205,18 @@ mod tests {
 
     #[test]
     fn a_known_agent_is_the_fourth_field_of_the_lock() {
-        let agent = Some("0193ab12-0000-7000-8000-000000000000");
+        let agent = "an-agent-id";
         let p = plan(
             Path::new("/r/rtok"),
             None,
             &[],
             ("t1", None),
-            (OWNER, agent),
+            (OWNER, Some(agent)),
             "d",
         );
         let reason = p.unwrap().reason;
-        assert_eq!(
-            reason,
-            format!("{OWNER} | t1 | d | agent {}", agent.unwrap())
-        );
-        assert_eq!(Owner::parse(&reason).unwrap().agent.as_deref(), agent);
+        assert_eq!(reason, format!("{OWNER} | t1 | d | agent {agent}"));
+        assert_eq!(Owner::parse(&reason).unwrap().agent.as_deref(), Some(agent));
     }
 
     #[rstest]
