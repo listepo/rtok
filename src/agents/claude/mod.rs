@@ -13,11 +13,12 @@ use std::sync::LazyLock;
 use crate::config::Config;
 use anyhow::Result;
 use rtok_agent_sdk::{Apply, KETCH_INSTALL, NO_CHANGES, array_at, edit_json, object_at};
+use semver::Version;
 use serde::Deserialize;
 use serde::de::{Deserializer, MapAccess, Visitor};
 use serde_json::{Value, json};
 
-use super::{Agent, Kind, Mode, Support, Variant, apply, mcp};
+use super::{Agent, Kind, Mode, Support, Variant, apply, mcp, plugin_version};
 
 /// `(event, matcher)` — empty matcher omits the field. `SessionEnd` was missing, so no session
 /// row got `ended_at` and no OTel session root ever shipped (`hooks::dispatch` handles it).
@@ -424,10 +425,11 @@ pub(crate) fn plugin_installed(cfg: &Config) -> bool {
 enum MarketplaceState {
     /// No `"rtok"` entry at all.
     Absent,
-    /// Points at the GitHub repo `MARKETPLACE_REPO` already — T139's own shape,
+    /// Points at the wanted target already: the GitHub repo — T139's own shape,
     /// `{"source": {"source": "github", "repo": "listepo/rtok"}}` (verified against the
-    /// Claude Code plugin-marketplaces docs).
-    Github,
+    /// Claude Code plugin-marketplaces docs) — or, for `--source local` (T279), the local
+    /// checkout as `{"source": {"source": "directory", "path": "<target>"}}`.
+    Current,
     /// A `"rtok"` entry exists but not with that shape — in practice the pre-T139 local
     /// ketch-store path, `{"source": {"source": "directory", "path": ".../store/rtok/vX.Y.Z/…"}}`
     /// (the literal shape a real `~/.claude/plugins/known_marketplaces.json` on this machine
@@ -440,7 +442,10 @@ enum MarketplaceState {
 /// `.contains("\"rtok\":")` could not tell the GitHub source from a stale local one, so a user
 /// still holding the pre-T139 local marketplace kept installing from it forever — `marketplace
 /// add` was skipped because *some* `"rtok"` entry existed, never checking what it pointed at).
-fn marketplace_state(cfg: &Config) -> MarketplaceState {
+/// Generalized over `target` (T279 PR 3) so [`plugin_against`] can ask the same question for a
+/// local checkout path, not only the GitHub repo shorthand: `"rtok"` pointed at anything else
+/// (another directory, or a different repo) reads as `Stale` either way.
+fn marketplace_state_for(cfg: &Config, target: &str) -> MarketplaceState {
     let text = super::read(&config_dir(cfg).join("plugins/known_marketplaces.json"));
     let Ok(root) = serde_json::from_str::<Value>(&text) else {
         return MarketplaceState::Absent;
@@ -448,11 +453,14 @@ fn marketplace_state(cfg: &Config) -> MarketplaceState {
     let Some(entry) = root.get("rtok") else {
         return MarketplaceState::Absent;
     };
-    let source = entry.get("source");
-    let is_github = source.and_then(|s| s.get("source")).and_then(Value::as_str) == Some("github")
-        && source.and_then(|s| s.get("repo")).and_then(Value::as_str) == Some(MARKETPLACE_REPO);
-    if is_github {
-        MarketplaceState::Github
+    let field = |k: &str| entry["source"][k].as_str();
+    let at = match field("source") {
+        Some("github") => field("repo"),
+        Some("directory") => field("path"),
+        _ => None,
+    };
+    if at == Some(target) {
+        MarketplaceState::Current
     } else {
         MarketplaceState::Stale
     }
@@ -466,6 +474,72 @@ fn claude_cli(cfg: &Config, args: &[&str]) -> std::result::Result<(), String> {
     let default = super::home_dir().join(".claude");
     let env = (dir != default).then_some(("CLAUDE_CONFIG_DIR", dir.as_path()));
     super::run_cli("claude", args, env)
+}
+
+/// [`plugin`]'s body, generalized over `target` (a GitHub `owner/repo` shorthand or a local
+/// checkout path) and `force` (T279 PR 3: the version decision already decided a reinstall is
+/// needed, so the "already installed, nothing to do" short-circuit below must not veto it).
+fn plugin_against(cfg: &Config, remove: bool, target: &str, force: bool) -> Result<String> {
+    let a = apply(cfg);
+    let installed = plugin_installed(cfg);
+    let state = marketplace_state_for(cfg, target);
+    if remove {
+        if !installed {
+            return Ok(NO_CHANGES.into());
+        }
+    } else if installed && state != MarketplaceState::Stale && !force {
+        return Ok(NO_CHANGES.into());
+    }
+    let steps: Vec<Vec<&str>> = if remove {
+        vec![
+            vec!["plugin", "uninstall", PLUGIN_ID],
+            vec!["plugin", "marketplace", "remove", "rtok"],
+        ]
+    } else {
+        let mut v = Vec::new();
+        let repoint = state == MarketplaceState::Stale;
+        // `force` (T279 PR 3, `--force`/a version-driven reinstall) uninstalls first even at
+        // an already-current marketplace: the point is a clean reinstall, not a repoint, so
+        // `marketplace remove`/`add` stay skipped in that case.
+        if installed && (repoint || force) {
+            v.push(vec!["plugin", "uninstall", PLUGIN_ID]);
+        }
+        if repoint {
+            v.push(vec!["plugin", "marketplace", "remove", "rtok"]);
+        }
+        if state != MarketplaceState::Current {
+            v.push(vec!["plugin", "marketplace", "add", target]);
+        }
+        v.push(vec!["plugin", "install", PLUGIN_ID]);
+        v
+    };
+    let shown = steps
+        .iter()
+        .map(|s| format!("claude {}", s.join(" ")))
+        .collect::<Vec<_>>()
+        .join(" && ");
+    if a.dry_run {
+        return Ok(if remove {
+            format!("- plugin {PLUGIN_ID} ({shown})")
+        } else {
+            format!("offer {PLUGIN_SRC} → {shown} {KETCH_INSTALL}")
+        });
+    }
+    if !remove && super::find_on_path("claude").is_none() {
+        return Ok(format!(
+            "offer {PLUGIN_SRC} → {shown} (claude failed: claude not found on PATH) {KETCH_INSTALL}"
+        ));
+    }
+    for step in &steps {
+        if let Err(e) = claude_cli(cfg, step) {
+            return Ok(format!("offer {PLUGIN_SRC} → {shown} (claude failed: {e})"));
+        }
+    }
+    Ok(if remove {
+        format!("- plugin {PLUGIN_ID}")
+    } else {
+        format!("+ plugin {PLUGIN_SRC} → {PLUGIN_ID}")
+    })
 }
 
 /// Offer, install, or uninstall the plugin through the official `claude plugin` commands
@@ -487,109 +561,191 @@ fn claude_cli(cfg: &Config, args: &[&str]) -> std::result::Result<(), String> {
 /// plugin already shows as installed. An `Absent` marketplace with the plugin already
 /// installed is left alone (ambiguous, not evidence of anything stale).
 fn plugin(cfg: &Config, remove: bool) -> Result<String> {
-    let a = apply(cfg);
-    let installed = plugin_installed(cfg);
-    let state = marketplace_state(cfg);
-    if remove {
-        if !installed {
-            return Ok(NO_CHANGES.into());
-        }
-    } else if installed && state != MarketplaceState::Stale {
-        return Ok(NO_CHANGES.into());
+    plugin_against(cfg, remove, MARKETPLACE_REPO, false)
+}
+
+/// `rtok@rtok`'s own `version` field in `installed_plugins.json` — Claude's fallback when
+/// neither a version file nor the receipt has one (T279 step 2, plan `installed()`). The real
+/// shape (verified against a machine that ran `claude plugin update`, same file `plugin_update`
+/// reads elsewhere in this module) is `{"version":2,"plugins":{"rtok@rtok":[{"scope":"user",
+/// "version":"latest"}]}}` — an array under `plugins.<id>`, one entry per scope, and Claude's
+/// own `version` there is often a channel name (`"latest"`), not SemVer; [`plugin_version::installed`]
+/// already drops whatever fails to parse, so that degrades to the same `0.0.0` a missing field
+/// would.
+fn host_record_version(cfg: &Config) -> Option<String> {
+    let text = super::read(&config_dir(cfg).join("plugins/installed_plugins.json"));
+    let root: Value = serde_json::from_str(&text).ok()?;
+    root.get("plugins")?
+        .get(PLUGIN_ID)?
+        .get(0)?
+        .get("version")?
+        .as_str()
+        .map(str::to_string)
+}
+
+/// The source `agents update`'s version decision compares against: `--source` wins; otherwise
+/// the row already on record; otherwise GitHub, [`plugin`]'s own default for a fresh install.
+fn update_source(
+    cfg: &Config,
+    installed: Option<&plugin_version::Installed>,
+) -> Result<plugin_version::Source> {
+    if let Some(s) = &cfg.setup.source {
+        return s.parse();
     }
-    let steps: Vec<&[&str]> = if remove {
-        vec![
-            &["plugin", "uninstall", PLUGIN_ID],
-            &["plugin", "marketplace", "remove", "rtok"],
-        ]
+    Ok(installed.map_or(plugin_version::Source::Github, |i| i.source))
+}
+
+/// Write (or refresh) the T279 receipt row after a successful install/update. Never called on
+/// failure — the receipt then stays exactly as it was, so the next `agents update` still knows
+/// what is really on disk.
+fn write_receipt(
+    cfg: &Config,
+    path: &Path,
+    source: plugin_version::Source,
+    available: &plugin_version::Available,
+) -> Result<()> {
+    let mut receipt = plugin_version::Receipt::read(path)?;
+    receipt.upsert(
+        "claude",
+        plugin_version::ReceiptEntry {
+            source,
+            reference: if source == plugin_version::Source::Local {
+                marketplace_target(source)
+            } else {
+                format!("v{}", available.version)
+            },
+            marketplace: (source != plugin_version::Source::Local).then(|| "rtok".to_string()),
+            path: config_dir(cfg).join("plugins/installed_plugins.json"),
+            version: available.version.clone(),
+            installed_at: plugin_version::now_iso(),
+        },
+    );
+    receipt.write(path)
+}
+
+/// What the `rtok` marketplace should point at for `source`: the local checkout path for
+/// `Source::Local`, the GitHub repo shorthand otherwise.
+fn marketplace_target(source: plugin_version::Source) -> String {
+    if source == plugin_version::Source::Local {
+        super::plugin_src(PLUGIN_SRC).display().to_string()
     } else {
-        let mut v: Vec<&[&str]> = Vec::new();
-        if state == MarketplaceState::Stale {
-            if installed {
-                v.push(&["plugin", "uninstall", PLUGIN_ID]);
-            }
-            v.push(&["plugin", "marketplace", "remove", "rtok"]);
-        }
-        if state != MarketplaceState::Github {
-            v.push(&["plugin", "marketplace", "add", MARKETPLACE_REPO]);
-        }
-        v.push(&["plugin", "install", PLUGIN_ID]);
-        v
-    };
-    let shown = steps
-        .iter()
-        .map(|s| format!("claude {}", s.join(" ")))
-        .collect::<Vec<_>>()
-        .join(" && ");
-    if a.dry_run {
-        return Ok(if remove {
-            format!("- plugin {PLUGIN_ID} ({shown})")
-        } else {
-            format!("offer {PLUGIN_SRC} → {shown} {KETCH_INSTALL}")
-        });
+        MARKETPLACE_REPO.to_string()
     }
-    if !remove && super::find_on_path("claude").is_none() {
-        return Ok(format!(
-            "offer {PLUGIN_SRC} → {shown} (claude failed: claude not found on PATH) {KETCH_INSTALL}"
-        ));
+}
+
+/// `agents update`'s reinstall path (T279 step 3/6): the decision already said `Install` or
+/// `Reinstall`, so [`plugin_against`] runs unconditionally (`force: true`) against `target` —
+/// `source`'s GitHub repo shorthand, or the local checkout path for `Source::Local`. The
+/// receipt is written only on the real `+ plugin …` success line, never on a dry run or a
+/// `claude` failure (both keep their own prefix).
+fn reinstall(
+    cfg: &Config,
+    source: plugin_version::Source,
+    available: &plugin_version::Available,
+    receipt_path: &Path,
+) -> Result<String> {
+    let line = plugin_against(cfg, false, &marketplace_target(source), true)?;
+    if line.starts_with('+') {
+        write_receipt(cfg, receipt_path, source, available)?;
     }
-    for step in steps {
-        if let Err(e) = claude_cli(cfg, step) {
-            return Ok(format!("offer {PLUGIN_SRC} → {shown} (claude failed: {e})"));
-        }
-    }
-    Ok(if remove {
-        format!("- plugin {PLUGIN_ID}")
-    } else {
-        format!("+ plugin {PLUGIN_SRC} → {PLUGIN_ID}")
-    })
+    Ok(line)
 }
 
 /// `agents update` over a plugin already installed from the GitHub marketplace (T242.3):
-/// refresh the marketplace and `claude plugin update` in place; if either step fails,
-/// reinstall (`uninstall` + `install`). No `--yes`: accepting a changed marketplace-declared
-/// command stays the user's call, and a non-TTY refusal just takes the reinstall path.
-/// Claude's own `installed_plugins.json` is the evidence — unchanged bytes read as
-/// [`NO_CHANGES`], so an update that found nothing new says `already current`.
-fn plugin_update(cfg: &Config) -> Result<String> {
-    const UPDATE: [&[&str]; 2] = [
+/// refresh the marketplace and `claude plugin update` in place; if either step fails, fall
+/// back to [`reinstall`]. No `--yes`: accepting a changed marketplace-declared command stays
+/// the user's call, and a non-TTY refusal just takes the reinstall path.
+fn update_in_place(
+    cfg: &Config,
+    source: plugin_version::Source,
+    available: &plugin_version::Available,
+    receipt_path: &Path,
+) -> Result<String> {
+    const STEPS: [&[&str]; 2] = [
         &["plugin", "marketplace", "update", "rtok"],
         &["plugin", "update", PLUGIN_ID],
     ];
-    const REINSTALL: [&[&str]; 2] = [
-        &["plugin", "uninstall", PLUGIN_ID],
-        &["plugin", "install", PLUGIN_ID],
-    ];
-    let shown = |steps: &[&[&str]]| {
-        steps
+    let shown = || {
+        STEPS
             .iter()
             .map(|s| format!("claude {}", s.join(" ")))
             .collect::<Vec<_>>()
             .join(" && ")
     };
     if apply(cfg).dry_run {
-        return Ok(format!("~ plugin {PLUGIN_ID} ({})", shown(&UPDATE)));
+        return Ok(format!(
+            "~ plugin {PLUGIN_ID} → {} ({})",
+            available.version,
+            shown()
+        ));
     }
     if super::find_on_path("claude").is_none() {
         return Ok(NO_CHANGES.into());
     }
-    let record = config_dir(cfg).join("plugins/installed_plugins.json");
-    let before = super::read(&record);
-    let Err(e) = UPDATE.iter().try_for_each(|s| claude_cli(cfg, s)) else {
-        return Ok(if super::read(&record) == before {
-            NO_CHANGES.into()
-        } else {
-            format!("~ plugin {PLUGIN_ID} updated")
-        });
-    };
-    match REINSTALL.iter().try_for_each(|s| claude_cli(cfg, s)) {
-        Ok(()) => Ok(format!(
-            "~ plugin {PLUGIN_ID} reinstalled (update failed: {e})"
-        )),
-        Err(e2) => Ok(format!(
-            "offer {PLUGIN_SRC} → {} (claude failed: {e2})",
-            shown(&REINSTALL)
-        )),
+    match STEPS.iter().try_for_each(|s| claude_cli(cfg, s)) {
+        Ok(()) => {
+            write_receipt(cfg, receipt_path, source, available)?;
+            Ok(format!(
+                "~ plugin {PLUGIN_ID} updated to {}",
+                available.version
+            ))
+        }
+        Err(e) => {
+            let line = reinstall(cfg, source, available, receipt_path)?;
+            Ok(format!("{line} (update failed: {e})"))
+        }
+    }
+}
+
+/// `agents update` over the Claude plugin (T279 PR 3): [`plugin_version::decide`] replaces the
+/// old "did `installed_plugins.json` change any bytes" check, so a stale build is caught even
+/// when Claude's own marketplace cache would otherwise never move. `--dry-run`/`--force`/
+/// `--source` (`cfg.setup.*`) flow straight into the decision; a `claude` failure never bails
+/// the whole `agents update` — it reports the error line and leaves the receipt untouched, so
+/// the next run tries again (other hosts in the same run are unaffected either way).
+fn plugin_update(cfg: &Config) -> Result<String> {
+    let receipt_path = plugin_version::receipt_path(cfg);
+    let receipt = plugin_version::Receipt::read(&receipt_path)?;
+    let currently_installed = plugin_installed(cfg);
+    let installed = currently_installed.then(|| {
+        plugin_version::installed(
+            None,
+            receipt.get("claude"),
+            host_record_version(cfg).as_deref(),
+            plugin_version::Source::Github,
+        )
+    });
+    let source = update_source(cfg, installed.as_ref())?;
+    let available = plugin_version::available(
+        source,
+        &super::plugin_src(PLUGIN_SRC),
+        &Version::parse(env!("CARGO_PKG_VERSION")).expect("CARGO_PKG_VERSION is valid semver"),
+    )?;
+    // A marketplace pointed elsewhere (the pre-T139 ketch-store path, or the other source)
+    // must be repointed, which only the reinstall path does; an in-place update would keep
+    // pulling from the stale one.
+    let stale = currently_installed
+        && marketplace_state_for(cfg, &marketplace_target(source)) == MarketplaceState::Stale;
+    match plugin_version::decide(installed, &available, cfg.setup.force || stale) {
+        // Nothing to do: report NO_CHANGES like every other up-to-date step, so the block
+        // header's "already current" note still fires (`agents::mod::block`). `--dry-run`
+        // still names the version, since a dry run has nothing else to show for this host.
+        plugin_version::Decision::Skip { .. } => {
+            if apply(cfg).dry_run {
+                return Ok(format!(
+                    "plugin {PLUGIN_ID} {} up to date ({source})",
+                    available.version
+                ));
+            }
+            Ok(NO_CHANGES.into())
+        }
+        plugin_version::Decision::SkipOlder { warning } => {
+            Ok(format!("plugin {PLUGIN_ID}: {warning}"))
+        }
+        plugin_version::Decision::Update => update_in_place(cfg, source, &available, &receipt_path),
+        plugin_version::Decision::Install | plugin_version::Decision::Reinstall { .. } => {
+            reinstall(cfg, source, &available, &receipt_path)
+        }
     }
 }
 
@@ -750,10 +906,7 @@ impl Agent for Claude {
                 // by Claude's own record, so a dry run or a declined offer still gets the
                 // settings-file install. MCP is independent of the plugin (T275): it always
                 // writes to `~/.claude.json`, plugin or no plugin.
-                let current = mode == Mode::Update
-                    && plugin_installed(cfg)
-                    && marketplace_state(cfg) == MarketplaceState::Github;
-                let mut lines = vec![if current {
+                let mut lines = vec![if mode == Mode::Update {
                     plugin_update(cfg)?
                 } else {
                     plugin(cfg, false)?
@@ -1334,6 +1487,8 @@ mod tests {
         c.setup.claude.settings_path = dir.join("settings.json");
         c.setup.dry_run = dry;
         c.setup.backup = false;
+        // D29: never let a test's receipt read/write touch the real state directory.
+        c.plugin_receipt_path = Some(dir.join("plugins.json"));
         c
     }
 
@@ -1441,6 +1596,139 @@ mod tests {
             report.contains("claude plugin uninstall rtok@rtok && claude plugin marketplace remove rtok && claude plugin marketplace add listepo/rtok && claude plugin install rtok@rtok"),
             "{report}"
         );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    // --- T279 PR 3: `plugin_update`'s version decision, no real `claude` (dry-run only) ---
+
+    /// Claude's own record of `rtok@rtok` at `version`, and the `rtok` marketplace `source`.
+    fn record(dir: &std::path::Path, version: &str, source: &str) {
+        let plugins = dir.join("plugins");
+        fs::write(
+            plugins.join("installed_plugins.json"),
+            format!(r#"{{"version":2,"plugins":{{"rtok@rtok":[{{"scope":"user","version":"{version}"}}]}}}}"#),
+        )
+        .unwrap();
+        let known = format!(r#"{{"rtok":{{"source":{source}}}}}"#);
+        fs::write(plugins.join("known_marketplaces.json"), known).unwrap();
+    }
+
+    const GITHUB: &str = r#"{"source":"github","repo":"listepo/rtok"}"#;
+
+    /// Same version on record as the one running: skip, name the version, run no `claude`.
+    #[test]
+    fn plugin_update_skips_when_the_host_record_matches_the_running_version() {
+        let dir = plugin_dir("update-skip");
+        record(&dir, env!("CARGO_PKG_VERSION"), GITHUB);
+        // Up to date and not a dry run: NO_CHANGES, same as every other current-already step,
+        // so `agents::mod::block`'s "already current" note still fires.
+        let report = plugin_update(&plugin_cfg(&dir, false)).unwrap();
+        assert_eq!(report, NO_CHANGES);
+
+        // `--dry-run` still names the version, since a dry run has nothing else to show.
+        let dry_report = plugin_update(&plugin_cfg(&dir, true)).unwrap();
+        assert!(dry_report.contains("up to date"), "{dry_report}");
+        assert!(
+            dry_report.contains(env!("CARGO_PKG_VERSION")),
+            "{dry_report}"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// A legacy install (host record predates T279, no version file, no receipt) always reads
+    /// as `0.0.0` — lower than any real release, so it updates once.
+    #[test]
+    fn plugin_update_treats_a_legacy_install_as_an_update() {
+        let dir = plugin_dir("update-legacy");
+        record(&dir, "0.0.1", GITHUB);
+        let report = plugin_update(&plugin_cfg(&dir, true)).unwrap();
+        assert!(report.starts_with("~ plugin"), "{report}");
+        assert!(
+            report.contains("claude plugin marketplace update rtok"),
+            "{report}"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Nothing installed at all: `Decision::Install` runs the same fresh-install steps
+    /// [`plugin`] would for `agents install` (T279 step 4's "first `agents update`").
+    #[test]
+    fn plugin_update_installs_fresh_when_nothing_is_on_record() {
+        let dir = plugin_dir("update-fresh");
+        let report = plugin_update(&plugin_cfg(&dir, true)).unwrap();
+        assert!(report.starts_with("offer plugins/claude → "), "{report}");
+        assert!(
+            report.contains("claude plugin marketplace add listepo/rtok"),
+            "{report}"
+        );
+        assert!(
+            report.contains("claude plugin install rtok@rtok"),
+            "{report}"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// `--force` reinstalls even at the running version: uninstall then install, no
+    /// marketplace repoint since the recorded source is already GitHub.
+    #[test]
+    fn plugin_update_force_reinstalls_even_when_up_to_date() {
+        let dir = plugin_dir("update-force");
+        record(&dir, env!("CARGO_PKG_VERSION"), GITHUB);
+        let mut c = plugin_cfg(&dir, true);
+        c.setup.force = true;
+        let report = plugin_update(&c).unwrap();
+        assert!(
+            report.contains("claude plugin uninstall rtok@rtok && claude plugin install rtok@rtok"),
+            "{report}"
+        );
+        assert!(!report.contains("marketplace"), "{report}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Up to date but installed from the pre-T139 ketch-store marketplace: reinstall and
+    /// repoint to GitHub, never an in-place update from the stale path.
+    #[test]
+    fn plugin_update_repoints_a_stale_marketplace_even_when_up_to_date() {
+        let dir = plugin_dir("update-stale");
+        let stale = r#"{"source":"directory","path":"/x/.ketch/store/rtok/v0.6.3/plugins/claude"}"#;
+        record(&dir, env!("CARGO_PKG_VERSION"), stale);
+        let report = plugin_update(&plugin_cfg(&dir, true)).unwrap();
+        for step in [
+            "uninstall rtok@rtok",
+            "marketplace remove rtok",
+            "marketplace add listepo/rtok",
+        ] {
+            assert!(report.contains(step), "{step}: {report}");
+        }
+        assert!(!report.contains("marketplace update"), "{report}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// `--source local` reinstalls from the local plugin tree instead of the GitHub repo.
+    #[test]
+    fn plugin_update_source_local_installs_from_the_local_tree() {
+        let dir = plugin_dir("update-source-local");
+        let mut c = plugin_cfg(&dir, true);
+        c.setup.source = Some("local".to_string());
+        let report = plugin_update(&c).unwrap();
+        // The same path the code passes, so Windows separators match too.
+        let local = marketplace_target(plugin_version::Source::Local);
+        assert!(local.ends_with("claude"), "{local}");
+        assert!(
+            report.contains(&format!("claude plugin marketplace add {local}")),
+            "{report}"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// An invalid `--source` value is reported as an error rather than silently defaulting.
+    #[test]
+    fn plugin_update_rejects_an_unknown_source() {
+        let dir = plugin_dir("update-source-bad");
+        let mut c = plugin_cfg(&dir, true);
+        c.setup.source = Some("npm".to_string());
+        let err = plugin_update(&c).unwrap_err().to_string();
+        assert!(err.contains("npm"), "{err}");
         let _ = fs::remove_dir_all(dir);
     }
 }

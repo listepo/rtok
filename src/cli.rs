@@ -651,6 +651,31 @@ struct UpdateArgs {
     /// Skip closing/reopening a running desktop app around the write (T141)
     #[arg(long)]
     no_restart: bool,
+    /// Reinstall the plugin even when it is already at the available version (T279)
+    #[arg(long)]
+    force: bool,
+    /// Compare against this install source instead of the one on record (T279)
+    #[arg(long, value_enum)]
+    source: Option<SourceArg>,
+}
+
+/// `--source` for `rtok agents update` (T279): mirrors `agents::plugin_version::Source`, kept
+/// separate so this module does not need that one's `serde`/`FromStr` shape.
+#[derive(Copy, Clone, clap::ValueEnum)]
+enum SourceArg {
+    Github,
+    Local,
+    Marketplace,
+}
+
+impl SourceArg {
+    fn as_str(self) -> &'static str {
+        match self {
+            SourceArg::Github => "github",
+            SourceArg::Local => "local",
+            SourceArg::Marketplace => "marketplace",
+        }
+    }
 }
 
 /// One definition behind `rtok agents install` and the deprecated `rtok setup`.
@@ -1662,7 +1687,10 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         all,
         no_restart,
     } = args;
-    let mut cfg = Config::load_with(config_file, setup_flags(dry_run, yes, mcp, proxy, &mode))?;
+    let mut cfg = Config::load_with(
+        config_file,
+        setup_flags(dry_run, yes, mcp, proxy, &mode, false, None),
+    )?;
     // Comma-separated hosts: `rtok agents install opencode,cursor` installs both.
     let hosts = parse_hosts(&host)?;
     let mode = if remove {
@@ -1687,7 +1715,15 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
 fn update_hosts(config_file: Option<&std::path::Path>, args: UpdateArgs) -> Result<()> {
     let mut cfg = Config::load_with(
         config_file,
-        setup_flags(args.dry_run, false, false, false, &[]),
+        setup_flags(
+            args.dry_run,
+            false,
+            false,
+            false,
+            &[],
+            args.force,
+            args.source.map(SourceArg::as_str),
+        ),
     )?;
     let hosts = match &args.host {
         Some(h) => parse_hosts(h)?,
@@ -1742,8 +1778,10 @@ fn setup_flags(
     mcp: bool,
     proxy: bool,
     mode: &[String],
+    force: bool,
+    source: Option<&str>,
 ) -> Option<figment::value::Dict> {
-    if !dry_run && !yes && !mcp && !proxy && mode.is_empty() {
+    if !dry_run && !yes && !mcp && !proxy && mode.is_empty() && !force && source.is_none() {
         return None;
     }
     use figment::value::{Dict, Value};
@@ -1759,6 +1797,12 @@ fn setup_flags(
     }
     if proxy {
         setup.insert("proxy".into(), Value::from(true));
+    }
+    if force {
+        setup.insert("force".into(), Value::from(true));
+    }
+    if let Some(s) = source {
+        setup.insert("source".into(), Value::from(s));
     }
     if !mode.is_empty() {
         setup.insert(

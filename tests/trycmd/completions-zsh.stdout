@@ -275,12 +275,14 @@ _arguments "${_arguments_options[@]}" : /
 ;;
 (update)
 _arguments "${_arguments_options[@]}" : /
+'--source=[Compare against this install source instead of the one on record (T279)]:SOURCE:(github local marketplace)' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--dry-run[Print the planned edits and exit]' /
 '--cli[Only the CLI app (default is all)]' /
 '--desktop[Only the desktop app (default is all)]' /
 '--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
 '--no-restart[Skip closing/reopening a running desktop app around the write (T141)]' /
+'--force[Reinstall the plugin even when it is already at the available version (T279)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 '::host -- Host(s), comma-separated; omitted = every host rtok is installed in:_default' /
@@ -550,12 +552,14 @@ _arguments "${_arguments_options[@]}" : /
 ;;
 (update)
 _arguments "${_arguments_options[@]}" : /
+'--source=[Compare against this install source instead of the one on record (T279)]:SOURCE:(github local marketplace)' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--dry-run[Print the planned edits and exit]' /
 '--cli[Only the CLI app (default is all)]' /
 '--desktop[Only the desktop app (default is all)]' /
 '--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
 '--no-restart[Skip closing/reopening a running desktop app around the write (T141)]' /
+'--force[Reinstall the plugin even when it is already at the available version (T279)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 '::host -- Host(s), comma-separated; omitted = every host rtok is installed in:_default' /
