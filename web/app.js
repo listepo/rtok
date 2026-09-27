@@ -38,8 +38,7 @@
   const fmt = (n) => (n == null ? "—" : nf.format(n));
   const compact = (n) => {
     if (n == null) return "—";
-    n = Number(n);
-    if (!Number.isFinite(n)) return "—";
+    n = Number(n); // wire values: never let a string through into HTML
     const a = Math.abs(n);
     if (a >= 1e9) return (n / 1e9).toFixed(a >= 1e10 ? 0 : 1) + "B";
     if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
@@ -573,7 +572,9 @@
     }));
     calls.forEach((c) => {
       const b = buckets[Math.min(N - 1, Math.floor((c.ts - t0) / step))];
-      if (["hook", "mcp", "proxy"].includes(c.surface)) b[c.surface]++;
+      if (c.surface === "hook") b.hook++;
+      else if (c.surface === "mcp") b.mcp++;
+      else if (c.surface === "proxy") b.proxy++;
       if (!c.ok) b.err++;
     });
     const ms = calls
@@ -588,10 +589,11 @@
           (s) => s.started_at <= b.t + step && (s.ended_at == null || s.ended_at >= b.t),
         ).length,
     );
-    const bySurface = new Map();
+    // A Map, not an object: `surface` comes off the wire and must not reach a prototype key.
+    const surfaces = new Map();
     calls.forEach((c) => {
-      let o = bySurface.get(c.surface);
-      if (!o) bySurface.set(c.surface, (o = { n: 0, err: 0, last: 0 }));
+      if (!surfaces.has(c.surface)) surfaces.set(c.surface, { n: 0, err: 0, last: 0 });
+      const o = surfaces.get(c.surface);
       o.n++;
       if (!c.ok) o.err++;
       o.last = Math.max(o.last, c.ts);
@@ -614,7 +616,7 @@
       buckets,
       step,
       liveSeries,
-      bySurface,
+      bySurface: Object.fromEntries(surfaces),
       p50: q(0.5),
       p95: q(0.95),
       checks: doctorChecks(v.doctor),
@@ -1039,7 +1041,7 @@
       : emptyNote("no sessions yet");
 
     const surfaceRow = (k, label) => {
-      const o = D.bySurface.get(k);
+      const o = D.bySurface[k];
       return `<div class="flex items-center gap-2 text-2xs"><span class="w-12 text-ink-muted">${label}</span><span class="text-ink">${o ? o.n : 0} calls</span>${o && o.err ? `<span class="text-delta-fg">${o.err} failed</span>` : ""}<span class="ml-auto text-ink-subtle">${o ? "last " + ago(o.last, D.now) : "no activity"}</span></div>`;
     };
     const d = S.snap.doctor;
@@ -1084,7 +1086,7 @@
           ${panel(
             "calls over time",
             `<div class="p-3">${D.calls.length ? callsChart(D) : emptyNote("no calls yet (the ledger fills as hooks, MCP and the proxy run)")}
-            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-2xs text-ink-muted">${SERIES.map((s) => `<span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background:${s.fill}"></span>${s.label} ${D.bySurface.get(s.k)?.n ?? 0}</span>`).join("")}<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-delta-fg"></span>failed ${D.errors.length}</span><span class="ml-auto">p50 ${D.p50 == null ? "—" : D.p50.toFixed(1)} ms · p95 ${D.p95 == null ? "—" : D.p95.toFixed(0)} ms</span></div></div>`,
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-2xs text-ink-muted">${SERIES.map((s) => `<span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background:${s.fill}"></span>${s.label} ${D.bySurface[s.k] ? D.bySurface[s.k].n : 0}</span>`).join("")}<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-delta-fg"></span>failed ${D.errors.length}</span><span class="ml-auto">p50 ${D.p50 == null ? "—" : D.p50.toFixed(1)} ms · p95 ${D.p95 == null ? "—" : D.p95.toFixed(0)} ms</span></div></div>`,
             {
               cls: "xl:col-span-8",
               sub: `${D.calls.length} rows · ${Math.max(1, Math.round(D.step / 60))} min buckets`,
@@ -1441,10 +1443,10 @@
       <div class="grid grid-cols-1 xl:grid-cols-12 gap-3">
         ${checks.replace('class="glass shine flex', 'class="xl:col-span-7 glass shine flex')}
         <div class="xl:col-span-5 flex flex-col gap-3">
-          ${panel("hooks", `<div class="p-3 flex flex-col gap-1.5">${ev.map(([k, n]) => `<div class="flex items-center gap-2 text-xs"><span class="w-36 truncate text-ink-muted">${esc(k)}</span><div class="flex-1 h-1.5 rounded-full bg-surface-3"><div class="h-full rounded-full bg-accent-fg" style="width:${(n / mxE) * 100}%"></div></div><span class="w-6 text-right">${n}</span></div>`).join("") || '<p class="text-xs text-ink-muted">no hooks installed</p>'}</div>`, { sub: `${d.hooks_total} total`, id: "h-hk" })}
+          ${panel("hooks", `<div class="p-3 flex flex-col gap-1.5">${ev.map(([k, n]) => `<div class="flex items-center gap-2 text-xs"><span class="w-36 truncate text-ink-muted">${esc(k)}</span><div class="flex-1 h-1.5 rounded-full bg-surface-3"><div class="h-full rounded-full bg-accent-fg" style="width:${(n / mxE) * 100}%"></div></div><span class="w-6 text-right">${n}</span></div>`).join("") || '<p class="text-xs text-ink-muted">no hooks installed</p>'}</div>`, { sub: `${esc(d.hooks_total)} total`, id: "h-hk" })}
           ${panel("proxy chains", `<div class="p-3 flex flex-col gap-2 text-xs"><div class="flex flex-wrap items-center gap-1.5"><span class="w-16 text-ink-subtle">anthropic</span>${hops(d.proxy)}</div><div class="flex flex-wrap items-center gap-1.5"><span class="w-16 text-ink-subtle">openai</span>${hops(d.proxy_openai)}</div>${d.mcp_tool_search_disabled ? '<p class="text-2xs text-warn-fg">mcp_tool_search likely disabled (ANTHROPIC_BASE_URL is set)</p>' : ""}</div>`, { id: "h-px" })}
         </div>
-        ${panel("MCP servers", `<div class="overflow-x-auto"><table class="tbl"><thead><tr><th scope="col">name</th><th scope="col" class="text-right">tools</th><th scope="col" class="text-right">desc tokens</th><th scope="col">cmd</th></tr></thead><tbody>${d.mcp.map((s) => `<tr><td class="font-semibold">${esc(s.name)}</td><td class="text-right">${s.tools}</td><td class="text-right">~${fmt(s.desc_tokens)}</td><td class="text-ink-muted truncate max-w-[18rem]">${esc(s.cmd)}</td></tr>`).join("")}</tbody></table></div>`, { cls: "xl:col-span-7", sub: `${d.mcp.length} probed`, id: "h-mcp" })}
+        ${panel("MCP servers", `<div class="overflow-x-auto"><table class="tbl"><thead><tr><th scope="col">name</th><th scope="col" class="text-right">tools</th><th scope="col" class="text-right">desc tokens</th><th scope="col">cmd</th></tr></thead><tbody>${d.mcp.map((s) => `<tr><td class="font-semibold">${esc(s.name)}</td><td class="text-right">${esc(s.tools)}</td><td class="text-right">~${fmt(s.desc_tokens)}</td><td class="text-ink-muted truncate max-w-[18rem]">${esc(s.cmd)}</td></tr>`).join("")}</tbody></table></div>`, { cls: "xl:col-span-7", sub: `${d.mcp.length} probed`, id: "h-mcp" })}
         ${panel(
           "environment",
           `<div class="p-3">${kv([
@@ -1597,15 +1599,26 @@
       return;
     }
     const D = derive(S.snap);
-    const views = {
-      overview: viewOverview,
-      plugins: viewPlugins,
-      calls: viewCalls,
-      sessions: viewSessions,
-      doctor: viewDoctor,
-      logs: viewLogs,
-    };
-    main.innerHTML = (Object.hasOwn(views, S.route) ? views[S.route] : viewOverview)(D);
+    // `S.route` comes from the URL hash: a fixed switch, no lookup keyed by it.
+    let view = viewOverview;
+    switch (S.route) {
+      case "plugins":
+        view = viewPlugins;
+        break;
+      case "calls":
+        view = viewCalls;
+        break;
+      case "sessions":
+        view = viewSessions;
+        break;
+      case "doctor":
+        view = viewDoctor;
+        break;
+      case "logs":
+        view = viewLogs;
+        break;
+    }
+    main.innerHTML = view(D);
     if (keep) {
       const el = main.querySelector(`[data-filter="${keep.f}"]`);
       if (el) {
@@ -1827,8 +1840,7 @@
       S.sel[a.select] = i;
       render();
       if (innerWidth < 1024) {
-        const d = $("#detail");
-        d?.scrollIntoView({
+        $("#detail")?.scrollIntoView({
           behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
           block: "start",
         });
@@ -1909,8 +1921,7 @@
       );
       e.preventDefault();
       render();
-      const row = $(`#main tr[aria-selected="true"]`);
-      row?.scrollIntoView({ block: "nearest" });
+      $(`#main tr[aria-selected="true"]`)?.scrollIntoView({ block: "nearest" });
     }
   });
   addEventListener("hashchange", () => onRoute(false));
