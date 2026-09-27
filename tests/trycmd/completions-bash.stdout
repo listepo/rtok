@@ -133,6 +133,9 @@ _rtok() {
             rtok__subcmd__agents,update)
                 cmd="rtok__subcmd__agents__subcmd__update"
                 ;;
+            rtok__subcmd__agents,whoami)
+                cmd="rtok__subcmd__agents__subcmd__whoami"
+                ;;
             rtok__subcmd__agents__subcmd__help,help)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__help"
                 ;;
@@ -156,6 +159,9 @@ _rtok() {
                 ;;
             rtok__subcmd__agents__subcmd__help,update)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__update"
+                ;;
+            rtok__subcmd__agents__subcmd__help,whoami)
+                cmd="rtok__subcmd__agents__subcmd__help__subcmd__whoami"
                 ;;
             rtok__subcmd__agents__subcmd__help__subcmd__junk,clear)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__junk__subcmd__clear"
@@ -445,6 +451,9 @@ _rtok() {
             rtok__subcmd__help__subcmd__agents,update)
                 cmd="rtok__subcmd__help__subcmd__agents__subcmd__update"
                 ;;
+            rtok__subcmd__help__subcmd__agents,whoami)
+                cmd="rtok__subcmd__help__subcmd__agents__subcmd__whoami"
+                ;;
             rtok__subcmd__help__subcmd__agents__subcmd__junk,clear)
                 cmd="rtok__subcmd__help__subcmd__agents__subcmd__junk__subcmd__clear"
                 ;;
@@ -704,7 +713,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents)
-            opts="-h --config --help install uninstall remove update list info sessions junk help"
+            opts="-h --config --help install uninstall remove update list info sessions junk whoami help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -722,7 +731,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__help)
-            opts="install uninstall update list info sessions junk help"
+            opts="install uninstall update list info sessions junk whoami help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -862,6 +871,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__help__subcmd__update)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__agents__subcmd__help__subcmd__whoami)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1118,6 +1141,24 @@ _rtok() {
                     COMPREPLY=($(compgen -W "github local marketplace" -- "${cur}"))
                     return 0
                     ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__agents__subcmd__whoami)
+            opts="-h --json --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
                 --config)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -2190,7 +2231,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__agents)
-            opts="install uninstall update list info sessions junk"
+            opts="install uninstall update list info sessions junk whoami"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2316,6 +2357,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__agents__subcmd__update)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__help__subcmd__agents__subcmd__whoami)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )

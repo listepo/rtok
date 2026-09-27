@@ -35,6 +35,7 @@ config; reading cases set `inherit = false` and `RTOK_HOME` under `target/tmp/`.
 - `agents-info.toml` — `agents info` table for one host (host paths via `...`)
 - `agents-info-json.toml` — `agents info --json` for one host (host paths via `...`)
 - `agents-sessions.toml` — `agents sessions` on an empty store
+- `agents-whoami.trycmd` — `agents whoami` with no `RTOK_AGENT_ID` (exit 1)
 - `demon-status.toml` — `demon status` with nothing running
 - `otel-status.toml` — `otel status` table
 - `logs-print.toml` — `logs` on an empty log

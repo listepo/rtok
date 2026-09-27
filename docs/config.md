@@ -436,7 +436,7 @@ Unset keeps Mozilla roots only. `rtok hook` never opens TLS.
 |-----------|------|-----|
 | global | `--config <path>` | (selects the file; not a key) |
 | global | `RTOK_HOME` | (selects the directory; env only, not a clap flag) |
-| reading | `--json` | `stats.format` on `stats`; otherwise an action (the `web::model` page as JSON, not a stored key). On `stats`, `info`, `config show`, `doctor`, `plugins`, `agents list`, `agents sessions`, `logs`, `demon status`, `otel status` |
+| reading | `--json` | `stats.format` on `stats`; otherwise an action (the `web::model` page as JSON, not a stored key). On `stats`, `info`, `config show`, `doctor`, `plugins`, `agents list`, `agents sessions`, `agents whoami`, `logs`, `demon status`, `otel status` |
 | `hook` | `--host` | `hook.host` |
 | `proxy` | `--port`, `--upstream`, `--mode`, `--dry-run` | `proxy.port`, `proxy.upstream`, `proxy.mode`, `proxy.dry_run` |
 | `web` | `--host`, `--port` | `web.host`, `web.port` (`rtok dashboard` is the deprecated spelling) |
@@ -448,6 +448,7 @@ Unset keeps Mozilla roots only. `rtok hook` never opens TLS.
 | `agents install` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace`, `--cli`, `--desktop`, `--all` | `setup.*` (`--remove`, `--replace`, `--cli`, `--desktop`, `--all` are actions) |
 | `agents remove` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
 | `agents list` | — | reads the host configs and `<bin> --version` (`--json` is the reading row) |
+| `agents whoami` | — | reads `RTOK_AGENT_ID` and resolves it through the store (T283); no key, no `setup.*` (`--json` is the reading row) |
 | `expand` | `--lines`, `--grep` (regex, literal fallback; hits print as `N:line`), `--context N` (lines around each grep hit, windows merged with `--`) | per call (no key); `expand.max_lines` caps; `expand.max_rate` is the report ceiling (T22.5) |
 | `filter` | `--cmd` | `filter.cmd` |
 | `config init`, `config set`, `memory import`, `graph index` | `--dry-run` | (action: renders the change as a git diff and writes nothing) |
