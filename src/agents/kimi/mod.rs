@@ -88,10 +88,7 @@ impl Agent for Kimi {
     }
 
     fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
-        &[
-            rtok_plugin_sdk::Surface::Hook,
-            rtok_plugin_sdk::Surface::Mcp,
-        ]
+        &[rtok_plugin_sdk::Surface::Hook]
     }
 
     fn shared(&self) -> bool {
@@ -107,7 +104,7 @@ impl Agent for Kimi {
         if super::read(&cfg.setup.kimi.config_path).contains("rtok hook") {
             out.push("hooks");
         }
-        if super::read(&mcp_path(cfg)).contains("\"rtok\"") {
+        if super::mcp::has_entry(&mcp_path(cfg), "mcpServers", NAME) {
             out.push("mcp");
         }
         if plugin_detected(cfg) {
@@ -124,24 +121,20 @@ impl Agent for Kimi {
             lines.push(unregister_mcp(cfg)?);
             return Ok(lines);
         }
-        if plugin_detected(cfg) {
-            // D21 singleton: the plugin serves hooks and MCP, so rtok's own
-            // tables go instead of coming (Cursor's `plugin_is_mcp` rule,
-            // for hooks too).
-            let mut lines = vec![offer_plugin(cfg, false)?];
-            lines.push(run(cfg, true)?);
-            lines.push(unregister_mcp(cfg)?);
-            return Ok(lines);
-        }
-        // Plain path: hooks + MCP lines first. The offer line follows only when
-        // something else changed and `--yes` is set — a repeat install is all
-        // `NO_CHANGES` and reads back as `already installed` (every line counts,
-        // including guidance).
-        let mut lines = vec![run(cfg, false)?];
+        let plugin = plugin_detected(cfg);
+        // D21 singleton: while the plugin is installed it is the only call path for hooks,
+        // so rtok's own `[[hooks]]` tables are stripped instead of added. MCP is
+        // independent of the plugin (T275/D33): install/update always write
+        // `mcpServers.rtok` regardless of plugin state; only remove takes it out.
+        let mut lines = vec![run(cfg, plugin)?];
         if cfg.setup.mcp {
             lines.push(register_mcp(cfg)?);
         }
-        if lines.iter().any(|l| l != NO_CHANGES) && cfg.setup.yes {
+        // The offer line goes first unconditionally once the plugin is already detected;
+        // otherwise it follows only when something else changed and `--yes` is set — a
+        // repeat install is all `NO_CHANGES` and reads back as `already installed` (every
+        // line counts, including guidance).
+        if plugin || (lines.iter().any(|l| l != NO_CHANGES) && cfg.setup.yes) {
             lines.insert(0, offer_plugin(cfg, false)?);
         } else {
             lines.insert(0, NO_CHANGES.into());
@@ -518,9 +511,10 @@ mod tests {
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
-    /// `plugins/kimi/kimi.plugin.json` (T85) is the installer's hooks and MCP in Kimi's plugin
-    /// shape: same entries in the same order, same default timeout, one server. A new `ENTRIES`
-    /// row fails here until the manifest follows.
+    /// `plugins/kimi/kimi.plugin.json` (T85) is the installer's hooks in Kimi's plugin shape:
+    /// same entries in the same order, same default timeout. A new `ENTRIES` row fails here
+    /// until the manifest follows. It ships no MCP server of its own (T275/D33):
+    /// `mcpServers.rtok` is written by `rtok agents install kimi` into `mcp.json` directly.
     #[test]
     fn plugin_manifest_matches_the_installer() {
         let m: serde_json::Value =
@@ -542,10 +536,7 @@ mod tests {
             let (cmd, event) = (h["command"].as_str().unwrap(), h["event"].as_str().unwrap());
             assert!(is_ours(cmd, event), "{cmd}");
         }
-        assert_eq!(
-            m["mcpServers"],
-            json!({NAME: {"command": "rtok", "args": ["mcp"]}})
-        );
+        assert!(m.get("mcpServers").is_none(), "{m}");
     }
 
     /// T86: the offer names `plugins/kimi` and `/plugins install` (dry-run and
@@ -570,11 +561,12 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// T86 D21 singleton: with a seeded `managed/rtok/kimi.plugin.json` a second
-    /// install removes the nine tables and `mcpServers.rtok` and reports `plugin`;
-    /// remove leaves the managed copy alone with its own remove line.
+    /// T86 D21 singleton: with a seeded `managed/rtok/kimi.plugin.json` a second install
+    /// removes the nine `[[hooks]]` tables and reports `plugin`. MCP is independent of the
+    /// plugin (T275/D33): `mcpServers.rtok` stays written regardless, and only remove takes
+    /// it out.
     #[test]
-    fn plugin_detected_strips_own_tables_and_reports_plugin() {
+    fn plugin_detected_strips_own_hooks_mcp_is_independent() {
         let (mut c, dir) = cfg("singleton", false);
         c.setup.yes = true;
         // Plain install first: hooks + MCP land in the user files; the `--yes`
@@ -591,11 +583,15 @@ mod tests {
         fs::create_dir_all(marker.parent().unwrap()).unwrap();
         fs::write(&marker, "{}").unwrap();
         let second = Kimi.apply(&c, Kind::Cli, Mode::Install).unwrap();
-        assert_eq!(Kimi.installed(&c, Kind::Cli), ["plugin"]);
+        assert_eq!(Kimi.installed(&c, Kind::Cli), ["mcp", "plugin"]);
         assert!(!super::super::read(&c.setup.kimi.config_path).contains("rtok hook"));
-        assert!(!super::super::read(&mcp_path(&c)).contains("\"rtok\""));
+        assert!(
+            super::super::read(&mcp_path(&c)).contains("\"rtok\""),
+            "T275/D33: mcp is independent of the plugin"
+        );
         assert!(second[0].contains("/plugins install"), "{second:?}");
-        // Remove: own tables already gone, managed copy kept with its line.
+        // Remove: own hooks already gone, mcpServers.rtok taken out, managed copy kept
+        // with its own remove line.
         let rm = Kimi.apply(&c, Kind::Cli, Mode::Remove).unwrap();
         assert!(rm[0].contains("/plugins remove rtok"), "{rm:?}");
         assert!(marker.is_file(), "remove leaves the managed copy alone");
@@ -642,5 +638,27 @@ command = \"/old/store/rtok/v0.1.0/rtok hook PreToolUse\"\ntimeout = 1\n\n\
         let current = doc.to_string();
         assert_eq!(insert_ours(&mut doc, 5).unwrap(), NO_CHANGES);
         assert_eq!(doc.to_string(), current);
+    }
+
+    /// T275/D33: install/update always write `mcpServers.rtok`, plugin detected or not;
+    /// only remove takes it out; a user-edited entry is left with a `leave` line.
+    #[test]
+    fn t275_mcp_entry_always_written_except_on_remove() {
+        let (c, dir) = cfg("t275-mcp", false);
+        let marker = plugin_marker(&c);
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, "{}").unwrap();
+        assert!(plugin_detected(&c));
+
+        let path = mcp_path(&c);
+        crate::agents::mcp::assert_json_entry_lifecycle(
+            &Kimi,
+            &c,
+            Kind::Cli,
+            &path,
+            "mcpServers",
+            || register_mcp(&c),
+        );
+        let _ = fs::remove_dir_all(dir);
     }
 }
