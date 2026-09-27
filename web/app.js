@@ -38,6 +38,8 @@
   const fmt = (n) => (n == null ? "—" : nf.format(n));
   const compact = (n) => {
     if (n == null) return "—";
+    n = Number(n);
+    if (!Number.isFinite(n)) return "—";
     const a = Math.abs(n);
     if (a >= 1e9) return (n / 1e9).toFixed(a >= 1e10 ? 0 : 1) + "B";
     if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
