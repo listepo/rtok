@@ -382,6 +382,15 @@ const PLUGIN_SRC: &str = "plugins/claude";
 /// `installed_plugins.json` for the hooks the installed plugin carries.
 pub(crate) const PLUGIN_ID: &str = "rtok@rtok";
 
+/// The one Claude plugin failure `agents update`'s exit code cannot shrug off (T279 step 3/6
+/// "Failure"): [`plugin_against`] already uninstalled the old copy when the install step then
+/// failed, so the host is left with nothing — every other `claude` failure keeps the old copy
+/// in place and stays a non-fatal `offer …`/`~ …` line. `cli::apply_hosts` greps the rendered
+/// report for this marker after printing it (the same "print, then bail on a bad outcome"
+/// shape `worktree gc`/`clean` already use) instead of propagating a fresh `Err`, which would
+/// cut the report short and abort every other host in the same run.
+pub(crate) const REINSTALL_FAILED: &str = "removed, reinstall failed:";
+
 /// GitHub `owner/repo` shorthand `claude plugin marketplace add` resolves (T139): the repo
 /// root's `.claude-plugin/marketplace.json` names this one marketplace `rtok`, whose only
 /// plugin is `./plugins/claude` (relative to the repo root, not the marketplace file). A
@@ -530,9 +539,17 @@ fn plugin_against(cfg: &Config, remove: bool, target: &str, force: bool) -> Resu
             "offer {PLUGIN_SRC} → {shown} (claude failed: claude not found on PATH) {KETCH_INSTALL}"
         ));
     }
+    let mut removed = false;
     for step in &steps {
         if let Err(e) = claude_cli(cfg, step) {
-            return Ok(format!("offer {PLUGIN_SRC} → {shown} (claude failed: {e})"));
+            return Ok(if !remove && removed {
+                format!("plugin {PLUGIN_ID} {REINSTALL_FAILED} {e}")
+            } else {
+                format!("offer {PLUGIN_SRC} → {shown} (claude failed: {e})")
+            });
+        }
+        if !remove && matches!(step.as_slice(), ["plugin", "uninstall", ..]) {
+            removed = true;
         }
     }
     Ok(if remove {
@@ -636,8 +653,12 @@ fn marketplace_target(source: plugin_version::Source) -> String {
 /// `agents update`'s reinstall path (T279 step 3/6): the decision already said `Install` or
 /// `Reinstall`, so [`plugin_against`] runs unconditionally (`force: true`) against `target` —
 /// `source`'s GitHub repo shorthand, or the local checkout path for `Source::Local`. The
-/// receipt is written only on the real `+ plugin …` success line, never on a dry run or a
-/// `claude` failure (both keep their own prefix).
+/// receipt is written only on the real `+ plugin …` success line; a dry run or a `claude`
+/// failure that never removed anything leaves it untouched (both keep their own prefix). A
+/// [`REINSTALL_FAILED`] line means the old copy is already gone, so the receipt row is
+/// deleted too — the next `agents update` then finds no receipt, no version file and no
+/// `claude`-reported install, reads that as "not installed", and installs fresh instead of
+/// replaying a decision built on a copy that no longer exists.
 fn reinstall(
     cfg: &Config,
     source: plugin_version::Source,
@@ -647,6 +668,10 @@ fn reinstall(
     let line = plugin_against(cfg, false, &marketplace_target(source), true)?;
     if line.starts_with('+') {
         write_receipt(cfg, receipt_path, source, available)?;
+    } else if line.contains(REINSTALL_FAILED) {
+        let mut receipt = plugin_version::Receipt::read(receipt_path)?;
+        receipt.delete("claude");
+        receipt.write(receipt_path)?;
     }
     Ok(line)
 }

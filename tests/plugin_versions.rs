@@ -11,6 +11,8 @@
 //! bare Windows box may not; once `--files` runs, a file it lists but that is missing on disk
 //! still fails the test.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -107,3 +109,213 @@ fn every_plugin_manifest_version_matches_cargo_pkg_version() {
         );
     }
 }
+
+/// T279 PR 3: `agents update claude` wired to the decision engine
+/// (`src/agents/plugin_version.rs`, `src/agents/claude/mod.rs`'s
+/// `plugin_update`/`reinstall`/`update_in_place`), exercised end to end with a fake `claude`
+/// CLI (`common::agents::fake_claude_path`, reused rather than respelled) so no test ever
+/// shells out to the real thing. `#[cfg(unix)]`, same as `tests/claude_plugin.rs`: the shim is
+/// a shell script, and these are the only tests in this file that need one — the file/manifest
+/// checks above run everywhere and skip without `bash`.
+#[cfg(unix)]
+mod claude_reinstall {
+    use super::*;
+    use common::agents::{claude_log, fake_claude_path, json, raw, rtok, slash, tmp, write_cfg};
+
+    /// `known_marketplaces.json` pointing `rtok` at `source_json` (the `"source"` object's body),
+    /// and `installed_plugins.json` recording `rtok@rtok` at `version` — a legacy host record with
+    /// no `.rtok-plugin-version` and no receipt, exactly what every install before T279 left
+    /// (`seed_claude_plugin` in `tests/agents_update.rs` covers the same ground for the older,
+    /// receipt-less T242.3 tests; this one also seeds the marketplace shape so the T279 source/
+    /// stale-repoint decisions have something to read).
+    fn seed(home: &Path, source_json: &str, version: &str) {
+        let dir = home.join(".claude/plugins");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("known_marketplaces.json"),
+            format!(r#"{{"rtok":{{"source":{source_json}}}}}"#),
+        )
+        .unwrap();
+        fs::write(
+        dir.join("installed_plugins.json"),
+        format!(
+            r#"{{"version":2,"plugins":{{"rtok@rtok":[{{"scope":"user","version":"{version}"}}]}}}}"#
+        ),
+    )
+    .unwrap();
+    }
+
+    /// `known_marketplaces.json`'s `"source"` body for the GitHub marketplace `plugin_against`
+    /// treats as current (T139).
+    const GITHUB_SOURCE: &str = r#"{"source":"github","repo":"listepo/rtok"}"#;
+
+    /// Where the T279 receipt lands for a `home` these tests redirected `HOME`/`XDG_STATE_HOME`/
+    /// `LOCALAPPDATA` into (`common::agents::raw_with_path` pins all three so a real value on the
+    /// test machine never leaks in) — the same OS branches as
+    /// `agents::plugin_version::default_receipt_path`, which is private to the production crate.
+    fn receipt_path(home: &Path) -> PathBuf {
+        if cfg!(target_os = "macos") {
+            home.join("Library/Application Support/rtok/plugins.json")
+        } else if cfg!(target_os = "windows") {
+            home.join("AppData/Local/rtok/plugins.json")
+        } else {
+            home.join(".local/state/rtok/plugins.json")
+        }
+    }
+
+    /// A throwaway home with the fake `claude` first on `PATH` and rtok's own config pointed at
+    /// it, ready for [`seed`].
+    fn home_with_fake_claude(name: &str) -> (PathBuf, PathBuf) {
+        let home = tmp(name);
+        let cfg = write_cfg(&home);
+        fake_claude_path(&home); // installs the fake `claude`/`codex`/`copilot` shims under `home`
+        (home, cfg)
+    }
+
+    /// Older installed → `plugin marketplace update` + `plugin update`, and the T279 receipt is
+    /// written at the running version; a rerun then finds the receipt already current and calls
+    /// `claude` for nothing (T279 step 3, plan check: "a second run prints `up to date` and runs
+    /// no `claude` command").
+    #[test]
+    fn update_writes_the_receipt_then_a_rerun_skips_with_no_claude_call() {
+        let (home, cfg) = home_with_fake_claude("pv-up-to-date");
+        seed(&home, GITHUB_SOURCE, "0.1.0");
+
+        let out = rtok(&["agents", "update", "claude", "--cli"], &cfg, &home);
+        assert!(out.contains("~ plugin rtok@rtok updated"), "{out}");
+        assert_eq!(
+            claude_log(&home),
+            "plugin marketplace update rtok\nplugin update rtok@rtok\n"
+        );
+        let receipt = json(&receipt_path(&home));
+        assert_eq!(receipt["claude"]["source"], "github");
+        assert_eq!(receipt["claude"]["version"], env!("CARGO_PKG_VERSION"));
+
+        let before = claude_log(&home);
+        let again = rtok(&["agents", "update", "claude", "--cli"], &cfg, &home);
+        assert!(again.contains("already current"), "{again}");
+        assert_eq!(claude_log(&home), before, "up to date calls no claude");
+    }
+
+    /// `--force` reinstalls — uninstall then install — even though the receipt is already at the
+    /// running version, and never calls `plugin update` (the decision function is bypassed
+    /// entirely, plan T279 step 6).
+    #[test]
+    fn force_reinstalls_even_when_already_up_to_date() {
+        let (home, cfg) = home_with_fake_claude("pv-force");
+        seed(&home, GITHUB_SOURCE, env!("CARGO_PKG_VERSION"));
+
+        let out = rtok(
+            &["agents", "update", "claude", "--cli", "--force"],
+            &cfg,
+            &home,
+        );
+        assert!(out.contains("+ plugin"), "{out}");
+        let log = claude_log(&home);
+        assert_eq!(
+            log,
+            "plugin uninstall rtok@rtok\nplugin install rtok@rtok\n"
+        );
+        assert_eq!(
+            json(&receipt_path(&home))["claude"]["version"],
+            env!("CARGO_PKG_VERSION")
+        );
+    }
+
+    /// A stale ketch-store marketplace (the pre-T139 local path, not GitHub) is repointed on a
+    /// plain `agents update`, no `--force` needed: `plugin_update`'s own stale check feeds the
+    /// same `true` into `decide` that `--force` would.
+    #[test]
+    fn a_stale_local_marketplace_is_repointed_back_to_github_on_update() {
+        let (home, cfg) = home_with_fake_claude("pv-stale-marketplace");
+        seed(
+            &home,
+            r#"{"source":"directory","path":"/old/store/rtok/v0.1.0/plugins/claude"}"#,
+            "0.1.0",
+        );
+
+        let out = rtok(&["agents", "update", "claude", "--cli"], &cfg, &home);
+        assert!(out.contains("+ plugin"), "{out}");
+        assert_eq!(
+            claude_log(&home),
+            "plugin uninstall rtok@rtok\nplugin marketplace remove rtok\n\
+         plugin marketplace add listepo/rtok\nplugin install rtok@rtok\n"
+        );
+        assert_eq!(json(&receipt_path(&home))["claude"]["source"], "github");
+    }
+
+    /// `--source local` reinstalls from the local checkout tree and switches the receipt over —
+    /// a source change alone forces a reinstall (`plugin_version::decide`), no `--force` needed.
+    #[test]
+    fn source_local_reinstalls_from_the_checkout_and_switches_the_receipt_source() {
+        let (home, cfg) = home_with_fake_claude("pv-source-local");
+        seed(&home, GITHUB_SOURCE, "0.1.0");
+
+        let out = rtok(
+            &["agents", "update", "claude", "--cli", "--source", "local"],
+            &cfg,
+            &home,
+        );
+        assert!(out.contains("+ plugin"), "{out}");
+        let log = slash(claude_log(&home));
+        assert!(
+            log.lines()
+                .any(|l| l.starts_with("plugin marketplace add ") && l.ends_with("plugins/claude")),
+            "{log}"
+        );
+        assert_eq!(json(&receipt_path(&home))["claude"]["source"], "local");
+    }
+
+    /// T279 step 3/6 "Failure": a forced reinstall whose uninstall succeeds and whose install then
+    /// fails reports it plainly, deletes the receipt row (so the next `agents update` treats the
+    /// host as not installed), and `rtok agents update` exits non-zero — unlike every other
+    /// `claude` failure, which keeps the old copy and stays a non-fatal `offer …`/`~ …` line.
+    #[test]
+    fn a_failed_forced_reinstall_after_a_successful_uninstall_deletes_the_receipt_and_exits_non_zero()
+     {
+        let (home, cfg) = home_with_fake_claude("pv-reinstall-fail");
+        seed(&home, GITHUB_SOURCE, "0.1.0");
+        // A normal update first, so there is a receipt row to lose.
+        rtok(&["agents", "update", "claude", "--cli"], &cfg, &home);
+        assert_eq!(json(&receipt_path(&home))["claude"]["source"], "github");
+
+        fs::write(home.join("fake-claude-fail-install"), "").unwrap();
+        let out = raw(
+            &["agents", "update", "claude", "--cli", "--force"],
+            &cfg,
+            &home,
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        assert!(
+            !out.status.success(),
+            "exit code {:?}: {stdout}",
+            out.status.code()
+        );
+        assert!(
+            stdout.contains("plugin rtok@rtok removed, reinstall failed: install failed"),
+            "{stdout}"
+        );
+        assert!(
+            json(&receipt_path(&home)).get("claude").is_none(),
+            "the receipt row must be gone: {}",
+            json(&receipt_path(&home))
+        );
+
+        // A failure before anything was removed (no `--force`: `installed_plugins.json` is gone,
+        // so the plain path has nothing to uninstall and goes straight to `install`) keeps
+        // today's `offer …` line instead, and never touches the receipt (there is none to touch).
+        let plain = raw(&["agents", "update", "claude", "--cli"], &cfg, &home);
+        let plain_out = String::from_utf8_lossy(&plain.stdout).into_owned();
+        assert!(plain.status.success(), "{plain_out}");
+        assert!(plain_out.contains("offer plugins/claude"), "{plain_out}");
+        assert!(
+            plain_out.contains("claude failed: install failed"),
+            "{plain_out}"
+        );
+
+        // The fake CLI healthy again: the next update finds nothing installed and installs fresh.
+        fs::remove_file(home.join("fake-claude-fail-install")).unwrap();
+        let again = rtok(&["agents", "update", "claude", "--cli"], &cfg, &home);
+        assert!(again.contains("+ plugin"), "{again}");
+    }
+} // mod claude_reinstall
