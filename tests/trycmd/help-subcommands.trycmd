@@ -137,6 +137,10 @@ Commands:
              store
   show       One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status
   status     Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars
+  send       Send a message to an agent (T287): `send <id-prefix> <text|->` or `send --all-live
+             <text|->`
+  inbox      Read messages (T287): your own inbox from `RTOK_AGENT_ID` (marks them read), or with an
+             id that agent's queue (marks nothing)
   help       Print this message or the help of the given subcommand(s)
 
 Options:

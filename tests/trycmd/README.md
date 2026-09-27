@@ -38,6 +38,7 @@ config; reading cases set `inherit = false` and `RTOK_HOME` under `target/tmp/`.
 - `agents-whoami.trycmd` — `agents whoami` with no `RTOK_AGENT_ID` (exit 1)
 - `agents-show.trycmd` — `agents show` with an unknown id prefix (exit 1)
 - `agents-status.trycmd` — `agents status` with no `RTOK_AGENT_ID` (exit 1)
+- `agents-messages.trycmd` — `agents inbox` / `agents send` refusals (exit 1)
 - `demon-status.toml` — `demon status` with nothing running
 - `otel-status.toml` — `otel status` table
 - `logs-print.toml` — `logs` on an empty log

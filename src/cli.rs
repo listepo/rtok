@@ -646,6 +646,28 @@ enum AgentCmd {
         /// The status text; empty clears it
         text: String,
     },
+    /// Send a message to an agent (T287): `send <id-prefix> <text|->` or `send --all-live <text|->`
+    Send {
+        /// Recipient's rtok agent id (any unique prefix); with `--all-live`, the text instead
+        to: Option<String>,
+        /// The message; `-` reads it from stdin (≤ 4 KiB, control characters stripped)
+        text: Option<String>,
+        /// Every live agent of this project (same repository or cwd), except the sender
+        #[arg(long)]
+        all_live: bool,
+    },
+    /// Read messages (T287): your own inbox from `RTOK_AGENT_ID` (marks them read), or with an
+    /// id that agent's queue (marks nothing)
+    Inbox {
+        /// An agent's rtok id (any unique prefix); omitted: `RTOK_AGENT_ID`
+        id: Option<String>,
+        /// Only messages not read yet
+        #[arg(long)]
+        unread: bool,
+        /// JSON instead of the framed text
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1346,6 +1368,14 @@ pub fn run() -> Result<()> {
                     None => println!("status cleared"),
                 }
             }
+            AgentCmd::Send { to, text, all_live } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                agents_send(&cfg, to, text, all_live)?;
+            }
+            AgentCmd::Inbox { id, unread, json } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                agents_inbox(&cfg, id, unread, json)?;
+            }
         },
         Cmd::Setup(args) => {
             let msg = format!(
@@ -2045,6 +2075,126 @@ fn report_flags(
     let mut flags = Dict::new();
     flags.insert("report".into(), Value::from(report));
     Some(flags)
+}
+
+/// T287: the caller's own rtok agent id — `RTOK_AGENT_ID` resolved, `None` when unset (the
+/// user at a terminal). A set but unresolvable id is an error, never a silent "user".
+fn caller_agent(store: &crate::store::Store) -> Result<Option<String>> {
+    match std::env::var("RTOK_AGENT_ID")
+        .ok()
+        .filter(|s| !s.is_empty())
+    {
+        None => Ok(None),
+        Some(raw) => store
+            .resolve_agent(&raw)
+            .map(Some)
+            .map_err(|e| anyhow::anyhow!("RTOK_AGENT_ID {raw}: {e}")),
+    }
+}
+
+/// `rtok agents send` (T287): one recipient by id prefix, or every live agent of the caller's
+/// project (`project_name` of its cwd, else the cwd itself) minus the sender.
+fn agents_send(
+    cfg: &Config,
+    to: Option<String>,
+    text: Option<String>,
+    all_live: bool,
+) -> Result<()> {
+    let (to, text) = match (all_live, to, text) {
+        (false, Some(to), Some(text)) => (Some(to), text),
+        (true, Some(text), None) => (None, text),
+        _ => bail!("usage: rtok agents send <id-prefix> <text|->, or --all-live <text|->"),
+    };
+    let text = if text == "-" {
+        let mut buf = String::new();
+        io::stdin().read_to_string(&mut buf)?;
+        buf
+    } else {
+        text
+    };
+    let store = crate::store::Store::open(&cfg.core.db_path)?;
+    let from = caller_agent(&store)?;
+    let targets = if all_live {
+        let here = match &from {
+            Some(id) => store
+                .agent_detail(id)?
+                .and_then(|d| d.cwd)
+                .map(PathBuf::from),
+            None => std::env::current_dir().ok(),
+        };
+        let key = |p: &std::path::Path| {
+            crate::project::project_name(p).unwrap_or_else(|| p.display().to_string())
+        };
+        let Some(here) = here.as_deref().map(key) else {
+            bail!("--all-live: the caller has no cwd to match a project by");
+        };
+        let ids: Vec<String> = store
+            .live_agents(&cfg.agents.idle)?
+            .into_iter()
+            .filter(|a| Some(&a.id) != from.as_ref())
+            .filter(|a| {
+                a.cwd
+                    .as_deref()
+                    .is_some_and(|c| key(std::path::Path::new(c)) == here)
+            })
+            .map(|a| a.id)
+            .collect();
+        if ids.is_empty() {
+            bail!("no other live agent in this project");
+        }
+        ids
+    } else {
+        let prefix = to.unwrap_or_default();
+        let id = store
+            .resolve_agent(&prefix)
+            .map_err(|e| anyhow::anyhow!("agent {prefix}: {e}"))?;
+        vec![id]
+    };
+    for id in targets {
+        let msg = store.send_message(from.as_deref(), &id, &text)?;
+        println!("sent #{msg} to {}", crate::store::short_agent_id(&id));
+    }
+    Ok(())
+}
+
+/// `rtok agents inbox` (T287): with no id the caller reads — and marks read — its own queue;
+/// with one the user peeks at that agent's queue and marks nothing.
+fn agents_inbox(cfg: &Config, id: Option<String>, unread: bool, json: bool) -> Result<()> {
+    let store = crate::store::Store::open(&cfg.core.db_path)?;
+    let (to, mark) = match id {
+        Some(prefix) => (
+            store
+                .resolve_agent(&prefix)
+                .map_err(|e| anyhow::anyhow!("agent {prefix}: {e}"))?,
+            false,
+        ),
+        None => match caller_agent(&store)? {
+            Some(me) => (me, true),
+            None => bail!("not inside an agent session; pass an agent id"),
+        },
+    };
+    let rows = store.inbox(&to, unread, mark)?;
+    if json {
+        let framed: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|m| {
+                let mut v = serde_json::to_value(m).unwrap_or_default();
+                v["framed"] = crate::render::agent_message_frame(m).into();
+                v
+            })
+            .collect();
+        return print_json(&framed);
+    }
+    if rows.is_empty() {
+        println!("no messages");
+    }
+    for (i, m) in rows.iter().enumerate() {
+        if i > 0 {
+            println!();
+        }
+        print!("{}", crate::render::agent_message_frame(m));
+    }
+    Ok(())
 }
 
 fn print_json(value: &(impl serde::Serialize + ?Sized)) -> Result<()> {
