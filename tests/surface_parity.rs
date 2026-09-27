@@ -589,6 +589,15 @@ const EXEMPT: &[(&str, &str)] = &[
          identity call, not a shared model page",
     ),
     (
+        "agents send",
+        "writes message rows for one agent or this project's live agents (T287)",
+    ),
+    (
+        "agents inbox",
+        "one agent's framed message queue, marked read when the agent reads its own (T287); \
+         not a shared model page",
+    ),
+    (
         "info",
         "prints version, paths, disk usage, error count and proxy status",
     ),
@@ -695,6 +704,7 @@ const JSON_READERS: &[&str] = &[
     "agents sessions",
     "agents whoami",
     "agents show",
+    "agents inbox",
     "logs",
     "demon status",
     "otel status",

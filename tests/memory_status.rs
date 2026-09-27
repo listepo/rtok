@@ -86,3 +86,32 @@ fn memory_status_excludes_session_handoff_notes() {
         "{status:?}"
     );
 }
+
+/// T308: the kind filter matches `checkpoint:<id>` and `session:<id>` with the colon, like
+/// `list_notes`: a kind that only starts with `checkpoint` is a real note kind and stays in
+/// `memory status` (the old `checkpoint%` pattern dropped it).
+#[test]
+fn note_aggs_skip_session_and_checkpoint_kinds() {
+    let dir = home("aggs-kinds");
+    let cfg = Config::load_from(&dir).expect("config");
+    let cx = Runtime::open(cfg, "mem-aggs").unwrap();
+    for kind in [
+        "decision",
+        "session:s1",
+        "session:s2",
+        "checkpoint:c1",
+        "checkpointer",
+    ] {
+        cx.store
+            .upsert_note(Some("rtok"), kind, "t", "body")
+            .unwrap();
+    }
+    let kinds: Vec<String> = cx
+        .store
+        .memory_note_aggs(Some("rtok"))
+        .unwrap()
+        .into_iter()
+        .map(|a| a.kind)
+        .collect();
+    assert_eq!(kinds, ["checkpointer", "decision"]);
+}

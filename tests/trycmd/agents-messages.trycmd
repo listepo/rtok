@@ -1,0 +1,18 @@
+# `rtok agents send` / `rtok agents inbox` (T287): the deterministic refusals. Sending,
+# reading, `--all-live` and the ended-agent refusal need registered agents (fresh UUIDs and
+# timestamps per run) and are covered by `tests/agents_messages.rs` instead.
+
+```console
+$ HOME=target/tmp/t287-msg RTOK_HOME=target/tmp/t287-msg rtok agents inbox
+? 1
+Error: not inside an agent session; pass an agent id
+
+$ HOME=target/tmp/t287-msg RTOK_HOME=target/tmp/t287-msg rtok agents send ffff hi
+? 1
+Error: agent ffff: unknown
+
+$ HOME=target/tmp/t287-msg RTOK_HOME=target/tmp/t287-msg rtok agents send --all-live
+? 1
+Error: usage: rtok agents send <id-prefix> <text|->, or --all-live <text|->
+
+```

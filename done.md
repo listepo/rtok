@@ -987,6 +987,17 @@ Done when:
 
 **Check:** cargo test relevant areas pass (700/702 lib; skill_listing, memory_status, web_wasm pass)
 
+### T308. Regression test: `memory status` aggregates skip `session:` and `checkpoint:` kinds
+
+T304 (PR #480) made `Store::memory_note_aggs` skip `session:%` and tightened `checkpoint%` to `checkpoint:%`, the same filters as `list_notes` / `list_note_titles`. Its test `memory_status_excludes_session_handoff_notes` covers the `session:` row; nothing covered the tightened `checkpoint:` pattern, which used to drop any real kind that merely starts with `checkpoint`.
+
+Result: `tests/memory_status.rs::note_aggs_skip_session_and_checkpoint_kinds` stores `decision`, `session:s1`, `session:s2`, `checkpoint:c1` and `checkpointer` notes and asserts the aggregates list only `checkpointer` and `decision`: it fails on the old `checkpoint%` pattern and on a missing `session:%` filter.
+
+Check: fails before T304 (lists `session:s1` / `session:s2`, drops `checkpointer`); `cargo nextest run --test memory_status` on `main` after #480: 4 passed.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-opus-5-5
+
 ---
 
 ## T68.10 — `[plugins.graph]` exclude, include and extension map
@@ -4470,6 +4481,15 @@ Do: in `compress` mode: for `tool_result` blocks that are (a) older than `archiv
 Check: fixture request with 6 turns → only turns 1–2 large results rewritten; sending the same request twice yields byte-identical rewritten bodies; unit test proves the prefix up to the first rewritten block is unchanged.
 Status: done 2026-09-02 · Check: `only_turns_older_than_keep_turns_are_rewritten` (6-turn fixture → exactly turns 1–2 rewritten, `system`/`tools`/turns 3–6 byte-equal), `same_request_twice_is_byte_identical_and_prefix_unchanged` (two runs serialise identically; bytes before the first rewritten block equal the original), `proxy_compress_rewrites_old_tool_results_identically` (same request twice through the live axum server in `compress` mode → identical `call_io` request bodies, 2 `plugin_run` rows, 4 `archive` measurements). `make check` green (119 tests). Deviation: the module is `src/plugins/archive/mod.rs` (T0.4 layout), not `archive.rs`; `Ctx` gained `call_id: Option<i32>` + `record_plugin_run` so the child row nests under the API request; `Store::spill` now ignores a duplicate archive id (the second identical request used to fail `call_io`). Pointer text is `[archived <id12>: N lines · T tokens · expand(<id>)]` + head/tail lines. Over the 200 LOC / 3 files budget: rewrite, store decisions, migration `0004.sql`, proxy wiring and tests are one unit.
 
+### T305. stats archive replay no longer double-counts short bodies
+
+`replay_ctt` (`src/measure/stats.rs`), which estimates what `rtok stats` calls `archive replay (estimate)` — the CTT the `archive` plugin (T5.3) leaves behind once a tool result ages past `keep_turns` — modelled the kept lines as `lines.iter().take(head_lines)` chained with `lines.iter().rev().take(tail_lines)`. When a result had fewer lines than `head_lines + tail_lines` (a single huge line, for example) the two slices overlapped, so `kept` counted those lines up to 2x and the estimate could land above not archiving at all. Fixed to mirror `archive::pointer`'s own guard: when `lines.len() <= head + tail`, sum each line once — through `archive::clip`, the same per-line truncation `pointer` applies — instead of taking overlapping head/tail slices; every shown line (head and tail too) goes through `archive::clip`, as `pointer` does. Also: the stats tests' `tempfile_dir` named directories by pid + nanos only, and macOS clocks tick in microseconds, so two parallel tests could share one directory (`compact_boundary_counts_once_per_event` failed intermittently); a counter now keeps them apart.
+
+Check: `mise exec -- cargo test --lib stats` — new `archive_replay_never_doubles_short_bodies` (a single-line body never yields a replay above `tokens * remain`; multi-line, non-overlapping content keeps its prior result) plus the existing `archive_replay_keeps_young_turns_and_shrinks_old_ones` unchanged; `cargo clippy --lib --tests -- -D warnings` and `cargo fmt --check` clean.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5, Claude Code / claude-opus-5-5
+
 **T5.4 `expand` through the proxy** · T5.3, T4.1 · `src/plugins/archive.rs`
 Do: MCP `expand(id, lines?)` returns the archived original (from T5.3 store); mark id as expanded → T5.3 stops rewriting it from the next request on. Track expand rate.
 Check: expand → next fixture request contains the original block again.
@@ -6500,6 +6520,17 @@ Result: `tests/fixtures/replay/session.jsonl` (30 hand-written events: 23 Bash, 
 
 Model: Claude Code / opus-5.5 (first draft, abandoned unpushed in another session's worktree), claude-opus-5-5 (re-landed, reviewed)
 
+### T298. Proxy replay bench with a saving floor
+
+`tests/replay_bench.rs` put a floor under `cmd` and `read` only. The proxy methods (`archive`, `toon`, `compress`) had unit checks that output shrinks but no floor over a realistic request.
+
+Result: `tests/proxy_bench.rs` sends `tests/fixtures/proxy/messages.json` (10-turn Messages request: a 200-line CI log, a 150-line `ls -la` listing and a postmortem as old tool results, two JSON arrays, one short body, four live turns) through the real proxy against an `httpmock` upstream. The floor is end to end, per `tool_use_id`: original content vs what upstream received, so an `archive` → `compress` chain on one block counts once. Measured 91.4 % (10,054 → 867 est. tokens), floor 86.4; per plugin (information only): `archive` 90.4 %, `toon` 50.9 %, `compress` 26.6 %. It also checks each plugin shrank at least one block, the short body arrives byte-identical, every archived id expands to the original bytes, terminal rows' `after_bytes` match the sent bytes, and that `archive` off drops below the floor. `Server`/`proxy_server` moved from `tests/proxy.rs` into `tests/common/proxy.rs` for both binaries. Noted: an `archive` row's `after_bytes` is the intermediate pointer when `compress` shrinks that block further; saved tokens (`before − after`) still add up across the chain, only a ratio of summed `before`/`after` would be skewed.
+
+Check: `cargo nextest run -p rtok --test proxy_bench --test proxy` 34/34; clippy on both targets clean.
+
+Status: done 2026-09-27
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
 ### T240. Golden files for rule families without one
 
 `rules/default.toml` has families with no pair in `tests/cmd_golden`: `curl`, `node`, `pnpm`, `sed` (re-list at claim time — any rule `match_cmd` or Rust formatter with no `.in`/`.out`). Their output shape is untested.
@@ -6936,6 +6967,19 @@ Result: `CachePrompt` gains `params`: every top-level request field except `mess
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
+### T303. Semantic-cache key covers tool_use input, unknown blocks and OpenAI tool_calls
+
+Found in a review of `src/proxy/semantic_cache.rs`: `block_text`'s `tool_use` arm hashed only `id` and `name`, never `input`, so two requests differing solely in an earlier tool call's arguments hashed equal; its `_ => String::new()` fallback made every other block kind (`thinking`, `redacted_thinking`, `server_tool_use`, `web_search_tool_result`, …) contribute nothing; and `messages_text` dropped an OpenAI Chat assistant message's `tool_calls` (a sibling of `content`, not covered by it) and any message with no `content` key at all (the `?` on `m.get("content")` discarded the whole message, `tool_call_id` on `tool` messages too). Two different conversations could collide on the cache key and the proxy would replay a wrong cached answer.
+
+Plan: fold `canonical_json(input)` into the `tool_use` contribution; make the fallback arm serialize `canonical_json(b)` for unknown block kinds instead of an empty string; in `messages_text`, treat a missing `content` as empty text and append the canonicalized `tool_calls` and `tool_call_id` when present.
+
+Check: `tool_use_input_joins_the_cache_key`, `thinking_block_joins_the_cache_key`, `openai_tool_calls_join_the_cache_key` — bodies differing only there hash differently, key order inside `tool_use` input does not; existing `tool_use_ids_join_the_cache_key` and the rest of `mod tests` stay green; `just test` green.
+
+Result: `block_text`'s `tool_use` arm now appends `canonical_json(input)`, serialized; its fallback arm serializes `canonical_json(b)` for any other block kind instead of returning an empty string. `messages_text` defaults a missing `content` to empty text rather than dropping the message via `?`, and appends the canonicalized `tool_calls` and the `tool_call_id` string when either is present. Tests: `tool_use_input_joins_the_cache_key` (differing input, and identical input under different key order), `thinking_block_joins_the_cache_key`, `openai_tool_calls_join_the_cache_key`; `cargo test --lib semantic_cache` and `cargo clippy --lib --tests -- -D warnings` green.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5
+
 ### T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 
 Found 2026-09-22 in the docs pass (all confirmed against the files): T126 appears as three table rows and three identical cards (plan.md `### T126` ×3); T123 has two full cards; `todo.md` carries T126 twice; T183's Check sits under T184's card (the `Check: dry-run with \`all\`…` paragraph after T184's own Check) so T183 has none and T184 appears to have two; three blank lines split the task table into four markdown tables that render as raw pipes on GitHub and the site; T122 still carries the fix scope handed to T127; and T122/T123/T125 — all `src/` code cards — are claimed by `claude-haiku-4-5`, the exact models AGENTS.md forbids for code ("on T122–T125 every Haiku code diff had a defect its report called green"). "One task = one card with a Check" is broken throughout.
@@ -7115,6 +7159,22 @@ Result: The creator raised the Check (2026-09-26) to hook p50 as Claude Code see
 
 Status: done 2026-09-26
 Model: Cursor / grok 4.7
+
+### T302. `--ai` report leaks NaN/inf and report charts wrap huge u64 counts to -1
+
+Found by a bug-hunt pass over `src/report/**`. Two verified correctness bugs, both in code that formats measured data for a human or a downstream model to read:
+
+1. `report::ai::expand()` formatted `100.0 * exp.rate` with a raw `{:.1}` instead of routing it through `markdown::dec()` like `markdown.rs`/`html.rs` already do for the same value. A non-finite `rate` (a corrupted/legacy DB row — exactly the case `report::fixtures::hostile()` exists to cover for the other two renderers) printed the literal string `rate=NaN%` or `rate=inf%` into the `--ai` report, which is read by a model/parser downstream; the other two renderers correctly print `—` for the same input (T105).
+2. `html.rs` and `pdf.rs` each cast a `u64` call/bust count to `i64` with a plain `as i64` when building chart data (`r.calls as i64`, `*n as i64`). For a count exceeding `i64::MAX` this bit-reinterprets instead of saturating, producing `-1` in the chart while the adjacent table (fed from the same `u64`) correctly showed the huge count — a self-contradictory report, reproduced verbatim in the `html::tests::one_row_snapshot` fixture before the fix.
+
+Also tightened, same module, same theme (unchecked arithmetic on store-derived `i64` values in `advice.rs`): `retire_plugin`'s `-r.saved` and `inject_budget`'s `budget * r.rows as i64` now use `saturating_neg`/`saturating_mul` instead of an operator that panics in debug and wraps in release on an extreme stored value; and `top_sinks` now ranks by an estimated token count (`before_bytes` divided by `[estimator] code`) instead of a raw byte count, so its sort key is denominated the same way as every other rule feeding `recommendations()`'s single `Reverse(tokens)` sort (the module's own doc comment: ordered "by the tokens it would recover").
+
+Fix: `ai::expand()` now calls `super::markdown::dec(Some(100.0 * exp.rate))`; `html.rs`/`pdf.rs` use `i64::try_from(..).unwrap_or(i64::MAX)` for both chart-data casts.
+
+Check: new `report::ai::tests::non_finite_rate_never_leaks_into_the_document` (NaN and infinity, mirrors markdown.rs/html.rs's T105 `holds()`); the html `one_row_snapshot` fixture re-blessed to show the correct huge count instead of `-1` in the chart; new `report::advice::tests::top_sinks_ranks_by_estimated_tokens_not_raw_bytes`. `cargo test --lib report::`, `cargo fmt`, `cargo clippy --lib -- -D warnings` all green.
+
+Status: done 2026-09-28
+Model: Claude Code / sonnet-5
 
 ### T282. Agent registry: an rtok agent id for every host session
 
