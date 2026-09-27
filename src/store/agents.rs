@@ -1,5 +1,5 @@
 //! T282 (D34): the rtok agent id. The host's own session id collides across hosts and is
-//! missing on several (`research.md` §26), so rtok issues its own UUIDv7 per host session,
+//! missing on several (`research.md` §26), so rtok issues its own random UUIDv4 per host session,
 //! shown as its first 8 hex chars and resolved from any unique prefix of 4+ hex chars.
 //! `parent_key` is `""` for the main window or the host's own sub-agent `agent_id`
 //! (`HookInput::agent_id`, `research.md` §17.2); `parent_id` is the resolved rtok id of a
@@ -86,7 +86,7 @@ fn agent_cols() -> (
 impl Store {
     /// Ensure the row for this host session (or, when `parent_key` names one, its sub-agent)
     /// exists and is fresh; returns its rtok id (existing on repeat, else a freshly minted
-    /// UUIDv7). One indexed upsert on the hot path (`parent_key: None`); a sub-agent first
+    /// UUIDv4). One indexed upsert on the hot path (`parent_key: None`); a sub-agent first
     /// resolves its parent's id with one extra indexed read, so `parent_id` is set from the
     /// row's very first insert. `activity` follows [`Store::touch_agent`]'s rule: `None`
     /// leaves whatever is already stored untouched (`register_agent` never blanks a hook
@@ -112,7 +112,7 @@ impl Store {
                 .first(&mut *conn)
                 .optional()?
         };
-        let id = uuid::Uuid::now_v7().to_string();
+        let id = uuid::Uuid::new_v4().to_string();
         let row_id: String = diesel::insert_into(agents::table)
             .values((
                 agents::id.eq(&id),
@@ -163,8 +163,11 @@ impl Store {
     }
 
     /// The one id whose text starts with `prefix`. `Err("unknown")` for zero matches,
-    /// `Err("ambiguous: <ids>")` for more than one — never guesses.
+    /// `Err("ambiguous: <ids>")` for more than one — never guesses. D34: at least 4 chars.
     pub fn resolve_agent(&self, prefix: &str) -> Result<String> {
+        if prefix.chars().count() < 4 {
+            bail!("an agent id prefix needs at least 4 characters");
+        }
         let mut conn = self.lock()?;
         let len = i32::try_from(prefix.len()).unwrap_or(i32::MAX);
         let matches: Vec<String> = agents::table
@@ -287,10 +290,8 @@ mod tests {
         let a = store
             .register_agent(claude, "sess-a", None, None, None)
             .unwrap();
-        // A hand-picked second id sharing `a`'s first 8 chars, so a short prefix is
-        // ambiguous — UUIDv7's own leading bytes are a millisecond timestamp, so two ids
-        // minted close together already share a prefix this long in practice.
-        let shared = format!("{}-0000-7000-8000-000000000000", &a[..8]);
+        // A hand-picked second id sharing `a`'s first 8 chars, so that prefix is ambiguous.
+        let shared = format!("{}-0000-4000-8000-000000000000", &a[..8]);
         diesel::insert_into(agents::table)
             .values((
                 agents::id.eq(&shared),
@@ -307,6 +308,8 @@ mod tests {
         assert!(ambiguous.contains(&a) && ambiguous.contains(&shared));
         let unknown = store.resolve_agent("ffffffff").unwrap_err().to_string();
         assert_eq!(unknown, "unknown");
+        let short = store.resolve_agent(&a[..3]).unwrap_err().to_string();
+        assert!(short.contains("at least 4"), "{short}");
     }
 
     #[test]
