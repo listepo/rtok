@@ -15,16 +15,16 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T262.3 | todo | P2 | 2 | 0% | |
 | T261 | in progress | P2 | 3 | 95% | Cursor / grok 4.7 |
 | T271 | todo | P1 | 2 | 40% | |
-| T275 | in progress | P1 | 4 | 30% | Claude Code / claude-opus-5-5 |
+| T275 | in progress | P1 | 4 | 50% | Claude Code / claude-opus-5-5 |
 | T275.1 | todo | P2 | 3 | 0% | |
 | T276 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
-| T277 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
+| T277 | in progress | P2 | 5 | 20% | Claude Code / claude-opus-5-5 |
 | T278 | todo | P1 | 3 | 0% | |
-| T279 | in progress | P1 | 5 | 25% | Claude Code / claude-opus-5-5 |
+| T279 | in progress | P1 | 5 | 60% | Claude Code / claude-opus-5-5 |
 | T279.1 | todo | P2 | 2 | 0% | |
-| T281 | todo | P1 | 3 | 0% | |
-| T282 | in progress | P1 | 4 | 0% | Claude Code / claude-opus-5-5 |
-| T283 | todo | P1 | 3 | 0% | |
+| T281 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
+| T282 | in progress | P1 | 4 | 80% | Claude Code / claude-opus-5-5 |
+| T283 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T284 | todo | P1 | 3 | 0% | |
 | T285 | in progress | P1 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T286 | todo | P1 | 3 | 0% | |
@@ -420,6 +420,8 @@ Plan:
 
 Check: `research.md` §26 gains a dated table host → host version → the MCP process's link to the session (env var name / ppid rule / cwd only / none) → sub-agent behaviour → one MCP process per session yes/no, each row with its source (the probe log or the vendor docs URL). The T283 card is updated with the rule per host.
 
+Execution (2026-09-27): agent sessions may not read their own process environment (blocked by the host's policy), so the live runs are the creator's. (1) Worktree `_worktrees/rtok-t281`. (2) Vendor docs first, per host: which env vars an MCP server process inherits, the hook payload's session field, whether one MCP process serves one session; each fact cited with URL and date. (3) A probe kit in the scratchpad, never committed: an MCP stdio wrapper that logs pid, ppid chain, cwd, the filtered env var names and values, `initialize` params, then execs `rtok mcp`; a hook script that logs the same next to the payload's session field; a one-page run sheet for the creator. (4) `research.md` §26 gets the table from the docs now, with a "probe" column left `pending` until the creator's logs arrive; T283's card gets the rule per host once they do.
+
 ### T282. Agent registry: an rtok agent id for every host session
 
 Depends on nothing; blocks T283–T290. Today a session is keyed by the host's own `session_id` (`src/store/schema.rs:151`, `sessions.id`), which collides across hosts, is missing on several (`research.md` §26), and has no status. `agent_id` in `HookInput` (`src/hooks/types.rs:18`) means a sub-agent's context inside one host session, a different thing. D34 defines the rtok agent id.
@@ -448,6 +450,8 @@ Plan:
 5. CLI `rtok agents whoami [--json]` → the same, from `RTOK_AGENT_ID` or the T281 rule; exit 1 with "not inside an agent session" otherwise.
 
 Check: hook fixture test: SessionStart output carries the line and it is identical across two runs but for the id; MCP e2e with a fake client: `initialize` then `tools/call whoami` returns the registered id; a hook-less fake host registers through MCP alone; trycmd for `agents whoami`; `surface_parity`, `config_coverage`, man page; `just check`.
+
+Execution (2026-09-27): two PRs. PR 1, cut on top of T282's branch until #439 merges: the SessionStart line (step 2) inside the injection budget; `RTOK_AGENT_ID` through `CLAUDE_ENV_FILE` (step 3, cited from the Claude Code hooks docs); `rtok agents whoami [--json]` from `RTOK_AGENT_ID` (step 5); tests: hook fixture byte-stable but for the id, `enabled = false` prints nothing, trycmd, `surface_parity`, `config_coverage`, man page. PR 2, after T281's rules and T275's per-host PRs land: `rtok mcp` resolves its agent at `initialize`, `--host <id>` in every host's MCP entry, hook-less hosts register through MCP, MCP tool `whoami`; MCP e2e with a fake client.
 
 ### T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
 
