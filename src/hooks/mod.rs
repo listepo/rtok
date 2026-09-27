@@ -457,6 +457,15 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         "PreToolUse" => pre_tool(input, cx, &registry),
         "PostToolUse" => post_tool(input, cx, &registry),
         "AfterMCPExecution" => after_mcp(input, cx),
+        // T295: Claude Code's PostCompact has no decision control and rejects any
+        // `hookSpecificOutput` (code.claude.com/docs/en/hooks, checked 2026-09-27); its
+        // checkpoint arrives on SessionStart source=compact. `compact_summary` is Claude's own
+        // input field: Codex (`turn_id`) and Devin's `PostCompaction` still inject below.
+        "PostCompact"
+            if cx.config.hook.host == "claude" && input.extra.contains_key("compact_summary") =>
+        {
+            HookOutput::default()
+        }
         "SessionStart" | "UserPromptSubmit" | "PostCompact" | "SubagentStart" => {
             inject_event(input, cx, &registry)
         }
@@ -1301,6 +1310,61 @@ mod tests {
             .as_str()
             .unwrap_or("");
         assert_eq!(cursor_ctx, claude_ctx);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T295: Claude Code's PostCompact prints `{}` (it rejects `hookSpecificOutput`), while
+    /// SessionStart source=compact carries the checkpoint. The same PostCompact without
+    /// `compact_summary` (Codex's shape) still injects it.
+    #[test]
+    fn claude_post_compact_prints_empty_and_session_start_carries_the_checkpoint() {
+        let dir = std::env::temp_dir().join(format!("rtok-t295-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut cfg = Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.core.archive_dir = dir.join("archive");
+        let post: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/hooks/post_compact.json"))
+                .unwrap();
+        let session = post["session_id"].clone();
+        let pre = serde_json::json!({
+            "hook_event_name": "PreCompact", "session_id": session,
+            "cwd": post["cwd"], "transcript_path": "", "trigger": "auto"
+        });
+        let mut out = Vec::new();
+        run("PreCompact", pre.to_string().as_bytes(), &mut out, &cfg);
+        let context = |event: &str, input: &serde_json::Value| {
+            let mut out = Vec::new();
+            run(event, input.to_string().as_bytes(), &mut out, &cfg);
+            out
+        };
+        assert_eq!(
+            String::from_utf8_lossy(&context("PostCompact", &post)),
+            "{}"
+        );
+
+        let start = serde_json::json!({
+            "hook_event_name": "SessionStart", "session_id": session,
+            "cwd": post["cwd"], "source": "compact"
+        });
+        let v: serde_json::Value =
+            serde_json::from_slice(&context("SessionStart", &start)).unwrap();
+        assert_eq!(
+            v["hookSpecificOutput"]["hookEventName"], "SessionStart",
+            "{v}"
+        );
+        let text = v["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or("");
+        assert!(text.contains("checkpoint"), "{v}");
+
+        let mut codex = post.clone();
+        codex.as_object_mut().unwrap().remove("compact_summary");
+        let v: serde_json::Value = serde_json::from_slice(&context("PostCompact", &codex)).unwrap();
+        let text = v["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or("");
+        assert!(text.contains("checkpoint"), "{v}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

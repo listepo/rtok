@@ -35,7 +35,8 @@ ahead of newest-first order; both orders are byte-stable for an unchanged store.
 
 - PreCompact: extracts the last 20 user prompts (≤ 300 chars each), touched file paths and
   last error lines from the transcript into a `checkpoint` note.
-- SessionStart with `source == "compact"` (and PostCompact): injects the latest checkpoint
+- SessionStart with `source == "compact"` (and PostCompact on Codex and Devin; Claude Code's
+  PostCompact takes no context, T295): injects the latest checkpoint
   (≤ 400 tokens) through `inject`.
 - SessionStart recall: last 5 note titles + ids for the project (≤ 200 tokens, priority 10),
   never bodies.
