@@ -425,47 +425,15 @@ mod tests {
         fs::write(&manifest, r#"{"name":"rtok"}"#).unwrap();
         assert!(plugin_installed(&c));
 
-        // (d) extension linked but no entry yet: installed() has no "mcp".
-        assert!(!Gemini.installed(&c, Kind::Cli).contains(&"mcp"));
-
-        // (a) extension linked + install: settings.json gets rtok's entry with the right shape.
-        Gemini.apply(&c, Kind::Cli, Mode::Install).unwrap();
-        let doc: Value =
-            serde_json::from_str(&fs::read_to_string(settings_path(&c)).unwrap()).unwrap();
-        let rtok = &doc["mcpServers"]["rtok"];
-        assert_eq!(rtok["command"], super::super::rtok_command());
-        assert_eq!(rtok["args"], json!(["mcp"]));
-        assert!(Gemini.installed(&c, Kind::Cli).contains(&"mcp"));
-
-        // (b) same after update: the entry is kept, not stripped.
-        let lines = Gemini.apply(&c, Kind::Cli, Mode::Update).unwrap();
-        assert!(
-            !lines.iter().any(|l| l.contains("- mcpServers.rtok")),
-            "{lines:?}"
+        let path = settings_path(&c);
+        crate::agents::mcp::assert_json_entry_lifecycle(
+            &Gemini,
+            &c,
+            Kind::Cli,
+            &path,
+            "mcpServers",
+            || register_mcp(&c),
         );
-        assert!(Gemini.installed(&c, Kind::Cli).contains(&"mcp"));
-
-        // (e) a user-edited entry is left alone with a `leave` line, not silently dropped.
-        let mut edited = doc.clone();
-        edited["mcpServers"]["rtok"]["args"] = json!(["mcp", "--extra"]);
-        fs::write(settings_path(&c), edited.to_string()).unwrap();
-        let lines = Gemini.apply(&c, Kind::Cli, Mode::Remove).unwrap();
-        assert!(
-            lines.iter().any(|l| l.starts_with("leave mcpServers.rtok")),
-            "{lines:?}"
-        );
-        assert!(
-            fs::read_to_string(settings_path(&c))
-                .unwrap()
-                .contains("--extra"),
-            "edited entry must survive"
-        );
-
-        // (c) remove takes an untouched entry out.
-        register_mcp(&c).unwrap();
-        assert!(Gemini.installed(&c, Kind::Cli).contains(&"mcp"));
-        Gemini.apply(&c, Kind::Cli, Mode::Remove).unwrap();
-        assert!(!Gemini.installed(&c, Kind::Cli).contains(&"mcp"));
         let _ = fs::remove_dir_all(dir);
     }
 

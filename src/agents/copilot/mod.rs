@@ -312,6 +312,18 @@ mod tests {
         (c, dir)
     }
 
+    /// Copilot's record of an installed rtok plugin: the manifest under `installed-plugins`.
+    fn fake_plugin(c: &Config) -> PathBuf {
+        let marker = c
+            .setup
+            .copilot
+            .dir
+            .join("installed-plugins/_direct/x/plugin.json");
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, r#"{"name":"rtok"}"#).unwrap();
+        marker
+    }
+
     #[test]
     fn dry_run_names_the_hook_file_and_creates_nothing() {
         let (c, dir) = cfg("dry", true);
@@ -374,13 +386,7 @@ mod tests {
         assert!(s.contains("copilot plugin install"), "{s}");
         assert!(s.contains("ketch install listepo/rtok"), "{s}");
         assert!(!plugin_installed(&c));
-        let marker = c
-            .setup
-            .copilot
-            .dir
-            .join("installed-plugins/_direct/x/plugin.json");
-        fs::create_dir_all(marker.parent().unwrap()).unwrap();
-        fs::write(&marker, r#"{"name":"rtok"}"#).unwrap();
+        let marker = fake_plugin(&c);
         assert!(plugin_installed(&c));
         assert_eq!(plugin(&c, false).unwrap(), NO_CHANGES);
         assert_eq!(
@@ -401,13 +407,7 @@ mod tests {
         c.setup.yes = true;
         assert!(run(&c, false).unwrap().starts_with("+ "));
         assert!(register_mcp(&c).unwrap().starts_with("mcpServers.rtok: "));
-        let marker = c
-            .setup
-            .copilot
-            .dir
-            .join("installed-plugins/_direct/x/plugin.json");
-        fs::create_dir_all(marker.parent().unwrap()).unwrap();
-        fs::write(&marker, r#"{"name":"rtok"}"#).unwrap();
+        fake_plugin(&c);
         let lines = Copilot.apply(&c, Kind::Cli, Mode::Install).unwrap();
         assert!(
             lines
@@ -436,55 +436,18 @@ mod tests {
     #[test]
     fn t275_mcp_entry_always_written_except_on_remove() {
         let (c, dir) = cfg("t275-mcp", false);
-        let marker = c
-            .setup
-            .copilot
-            .dir
-            .join("installed-plugins/_direct/x/plugin.json");
-        fs::create_dir_all(marker.parent().unwrap()).unwrap();
-        fs::write(&marker, r#"{"name":"rtok"}"#).unwrap();
+        fake_plugin(&c);
         assert!(plugin_installed(&c));
 
-        // (d) plugin installed but no entry yet: installed() has no "mcp".
-        assert!(!Copilot.installed(&c, Kind::Cli).contains(&"mcp"));
-
-        // (a) plugin installed + install: the config gets rtok's entry with the right shape.
-        Copilot.apply(&c, Kind::Cli, Mode::Install).unwrap();
-        let doc: Value = serde_json::from_str(&fs::read_to_string(mcp_path(&c)).unwrap()).unwrap();
-        let rtok = &doc["mcpServers"]["rtok"];
-        assert_eq!(rtok["command"], super::super::rtok_command());
-        assert_eq!(rtok["args"], json!(["mcp"]));
-        assert!(Copilot.installed(&c, Kind::Cli).contains(&"mcp"));
-
-        // (b) same after update: the entry is kept, not stripped.
-        let lines = Copilot.apply(&c, Kind::Cli, Mode::Update).unwrap();
-        assert!(
-            !lines.iter().any(|l| l.contains("- mcpServers.rtok")),
-            "{lines:?}"
+        let path = mcp_path(&c);
+        crate::agents::mcp::assert_json_entry_lifecycle(
+            &Copilot,
+            &c,
+            Kind::Cli,
+            &path,
+            "mcpServers",
+            || register_mcp(&c),
         );
-        assert!(Copilot.installed(&c, Kind::Cli).contains(&"mcp"));
-
-        // (e) a user-edited entry is left alone with a `leave` line, not silently dropped.
-        let mut edited = doc.clone();
-        edited["mcpServers"]["rtok"]["args"] = json!(["mcp", "--extra"]);
-        fs::write(mcp_path(&c), edited.to_string()).unwrap();
-        let lines = Copilot.apply(&c, Kind::Cli, Mode::Remove).unwrap();
-        assert!(
-            lines.iter().any(|l| l.starts_with("leave mcpServers.rtok")),
-            "{lines:?}"
-        );
-        assert!(
-            fs::read_to_string(mcp_path(&c))
-                .unwrap()
-                .contains("--extra"),
-            "edited entry must survive"
-        );
-
-        // (c) remove takes an untouched entry out.
-        register_mcp(&c).unwrap();
-        assert!(Copilot.installed(&c, Kind::Cli).contains(&"mcp"));
-        Copilot.apply(&c, Kind::Cli, Mode::Remove).unwrap();
-        assert!(!Copilot.installed(&c, Kind::Cli).contains(&"mcp"));
         let _ = fs::remove_dir_all(dir);
     }
 
