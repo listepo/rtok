@@ -210,8 +210,28 @@ pub(crate) fn home_dir() -> PathBuf {
     crate::config::env_user_home().unwrap_or_default()
 }
 
-/// `~/x` and `$VAR/x` as a path on this machine; anything else unchanged.
+/// Set (to any value) by the test harness, `.config/nextest.toml` (T280): no test may find or
+/// run an agent installed on the machine. rtok then sees only hosts under the home dir — a
+/// test's own fakes: host CLIs resolve from PATH entries under it, absolute app paths are
+/// looked up beneath it, and a host CLI is spawned by the path found, never by name.
+const HOST_SANDBOX_ENV: &str = "RTOK_HOST_SANDBOX";
+
+/// The home dir when [`HOST_SANDBOX_ENV`] is set.
+fn host_sandbox() -> Option<PathBuf> {
+    std::env::var_os(HOST_SANDBOX_ENV).map(|_| home_dir())
+}
+
+/// [`expand_spec`], re-rooted under the home dir when [`HOST_SANDBOX_ENV`] is set.
 fn expand_app(spec: &str) -> PathBuf {
+    let path = expand_spec(spec);
+    match host_sandbox() {
+        Some(home) => under(&home, path),
+        None => path,
+    }
+}
+
+/// `~/x` and `$VAR/x` as a path on this machine; anything else unchanged.
+fn expand_spec(spec: &str) -> PathBuf {
     if let Some(rest) = spec.strip_prefix("~/") {
         return join_rel(&home_dir(), rest);
     }
@@ -225,17 +245,42 @@ fn expand_app(spec: &str) -> PathBuf {
     PathBuf::from(spec)
 }
 
-/// The first `bin` on PATH (`.exe`/`.cmd` on Windows).
+/// `path` when it is inside `home`, else the same path re-rooted beneath `home`
+/// (`/Applications/X.app` → `<home>/Applications/X.app`; a drive prefix is dropped).
+fn under(home: &Path, path: PathBuf) -> PathBuf {
+    if path.starts_with(home) {
+        return path;
+    }
+    let rel: PathBuf = path
+        .components()
+        .filter(|c| matches!(c, std::path::Component::Normal(_)))
+        .collect();
+    home.join(rel)
+}
+
+/// The first `bin` on PATH (`.exe`/`.cmd` on Windows). Under [`HOST_SANDBOX_ENV`], only PATH
+/// entries under the home dir count.
 fn find_on_path(bin: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
+    let sandbox = host_sandbox();
     let names: &[String] = if cfg!(windows) {
         &[bin.to_string(), format!("{bin}.exe"), format!("{bin}.cmd")]
     } else {
         &[bin.to_string()]
     };
     std::env::split_paths(&path)
+        .filter(|dir| sandbox.as_ref().is_none_or(|home| dir.starts_with(home)))
         .flat_map(|dir| names.iter().map(move |n| dir.join(n)))
         .find(|p| p.is_file())
+}
+
+/// What to spawn for host CLI `bin`: the name itself (or an explicit path), or under
+/// [`HOST_SANDBOX_ENV`] the path [`find_on_path`] found — `None` when there is none.
+fn host_program(bin: &str) -> Option<std::ffi::OsString> {
+    if host_sandbox().is_none() || Path::new(bin).is_absolute() {
+        return Some(bin.into());
+    }
+    find_on_path(bin).map(PathBuf::into_os_string)
 }
 
 /// Spawn a host CLI (`claude`, `codex`, …) by name. Windows CLIs installed through npm ship
@@ -243,10 +288,10 @@ fn find_on_path(bin: &str) -> Option<PathBuf> {
 /// (Win32's `CreateProcess`, never `PATHEXT`), so a bare spawn silently fails to find a real,
 /// on-PATH shim. Routing through `cmd /C` there reuses the shell's own PATH + `PATHEXT`
 /// search, which does try `.cmd`/`.bat` (T139).
-fn spawn_cli(bin: &str) -> std::process::Command {
+fn spawn_cli(bin: &std::ffi::OsStr) -> std::process::Command {
     if cfg!(windows) {
         let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/C", bin]);
+        cmd.arg("/C").arg(bin);
         cmd
     } else {
         std::process::Command::new(bin)
@@ -262,7 +307,10 @@ pub(crate) fn run_cli(
     args: &[&str],
     env: Option<(&str, &Path)>,
 ) -> std::result::Result<(), String> {
-    let mut cmd = spawn_cli(bin);
+    let Some(program) = host_program(bin) else {
+        return Err(format!("{bin}: not found"));
+    };
+    let mut cmd = spawn_cli(&program);
     cmd.args(args).stdin(std::process::Stdio::null());
     if let Some((key, val)) = env {
         cmd.env(key, val);
@@ -287,14 +335,24 @@ pub fn app_path(v: &Variant) -> Option<PathBuf> {
         .or_else(|| v.bins.iter().find_map(|b| find_on_path(b)))
 }
 
+/// How long one `<bin> --version` probe may run. `cursor --version` under an empty `$HOME`
+/// with stdout on a pipe never prints and leaves a helper holding the pipe for ~5 minutes
+/// (T280), so `Command::output` hung `agents list` and every test rendering a block.
+const VERSION_PROBE_LIMIT: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Version of the installed app, or `"-"` when unknown.
 /// Probes `<bin> --version` and keeps the first line that looks like a version (T168: some
 /// wrappers, e.g. npm-installed CLIs, print noise like `Package extraction took 1234ms`
 /// ahead of the real version line); falls back to the first non-empty line when no line
-/// looks like a version. 32 chars max.
+/// looks like a version. 32 chars max. Each probe gets [`VERSION_PROBE_LIMIT`] (T280).
 pub fn app_version(v: &Variant) -> String {
     for bin in v.bins {
-        let out = std::process::Command::new(bin).arg("--version").output();
+        let Some(program) = host_program(bin) else {
+            continue;
+        };
+        let mut cmd = std::process::Command::new(program);
+        cmd.arg("--version");
+        let out = crate::proc::capture(cmd, Some(VERSION_PROBE_LIMIT));
         let Ok(out) = out else { continue };
         let mut s = String::from_utf8_lossy(&out.stdout).into_owned();
         if s.trim().is_empty() {
@@ -2022,21 +2080,50 @@ mod tests {
     /// `~/x` follows the home dir, `$VAR/x` the variable, and an unset variable is left as
     /// written so the caller's `exists()` says no instead of probing a wrong root.
     #[test]
-    fn expand_app_resolves_home_and_env_vars() {
-        assert_eq!(expand_app("~/Apps/x"), join_rel(&home_dir(), "Apps/x"));
+    fn expand_spec_resolves_home_and_env_vars() {
+        assert_eq!(expand_spec("~/Apps/x"), join_rel(&home_dir(), "Apps/x"));
         let path = std::env::var_os("PATH").expect("PATH");
         assert_eq!(
-            expand_app("$PATH/Claude/claude.exe"),
+            expand_spec("$PATH/Claude/claude.exe"),
             join_rel(Path::new(&path), "Claude/claude.exe")
         );
         assert_eq!(
-            expand_app("$RTOK_NO_SUCH_VAR/app"),
+            expand_spec("$RTOK_NO_SUCH_VAR/app"),
             PathBuf::from("$RTOK_NO_SUCH_VAR/app")
         );
         assert_eq!(
-            expand_app("/Applications/Claude.app"),
+            expand_spec("/Applications/Claude.app"),
             PathBuf::from("/Applications/Claude.app")
         );
+    }
+
+    /// T280: under the host sandbox an app outside the home dir is looked up beneath it, so
+    /// the machine's `/Applications/Cursor.app` is never seen; a path already inside stays.
+    #[test]
+    fn under_reroots_a_path_outside_home() {
+        let home = Path::new("/h/test-home");
+        assert_eq!(
+            under(home, PathBuf::from("/Applications/Cursor.app")),
+            PathBuf::from("/h/test-home/Applications/Cursor.app")
+        );
+        assert_eq!(
+            under(home, PathBuf::from("/h/test-home/.grok/bin/grok")),
+            PathBuf::from("/h/test-home/.grok/bin/grok")
+        );
+        assert_eq!(
+            under(home, PathBuf::from("$LOCALAPPDATA/app")),
+            PathBuf::from("/h/test-home/$LOCALAPPDATA/app")
+        );
+    }
+
+    /// T280: `.config/nextest.toml` turns the host sandbox on for every test, so no test sees
+    /// the agents installed on the machine it runs on.
+    #[test]
+    fn tests_run_inside_the_host_sandbox() {
+        assert_eq!(host_sandbox(), Some(home_dir()));
+        for v in cursor::Cursor.variants() {
+            assert!(app_path(v).is_none(), "{} seen outside the sandbox", v.name);
+        }
     }
 
     /// A proxy on a non-default port read as not installed: the check looked for `8790`.
@@ -2156,6 +2243,37 @@ mod tests {
             apps: &[],
         };
         assert_eq!(app_version(&noisy), "0.1.0 (fake copilot)");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T280: a `--version` that never answers, with a helper left holding its stdout (what
+    /// `cursor` does under a fresh `$HOME`), costs one probe limit and reads as unknown.
+    #[cfg(unix)]
+    #[test]
+    fn app_version_gives_up_on_a_cli_that_never_answers() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir =
+            std::env::temp_dir().join(format!("rtok-app-version-hang-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("rtok-test-hang");
+        std::fs::write(&bin, "#!/bin/sh\nsleep 60 &\nsleep 60\n").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path: &'static str = Box::leak(bin.to_string_lossy().into_owned().into_boxed_str());
+        let bins: &'static [&'static str] = Box::leak(vec![path].into_boxed_slice());
+        let hang = Variant {
+            kind: Kind::Cli,
+            name: "hang",
+            bins,
+            apps: &[],
+        };
+        let start = std::time::Instant::now();
+        assert_eq!(app_version(&hang), "-");
+        assert!(
+            start.elapsed() < VERSION_PROBE_LIMIT + std::time::Duration::from_secs(2),
+            "{:?}",
+            start.elapsed()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

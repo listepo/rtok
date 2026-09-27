@@ -3,12 +3,15 @@
 # `~/.codex`. A setup script, not cargo's `[env]`, which would reach `cargo run` too. The tool
 # homes keep their real values so `rustup`, `rust-analyzer` and `mise where` still find the
 # toolchain; tests that commit pass their own git `user.*`. Each run starts from an empty home.
+# T280: `RTOK_HOST_SANDBOX` hides every agent installed on this machine (CLIs on PATH, apps in
+# `/Applications` and the like): rtok sees only hosts under `HOME`, i.e. a test's own fakes.
 experimental = ["setup-scripts"]
 
 [scripts.setup.test-home-unix]
 command = ['sh', '-c', '''
 h="$PWD/target/test-home" && rm -rf "$h" && mkdir -p "$h" && {
   echo "HOME=$h"
+  echo "RTOK_HOST_SANDBOX=1"
   echo "CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}"
   echo "RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}"
   echo "MISE_DATA_DIR=${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"
@@ -25,7 +28,7 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path $h
 New-Item -ItemType Directory -Force -Path $h | Out-Null
 $c = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
 $r = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $env:USERPROFILE ".rustup" }
-[IO.File]::AppendAllText($env:NEXTEST_ENV, "HOME=$h`nUSERPROFILE=$h`nCARGO_HOME=$c`nRUSTUP_HOME=$r`n")
+[IO.File]::AppendAllText($env:NEXTEST_ENV, "HOME=$h`nUSERPROFILE=$h`nRTOK_HOST_SANDBOX=1`nCARGO_HOME=$c`nRUSTUP_HOME=$r`n")
 ''']
 
 [[profile.default.scripts]]
