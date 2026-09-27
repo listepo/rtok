@@ -1711,10 +1711,9 @@ mod tests {
         let mut c = plugin_cfg(&dir, true);
         c.setup.source = Some("local".to_string());
         let report = plugin_update(&c).unwrap();
-        let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("plugins/claude")
-            .display()
-            .to_string();
+        // The same path the code passes, so Windows separators match too.
+        let local = marketplace_target(plugin_version::Source::Local);
+        assert!(local.ends_with("claude"), "{local}");
         assert!(
             report.contains(&format!("claude plugin marketplace add {local}")),
             "{report}"
