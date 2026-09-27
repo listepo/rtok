@@ -26,3 +26,7 @@
 - T288. Push unread messages to hooked agents
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
+- T291. One event module registers memory hooks for every agent
+- T292. Smart memory is on by default
+- T293. Recall names the fetch; bodies stay behind `mem_get`
+- T294. Export rows that can carry a tombstone

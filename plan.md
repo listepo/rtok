@@ -21,7 +21,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T277 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T278 | todo | P1 | 3 | 0% | |
 | T279 | in progress | P1 | 5 | 25% | Claude Code / claude-opus-5-5 |
-| T279.1 | todo | P2 | 2 | 0% | |
+| T279.1 | in progress | P2 | 2 | 0% | Cursor / composer 2.5 |
 | T281 | todo | P1 | 3 | 0% | |
 | T282 | in progress | P1 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T283 | todo | P1 | 3 | 0% | |
@@ -32,14 +32,18 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T288 | todo | P2 | 3 | 0% | |
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
+| T291 | todo | P0 | 4 | 0% | |
+| T292 | in progress | P0 | 2 | 0% | Cursor / composer 2.5 |
+| T293 | in progress | P0 | 2 | 0% | Cursor / composer 2.5 |
+| T294 | in progress | P2 | 2 | 0% | Cursor / composer 2.5 |
 
 
 
 ### T131. Measure the spawn brief: cost row and on/off re-read share
 Rule: a saving that is not a `Measurement` row does not exist, and the brief is a cost first. Needs T128 and T130.2.
 Plan: T130.1's hook records a `Measurement` (`plugin: "memory"`, `kind: "brief"`) with the tokens it added (before = 0, after = brief) so the cost shows as negative saving; `rtok stats` `subagents` row splits the re-read share and sub-agent input tokens by "spawned with a brief" (the brief's archive id in the sub-agent's first user message) vs without.
-Check: fixture with one briefed and one plain sub-agent asserts the split; after a dated window with the flag on, `research.md` §17 gets the measured net; default flips to on only if net tokens saved > 0 — otherwise the card closes with the number and T130 stays off.
-Progress (2026-09-25): the cost row was already recorded by T130.1 (`memory`/`brief`, before 0, after = brief tokens); `tests/hook_spawn_brief.rs` now asserts one row per fired brief and none otherwise. `rtok stats` splits the `subagents` re-read share and input tokens into `brief` / `no brief`, detected by `measure::subagents::SPAWN_BRIEF_MARKER` in a sub-agent's first user message (a `handoff.rs` test pins it inside the brief's `INSTRUCTIONS`); fixture test `briefed_and_plain_subagents_split_the_reread_share`. Left: the dated window with the flag on, the net in `research.md` §17, and the default decision.
+Check: fixture with one briefed and one plain sub-agent asserts the split; after a dated window with the flag on, `research.md` §17 gets the measured net. Creator 2026-09-27 (D35, T292): that net no longer chooses the default; `spawn_brief` is on either way, and this card only records the number.
+Progress (2026-09-25): the cost row was already recorded by T130.1 (`memory`/`brief`, before 0, after = brief tokens); `tests/hook_spawn_brief.rs` now asserts one row per fired brief and none otherwise. `rtok stats` splits the `subagents` re-read share and input tokens into `brief` / `no brief`, detected by `measure::subagents::SPAWN_BRIEF_MARKER` in a sub-agent's first user message (a `handoff.rs` test pins it inside the brief's `INSTRUCTIONS`); fixture test `briefed_and_plain_subagents_split_the_reread_share`. Left: the dated window with the flag on and the net in `research.md` §17. The default is T292's (D35), not this card's.
 ### T132. Ship a Haiku scout agent definition with the Claude Code plugin
 `research.md` §17.3(4). Make the cheap path the default one: `plugins/claude/agents/rtok-scout.md` with `model: haiku`, `tools` limited to the rtok MCP `read`, `search`, `outline`, `explore`, `expand`, and a short system prompt — ranged reads only, never a whole file over the outline threshold, answer with `path:line` citations and no file dumps. Verify the plugin `agents/` directory format against the current Claude Code docs first and add the link to the `## Docs` list in `plugins/claude/README.md`.
 Check: `rtok agents install claude` offers the agent file and removal takes it away (host matrix e2e); `tests/host_docs.rs` and `tests/agents_doc.rs` (`RTOK_BLESS=1`) green; T128's per-`agentType` split is the measurement — record `rtok-scout` vs `Explore`/`general-purpose` read bytes per sub-agent in `research.md` §17 after a dated window.
@@ -543,6 +547,54 @@ Plan:
 
 Check: `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where host tables change; the new test green on macOS, Linux and Windows CI; `just check`.
 
+### T291. One event module registers memory hooks for every agent
+
+Memory already runs in one place at runtime: `inject_event` (`src/hooks/mod.rs`) for `SessionStart`, `UserPromptSubmit` and `SubagentStart`, and `hooks::dispatch` for `SessionEnd` (`checkpoint::save_session`). What is split is the install list. `claude::ENTRIES` (`src/agents/claude/mod.rs`) is one list; Cursor, Copilot, Gemini and ZCode each keep another, and `plugins/*/hooks/hooks.json` is written by hand. Cursor's manifest has `sessionStart` and `preCompact` and omits `beforeSubmitPrompt`, `sessionEnd` and `subagentStart`, so `remember:`, per-turn recall and the session note never fire there. `cursor_event` already maps `beforeSubmitPrompt` → `UserPromptSubmit` and does not map `sessionEnd` or `subagentStart` (`src/hooks/types.rs`). Cursor's own docs list all three events (https://cursor.com/docs/hooks, fetched 2026-09-27). On Cursor cloud agents `sessionStart` is deferred and `sessionEnd` is the IDE session, so those two stay unwired there; the module records that and does not grow a second memory path.
+
+Plan:
+1. Worktree `_worktrees/rtok-T291`.
+2. One module under `src/agents/` owns the canonical events (`UserPromptSubmit`, `SessionStart`, `SessionEnd`, `PreCompact`, `SubagentStart`) and each host's name map. `cursor_event`, `claude_event` and `gemini_event` become the inverse of that table. A `create` (or the table the installers already call) is the only function that emits a host manifest. Install still goes through `rtok-agent-sdk` (D28).
+3. Generate `plugins/*/hooks/hooks.json` and each installer list from that table. A drift test fails when a manifest is edited by hand.
+4. Cursor's manifest and installer gain `beforeSubmitPrompt`, `sessionEnd` and `subagentStart`, fail-open, same command shape as `sessionStart`. `cursor_event` maps the last two.
+5. A host with no equivalent event (ZCode has no distinct session-end; Gemini and Kimi have no subagent event; Cursor cloud agents have no IDE `sessionEnd`) is a row on the module: MCP-only for that event. `SessionEnd` stays in `hooks::dispatch`. `SubagentStart` stays in `inject_event`. Hook path stays synchronous, ≤10 ms, fail-open, no LLM, no vector read (D13). SQLite stays the only store (D8).
+
+Check: a fixture per host asserts the generated manifest contains every event that host's map names, and omits the ones the module marks MCP-only; a Cursor `beforeSubmitPrompt` / `sessionEnd` / `subagentStart` payload reaches `prompt_submit`, `save_session` and `subagent_start`; `just check`.
+
+### T292. Smart memory is on by default
+
+Creator 2026-09-27 (D35) overrode the T131 gate. `prompt_recall`, `startup_recall`, `handoff` and `spawn_brief` are off in both `config/default.toml` and `Memory` (`src/config/mod.rs`), so the hooks from T291 still inject nothing. `prompt_recall` is a count; on means 5, the same title count as `recall_titles`.
+
+Plan:
+1. Worktree `_worktrees/rtok-T292`. Depends on T291 so the events exist to fire.
+2. Set `prompt_recall = 5`, `startup_recall = true`, `handoff = true`, `spawn_brief = true` in `config/default.toml` and the `Memory` defaults. Leave `recall_tokens` 200, `checkpoint_tokens` 400, `spawn_brief_tokens` 300, inject `budget_tokens` 800. Leave `[plugins.memory.embed] enabled = false`.
+3. `prompt_recall` injects id and title only. `startup_recall` restores the newest `session:*` note inside 400 tokens. `spawn_brief` stays inside 300. Measurement rows for those four kinds still write. An empty or failing measurement does not flip the flags back.
+4. Tests that pin the old off defaults (`prompt_recall_is_off_by_default`, the startup-off half of the session-end test) expect the new defaults and cover an explicit off. Schema drift stays green.
+
+Check: `rtok config show` on a fresh config prints the four flags on; a hook fixture with defaults injects titles on `UserPromptSubmit` and a session note on startup; the same fixture with the flags set false injects neither; `just check`.
+
+### T293. Recall names the fetch; bodies stay behind `mem_get`
+
+SessionStart recall is already on and already title-only (`recall_tokens` 200, up to 5 lines). On this machine `rtok memory status` showed 125 live notes, 235 recalls, and `mem_get` called 0 times (2026-09-27), so the titles never become a memory the model can use. claude-mem's index works because each line shows the retrieval cost and names the tool that fetches the body (https://docs.claude-mem.ai/progressive-disclosure, fetched 2026-09-27). The diagram token counts on that page are the vendor's illustrations.
+
+Plan:
+1. Worktree `_worktrees/rtok-T293`. Independent of T291; land before or with T292 so the newly-on paths use the same line shape.
+2. `recall` and `prompt_recall` stay inside their budgets and still contain no bodies. Each title line gains an estimated body-token count. One line says these are titles, and names `mem_search` for the turn and `mem_get` for a matching id.
+3. Zero notes for the resolved project inject one line naming that project key, inside the 200-token cap.
+4. `mem_get` writes a `Measurement` (bytes and estimated tokens) and returns the verbatim body, retired prefix included (D4). The tool description points at the index. No truncation, no new tool, no embedding call.
+
+Check: a fixture with three notes asserts the injected text has ids, titles and token counts and does not contain a body secret; an empty project asserts the one-line key; `mem_get` records one `memory` measurement and returns the full body; `just check`.
+
+### T294. Export rows that can carry a tombstone
+
+A later sync lives in a private repo. That repo was not in the local tree or in `gh repo list` / `gh search` on 2026-09-27 (the only cloud-sync hit was Fern in `listepo/budget-app`, a different product). This repo does not grow a protocol (D8). `export.rs` writes `{kind, title, body, project}` and drops `id`, timestamps, `retired`, `superseded_by` and `pinned`, so a replicator cannot apply a tombstone.
+
+Plan:
+1. Worktree `_worktrees/rtok-T294`.
+2. Export and import round-trip `id`, `ts`, `retired`, `superseded_by` and `pinned` beside the fields already written. Old lines still import. `checkpoint:*` and `session:*` rows stay out. A retired row stays a tombstone. SQLite remains the source of truth.
+3. No HTTP client, no hub, no cursor protocol. When the private repo's task is named, its identity and conflict rules get a row in `research.md` §27; they do not change this export until the creator says so.
+
+Check: a round-trip fixture keeps a tombstone and a pin, an old three-field line still imports, and a `checkpoint:` row is absent from the file; `just check`.
+
 ## Reference
 
 Historical phase notes (P0–P39) live in `done.md`. Companion evidence: `research.md`, `architecture.md`. Per-plugin plan: `roadmap.md`. Unapproved propositions: `ideas.md`.
@@ -585,6 +637,7 @@ Claim a `todo` row before work: set Status to `in progress` and Agent to `Provid
 | D32 | **An optional resident hook process (T178).** `rtok hook --serve` answers `rtok-hook`, a std-only client, over a Unix socket (Windows: a named pipe); `rtok demon` supervises it as the service `hook`, or the hook starts it detached, rate-limited by a lock file. This supersedes D1's "no daemon on the hook path" and D22's "nothing in it is on the hook path" for the `hook` service only. Without it everything works as today: the client runs `rtok hook` when the resident is absent or refuses (another version or config environment), and prints `{}` when it does not answer within 50 ms. | Process start is ~11 ms of the ~14 ms Claude Code waits per hook (research.md §19); a fresh process cannot meet the 10 ms budget. |
 | D33 | **rtok's MCP lives in each agent's own config, not in its plugins (T275, amends D21 for MCP).** Install and update always write the config entry `rtok`; only `remove` takes it out, and a plugin no longer suppresses or strips it. Where an agent would show a plugin server next to the config entry (Claude Code and Desktop, Cursor, Copilot, Codex, VS Code, ZCode, Kimi, Grok; `research.md` §25), the rtok plugin ships no MCP server and keeps its hooks, skills and agents. Gemini keeps both, since settings.json wins over an extension's same-name server. Same-name entries across one agent's files are left to the agent to merge. Hooks keep D21 unchanged. |
 | D34 | **rtok gives every agent session its own id and owns its worktrees the same way on every host (T281–T290, creator request 2026-09-27).** The agent id is a UUIDv7 issued by rtok per host session (sub-agents get their own, with a parent), shown as its first 8 hex chars; any unique prefix of 4+ chars is accepted. The host's session id is kept alongside but never used as the identity: it collides across hosts and is missing on several (`research.md` §26). A worktree is bound to one agent by the git lock reason `<owner> \| <task-id> \| <date> \| agent <uuid>` (the old 3-field form stays valid) and a store row; the lock is the source of truth. Every host gets the same root, naming, lock, list, remove and gc: Claude Code redirects its own worktrees through `WorktreeCreate`/`WorktreeRemove` (T159), hosts with a post-create script adopt theirs (T289), all others use the skill and the MCP tools. Messages between agents and from the user are local, capped, framed as information from another agent and never as instructions. |
+| D35 | **Smart memory is on by default for every agent, from one event module (T291–T293, creator 2026-09-27).** `prompt_recall` (5), `startup_recall`, `handoff` and `spawn_brief` default on. This overrides the T131 gate that would have left `spawn_brief` off until a measured net saving. Bodies stay out of the always-on prompt; the index names `mem_get`. One module under `src/agents/` generates every host manifest from that host's event-name map; a host with no equivalent event is MCP-only for it. Hook path stays sync, ≤10 ms, fail-open, no LLM and no vector read (D13). SQLite stays the only store (D8). A later private-repo sync is outside this repo; T294 only makes an export row able to carry a tombstone. Evidence: `research.md` §27. |
 
 ### Architecture
 

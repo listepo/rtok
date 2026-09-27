@@ -1848,3 +1848,35 @@ Hosts = `src/agents/*` (21): aider, antigravity, claude, cline, codewhale, codex
 5. Weakest coverage, flagged rather than guessed: Cline (docs page didn't render), Pi's worktree extensions (community, not core docs), Kilo's own session-hook existence, MiMo's exact session-id field name and worktree directory — all marked **unverified** above rather than asserted.
 
 Consequences for the plan (D34): only Claude Code can redirect creation and removal (T159). Cursor, Kilo and Devin/Windsurf run a script after they create a worktree, which is where `rtok worktree adopt` hooks in (T289). Every other host gets rtok's worktrees through the skill and the MCP tools only (T285, T286). The host session id is not unique across hosts and is missing on several, so rtok issues its own agent id (T282).
+
+## 27. Memory defaults and one install point (T291–T294) (2026-09-27)
+
+Creator 2026-09-27: the write hook and the session-end hook must fire, smart memory must be on by default, and every agent must get that from one module (or one `create`), not from a hand-written manifest per host. Decision D35. Cloud sync of notes is a later task in a private repo; that repo was not found in the local tree or via `gh repo list` / `gh search` on this date (the only cloud-sync hit was Fern in `listepo/budget-app`, a different product). D8 stands: this repo keeps one SQLite file and does not grow a sync protocol. T294 only widens the JSONL row so a later replicator can carry a tombstone.
+
+### 27.1 Why memory looks off
+
+Runtime is already one path. `inject_event` dispatches `SessionStart`, `UserPromptSubmit` and `SubagentStart`; `hooks::dispatch` writes the session note on `SessionEnd`. Install is not one path: `claude::ENTRIES` plus a separate list in Cursor, Copilot, Gemini and ZCode, and a hand-written `plugins/*/hooks/hooks.json` for each.
+
+Cursor's plugin manifest (`plugins/cursor/hooks/hooks.json`, tree read 2026-09-27) registers `sessionStart`, `preCompact`, shell and MCP. It does not register `beforeSubmitPrompt`, `sessionEnd` or `subagentStart`. `cursor_event` maps `beforeSubmitPrompt` → `UserPromptSubmit` and leaves `sessionEnd` and `subagentStart` unmapped (`src/hooks/types.rs`). Cursor documents all three (https://cursor.com/docs/hooks, fetched 2026-09-27). The same page says cloud agents defer `sessionStart` and have no IDE-lifetime `sessionEnd`; those two stay unwired for cloud agents, recorded on the module, with no second memory implementation.
+
+Defaults that leave the smart paths silent, both in `config/default.toml` and `Memory` (`src/config/mod.rs`): `prompt_recall = 0`, `startup_recall = false`, `handoff = false`, `spawn_brief = false`. Embeddings stay off. Recall itself is on (`recall_tokens = 200`, five titles, no bodies).
+
+On this machine, `rtok memory status` (2026-09-27, rtok 0.10.0): 125 live notes, 235 recalls, `mem_get` 0, `mem_search` 3. Titles are injected and the bodies are never fetched.
+
+### 27.2 What the five products actually do
+
+Fetched 2026-09-27. Vendor diagrams are their own illustrations. Letta, Zep and Graphiti were absent from `research.md` before this section. Mem0 and claude-mem were already in §4 and §9 (scan 2026-09-17); this section adds only the mechanism that bears on D35.
+
+| Product | What reduces tokens | What spends tokens | Store / sync shape | Source |
+| --- | --- | --- | --- | --- |
+| Mem0 | The app calls `search` and chooses which memories enter the prompt, instead of replaying the transcript. | Default `add` runs an LLM extraction, then embeds. SQL holds facts; a vector store and an entity store sit beside it. `infer=False` stores the raw text. | Platform manages the three stores. OSS leaves the backing stores to config. | https://docs.mem0.ai/core-concepts/how-it-works |
+| Letta MemFS | Files under `system/` are in the system prompt every turn. Every other path is a name in the tree; the body is read with ordinary file tools when needed. No vector index by default. | The `system/` tree is always-on. Dreaming and memory-doctor subagents edit memory in git worktrees. Semantic search is an optional mod (QMD). | One git repo per agent. Cloud agents push to a hosted repo. Local agents commit on the machine. | https://docs.letta.com/concepts/memfs/ |
+| Zep | `scope="auto"` returns one context block packed to `max_characters` (default 2500, cap 50000). Search `limit` defaults to 10. | The block is built to be pasted into the prompt. The graph behind it is Graphiti. | Managed context graph. | https://help.getzep.com/searching-the-graph |
+| Graphiti | Episodes stay the raw ingested stream; derived facts carry temporal validity windows and point back at episodes. Retrieval is hybrid (semantic, keyword, graph). | Ingest uses an LLM. Backing store is Neo4j, FalkorDB, Neptune or Kuzu. `SEMAPHORE_LIMIT` defaults to 10 concurrent ingest operations; that is a concurrency cap, not a retrieval cap. The README on `main` does not state a current release version (it mentions v0.17.0 for the database-driver API). A search-limit constant of 10 at tag `v0.30.2` was reported from `graphiti_core/search/search_config.py` and is **unverified** (not in that README body). | Open-source framework under Zep. A context graph is a second store. | https://github.com/getzep/graphiti (README on `main`) |
+| claude-mem | SessionStart shows an index: id, time, type, title, approximate token cost, and the name of the MCP tool that fetches the body (`search`, then `timeline`, then `get_observations`). | Observations are extracted and compressed. The index is always injected. The page's 35,000 / 800 / 920 token figures are illustrations, not a measured bill. | SQLite plus the tool-use table. Cloud sync was already noted in §9.1 (v13.25.1, 2026-09-17); this page does not restate a version. | https://docs.claude-mem.ai/progressive-disclosure |
+
+What survives D4, D8 and D13: an index of titles plus a fetch (`mem_get`), a character/token cap on anything that is injected, and verbatim episodes (rtok's note body). What does not: LLM extraction on the hook, a vector or graph store beside SQLite, lossy observation compression, and a git repo as the source of truth.
+
+### 27.3 What follows
+
+T291 is the one module. T292 turns the four flags on inside the existing budgets (200 / 400 / 300 / 800). T293 puts a token count and the `mem_get` name on each title line, and records a measurement when a body is fetched. T294 adds tombstone fields to the JSONL row. T131 still measures the spawn-brief net; D35 says that net does not choose the default.
