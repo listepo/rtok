@@ -390,7 +390,10 @@ pub fn decide(installed: Option<Installed>, available: &Available, force: bool) 
 /// `installed_at` for a fresh [`ReceiptEntry`]: RFC 3339 UTC, second precision, from the same
 /// clock and calendar `rtok_log::stamp` uses for log lines.
 pub fn now_iso() -> String {
-    format!("{}Z", rtok_log::stamp(rtok_log::now()).replacen(' ', "T", 1))
+    format!(
+        "{}Z",
+        rtok_log::stamp(rtok_log::now()).replacen(' ', "T", 1)
+    )
 }
 
 #[cfg(test)]
