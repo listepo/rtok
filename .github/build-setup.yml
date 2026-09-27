@@ -12,20 +12,32 @@
 # a secret here — we import the cert into a throwaway keychain and read the
 # Developer ID Application identity out of it, matching ketch's release.yml.
 
-# Build releases with the Rust that ci.yml tests (the `rust` pin in mise.toml),
-# not whatever stable the runner image ships. Runs first so rust-cache keys on
-# this rustc. Keep the version in sync with mise.toml.
-- name: Pin Rust toolchain
+# Build releases with the Rust that ci.yml tests: the `rust` pin in mise.toml (the
+# single source of the Rust version), not whatever stable the runner image ships.
+# Runs first so rust-cache keys on this rustc. Only `rust` is installed; the other
+# mise tools are not needed to build. rustfmt and clippy come from mise.toml.
+- name: Install Rust from mise.toml
+  uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+  with:
+    install_args: rust
+    cache_key_prefix: mise-v1-release
+
+# Make the mise pin the active toolchain for every later rustup/cargo call (dist,
+# wasm-pack) and add the matrix cross targets to it.
+- name: Add release targets to the mise toolchain
   shell: bash
   env:
     TARGETS: ${{ join(matrix.targets, ' ') }}
   run: |
     set -euo pipefail
-    rustup toolchain install 1.97.1 --profile minimal
-    rustup default 1.97.1
+    version="$(mise current rust)"
+    echo "RUSTUP_TOOLCHAIN=$version" >> "$GITHUB_ENV"
+    export RUSTUP_TOOLCHAIN="$version"
     # shellcheck disable=SC2086
     rustup target add $TARGETS
     rustc --version
+    rustc --version | grep -q "^rustc $version " \
+      || { echo "rustc is not the mise.toml pin $version" >&2; exit 1; }
 
 - name: Cache Cargo build
   uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

@@ -31,7 +31,7 @@ Project programs and direct packages from the manifests.
 | oxfmt | mise (`npm:oxfmt`) | `just js` / `just js-fmt` (T110): formatter for the same JS/TS files | https://github.com/oxc-project/oxc |
 | vitest | mise (`npm:vitest`) | T111: runs the TS host plugin tests (`vitest.config.mjs`, globals, inline snapshots); driven by `tests/filter.rs` and `tests/pi_plugin.rs` (`--bail=1`), on Linux only (skipped on macOS and Windows) | https://github.com/vitest-dev/vitest |
 | vite | mise (`npm:vite`) | Peer of vitest 5 (`@vitest/mocker`); required so Windows CI can resolve `vite` when running host plugin tests | https://github.com/vitejs/vite |
-| rust | mise | CI otherwise installs the minimal profile | https://github.com/rust-lang/rust |
+| rust | mise | The one Rust version of the repo: local, ci.yml, verify.yml, sonarcloud.yml and release builds (build-setup.yml) all install it from mise.toml; `rustfmt,clippy` because CI otherwise installs the minimal profile | https://github.com/rust-lang/rust |
 | rustc | mise (pin rust) | Rust compiler | https://github.com/rust-lang/rust |
 | cargo | mise (pin rust) | Rust build and dependencies | https://github.com/rust-lang/cargo |
 | colima | mise | Container runtime that runs Docker (and others) inside a Lima VM — lightweight alternative to Docker Desktop for agents | https://github.com/abiosoft/colima |
