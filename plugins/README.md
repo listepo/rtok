@@ -65,7 +65,7 @@ See [`src/agents/claude/README.md`](../src/agents/claude/README.md) and [`docs/a
 | [`devin/`](devin/) | Devin (CLI + Desktop) | `.devin-plugin` manifest + root `hooks.json` + MCP |
 | [`gemini/`](gemini/) | Gemini CLI | `gemini-extension.json` (embedded MCP) + `hooks/hooks.json` |
 | [`grok/`](grok/) | Grok Build | Claude-layout plugin + MCP |
-| [`kimi/`](kimi/) | Kimi Code | single `kimi.plugin.json` |
+| [`kimi/`](kimi/) | Kimi Code | single `kimi.plugin.json` (no MCP: T275) |
 | [`opencode/`](opencode/) | OpenCode (+ Kilo) | `rtok.ts` plugin |
 | [`pi/`](pi/) | pi | extension + skill (no MCP by default) |
 | [`zcode/`](zcode/) | ZCode | hooks + launcher (no MCP: T275) |

@@ -1,19 +1,13 @@
 {
   "name": "rtok",
   "version": "0.10.0",
-  "description": "rtok hooks and MCP server for Kimi Code CLI and Desktop",
+  "description": "rtok hooks for Kimi Code CLI and Desktop",
   "homepage": "https://github.com/listepo/rtok",
   "interface": {
     "displayName": "rtok",
-    "shortDescription": "Token reduction: hooks and one MCP server",
+    "shortDescription": "Token reduction: hooks",
     "developerName": "listepo",
     "websiteURL": "https://github.com/listepo/rtok"
-  },
-  "mcpServers": {
-    "rtok": {
-      "command": "rtok",
-      "args": ["mcp"]
-    }
   },
   "hooks": [
     { "event": "PreToolUse", "matcher": "Bash", "command": "rtok hook PreToolUse", "timeout": 5 },

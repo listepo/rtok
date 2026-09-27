@@ -37,6 +37,7 @@ fn plugin_tree(host: &str) -> (&str, bool) {
         "cursor" => ("cursor", false),
         "codex" => ("codex", false),
         "zcode" => ("zcode", false),
+        "kimi" => ("kimi", false),
         _ => (host, true),
     }
 }
