@@ -27,4 +27,3 @@
 - T290. Docs, skill and one cross-host test for agents and worktrees
 - T297. Saving floors that catch a regression
 - T298. Proxy replay bench with a saving floor
-- T299. Saving checks for guard and the read modes

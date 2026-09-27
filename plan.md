@@ -33,7 +33,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T290 | todo | P1 | 3 | 0% | |
 | T297 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T298 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
-| T299 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
 
 
 
@@ -562,14 +561,6 @@ Check: `cargo nextest run -p rtok --lib cmd::formatters`; lowering a rule's keep
 Plan: a fixture Messages request (large tool results, JSON arrays, prose, a short body that must stay) replayed through the proxy against a fake upstream; sum the `Measurement` rows per plugin; assert a total floor (measured minus 5 points), a per-plugin non-zero saving, that each archived id expands to the original bytes, and a mutation check (plugin off → below the floor).
 
 Check: `cargo nextest run -p rtok --test proxy_bench`.
-
-### T299. Saving checks for guard and the read modes
-
-`guard` records denied repeats with `est_after: 0`, but no test checks that `est_before` is the size of what was denied. The `read` modes `map`, `outline` and `search` have no minimum saving.
-
-Plan: a guard test asserting `est_before` equals the token estimate of the denied payload; read-mode tests over a fixture source file asserting each mode's saving floor (measured minus 5 points) and that the `Measurement` row matches the bytes returned.
-
-Check: `cargo nextest run -p rtok --lib guard read` and the touched integration tests.
 
 ## Reference
 
