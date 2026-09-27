@@ -45,6 +45,8 @@ Every effective key with its origin — the `config show --sources` page.
 
 | key | value | source |
 | --- | --- | --- |
+| agents.enabled | true | default |
+| agents.idle | 30m | default |
 | bench.configs.a | bench/configs/legacy.json | default |
 | bench.configs.b | bench/configs/rtok.json | default |
 | bench.dry_run | false | default |

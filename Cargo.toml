@@ -148,6 +148,8 @@ log = "0.4.34" # T225: logging facade; env_logger drains it, every D26 line is m
 env_logger = "0.11.11" # T225: `RUST_LOG` debug log on stderr; the filter defaults to `off`, not `error`
 diesel_migrations = { version = "2.2", features = ["sqlite"] } # T163.4: embedded migrations + version table
 semver = { version = "1.0", features = ["serde"] } # T279: plugin version compare + version-file (de)serialization; already in the lock as a transitive dep
+uuid = { version = "1.26", features = ["v7"] } # T282: the rtok agent id (D34); already in the lock as a transitive dep
+humantime = "2.4" # T282 review: [agents] idle parsing, replacing a hand-rolled duplicate of measure::stats::parse_since; already in the lock as a transitive dep
 
 [dev-dependencies]
 assert_cmd = "2" # CLI e2e through `Command::cargo_bin` (plan Working agreement)

@@ -271,9 +271,29 @@ diesel::table! {
     }
 }
 
+// 0024 (T282, D34): the rtok agent id — one row per host session, one per sub-agent inside
+// it. `parent_key` is '' for the main window or the host's own sub-agent `agent_id`;
+// `parent_id` is the resolved rtok id of that sub-agent's parent row.
+diesel::table! {
+    agents (id) {
+        id -> Text,
+        host_id -> Integer,
+        host_session_id -> Text,
+        parent_key -> Text,
+        parent_id -> Nullable<Text>,
+        cwd -> Nullable<Text>,
+        started_at -> BigInt,
+        last_seen -> BigInt,
+        ended_at -> Nullable<BigInt>,
+        activity -> Nullable<Text>,
+        status_text -> Nullable<Text>,
+    }
+}
+
 diesel::joinable!(archive_decisions -> archive (archive_id));
 diesel::joinable!(models -> providers (provider_id));
 diesel::joinable!(sessions -> hosts (host_id));
+diesel::joinable!(agents -> hosts (host_id));
 diesel::joinable!(calls -> hosts (host_id));
 diesel::joinable!(calls -> providers (provider_id));
 diesel::joinable!(calls -> models (model_id));
@@ -305,4 +325,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     symbols,
     extractor,
     symbol_stale,
+    agents,
 );

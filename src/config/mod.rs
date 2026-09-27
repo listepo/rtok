@@ -151,6 +151,17 @@ section! {
 }
 
 section! {
+    /// `[agents]` — the rtok agent registry (T282, D34): one row per host session, resolved
+    /// by any unique id prefix of 4+ hex chars. `idle` bounds `live()` (`store::live_agents`,
+    /// parsed by `humantime::parse_duration`); `enabled` gates registration only — the
+    /// hook itself and `[core] enabled` are unaffected.
+    Agents {
+        enabled: bool = true,
+        idle: String = s("30m"),
+    }
+}
+
+section! {
     /// `[mcp]` — `rtok mcp`.
     Mcp {
         tools: Vec<String> = Vec::new(),
@@ -817,6 +828,7 @@ pub struct Config {
     pub estimator: Estimator,
     pub log: Log,
     pub hook: Hook,
+    pub agents: Agents,
     pub mcp: Mcp,
     pub proxy: Proxy,
     pub web: Web,
