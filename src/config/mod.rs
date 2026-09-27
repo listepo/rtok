@@ -362,6 +362,14 @@ section! {
         modes: Vec<String> = Vec::new(),
         mcp: bool = true,
         proxy: bool = false,
+        /// `agents update --force` (T279 PR 3): reinstall the host plugin even when the
+        /// version decision would otherwise skip it.
+        force: bool = false,
+        /// `agents update --source github|local|marketplace` (T279 PR 3): override the
+        /// install source the version decision compares against, instead of the receipt's
+        /// recorded one. Validated by `agents::plugin_version::Source`'s `FromStr`, not here,
+        /// so this section stays free of that module's types.
+        source: Option<String> = None,
         claude: SetupClaude = SetupClaude::default(),
         cursor: SetupCursor = SetupCursor::default(),
         codex: SetupCodex = SetupCodex::default(),

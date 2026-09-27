@@ -1,17 +1,17 @@
 //! One version scheme for a plugin across every install source — GitHub, local checkout and
-//! marketplace catalog (plan T279). Pure core only: the version-file format, the per-host
-//! install receipt, the installed/available version lookup and the update/skip/reinstall
-//! decision. `agents update` does not call any of this yet (T279 PR 3).
-//!
-//! `agents update` wiring follows in PR 3; every item here is exercised only by this
-//! module's own tests until then.
-#![allow(dead_code)]
+//! marketplace catalog (plan T279). The version-file format, the per-host install receipt,
+//! the installed/available version lookup and the update/skip/reinstall decision, plus (PR 3)
+//! `git describe` for a local build and parsing `--source` off the CLI. `agents update` wires
+//! this in for Claude (the worked example the docs task names); other hosts still reinstall
+//! unconditionally until they grow the same plumbing.
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
 use semver::Version;
@@ -43,6 +43,23 @@ impl std::fmt::Display for Source {
     }
 }
 
+impl FromStr for Source {
+    type Err = anyhow::Error;
+
+    /// `agents update --source github|local|marketplace` (T279 PR 3). Case-insensitive so a
+    /// shell-completed or hand-typed `--source GitHub` still parses.
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "github" => Ok(Source::Github),
+            "local" => Ok(Source::Local),
+            "marketplace" => Ok(Source::Marketplace),
+            other => {
+                bail!("unknown plugin source {other:?} (expected github, local or marketplace)")
+            }
+        }
+    }
+}
+
 /// `plugins/<host>/.rtok-plugin-version`: committed at the plugin root, copied with the
 /// plugin by every install source. `source` is only set by a local install (T279 step 1); a
 /// committed file carries none.
@@ -56,6 +73,10 @@ pub struct VersionFile {
 }
 
 impl VersionFile {
+    /// Exercised by this module's own round-trip tests; writing a fresh `.rtok-plugin-version`
+    /// into an installed copy is a later task (resolving that path needs the version-numbered
+    /// cache directory a host names only after install, out of PR 3's scope).
+    #[allow(dead_code)]
     pub fn new(plugin: impl Into<String>, version: Version) -> Self {
         Self {
             schema: SCHEMA,
@@ -82,6 +103,8 @@ impl VersionFile {
     }
 
     /// Writes the compact, single-line JSON shape the committed files use, LF-terminated.
+    /// Same PR 3 scope note as [`VersionFile::new`].
+    #[allow(dead_code)]
     pub fn write(&self, path: &Path) -> Result<()> {
         let body = format!("{}\n", serde_json::to_string(self)?);
         crate::config::write_file(path, &body)
@@ -132,6 +155,10 @@ impl Receipt {
         self.0.insert(host.into(), entry);
     }
 
+    /// A reinstall failure deleting the receipt (plan T279 step 6, `--force`'s own path) is
+    /// out of PR 3's scope: this PR leaves the receipt untouched on any `claude` failure, so
+    /// the next `agents update` sees the same state and tries again.
+    #[allow(dead_code)]
     pub fn delete(&mut self, host: &str) -> Option<ReceiptEntry> {
         self.0.remove(host)
     }
@@ -229,7 +256,11 @@ pub fn installed(
 }
 
 /// Reads the version file (if the installed copy has one) and the receipt row, then applies
-/// [`installed`] — the thin I/O wrapper the pure lookup is built on.
+/// [`installed`] — the thin I/O wrapper the pure lookup is built on. Not called yet: Claude's
+/// `plugin_update` (T279 PR 3) only has the receipt and the host record — locating the
+/// installed copy's own file needs the version-numbered cache directory a host names only
+/// after install, a later task.
+#[allow(dead_code)]
 pub fn read_installed(
     version_file_path: &Path,
     receipt: &Receipt,
@@ -256,6 +287,47 @@ pub fn read_installed(
 pub struct Available {
     pub version: Version,
     pub source: Source,
+}
+
+/// The version available from `source` (plan T279 step 2), given the plugin's local tree
+/// (`plugins/<host>` for a local install; unused otherwise) and the running rtok's own
+/// version. GitHub and marketplace both read as `running_version`: PR 1's `--check` (and its
+/// Rust twin) keep every `.rtok-plugin-version` and manifest equal to `CARGO_PKG_VERSION`, so
+/// the tag or catalog entry matching this binary is already known — no network call, and
+/// `agents outdated` (T279.1) works offline. Only a local checkout can genuinely differ from
+/// what is running, so it alone reads its own file and `git describe`.
+pub fn available(source: Source, local_dir: &Path, running_version: &Version) -> Result<Available> {
+    if source != Source::Local {
+        return Ok(Available {
+            version: running_version.clone(),
+            source,
+        });
+    }
+    let file = VersionFile::read(&local_dir.join(".rtok-plugin-version"))?;
+    let describe = git_describe(local_dir)?;
+    Ok(Available {
+        version: local_version(&file.version, &describe),
+        source,
+    })
+}
+
+/// `git -C <dir> describe --always --dirty`, trimmed — the only place this module spawns a
+/// process.
+fn git_describe(dir: &Path) -> Result<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["describe", "--always", "--dirty"])
+        .output()
+        .with_context(|| format!("cannot run git describe in {}", dir.display()))?;
+    if !out.status.success() {
+        bail!(
+            "git describe in {}: {}",
+            dir.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
 /// What `agents update` should do for one host (plan T279 step 3/4/6): the pure decision, no
@@ -313,6 +385,34 @@ pub fn decide(installed: Option<Installed>, available: &Available, force: bool) 
         },
         Ordering::Equal => Decision::Update,
     }
+}
+
+/// `installed_at` for a fresh [`ReceiptEntry`]: UTC, second precision, no dependency.
+pub fn now_iso() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (days, rem) = (secs / 86400, secs % 86400);
+    let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    let (y, mo, d) = civil_from_days(days as i64);
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+/// Days since the Unix epoch to a proleptic-Gregorian (year, month, day) — Howard Hinnant's
+/// `civil_from_days` (public domain), the same algorithm `chrono`/`time` use for UTC, so
+/// [`now_iso`] needs no extra dependency for one timestamp field.
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
 #[cfg(test)]
@@ -678,5 +778,100 @@ mod tests {
     fn local_version_tagged_describe() {
         let version = local_version(&v("0.10.0"), "v0.10.0-3-g12c7e91");
         assert_eq!(version.to_string(), "0.10.0+g12c7e91");
+    }
+
+    // ── Source::from_str ────────────────────────────────────────────────────
+
+    #[test]
+    fn source_from_str_accepts_any_case() {
+        assert_eq!("github".parse::<Source>().unwrap(), Source::Github);
+        assert_eq!("Local".parse::<Source>().unwrap(), Source::Local);
+        assert_eq!(
+            "MARKETPLACE".parse::<Source>().unwrap(),
+            Source::Marketplace
+        );
+    }
+
+    #[test]
+    fn source_from_str_rejects_unknown() {
+        let err = "npm".parse::<Source>().unwrap_err().to_string();
+        assert!(err.contains("npm"), "{err}");
+    }
+
+    // ── available ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn available_github_and_marketplace_read_as_the_running_version() {
+        let running = v("0.10.0");
+        for source in [Source::Github, Source::Marketplace] {
+            let a = super::available(source, Path::new("/does/not/exist"), &running).unwrap();
+            assert_eq!(a.version, running);
+            assert_eq!(a.source, source);
+        }
+    }
+
+    #[test]
+    fn available_local_reads_the_tree_s_own_file_and_git_describe() {
+        let dir = scratch("available-local");
+        VersionFile::new("claude", v("0.10.0"))
+            .write(&dir.join(".rtok-plugin-version"))
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
+        std::process::Command::new("git")
+            .args([
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "--allow-empty",
+                "-q",
+                "-m",
+                "x",
+            ])
+            .current_dir(&dir)
+            .status()
+            .unwrap();
+        let a = super::available(Source::Local, &dir, &v("99.0.0")).unwrap();
+        assert_eq!(a.source, Source::Local);
+        assert!(a.version.to_string().starts_with("0.10.0+g"), "{a:?}");
+    }
+
+    #[test]
+    fn available_local_names_the_directory_when_git_fails() {
+        let dir = scratch("available-local-no-git");
+        VersionFile::new("claude", v("0.10.0"))
+            .write(&dir.join(".rtok-plugin-version"))
+            .unwrap();
+        let err = super::available(Source::Local, &dir, &v("99.0.0"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(&dir.display().to_string()), "{err}");
+    }
+
+    // ── now_iso ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn civil_from_days_epoch_is_1970_01_01() {
+        assert_eq!(civil_from_days(0), (1970, 1, 1));
+    }
+
+    #[test]
+    fn civil_from_days_matches_a_known_date() {
+        // 2026-09-27 is 20723 days after the epoch.
+        assert_eq!(civil_from_days(20723), (2026, 9, 27));
+    }
+
+    #[test]
+    fn now_iso_looks_like_rfc3339_utc() {
+        let ts = now_iso();
+        assert_eq!(ts.len(), 20, "{ts}");
+        assert!(ts.ends_with('Z'), "{ts}");
+        assert_eq!(&ts[4..5], "-");
+        assert_eq!(&ts[10..11], "T");
     }
 }
