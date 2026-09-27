@@ -1,10 +1,11 @@
 //! T86 + D21: the Kimi host plugin is one manifest, a singleton, CLI+Desktop.
 //!
 //! Check: `plugins/kimi/kimi.plugin.json` carries the same nine hooks the installer
-//! writes (pinned by `agents::kimi::tests::plugin_manifest_matches_the_installer`)
-//! plus `mcpServers.rtok` → `rtok mcp` as the only server; `rtok agents install kimi`
-//! with a seeded `plugins/managed/rtok/kimi.plugin.json` strips its own tables and
-//! reports `plugin`; remove leaves the managed copy alone.
+//! writes (pinned by `agents::kimi::tests::plugin_manifest_matches_the_installer`);
+//! it ships no `mcpServers` of its own (T275/D33: `rtok agents install kimi` writes
+//! `mcpServers.rtok` into the host's own config, independent of the plugin);
+//! `rtok agents install kimi` with a seeded `plugins/managed/rtok/kimi.plugin.json`
+//! strips its own hook tables and reports `plugin`; remove leaves the managed copy alone.
 
 use std::fs;
 use std::path::PathBuf;
@@ -18,7 +19,7 @@ fn manifest() -> serde_json::Value {
 }
 
 #[test]
-fn d21_single_manifest_carries_hooks_and_one_mcp_server() {
+fn d21_single_manifest_carries_hooks_only_no_mcp() {
     let m = manifest();
     assert_eq!(m["name"], "rtok");
     let hooks = m["hooks"].as_array().expect("hooks array");
@@ -28,11 +29,8 @@ fn d21_single_manifest_carries_hooks_and_one_mcp_server() {
         assert!(cmd.starts_with("rtok hook "), "{h}");
         assert_eq!(h["timeout"], 5);
     }
-    let servers = m["mcpServers"].as_object().expect("mcpServers");
-    assert_eq!(servers.len(), 1, "singleton: one MCP server");
-    let rtok = &servers["rtok"];
-    assert_eq!(rtok["command"], "rtok", "cross-platform: no sh wrapper");
-    assert_eq!(rtok["args"], serde_json::json!(["mcp"]));
+    // T275/D33: MCP is independent of the plugin — the manifest carries none.
+    assert!(m.get("mcpServers").is_none(), "{m}");
 }
 
 #[test]

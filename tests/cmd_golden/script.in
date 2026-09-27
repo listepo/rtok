@@ -1,0 +1,43 @@
+argv: 'npm run build && pytest -q'
+exit: 0
+min_saving: 40
+---
+> foo@1.0.0 build
+> webpack --mode production
+
+asset chunk-1.js emitted, size 112 KiB
+asset chunk-2.js emitted, size 212 KiB
+asset chunk-3.js emitted, size 312 KiB
+asset chunk-4.js emitted, size 412 KiB
+asset chunk-5.js emitted, size 512 KiB
+asset chunk-6.js emitted, size 612 KiB
+asset chunk-7.js emitted, size 712 KiB
+asset chunk-8.js emitted, size 812 KiB
+asset chunk-9.js emitted, size 912 KiB
+asset chunk-10.js emitted, size 1012 KiB
+asset chunk-11.js emitted, size 1112 KiB
+asset chunk-12.js emitted, size 1212 KiB
+asset chunk-13.js emitted, size 1312 KiB
+asset chunk-14.js emitted, size 1412 KiB
+asset chunk-15.js emitted, size 1512 KiB
+asset chunk-16.js emitted, size 1612 KiB
+asset chunk-17.js emitted, size 1712 KiB
+asset chunk-18.js emitted, size 1812 KiB
+asset chunk-19.js emitted, size 1912 KiB
+asset chunk-20.js emitted, size 2012 KiB
+webpack compiled in 4231 ms
+
+============================= test session starts ==============================
+collected 12 items
+
+test_api.py ......F.
+test_db.py ...
+=================================== FAILURES ====================================
+_________________________________ test_timeout __________________________________
+
+    def test_timeout():
+>       assert client.get_with_timeout(0.01) is None
+E       Exception: request did not time out
+
+test_api.py:41: Exception
+========================= 1 failed, 11 passed in 1.22s ==========================

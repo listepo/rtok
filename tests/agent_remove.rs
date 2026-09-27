@@ -258,11 +258,12 @@ fn kimi_remove_keeps_comments_and_foreign_hooks() {
 
 /// T86 D21 singleton at the binary level: with the plugin installed
 /// (`plugins/managed/rtok/kimi.plugin.json` seeded, as Kimi's own
-/// `/plugins install` would write it), install strips rtok's own tables and
-/// `mcpServers.rtok` instead of adding them and reports `plugin`; remove leaves
-/// the managed copy alone with its own remove line.
+/// `/plugins install` would write it), install strips rtok's own hook tables
+/// instead of adding them and reports `plugin`. MCP is independent of the
+/// plugin (T275/D33): `mcpServers.rtok` is written and kept either way; remove
+/// leaves the managed copy alone with its own remove line.
 #[test]
-fn kimi_plugin_singleton_strips_own_tables_and_keeps_the_managed_copy() {
+fn kimi_plugin_singleton_strips_own_hooks_mcp_is_independent() {
     let home = tmp("kimi-singleton");
     let cfg = write_cfg(&home);
     let path = home.join(".kimi-code/config.toml");
@@ -282,16 +283,20 @@ fn kimi_plugin_singleton_strips_own_tables_and_keeps_the_managed_copy() {
     assert!(second.contains("plugin"), "{second}");
     assert!(
         !fs::read_to_string(&path).unwrap().contains("rtok hook"),
-        "own tables stripped while the plugin serves them"
+        "own hook tables stripped while the plugin serves them"
     );
     assert!(
-        json(&mcp)["mcpServers"]["rtok"].is_null(),
-        "own MCP entry stripped while the plugin serves it"
+        json(&mcp)["mcpServers"]["rtok"].is_object(),
+        "MCP entry is independent of the plugin (T275/D33)"
     );
 
     let rm = rtok(&["agents", "remove", "kimi"], &cfg, &home);
     assert!(rm.contains("/plugins remove rtok"), "{rm}");
     assert!(marker.is_file(), "remove leaves the managed copy alone");
+    assert!(
+        json(&mcp)["mcpServers"]["rtok"].is_null(),
+        "remove still takes the MCP entry out"
+    );
 }
 
 #[test]

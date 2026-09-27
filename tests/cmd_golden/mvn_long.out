@@ -1,0 +1,29 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Building foo 1.0.0
+[INFO] ------------------------------------------------------------------------
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib1/1.0/lib1-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib1/1.0/lib1-1.0.jar (11 kB at 31 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib2/1.0/lib2-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib2/1.0/lib2-1.0.jar (12 kB at 32 kB/s)
+… 108 lines omitted (expand deadbeef)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib57/1.0/lib57-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib57/1.0/lib57-1.0.jar (157 kB at 357 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib58/1.0/lib58-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib58/1.0/lib58-1.0.jar (158 kB at 358 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib59/1.0/lib59-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib59/1.0/lib59-1.0.jar (159 kB at 359 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib60/1.0/lib60-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib60/1.0/lib60-1.0.jar (160 kB at 360 kB/s)
+[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ foo ---
+[INFO] Changes detected - recompiling the module!
+[ERROR] COMPILATION ERROR :
+[ERROR] /src/main/java/Main.java:[8,5] cannot find symbol
+[ERROR]   symbol:   method doThing()
+[ERROR]   location: class Main
+[INFO] 1 error
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile (default-compile) on project foo: Compilation failure
+[ERROR] /src/main/java/Main.java:[8,5] cannot find symbol

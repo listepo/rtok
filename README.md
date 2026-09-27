@@ -119,6 +119,8 @@ installed in (or only the hosts named): a hook or MCP entry written by an older
 binary path or with an old timeout is rewritten in place, and a
 host that has nothing of rtok is skipped rather than installed into.
 
+Plugin versions and updates: [docs/plugin-versions.md](docs/plugin-versions.md)
+
 `rtok agents uninstall claude` takes it all back out: hook entries, MCP
 registration, and the proxy variable. Both install and uninstall copy every file
 they touch to `_backup/<name>.bak-<ts>` first; a no-op run leaves no copy,
