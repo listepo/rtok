@@ -6,9 +6,9 @@ Agent rules for the **Grok Build** host package. Humans: [`README.md`](README.md
 
 | Item | Location / rule |
 | --- | --- |
-| Manifest / entry | `.grok-plugin/plugin.json`, `hooks/hooks.json`, `.mcp.json` |
+| Manifest / entry | `.grok-plugin/plugin.json`, `hooks/hooks.json` |
 | Hooks | Claude-style hooks → `rtok hook` (envelope via `GROK_HOOK_EVENT`) |
-| MCP | `.mcp.json` → `rtok mcp` |
+| MCP | none in the plugin (T275/D33): `[mcp_servers.rtok]` is written by `rtok agents install grok` into `config.toml` directly, plugin installed or not (skipped only while `[compat.claude]` already covers it) |
 | Installer | Package README (no `src/agents` module yet) |
 | Root human guide | [`../README.md`](../README.md) |
 
