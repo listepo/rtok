@@ -797,3 +797,75 @@ fn list_shows_each_agent_s_state_and_gc_keeps_a_live_agent_s_worktree() {
     assert_eq!(note("wt-live"), format!("agent {} is live", &ids[0][..8]));
     assert_eq!(note("wt-ended"), "merged, clean and idle");
 }
+
+/// T286: `remove` takes the caller's own clean worktree — with its branch once merged, or
+/// keeping an unmerged one on `--keep-branch` — releases the claim, and refuses a dirty
+/// worktree, another agent's, and the one it runs from.
+#[test]
+fn remove_takes_only_the_caller_s_own_clean_worktree() {
+    let tmp = rtok::testutil::tmp_dir("worktree-remove");
+    run(&tmp, &["init", "-q", "--bare", "origin.git"]);
+    run(&tmp, &["clone", "-q", "origin.git", "work"]);
+    let work = tmp.join("work");
+    commit(&work, "a.txt");
+    run(&work, &["push", "-q", "-u", "origin", "main"]);
+    run(&work, &["remote", "set-head", "origin", "main"]);
+    let (store, ids) = agents(&tmp, &["sess-me", "sess-other"]);
+    let (me, other) = (ids[0].as_str(), ids[1].as_str());
+    let lock = |task: &str, agent: &str| format!("claude | {task} | 2026-09-27 | agent {agent}");
+    add(&work, "done", Some(&lock("t1", me)));
+    add(&work, "open", Some(&lock("t2", me)));
+    add(&work, "dirty", Some(&lock("t3", me)));
+    add(&work, "theirs", Some(&lock("t4", other)));
+    add(&work, "here", None);
+    commit(&tmp.join("wt-done"), "done.txt");
+    commit(&tmp.join("wt-open"), "open.txt");
+    std::fs::write(tmp.join("wt-dirty/new.txt"), "x").unwrap();
+    squash(&work, "t-done");
+    run(&work, &["push", "-q", "origin", "main"]);
+    let done = tmp.join("wt-done").canonicalize().unwrap();
+    store
+        .claim_worktree(&done.display().to_string(), me, "t1")
+        .unwrap();
+    let remove = |cwd: &Path, args: &[&str]| {
+        let args = [&["worktree", "remove"][..], args].concat();
+        rtok_as(&tmp, cwd, Some(me), &args, b"")
+    };
+    let refused = |cwd: &Path, args: &[&str], why: &str| {
+        let out = remove(cwd, args);
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.code() == Some(1) && err.contains(why), "{err}");
+    };
+    let branch = |name: &str| !run(&work, &["branch", "--list", name]).is_empty();
+
+    let out = remove(&work, &["t1"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(text.contains("removed with its branch"), "{text}");
+    assert!(!done.exists() && !branch("t-done"));
+    assert!(store.open_worktree_claims().unwrap().is_empty());
+
+    refused(&work, &["../wt-open"], "--keep-branch");
+    assert!(tmp.join("wt-open").exists());
+    let out = remove(&work, &["../wt-open", "--keep-branch", "--json"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let removed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(removed["note"], "removed; branch kept");
+    assert!(!tmp.join("wt-open").exists() && branch("t-open"));
+
+    refused(&work, &["t3"], "uncommitted or untracked");
+    refused(&work, &["../wt-theirs"], other);
+    refused(&tmp.join("wt-here"), &["."], "current directory");
+    for name in ["wt-dirty", "wt-theirs", "wt-here"] {
+        assert!(tmp.join(name).exists(), "{name}");
+    }
+    let _ = std::fs::remove_dir_all(&tmp);
+}
