@@ -25,7 +25,7 @@ const LOCK_WAIT: crate::store::LockWait = crate::store::LockWait {
     migrate: std::time::Duration::from_millis(5),
 };
 
-// T304: each lock wait stays within half the 10 ms hook budget (D1). `tests/latency.rs` proves
+// T309: each lock wait stays within half the 10 ms hook budget (D1). `tests/latency.rs` proves
 // the hook gives up instead of waiting for the holder; the ms bound lives here, where it is exact.
 const _: () = assert!(LOCK_WAIT.busy.as_millis() <= 5 && LOCK_WAIT.migrate.as_millis() <= 5);
 

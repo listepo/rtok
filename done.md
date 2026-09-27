@@ -6261,7 +6261,7 @@ Result: `hook_returns_despite_exclusive_lock` now proves the fail-open by work: 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
-### T304. Latency lock test: prove fail-open without a runner-speed bound
+### T309. Latency lock test: prove fail-open without a runner-speed bound
 
 `tests/latency.rs` `hook_returns_despite_exclusive_lock` flaked on unrelated PRs on 2026-09-27: `ci / check (macos-latest)` for listepo/rtok#461 ("hook waited 102.74ms", 100 ms bound, job 108701481370) and `ci / windows (2/2)` for listepo/rtok#466 ("313.66ms", 250 ms bound, job 108706221829); both green on rerun. The `calls` assert (T237) is the proof that the hook gave up instead of waiting; the wall bound is a fixed guess at runner speed and shares the CPUs with the whole suite. Done means the test keeps catching a hook that waits on the lock, without depending on how loaded the runner is.
 
@@ -6519,6 +6519,17 @@ Check: the test fails when a plugin is disabled in the temp config; the `researc
 Result: `tests/fixtures/replay/session.jsonl` (30 hand-written events: 23 Bash, 5 MCP `read`, 2 `search`, tool mix from `rtok stats --since 7d --json`) replays through the real hook/run/mcp surfaces in a temp home; `tests/replay_bench.rs` sums `Store::list_measurements`, prints a per-plugin table with `--nocapture` and asserts the total over a 76 % floor. `disabling_cmd_plugin_drops_the_total_below_the_floor` is the mutation check. Run 2026-09-25 on main: total 79.7 % (`cmd` 82.7 %, `read` 52.3 %); `research.md` row cites the command. Caveat carried in the row: `emit_filtered`'s trailer is not counted in `after_bytes` (bug noted in T239), so `cmd`'s share is an upper bound.
 
 Model: Claude Code / opus-5.5 (first draft, abandoned unpushed in another session's worktree), claude-opus-5-5 (re-landed, reviewed)
+
+### T298. Proxy replay bench with a saving floor
+
+`tests/replay_bench.rs` put a floor under `cmd` and `read` only. The proxy methods (`archive`, `toon`, `compress`) had unit checks that output shrinks but no floor over a realistic request.
+
+Result: `tests/proxy_bench.rs` sends `tests/fixtures/proxy/messages.json` (10-turn Messages request: a 200-line CI log, a 150-line `ls -la` listing and a postmortem as old tool results, two JSON arrays, one short body, four live turns) through the real proxy against an `httpmock` upstream. The floor is end to end, per `tool_use_id`: original content vs what upstream received, so an `archive` → `compress` chain on one block counts once. Measured 91.4 % (10,054 → 867 est. tokens), floor 86.4; per plugin (information only): `archive` 90.4 %, `toon` 50.9 %, `compress` 26.6 %. It also checks each plugin shrank at least one block, the short body arrives byte-identical, every archived id expands to the original bytes, terminal rows' `after_bytes` match the sent bytes, and that `archive` off drops below the floor. `Server`/`proxy_server` moved from `tests/proxy.rs` into `tests/common/proxy.rs` for both binaries. Noted: an `archive` row's `after_bytes` is the intermediate pointer when `compress` shrinks that block further; saved tokens (`before − after`) still add up across the chain, only a ratio of summed `before`/`after` would be skewed.
+
+Check: `cargo nextest run -p rtok --test proxy_bench --test proxy` 34/34; clippy on both targets clean.
+
+Status: done 2026-09-27
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
 ### T240. Golden files for rule families without one
 
