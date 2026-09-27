@@ -12,12 +12,20 @@ use std::fs;
 use std::path::PathBuf;
 
 /// `docs/*.md` files that intentionally have no site page, with the reason why.
-const EXEMPT: &[(&str, &str)] = &[(
-    "plugin-plan-template.md",
-    "contributor scaffold copied verbatim into src/plugins/<id>/PLAN.md \
-     (see docs/plugin-authoring.md); not prose for site readers, same reasoning \
-     that keeps CONTRIBUTING.md off the site",
-)];
+const EXEMPT: &[(&str, &str)] = &[
+    (
+        "plugin-plan-template.md",
+        "contributor scaffold copied verbatim into src/plugins/<id>/PLAN.md \
+         (see docs/plugin-authoring.md); not prose for site readers, same reasoning \
+         that keeps CONTRIBUTING.md off the site",
+    ),
+    (
+        "site.md",
+        "project card for the listepo project site, not this Hugo site: \
+         .github/workflows/sync-docs.yml copies it to listepo/landing \
+         content/projects/rtok.md; its front matter is that site's contract",
+    ),
+];
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

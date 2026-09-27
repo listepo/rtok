@@ -25,6 +25,7 @@ against each host's current docs 2026-09-23; re-verify before flipping a host to
 | cline | no | no marketplace: `cline plugin install <source>` installs straight from a git repo or local path (SDK/CLI/Kanban only, not the VS Code extension), no catalog file to publish | [docs.cline.bot](https://docs.cline.bot/customization/plugins.md) |
 | copilot | no | git-hosted catalog possible, not wired in this repo yet | [docs.github.com](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference) |
 | cursor | no | manual review via cursor.com/marketplace/publish | [cursor.com](https://cursor.com/docs/plugins) |
+| devin | no | no public catalog to publish to: `devin plugins install <owner/repo>` installs straight from a git repo, and the Devin marketplace is an org/enterprise manifest in the web app | [docs.devin.ai](https://docs.devin.ai/cli/extensibility/plugins/overview) |
 | gemini | no | no marketplace: `gemini extensions install <source>` links a git repo or local path directly, no catalog file to publish | [geminicli.com](https://geminicli.com/docs/extensions/reference/) |
 | grok | no | catalog is the externally-owned `xai-org/plugin-marketplace` repo | [docs.x.ai](https://docs.x.ai/build/features/skills-plugins-marketplaces) |
 | kimi | no | git-hosted catalog possible, not wired in this repo yet | [kimi.com](https://www.kimi.com/code/docs/en/kimi-code-cli/customization/plugins.html) |

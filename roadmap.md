@@ -409,9 +409,20 @@ Not v0.1 work. Same plugins, extra backends. P28–P33 were promoted from `ideas
 | `proxy` | Optional semantic response cache (bifrost-like), off until a false-hit Check is 0 on the P9 set. | I-23 → **P31** |
 | ~~core / daemon~~ | Promoted to P20 (D22) — `rtok demon` supervises `proxy`/`mcp`/`dashboard`. | (was mis-tagged I-26; daemon ≠ WASM) → **P20** |
 | core | WASM host for out-of-tree plugins (`from_plugins` + `.wasm` example). | I-26 → **P32** |
+| hooks | Cut another ~10 ms off the §19.2 harness p50 so it reaches 10 ms (today §19.7: PreToolUse 12.3 ms / PostToolUse 12.5 ms). | from T178 |
 
 Design notes: `src/plugins/compress/PLAN.md` (P28, T28.0). Each one carries the `Target:` its gate
 must beat, and that line is the gate text below.
 
 **Gate P28 (LLM compression).** `rtok bench` cost per passed task against the v0.1 lossless path must not rise, and `expand` still recovers a non-regenerable original.
 
+---
+
+## Windows developer experience
+
+Surfaced 2026-09-26 by the first full local `just check` on Windows (T272–T274, `docs/windows.md`).
+
+| Item | What | Status |
+|------|------|--------|
+| W1 | `graph_lsp_gate::lsp_backend_outlines_dart_main` fails on Windows dart 3.9 (`File is not being analyzed`): give the temp project a `dart pub get` / a readiness wait, or skip-on-error on Windows — CI never runs it (no dart on runners) | open |
+| W2 | run `cargo clippy --workspace` in the `windows` CI job so `cfg(windows)` lint debt (the T273/T274 class) fails CI instead of the first local Windows gate | open |

@@ -89,3 +89,11 @@ threads-required = "num-test-threads"
 [[profile.default.overrides]]
 filter = 'binary(cli_trycmd)'
 threads-required = "num-test-threads"
+
+# Installs, lists and removes every host in turn: ~100 sequential `rtok` spawns, each `agents
+# list` probing all hosts. 8 s on the Windows runner, ~50 s alone on a loaded dev box, and it
+# hit the 180 s `terminate-after` there once the rest of the suite shared the CPUs (2026-09-26).
+# Alone, the time is the test's own, not its neighbours'.
+[[profile.default.overrides]]
+filter = 'test(/list_reports_installed_modules_per_host/)'
+threads-required = "num-test-threads"

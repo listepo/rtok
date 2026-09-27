@@ -650,6 +650,7 @@ mod tests {
     }
 
     /// Cursor's flat sessionStart output, printed only when no rtok is found (T250.3).
+    #[cfg(unix)]
     const MISSING_RTOK_NOTE: &str = r#"{"additional_context":"rtok is not installed; run ketch install listepo/rtok to enable it."}"#;
 
     fn plugin_hooks() -> Vec<u8> {

@@ -1784,3 +1784,7 @@ Question: which hosts let a hook add context to a sub-agent before it runs, the 
 | MiMo | no | no hook system | mimo docs |
 
 Follow-ups: T262.3 (Codex) and T262.4 (Copilot CLI). Grok and Antigravity rest on missing docs, so a docs change there is worth a recheck. Found on the way: Copilot CLI `subagentStop` accepts `modifiedResponse`, which replaces the subagent's answer to the parent (idea I-98).
+
+## 24. Cloud MCP mode for the Grok API (2026-09-26)
+
+The Grok API has no hooks and reaches MCP only over Streamable HTTP or SSE, from xAI's servers. Findings, sources and the proposed stdio/http split live in [`docs/research/grok-cloud-mcp.md`](docs/research/grok-cloud-mcp.md).

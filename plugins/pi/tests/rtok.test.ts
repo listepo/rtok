@@ -1,7 +1,13 @@
 // Unit test of the pi extension (T47.3): the extension talks to `rtok` on PATH, so each case
 // puts a fake `rtok` first on PATH (tests/node/fake-rtok.ts) and drives the two handlers through
 // a stub `pi`. Lives outside `extensions/` so pi never loads it.
-import { fakeExitingRtok, fakeHangingRtok, fakeRtok } from "../../../tests/node/fake-rtok.ts";
+import {
+  fakeExitingRtok,
+  fakeHangingRtok,
+  fakeRtok,
+  HANG_FALLBACK_MS,
+  wedgeMarker,
+} from "../../../tests/node/fake-rtok.ts";
 import extension from "../extensions/rtok.ts";
 
 /** `filter` prints `out`; `"echo"` prints stdin back. */
@@ -136,19 +142,48 @@ test("unchanged or empty filter output keeps the original", async () => {
   ).toBeUndefined();
 });
 
-test("a wedged rtok times out and tool_result keeps the original", async () => {
-  fakeHangingRtok();
+/** Per-case limit for the wedged-`rtok` cases: one 5 s spawn timeout plus slack. */
+const WEDGED_TEST_TIMEOUT_MS = 15_000;
+
+/** A bash `tool_result` runs two sequential spawns (PostToolUse hook, then filter). Each
+ * case below wedges exactly one of them via the stdin marker, so it costs one 5 s timeout,
+ * not two. Both set up the identical fake (the same `rtok` first on PATH, the same
+ * NODE_OPTIONS script), so they can run concurrently without racing on the process env;
+ * the non-concurrent cases around them still run alone. */
+async function bashResultWithWedged(subcommand: "hook" | "filter") {
+  fakeHangingRtok({ onlyMarked: true });
   const on: Record<string, Handler> = {};
   extension({ on: (name: string, fn: Handler) => (on[name] = fn) });
   const start = Date.now();
   const result = await on.tool_result({
     toolName: "bash",
-    content: [{ type: "text", text: "original output" }],
+    content: [{ type: "text", text: `original output ${wedgeMarker(subcommand)}` }],
   });
-  expect(result, "the result passes through unchanged").toBeUndefined();
-  // Two sequential spawns (PostToolUse hook, then filter) each time out at 5 s.
-  expect(Date.now() - start).toBeLessThan(20_000);
-}, 30_000);
+  return { result, elapsed: Date.now() - start };
+}
+
+test.concurrent(
+  "a wedged rtok hook times out and tool_result keeps the original",
+  async () => {
+    const { result, elapsed } = await bashResultWithWedged("hook");
+    expect(result, "the result passes through unchanged").toBeUndefined();
+    // Below the fake's fallback: the hook's 5 s timeout kill, not the fake giving up,
+    // must end the wait before the (echoing) filter runs.
+    expect(elapsed).toBeLessThan(HANG_FALLBACK_MS);
+  },
+  WEDGED_TEST_TIMEOUT_MS,
+);
+
+test.concurrent(
+  "a wedged rtok filter times out and tool_result keeps the original",
+  async () => {
+    const { result, elapsed } = await bashResultWithWedged("filter");
+    // A late "too late" answer would replace the result, so this also proves the kill.
+    expect(result, "the result passes through unchanged").toBeUndefined();
+    expect(elapsed).toBeLessThan(HANG_FALLBACK_MS);
+  },
+  WEDGED_TEST_TIMEOUT_MS,
+);
 
 test("an rtok that exits before reading stdin keeps the original (EPIPE fails open)", async () => {
   fakeExitingRtok();
@@ -187,8 +222,8 @@ test("an abort-killed rtok keeps the original", async () => {
   controller.abort();
   const result = await promise;
   expect(result, "an aborted spawn must not replace the result").toBeUndefined();
-  // Well under the 30 s hang and the 5 s spawn timeout: the abort signal, not
-  // the timeout, must be what ends the child.
+  // Well under the fake's fallback and the 5 s spawn timeout: the abort signal,
+  // not the timeout, must be what ends the child.
   expect(Date.now() - start).toBeLessThan(4_000);
 }, 10_000);
 

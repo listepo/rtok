@@ -9,8 +9,27 @@ source = "github:listepo/rtok"
 description = "Reduce the context AI coding agents must carry"
 homepage = "https://github.com/listepo/rtok"
 
-# Prefer the platform .tar.xz archives dist publishes; skip the self-updater
-# sidecar and the source tarball so scoring cannot pick those by mistake.
+# Only the CLI. The release archives also ship `plugins/` for
+# `rtok agents install`; without an explicit `bin`, Windows auto-discovery
+# treats `plugins/cursor/scripts/mcp.cmd` (and `mcp.sh`) as installable
+# binaries and copies them into `~/.ketch/bin`, which then breaks upgrades.
+# Path glob matches `rtok` (Unix) and `rtok.exe` (Windows). It also matches
+# the `rtok-hook(.exe)` client dist ships beside the main binary: ketch
+# resolves a glob to the first payload match, and NTFS lists `rtok-hook.exe`
+# before `rtok.exe`, so a Windows install linked the 390 KB hook stub as
+# `rtok` and every command hung reading stdin (observed 2026-09-26, ketch
+# 0.5.1). No `*`/`?` pattern can match `rtok`+`rtok.exe` while excluding
+# `rtok-hook.exe`, so the fix is ketch's side: prefer the candidate whose
+# stem is the link name. Keep this pin regardless — without it the
+# mcp.cmd discovery regression returns.
+bin = [{ path = "rtok*", name = "rtok" }]
+
+# Prefer platform archives dist publishes; skip self-updater sidecars and
+# the source tarball so scoring cannot pick those by mistake.
 [asset]
-include = ["*-apple-darwin.tar.xz", "*-linux-gnu.tar.xz"]
+include = [
+  "*-apple-darwin.tar.xz",
+  "*-linux-gnu.tar.xz",
+  "*-pc-windows-msvc.zip",
+]
 exclude = ["*-update*", "source.tar.gz"]

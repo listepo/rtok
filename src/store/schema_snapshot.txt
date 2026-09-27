@@ -13,6 +13,7 @@ index|measurements_plugin|measurements|CREATE INDEX measurements_plugin ON measu
 index|measurements_session_ts|measurements|CREATE INDEX measurements_session_ts ON measurements (session, ts)
 index|note_embeddings_model|note_embeddings|CREATE INDEX note_embeddings_model ON note_embeddings (model)
 index|notes_topic|notes|CREATE UNIQUE INDEX notes_topic ON notes (COALESCE(project, ''), kind, title)
+index|sqlite_autoindex___diesel_schema_migrations_1|__diesel_schema_migrations|
 index|sqlite_autoindex_archive_1|archive|
 index|sqlite_autoindex_archive_decisions_1|archive_decisions|
 index|sqlite_autoindex_extractor_1|extractor|
@@ -22,7 +23,6 @@ index|sqlite_autoindex_models_1|models|
 index|sqlite_autoindex_otel_export_1|otel_export|
 index|sqlite_autoindex_providers_1|providers|
 index|sqlite_autoindex_read_cache_1|read_cache|
-index|sqlite_autoindex_schema_migrations_1|schema_migrations|
 index|sqlite_autoindex_sessions_1|sessions|
 index|sqlite_autoindex_symbol_stale_1|symbol_stale|
 index|symbols_root_name|symbols|CREATE INDEX symbols_root_name ON symbols(root, name)
@@ -31,6 +31,7 @@ index|tokens_call|tokens|CREATE INDEX tokens_call ON tokens (call_id, phase)
 index|tokens_plugin|tokens|CREATE INDEX tokens_plugin ON tokens (plugin, ts)
 index|usage_call|usage|CREATE INDEX usage_call ON usage (call_id)
 index|usage_session|usage|CREATE INDEX usage_session ON usage (session, ts)
+table|__diesel_schema_migrations|__diesel_schema_migrations|CREATE TABLE __diesel_schema_migrations ( version VARCHAR(50) PRIMARY KEY NOT NULL, run_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP )
 table|archive|archive|CREATE TABLE archive ( id TEXT PRIMARY KEY, ts INTEGER NOT NULL DEFAULT (unixepoch()), session TEXT NOT NULL, tool TEXT, bytes INTEGER NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL , agent_id TEXT NULL)
 table|archive_decisions|archive_decisions|CREATE TABLE "archive_decisions" ( session TEXT NOT NULL, tool_use_id TEXT NOT NULL, archive_id TEXT NOT NULL REFERENCES archive(id), pointer TEXT NOT NULL, expanded_ts INTEGER, ts INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY (session, tool_use_id) )
 table|call_io|call_io|CREATE TABLE call_io ( call_id INTEGER PRIMARY KEY REFERENCES calls(id), request_bytes INTEGER NOT NULL DEFAULT 0, response_bytes INTEGER NOT NULL DEFAULT 0, request_sha256 TEXT, response_sha256 TEXT, request_json TEXT, response_json TEXT, request_archive TEXT REFERENCES archive(id), response_archive TEXT REFERENCES archive(id) , request_raw BLOB NULL, response_raw BLOB NULL)
@@ -52,7 +53,6 @@ table|notes_fts_idx|notes_fts_idx|CREATE TABLE 'notes_fts_idx'(segid, term, pgno
 table|otel_export|otel_export|CREATE TABLE otel_export ( stream TEXT PRIMARY KEY, mark BIGINT NOT NULL DEFAULT 0 )
 table|providers|providers|CREATE TABLE providers ( id INTEGER PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()) )
 table|read_cache|read_cache|CREATE TABLE read_cache ( session TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL, ts INTEGER NOT NULL DEFAULT (unixepoch()), archive_id TEXT, PRIMARY KEY (session, path) )
-table|schema_migrations|schema_migrations|CREATE TABLE schema_migrations ( name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL DEFAULT (unixepoch()))
 table|sessions|sessions|CREATE TABLE sessions ( id TEXT PRIMARY KEY, host_id INTEGER REFERENCES hosts(id), project TEXT, cwd TEXT, source TEXT, started_at INTEGER NOT NULL DEFAULT (unixepoch()), ended_at INTEGER )
 table|symbol_stale|symbol_stale|CREATE TABLE symbol_stale ( root TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY (root, path) )
 table|symbols|symbols|CREATE TABLE symbols ( id INTEGER PRIMARY KEY, path TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, line INTEGER NOT NULL, is_def INTEGER NOT NULL, file_sha TEXT NOT NULL , root TEXT NOT NULL DEFAULT '', mtime BIGINT NOT NULL DEFAULT 0, size BIGINT NOT NULL DEFAULT 0, end_line INTEGER NOT NULL DEFAULT 0, scope TEXT NOT NULL DEFAULT '')

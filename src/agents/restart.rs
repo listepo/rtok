@@ -56,8 +56,12 @@ fn tasklist_running(name: &str) -> bool {
 /// about).
 #[cfg(not(target_os = "windows"))]
 fn pgrep_running(name: &str) -> bool {
+    // `pgrep` prints matching PIDs; only the exit status is wanted, so the PIDs must not
+    // leak into rtok's own stdout.
     std::process::Command::new("pgrep")
         .args(["-x", name])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
@@ -366,24 +370,28 @@ mod tests {
         )
     }
 
-    /// The write closure pushes into the same call log as quit/open, so one assertion proves
-    /// the order: quit before write, write before reopen.
-    #[test]
-    fn running_and_changed_quits_writes_then_reopens_in_order() {
-        let procs = FakeProcs::running_names(&["Windsurf"]);
-        let mut cfg = Config::default();
+    /// A changed install for `windsurf` whose write closure pushes `write` into the same call
+    /// log as quit/open, so one assertion on the log proves the order of all three.
+    fn call_logging_write(procs: &FakeProcs) -> String {
         with_restart(
-            &mut cfg,
+            &mut Config::default(),
             &req("windsurf"),
             false,
-            &procs,
+            procs,
             |_, _| Ok(true),
             |_| {
                 procs.calls.borrow_mut().push("write".into());
                 Ok(String::new())
             },
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    /// Quit before write, write before reopen.
+    #[test]
+    fn running_and_changed_quits_writes_then_reopens_in_order() {
+        let procs = FakeProcs::running_names(&["Windsurf"]);
+        call_logging_write(&procs);
         assert_eq!(
             procs.calls.borrow().as_slice(),
             [
@@ -431,19 +439,7 @@ mod tests {
             fail_quit: true,
             ..FakeProcs::running_names(&["Windsurf"])
         };
-        let mut cfg = Config::default();
-        let out = with_restart(
-            &mut cfg,
-            &req("windsurf"),
-            false,
-            &procs,
-            |_, _| Ok(true),
-            |_| {
-                procs.calls.borrow_mut().push("write".into());
-                Ok(String::new())
-            },
-        )
-        .unwrap();
+        let out = call_logging_write(&procs);
         // No reopen call: a failed quit still writes, but nothing was closed to reopen.
         assert_eq!(
             procs.calls.borrow().as_slice(),
