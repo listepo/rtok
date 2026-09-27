@@ -10,15 +10,20 @@ use serde_json::Value;
 use toml_edit::{DocumentMut, Item};
 
 /// Whether `<key>.<name>` exists as a JSON object in an already-parsed `value` — never a
-/// substring match. A `key` that is not an object, or a `name` that exists but is not itself an
-/// object (or is mentioned only elsewhere) reads as `false` — fail open, never a panic. Shared
-/// by `has_entry` (reads a config file off disk) and doctor.rs's own missing-entry check, so the
-/// lookup lives in one place.
+/// substring match. `key` may itself be dot-separated (ZCode's `"mcp.servers"` nests two
+/// levels) and each segment is walked in turn. A missing segment, one that is not an object, or
+/// a `name` that exists but is not itself an object (or is mentioned only elsewhere) reads as
+/// `false` — fail open, never a panic. Shared by `has_entry` (reads a config file off disk) and
+/// doctor.rs's own missing-entry check, so the lookup lives in one place.
 pub(crate) fn entry_in(value: &Value, key: &str, name: &str) -> bool {
-    value
-        .get(key)
-        .and_then(|servers| servers.get(name))
-        .is_some_and(Value::is_object)
+    let mut cur = value;
+    for part in key.split('.') {
+        match cur.get(part) {
+            Some(v) => cur = v,
+            None => return false,
+        }
+    }
+    cur.get(name).is_some_and(Value::is_object)
 }
 
 /// Whether `<key>.<name>` exists as a JSON object in the JSONC file at `path` — never a
@@ -233,6 +238,19 @@ mod tests {
     fn invalid_file_is_false() {
         let path = tmp_file("invalid", "{ this is not json");
         assert!(!has_entry(&path, "mcpServers", "rtok"));
+    }
+
+    /// ZCode nests two levels (`mcp.servers.rtok`): a dotted `key` walks each segment.
+    #[test]
+    fn dotted_key_walks_nested_objects() {
+        let path = tmp_file(
+            "dotted",
+            r#"{"mcp": {"servers": {"rtok": {"command": "rtok", "args": ["mcp"]}}}}"#,
+        );
+        assert!(has_entry(&path, "mcp.servers", "rtok"));
+        assert!(!has_entry(&path, "mcp.other", "rtok"));
+        let missing = tmp_file("dotted-missing", r#"{"mcp": {"servers": {}}}"#);
+        assert!(!has_entry(&missing, "mcp.servers", "rtok"));
     }
 
     fn tmp_toml(name: &str, contents: &str) -> std::path::PathBuf {
