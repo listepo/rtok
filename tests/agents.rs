@@ -429,7 +429,7 @@ fn sessions_show_and_status_carry_the_agent_tree() {
     fs::create_dir_all(repo.join(".git")).unwrap();
     fs::create_dir_all(repo.join("src")).unwrap();
     let cwd = repo.join("src").to_string_lossy().into_owned();
-    let (main, sub, gone) = {
+    let (main, sub) = {
         let cfg = rtok::config::Config::load_from(&h).expect("config");
         let store = rtok::store::Store::open(&cfg.core.db_path).expect("store");
         let claude = store.host_id("claude").unwrap().unwrap();
@@ -449,7 +449,7 @@ fn sessions_show_and_status_carry_the_agent_tree() {
             .register_agent(claude, "live-a", Some("sub-2"), None, None)
             .unwrap();
         store.end_agent(&gone, rtok::log::now() as i64).unwrap();
-        (main, sub, gone)
+        (main, sub)
     };
 
     let out = rtok(&["agents", "sessions"], &h);
@@ -467,16 +467,16 @@ fn sessions_show_and_status_carry_the_agent_tree() {
         lines[at + 1].starts_with(&format!("  {}", &sub[..8])),
         "sub indented:\n{out}"
     );
-    assert!(
-        !out.contains(&format!("  {}", &gone[..8])),
-        "ended sub hidden:\n{out}"
-    );
+    // Ids minted in one second share their first 8 hex chars, so count the indented rows.
+    let subs = |t: &str| t.lines().filter(|l| l.starts_with("  ")).count();
+    assert_eq!(subs(&out), 1, "the ended sub-agent is hidden:\n{out}");
     assert!(
         lines.iter().any(|l| l.starts_with("- ")),
         "a session without an agent row still shows:\n{out}"
     );
     let all = rtok(&["agents", "sessions", "--all"], &h);
-    assert!(all.contains(&format!("  {}", &gone[..8])), "{all}");
+    assert_eq!(subs(&all), 2, "--all adds the ended sub-agent:\n{all}");
+    assert!(all.contains(" ended "), "{all}");
 
     let json: serde_json::Value =
         serde_json::from_str(&rtok(&["agents", "sessions", "--json"], &h)).unwrap();
@@ -502,6 +502,16 @@ fn sessions_show_and_status_carry_the_agent_tree() {
     assert_eq!(shown["status_text"], "fixing T284");
     assert_eq!(shown["model"], "claude-x");
     assert_eq!(shown["worktree"], "repo/src");
+    let long = "y".repeat(121);
+    let refused = rtok_as(&["agents", "status", &long], &h, &main);
+    assert_eq!(refused.status.code(), Some(1), "over 120 chars is refused");
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("at most 120"));
+    let kept: serde_json::Value =
+        serde_json::from_str(&rtok(&["agents", "show", &main, "--json"], &h)).unwrap();
+    assert_eq!(
+        kept["status_text"], "fixing T284",
+        "a refused text changes nothing"
+    );
     let text = rtok(&["agents", "show", &sub], &h);
     assert!(text.contains(&format!("parent: {main}")), "{text}");
 

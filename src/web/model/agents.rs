@@ -195,13 +195,19 @@ pub fn agent_show(cfg: &Config, prefix: &str, now: i64) -> Result<AgentView> {
     find(&nest(&rows, now, idle, true), &id).ok_or_else(|| anyhow::anyhow!("agent {id} vanished"))
 }
 
-/// Status text as stored: control characters stripped, trimmed, at most 120 chars;
-/// `None` when nothing is left (clears it).
-pub fn clean_status(text: &str) -> Option<String> {
+/// Longest status text an agent may set, in chars (after cleaning).
+pub const STATUS_MAX: usize = 120;
+
+/// Status text as stored: control characters stripped, trimmed; `None` when nothing is
+/// left (clears it). Longer than [`STATUS_MAX`] is refused, never cut (like T287's cap).
+pub fn clean_status(text: &str) -> Result<Option<String>> {
     let clean: String = text.chars().filter(|c| !c.is_control()).collect();
-    let clean: String = clean.trim().chars().take(120).collect();
-    let clean = clean.trim_end();
-    (!clean.is_empty()).then(|| clean.to_string())
+    let clean = clean.trim();
+    let n = clean.chars().count();
+    if n > STATUS_MAX {
+        bail!("status text is {n} chars; at most {STATUS_MAX} allowed");
+    }
+    Ok((!clean.is_empty()).then(|| clean.to_string()))
 }
 
 /// `rtok agents status <text>`: the caller's (`RTOK_AGENT_ID`) own status text.
@@ -213,7 +219,7 @@ pub fn set_status(cfg: &Config, agent_id: Option<&str>, text: &str) -> Result<Op
     let Some(id) = id else {
         bail!("not inside an agent session");
     };
-    let text = clean_status(text);
+    let text = clean_status(text)?;
     store.set_agent_status(&id, text.as_deref())?;
     Ok(text)
 }
@@ -353,7 +359,10 @@ mod tests {
             .unwrap();
         assert_eq!(agent_show(&cfg, &lone, now).unwrap().model, None);
         assert!(set_status(&cfg, None, "x").is_err());
-        assert_eq!(clean_status(&"y".repeat(200)).unwrap().len(), 120);
+        assert_eq!(clean_status(&"y".repeat(120)).unwrap().unwrap().len(), 120);
+        let long = clean_status(&"y".repeat(121)).unwrap_err().to_string();
+        assert!(long.contains("at most 120"), "{long}");
+        assert_eq!(clean_status(" \t ").unwrap(), None, "empty clears");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
