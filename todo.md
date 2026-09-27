@@ -25,6 +25,5 @@
 - T288. Push unread messages to hooked agents
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
-- T296. Every Rust formatter has a golden with a saving floor
 - T298. Proxy replay bench with a saving floor
 - T299. Saving checks for guard and the read modes
