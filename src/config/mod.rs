@@ -831,6 +831,12 @@ pub struct Config {
     /// Directory the config was loaded from; not part of the file.
     #[serde(skip)]
     pub home: PathBuf,
+    /// Override for the plugin install receipt path (T279, `agents::plugin_version`):
+    /// `$XDG_STATE_HOME/rtok/plugins.json` and OS equivalents by default. Not part of the
+    /// file — tests set it directly so a receipt round-trip never touches the real state
+    /// directory (D29).
+    #[serde(skip)]
+    pub plugin_receipt_path: Option<PathBuf>,
 }
 
 impl Config {
