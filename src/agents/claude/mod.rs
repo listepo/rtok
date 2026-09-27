@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde::de::{Deserializer, MapAccess, Visitor};
 use serde_json::{Value, json};
 
-use super::{Agent, Kind, Mode, Support, Variant, apply};
+use super::{Agent, Kind, Mode, Support, Variant, apply, mcp};
 
 /// `(event, matcher)` — empty matcher omits the field. `SessionEnd` was missing, so no session
 /// row got `ended_at` and no OTel session root ever shipped (`hooks::dispatch` handles it).
@@ -396,16 +396,16 @@ pub(crate) fn config_dir(cfg: &Config) -> PathBuf {
 }
 
 /// The modules rtok's hook and MCP registrations carry in the two FILES a foreign importer
-/// reads (`~/.claude/settings.json`, `~/.claude.json`) — the Claude plugin serves its own
-/// and is not visible there, so Grok's `[compat.claude]` import counts these alone (T100).
+/// reads (`~/.claude/settings.json`, `~/.claude.json`) — the Claude plugin serves hooks, not
+/// visible here, and MCP is independent of it (T275), so Grok's `[compat.claude]` import
+/// counts these alone (T100).
 pub fn files_serve_rtok(cfg: &Config) -> Vec<&'static str> {
     let s = super::read(&cfg.setup.claude.settings_path);
-    let m = super::read(&cfg.doctor.claude_json);
     let mut out = Vec::new();
     if s.contains("rtok hook") {
         out.push("hooks");
     }
-    if m.contains("\"rtok\"") {
+    if mcp::has_entry(&cfg.doctor.claude_json, "mcpServers", "rtok") {
         out.push("mcp");
     }
     out
@@ -417,12 +417,6 @@ pub fn files_serve_rtok(cfg: &Config) -> Vec<&'static str> {
 pub(crate) fn plugin_installed(cfg: &Config) -> bool {
     super::read(&config_dir(cfg).join("plugins/installed_plugins.json"))
         .contains(&format!("\"{PLUGIN_ID}\""))
-}
-
-/// Claude Code already serves rtok's MCP, through the plugin or `mcpServers.rtok` in
-/// `~/.claude.json` — both reach the desktop app's Code tab.
-fn code_serves_mcp(cfg: &Config) -> bool {
-    plugin_installed(cfg) || files_serve_rtok(cfg).contains(&"mcp")
 }
 
 /// What Claude Code's `known_marketplaces.json` says about the `rtok` marketplace.
@@ -687,22 +681,22 @@ impl Agent for Claude {
 
     fn installed(&self, cfg: &Config, kind: Kind) -> Vec<&'static str> {
         if kind == Kind::Desktop {
-            // Claude Code serves the Code tab's MCP instead of this file (T243, T244).
-            return if super::read(&desktop_path()).contains("\"rtok\"") || code_serves_mcp(cfg) {
+            return if mcp::has_entry(&desktop_path(), "mcpServers", "rtok") {
                 vec!["mcp"]
             } else {
                 vec![]
             };
         }
         let s = super::read(&cfg.setup.claude.settings_path);
-        // The installed plugin serves the hooks and the MCP itself (D21).
+        // The installed plugin serves the hooks (D21); MCP is independent (T275) and reported
+        // from `~/.claude.json` alone, whether the plugin is installed or not.
         let plugin = plugin_installed(cfg);
         let files = files_serve_rtok(cfg);
         let mut out = Vec::new();
         if files.contains(&"hooks") || plugin {
             out.push("hooks");
         }
-        if files.contains(&"mcp") || plugin {
+        if files.contains(&"mcp") {
             out.push("mcp");
         }
         // The URL `register_proxy` writes. Matching the default port `8790` anywhere in the
@@ -724,14 +718,16 @@ impl Agent for Claude {
         if kind == Kind::Desktop {
             let (a, path) = (apply(cfg), desktop_path());
             // `--replace` is about Claude Code's hooks; on the desktop it is a plain install.
-            // The desktop app's Code tab loads this file *and* Claude Code's own MCP (the
-            // plugin or `~/.claude.json`), so while Claude Code serves rtok the entry would be
-            // a second rtok server there (D21, T243, T244).
+            // Install and update always write this entry; only `remove` takes it out (T275) —
+            // the plugin no longer serves MCP, so there is no second rtok server to guard
+            // against here (D21, T243, T244 amended).
             return Ok(vec![
-                if remove || code_serves_mcp(cfg) {
+                if remove {
                     super::unregister_mcp_ours(cfg, &path, "rtok")?
-                } else {
+                } else if cfg.setup.mcp {
                     rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"])?
+                } else {
+                    NO_CHANGES.into()
                 },
                 super::skill::sync("claude", cfg, remove)?,
             ]);
@@ -749,10 +745,11 @@ impl Agent for Claude {
                 super::skill::sync("claude", cfg, true)?,
             ]),
             Mode::Install | Mode::Update => {
-                // Offer first: once the plugin is installed it is the only call path (D21
-                // singleton), so the settings-file hooks and MCP are stripped, not added —
-                // judged by Claude's own record, so a dry run or a declined offer still gets
-                // the settings-file install.
+                // Offer first: once the plugin is installed it is the only call path for hooks
+                // (D21 singleton), so the settings-file hooks are stripped, not added — judged
+                // by Claude's own record, so a dry run or a declined offer still gets the
+                // settings-file install. MCP is independent of the plugin (T275): it always
+                // writes to `~/.claude.json`, plugin or no plugin.
                 let current = mode == Mode::Update
                     && plugin_installed(cfg)
                     && marketplace_state(cfg) == MarketplaceState::Github;
@@ -763,12 +760,11 @@ impl Agent for Claude {
                 }];
                 if plugin_installed(cfg) {
                     lines.push(run(cfg, true)?);
-                    lines.push(unregister_mcp(cfg)?);
                 } else {
                     lines.push(run(cfg, false)?);
-                    if cfg.setup.mcp {
-                        lines.push(register_mcp(cfg)?);
-                    }
+                }
+                if cfg.setup.mcp {
+                    lines.push(register_mcp(cfg)?);
                 }
                 if cfg.setup.proxy {
                     lines.push(crate::proxy::cli::register_proxy(cfg)?);
@@ -948,7 +944,8 @@ mod tests {
             Claude.support(Kind::Desktop, "hooks"),
             Support::No(_)
         ));
-        // Register/unregister through the SDK at a temp path, the way `apply` does.
+        // Register/unregister through the SDK at a temp path, the way `apply` does (D29: never
+        // the real `desktop_path()`, which is not overridable from a Config).
         let path = tmp("desktop-mcp");
         let a = apply(&cfg(path.clone(), false));
         rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"]).unwrap();
@@ -960,11 +957,103 @@ mod tests {
             json!(desktop_command()),
             "{raw}"
         );
+        assert!(mcp::has_entry(&path, "mcpServers", "rtok"));
         assert_ne!(
             rtok_agent_sdk::unregister_mcp(&a, &path, "rtok").unwrap(),
             NO_CHANGES
         );
         assert!(!fs::read_to_string(&path).unwrap().contains("\"rtok\""));
+        assert!(!mcp::has_entry(&path, "mcpServers", "rtok"));
+    }
+
+    /// T275: install and update take the exact same branch for the desktop entry — `cfg.setup.mcp`
+    /// gates a plain register, whatever the plugin's state; there is nothing left to guard
+    /// against a "second rtok server" (the plugin no longer serves MCP). One register call
+    /// stands in for both Install and Update, since the code path is identical; a second call
+    /// is the idempotent re-run.
+    #[test]
+    fn desktop_install_and_update_write_the_same_entry_regardless_of_the_plugin() {
+        let path = tmp("desktop-mcp-independent");
+        let a = apply(&cfg(path.clone(), false));
+        for _ in 0..2 {
+            rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"]).unwrap();
+        }
+        assert!(mcp::has_entry(&path, "mcpServers", "rtok"));
+        let raw: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(raw["mcpServers"]["rtok"]["args"], json!(["mcp"]));
+    }
+
+    /// T246 via the Claude wrapper: an entry the user pointed elsewhere is left alone on
+    /// `remove`, with a `leave` line — for both surfaces MCP now always writes to (T275).
+    #[test]
+    fn remove_leaves_a_user_edited_mcp_entry_on_both_surfaces() {
+        // Still runs rtok (same bin), but with an argument the installer never writes — T246's
+        // "changed by you" case, not a foreign server that merely happens to be named `rtok`.
+        let edited =
+            json!({"mcpServers": {"rtok": {"command": "rtok", "args": ["mcp", "--custom"]}}});
+        let cli = tmp("cli-user-edited");
+        fs::write(&cli, edited.to_string()).unwrap();
+        let mut c = Config::default();
+        c.doctor.claude_json = cli.clone();
+        c.setup.backup = false;
+
+        let report = unregister_mcp(&c).unwrap();
+        assert!(
+            report.starts_with("leave mcpServers.rtok") && report.contains("changed by you"),
+            "{report}"
+        );
+        assert!(
+            mcp::has_entry(&cli, "mcpServers", "rtok"),
+            "kept, not removed"
+        );
+
+        let desktop = tmp("desktop-user-edited");
+        fs::write(&desktop, edited.to_string()).unwrap();
+        let report = crate::agents::unregister_mcp_ours(&c, &desktop, "rtok").unwrap();
+        assert!(
+            report.starts_with("leave mcpServers.rtok") && report.contains("changed by you"),
+            "{report}"
+        );
+        assert!(
+            mcp::has_entry(&desktop, "mcpServers", "rtok"),
+            "kept, not removed"
+        );
+    }
+
+    /// T275 (d)/(f): the plugin being installed no longer implies `mcp` — `installed()` reads
+    /// it from `~/.claude.json` alone. Regression for the creator's report: a plugin-installed
+    /// Claude Code with no entry in the file must not show `mcp`, and the file getting the
+    /// entry (independent of the plugin) makes it show.
+    #[test]
+    fn cli_installed_reports_mcp_only_from_its_own_file_not_the_plugin() {
+        let dir = tmp("cli-installed-mcp").parent().unwrap().to_path_buf();
+        fs::create_dir_all(dir.join("plugins")).unwrap();
+        fs::write(
+            dir.join("plugins/installed_plugins.json"),
+            r#"{"rtok@rtok": {"version": "1"}}"#,
+        )
+        .unwrap();
+        let mut c = Config::default();
+        c.setup.claude.settings_path = dir.join("settings.json");
+        c.doctor.claude_json = dir.join("claude.json");
+        c.setup.backup = false;
+
+        // Plugin installed, no MCP entry yet: hooks and plugin show, mcp does not.
+        let out = Claude.installed(&c, Kind::Cli);
+        assert!(out.contains(&"hooks"), "{out:?}");
+        assert!(out.contains(&"plugin"), "{out:?}");
+        assert!(
+            !out.contains(&"mcp"),
+            "the plugin no longer implies mcp: {out:?}"
+        );
+
+        // Once `~/.claude.json` carries the entry, mcp shows too — the plugin state is
+        // unrelated (T275).
+        register_mcp(&c).unwrap();
+        let out = Claude.installed(&c, Kind::Cli);
+        assert!(out.contains(&"mcp"), "{out:?}");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Windows keeps the desktop file under `%APPDATA%\Claude`, not under the profile root.
@@ -1170,8 +1259,9 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), first);
     }
 
-    /// T114: `plugins/claude` carries the installer's hooks, one `rtok mcp`, and the marketplace
-    /// the directory is its own marketplace (`claude plugin marketplace add plugins/claude`).
+    /// T114: `plugins/claude` carries the installer's hooks (no MCP of its own since T275) and
+    /// the marketplace the directory is its own marketplace (`claude plugin marketplace add
+    /// plugins/claude`).
     #[test]
     fn plugin_tree_matches_the_installer() {
         let parse = |s: &str| serde_json::from_str::<Value>(s).unwrap();
@@ -1196,11 +1286,6 @@ mod tests {
             array_at(&mut want, event).push(e);
         }
         assert_eq!(hooks["hooks"], want);
-        let mcp = parse(include_str!("../../../plugins/claude/.mcp.json"));
-        assert_eq!(
-            mcp["mcpServers"],
-            json!({"rtok": {"command": "${CLAUDE_PLUGIN_ROOT}/scripts/mcp.sh"}})
-        );
         let manifest = parse(include_str!(
             "../../../plugins/claude/.claude-plugin/plugin.json"
         ));
@@ -1211,10 +1296,10 @@ mod tests {
         assert_eq!(market["plugins"][0]["source"], "./");
     }
 
-    /// T132: the shipped scout stays cheap (`model: haiku`) and scoped to the plugin-scoped
-    /// rtok MCP tool names Claude Code resolves for a plugin's own server
-    /// (`mcp__plugin_<plugin>_<server>__<tool>`, per the plugins reference doc) — a bare or
-    /// unscoped name would silently never fire.
+    /// T132: the shipped scout stays cheap (`model: haiku`) and scoped to the rtok MCP tool
+    /// names Claude Code resolves for the plain `mcpServers.rtok` config entry (`mcp__<server>__
+    /// <tool>`, T275 — the plugin ships no `.mcp.json` of its own, so the scoped
+    /// `mcp__plugin_<plugin>_<server>__<tool>` form no longer applies).
     #[test]
     fn scout_agent_ships_with_the_cheap_scoped_frontmatter() {
         let text = include_str!("../../../plugins/claude/agents/rtok-scout.md");
@@ -1226,10 +1311,13 @@ mod tests {
         assert!(front.contains("name: rtok-scout"), "{front}");
         assert!(front.contains("model: haiku"), "{front}");
         for tool in ["read", "search", "outline", "explore", "expand"] {
-            let want = format!("mcp__plugin_rtok_rtok__{tool}");
+            let want = format!("mcp__rtok__{tool}");
             assert!(front.contains(&want), "{front}: missing {want}");
         }
-        assert!(!front.contains("mcp__rtok__"), "{front}: unscoped MCP name");
+        assert!(
+            !front.contains("mcp__plugin_rtok_rtok__"),
+            "{front}: stale plugin-scoped MCP name"
+        );
     }
 
     // --- T139: `plugin()` decision logic — installed/known-marketplace/fresh, no real `claude` ---

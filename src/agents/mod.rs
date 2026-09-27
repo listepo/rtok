@@ -23,6 +23,7 @@ pub mod jsonc;
 pub mod junk;
 pub mod kilo;
 pub mod kimi;
+pub(crate) mod mcp;
 pub mod mimo;
 pub mod omp;
 pub mod opencode;

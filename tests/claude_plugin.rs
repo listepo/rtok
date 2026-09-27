@@ -1,8 +1,9 @@
 //! T115 + T139 + D21: `rtok agents install claude` installs `plugins/claude` through the official
 //! `claude plugin` commands, by default once `claude` is on PATH — no `--yes` needed — from the
 //! GitHub marketplace `listepo/rtok` (a fake `claude` first on PATH records the calls), and while
-//! the plugin is installed it is the only call path — the settings-file hooks and `mcpServers.rtok`
-//! go.
+//! the plugin is installed it is the only call path for hooks — the settings-file hooks go.
+//! MCP is independent of the plugin (T275): `mcpServers.rtok` is always written to
+//! `~/.claude.json` and `claude_desktop_config.json`, plugin or no plugin.
 #![cfg(unix)]
 
 mod common;
@@ -10,11 +11,12 @@ mod common;
 use common::agents::{claude_desktop_config, claude_log, json, rtok, tmp, write_cfg};
 use std::fs;
 
-/// T243: the desktop app's Code tab loads `claude_desktop_config.json` and the Claude Code
-/// plugin both, so with the plugin installed a desktop `mcpServers.rtok` is a second rtok
-/// server there. A plain install drops a leftover entry and keeps the foreign ones.
+/// T275: the desktop app's Code tab loads `claude_desktop_config.json` and the Claude Code
+/// plugin both, but the plugin no longer serves MCP, so there is no second rtok server to
+/// guard against there any more — installing the plugin leaves the desktop entry alone, and
+/// keeps any foreign ones.
 #[test]
-fn the_plugin_supersedes_the_desktop_mcp_entry() {
+fn plugin_install_keeps_the_desktop_mcp_entry() {
     let home = tmp("claude-plugin-desktop");
     let cfg = write_cfg(&home);
     let file = claude_desktop_config(&home);
@@ -25,18 +27,23 @@ fn the_plugin_supersedes_the_desktop_mcp_entry() {
     rtok(&["agents", "install", "claude", "--desktop"], &cfg, &home);
     assert!(json(&file)["mcpServers"]["rtok"].is_object());
 
-    // Both variants: the CLI installs the plugin first, then the desktop entry goes.
+    // Both variants: the CLI installs the plugin, and the desktop entry stays put.
     let out = rtok(&["agents", "install", "claude"], &cfg, &home);
     assert!(out.contains("+ plugin plugins/claude → rtok@rtok"), "{out}");
     let servers = json(&file);
-    assert!(servers["mcpServers"]["rtok"].is_null(), "{servers}");
+    assert!(servers["mcpServers"]["rtok"].is_object(), "{servers}");
     assert!(servers["mcpServers"]["foreign"].is_object(), "{servers}");
+    let claude_json = home.join(".claude.json");
+    assert!(
+        json(&claude_json)["mcpServers"]["rtok"].is_object(),
+        "the CLI's own file gets it too"
+    );
 
-    // A rerun, or the desktop alone, never writes it back while the plugin is installed.
+    // A rerun, or the desktop alone, is idle either way.
     let again = rtok(&["agents", "install", "claude"], &cfg, &home);
     assert!(again.contains("already installed"), "{again}");
     rtok(&["agents", "install", "claude", "--desktop"], &cfg, &home);
-    assert!(json(&file)["mcpServers"]["rtok"].is_null());
+    assert!(json(&file)["mcpServers"]["rtok"].is_object());
     let _ = fs::remove_dir_all(&home);
 }
 
@@ -78,8 +85,9 @@ fn installs_the_plugin_by_default_as_the_only_call_path_and_remove_uninstalls() 
     assert_eq!(calls.len(), 2, "{log}");
     assert_eq!(calls[0], "plugin marketplace add listepo/rtok");
     assert_eq!(calls[1], "plugin install rtok@rtok");
-    // D21 singleton: the plugin serves hooks and MCP instead — the default install goes
-    // straight to the plugin, so neither file is ever written (or, if written, carries none).
+    // D21 singleton: the plugin serves hooks instead — the settings file is never written (or,
+    // if written, carries none). MCP is independent of the plugin (T275): `~/.claude.json`
+    // still gets `mcpServers.rtok`.
     assert!(
         !fs::read_to_string(&settings)
             .unwrap_or_default()
@@ -87,10 +95,10 @@ fn installs_the_plugin_by_default_as_the_only_call_path_and_remove_uninstalls() 
         "settings hooks stripped"
     );
     assert!(
-        !fs::read_to_string(&claude_json)
+        fs::read_to_string(&claude_json)
             .unwrap_or_default()
             .contains("\"rtok\""),
-        "mcpServers.rtok not registered"
+        "mcpServers.rtok must still be registered (T275)"
     );
 
     let again = rtok(&["agents", "install", "claude"], &cfg, &home);
@@ -100,6 +108,12 @@ fn installs_the_plugin_by_default_as_the_only_call_path_and_remove_uninstalls() 
     let removed = rtok(&["agents", "remove", "claude"], &cfg, &home);
     assert!(removed.contains("- plugin rtok@rtok"), "{removed}");
     assert!(!scout.exists(), "removal must take the agent file with it");
+    assert!(
+        !fs::read_to_string(&claude_json)
+            .unwrap_or_default()
+            .contains("\"rtok\""),
+        "remove takes the mcp entry out too"
+    );
     let log = claude_log(&home);
     let tail: Vec<&str> = log.lines().skip(2).collect();
     assert_eq!(

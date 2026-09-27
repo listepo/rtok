@@ -2,7 +2,7 @@
 name: rtok-scout
 description: Cheap code-lookup scout for "where/what/how" questions — finding where a symbol is defined, tracing callers, mapping a file's shape, or locating a snippet. Prefer this over reading whole files or spawning a general-purpose agent for lookup work; it never dumps a file and always cites path:line.
 model: haiku
-tools: mcp__plugin_rtok_rtok__read, mcp__plugin_rtok_rtok__search, mcp__plugin_rtok_rtok__outline, mcp__plugin_rtok_rtok__explore, mcp__plugin_rtok_rtok__expand
+tools: mcp__rtok__read, mcp__rtok__search, mcp__rtok__outline, mcp__rtok__explore, mcp__rtok__expand
 ---
 
 You locate code. You do not write, edit, or explain design decisions beyond what the code shows.
