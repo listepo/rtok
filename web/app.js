@@ -571,7 +571,7 @@
     }));
     calls.forEach((c) => {
       const b = buckets[Math.min(N - 1, Math.floor((c.ts - t0) / step))];
-      if (b[c.surface] != null) b[c.surface]++;
+      if (c.surface === "hook" || c.surface === "mcp" || c.surface === "proxy") b[c.surface]++;
       if (!c.ok) b.err++;
     });
     const ms = calls
@@ -586,9 +586,11 @@
           (s) => s.started_at <= b.t + step && (s.ended_at == null || s.ended_at >= b.t),
         ).length,
     );
-    const bySurface = {};
+    // A Map, not an object: `surface` comes off the wire and must not reach a prototype key.
+    const surfaces = new Map();
     calls.forEach((c) => {
-      const o = (bySurface[c.surface] = bySurface[c.surface] || { n: 0, err: 0, last: 0 });
+      if (!surfaces.has(c.surface)) surfaces.set(c.surface, { n: 0, err: 0, last: 0 });
+      const o = surfaces.get(c.surface);
       o.n++;
       if (!c.ok) o.err++;
       o.last = Math.max(o.last, c.ts);
@@ -611,7 +613,7 @@
       buckets,
       step,
       liveSeries,
-      bySurface,
+      bySurface: Object.fromEntries(surfaces),
       p50: q(0.5),
       p95: q(0.95),
       checks: doctorChecks(v.doctor),
@@ -1594,14 +1596,17 @@
       return;
     }
     const D = derive(S.snap);
-    main.innerHTML = {
+    const views = {
       overview: viewOverview,
       plugins: viewPlugins,
       calls: viewCalls,
       sessions: viewSessions,
       doctor: viewDoctor,
       logs: viewLogs,
-    }[S.route](D);
+    };
+    // `S.route` comes from the URL hash; only a known view may render.
+    const view = Object.hasOwn(views, S.route) ? views[S.route] : viewOverview;
+    main.innerHTML = view(D);
     if (keep) {
       const el = main.querySelector(`[data-filter="${keep.f}"]`);
       if (el) {
