@@ -1,0 +1,15 @@
+warning: unused variable: `x`
+ --> src/main.rs:10:9
+warning: this `if` has identical blocks
+ --> src/lib.rs:22:12
+warning: redundant clone
+ --> src/lib.rs:40:18
+warning: this `match` could be a `let` statement
+ --> src/util.rs:5:5
+warning: needless return statement
+ --> src/util.rs:18:5
+warning: unused import: `std::fmt`
+ --> src/lib.rs:1:5
+error[E0499]: cannot borrow `state` as mutable more than once at a time
+  --> src/state.rs:42:5
+error: could not compile `foo` (lib) due to 1 previous error; 6 warnings emitted

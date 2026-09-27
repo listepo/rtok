@@ -486,6 +486,121 @@ fn read_stripped_measurement_matches_returned_text() {
     );
 }
 
+/// T299: `map`, `signatures` (outline) and `search` over one realistic fixture must keep
+/// saving at least `floor` percent of the raw file's tokens (same estimator the code uses).
+/// Floors are the saving measured at authoring time minus 5 points.
+/// T300: `map`/`signatures` now also write exactly one fresh `read` row (`before` the raw
+/// fixture, `after` the returned text). `search`'s only "before" is its own full output, and
+/// this fixture is small enough that `cap` never truncates it, so it writes none.
+#[test]
+fn read_modes_keep_a_saving_floor() {
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/read_modes_sample.rs"
+    ))
+    .unwrap();
+    // (tool, args, floor %, expected `read` row kind): measured 95.1 / 88.8 / 88.9
+    // (1350 -> 66 / 151 / 150 tokens).
+    let cases = [
+        (
+            "read",
+            r#"{"path":"sample.rs","mode":"map"}"#,
+            90.1,
+            Some("map"),
+        ),
+        (
+            "read",
+            r#"{"path":"sample.rs","mode":"signatures"}"#,
+            83.8,
+            Some("signatures"),
+        ),
+        (
+            "search",
+            r#"{"pattern":"pub fn","path":"sample.rs"}"#,
+            83.9,
+            None,
+        ),
+    ];
+    for (name, args, floor, expected_kind) in cases {
+        let home = tmp("read-modes");
+        std::fs::write(home.0.join("sample.rs"), &src).unwrap();
+        let out = tool(&home, &home.0, name, args);
+        let cfg = Config::load_from(&home.0).unwrap();
+        let before = tokens::estimate(&src, Class::Code, &cfg.estimator);
+        let after = tokens::estimate(&out, Class::Code, &cfg.estimator);
+        let pct = 100.0 * (1.0 - f64::from(after) / f64::from(before));
+        assert!(
+            pct >= floor,
+            "{name} {args}: saved {pct:.1}% < floor {floor}% ({before} -> {after} tokens): {out}"
+        );
+        let read_rows = rows(&home, "read");
+        match expected_kind {
+            Some(kind) => {
+                let matching: Vec<_> = read_rows.iter().filter(|r| r.kind == kind).collect();
+                assert_eq!(matching.len(), 1, "{name} {args}: {read_rows:?}");
+                let row = matching[0];
+                assert_eq!(row.before_bytes as usize, src.len(), "{row:?}");
+                assert_eq!(row.after_bytes as usize, out.len(), "{row:?}");
+            }
+            None => {
+                assert!(
+                    read_rows.is_empty(),
+                    "{name} {args}: unexpected rows {read_rows:?}"
+                );
+            }
+        }
+    }
+}
+
+/// T300: `search`/`tree` write a `Measurement` only when `cap` actually cuts their output —
+/// a small `max_chars` forces that, and the row's `before` must be the full uncapped text
+/// (recovered via the row's `ref_id`, the same archive `cap` made for the returned pointer).
+#[test]
+fn search_and_tree_cap_measurement_matches_full_and_returned_text() {
+    let home = tmp("read-cap");
+    std::fs::write(
+        home.0.join("config.toml"),
+        "[plugins.read]\nmax_chars = 200\n",
+    )
+    .unwrap();
+    let nested = home.0.join("nest");
+    std::fs::create_dir_all(&nested).unwrap();
+    for i in 0..40 {
+        std::fs::write(nested.join(format!("f{i}.rs")), format!("fn f{i}() {{}}\n")).unwrap();
+    }
+
+    for (name, args, kind) in [
+        ("search", r#"{"pattern":"fn","path":"nest"}"#, "search_cap"),
+        ("tree", r#"{"path":"nest"}"#, "tree_cap"),
+    ] {
+        let out = tool(&home, &home.0, name, args);
+        assert!(out.contains("archived"), "{name}: {out}");
+        let cfg = Config::load_from(&home.0).unwrap();
+        let read_rows = rows(&home, "read");
+        let matching: Vec<_> = read_rows.iter().filter(|r| r.kind == kind).collect();
+        assert_eq!(matching.len(), 1, "{name}: {read_rows:?}");
+        let row = matching[0];
+        assert_eq!(row.after_bytes as usize, out.len(), "{row:?}");
+        assert_eq!(
+            row.est_after,
+            tokens::estimate(&out, Class::Code, &cfg.estimator) as i32
+        );
+        let id = row.ref_id.as_deref().expect("cap archives, so ref_id");
+        let full = rtok::store::Store::open(&home.0.join("rtok.db"))
+            .unwrap()
+            .get_archive(id, None)
+            .unwrap()
+            .expect("archived full text");
+        let full = String::from_utf8(full).unwrap();
+        assert_eq!(row.before_bytes as usize, full.len(), "{row:?}");
+        assert_eq!(
+            row.est_before,
+            tokens::estimate(&full, Class::Code, &cfg.estimator) as i32
+        );
+        assert!(row.after_bytes < row.before_bytes, "{row:?}");
+    }
+}
+
 /// Proxy surface: `compress` mode archives a `tool_result` older than `keep_turns`
 /// (`src/plugins/archive/mod.rs::rewrite_block`), which records `before`/`after` from the
 /// same `text`/`live` strings it substitutes into the request — so the row is checked

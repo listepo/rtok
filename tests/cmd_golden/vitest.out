@@ -1,0 +1,10 @@
+PASS src/utils/date.test.ts
+PASS src/utils/string.test.ts
+PASS src/hooks/useAuth.test.ts
+PASS src/hooks/useTheme.test.ts
+FAIL src/components/Button.test.ts
+  ● Button > renders label
+PASS src/components/Input.test.ts
+PASS src/components/Modal.test.ts
+PASS src/api/user.test.ts
+Tests:       1 failed, 15 passed (16)

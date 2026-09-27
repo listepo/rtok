@@ -6,9 +6,9 @@ Agent rules for the **Cursor** host package. Humans: [`README.md`](README.md). S
 
 | Item | Location / rule |
 | --- | --- |
-| Manifest / entry | `.cursor-plugin/plugin.json`, root `plugin.json`, `hooks/hooks.json`, `mcp.json` |
+| Manifest / entry | `.cursor-plugin/plugin.json`, root `plugin.json`, `hooks/hooks.json` |
 | Hooks | `hooks/hooks.json` → `rtok hook … --host cursor` |
-| MCP | `mcp.json` → `rtok mcp` directly (no `scripts/`; T85/I-37) |
+| MCP | not shipped here (T275/D33): `rtok agents install cursor` writes `~/.cursor/mcp.json`'s `mcpServers.rtok` independently, plugin linked or not |
 | Installer | [`../src/agents/cursor/README.md`](../src/agents/cursor/README.md) |
 | Root human guide | [`../README.md`](../README.md) |
 

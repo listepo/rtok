@@ -23,11 +23,13 @@ pub mod jsonc;
 pub mod junk;
 pub mod kilo;
 pub mod kimi;
+pub(crate) mod mcp;
 pub mod mimo;
 pub mod omp;
 pub mod opencode;
 pub mod pi;
 pub mod plugin;
+pub(crate) mod plugin_version;
 pub mod restart;
 pub mod skill;
 pub mod vscode;
@@ -210,8 +212,28 @@ pub(crate) fn home_dir() -> PathBuf {
     crate::config::env_user_home().unwrap_or_default()
 }
 
-/// `~/x` and `$VAR/x` as a path on this machine; anything else unchanged.
+/// Set (to any value) by the test harness, `.config/nextest.toml` (T280): no test may find or
+/// run an agent installed on the machine. rtok then sees only hosts under the home dir — a
+/// test's own fakes: host CLIs resolve from PATH entries under it, absolute app paths are
+/// looked up beneath it, and a host CLI is spawned by the path found, never by name.
+const HOST_SANDBOX_ENV: &str = "RTOK_HOST_SANDBOX";
+
+/// The home dir when [`HOST_SANDBOX_ENV`] is set.
+fn host_sandbox() -> Option<PathBuf> {
+    std::env::var_os(HOST_SANDBOX_ENV).map(|_| home_dir())
+}
+
+/// [`expand_spec`], re-rooted under the home dir when [`HOST_SANDBOX_ENV`] is set.
 fn expand_app(spec: &str) -> PathBuf {
+    let path = expand_spec(spec);
+    match host_sandbox() {
+        Some(home) => under(&home, path),
+        None => path,
+    }
+}
+
+/// `~/x` and `$VAR/x` as a path on this machine; anything else unchanged.
+fn expand_spec(spec: &str) -> PathBuf {
     if let Some(rest) = spec.strip_prefix("~/") {
         return join_rel(&home_dir(), rest);
     }
@@ -225,17 +247,42 @@ fn expand_app(spec: &str) -> PathBuf {
     PathBuf::from(spec)
 }
 
-/// The first `bin` on PATH (`.exe`/`.cmd` on Windows).
+/// `path` when it is inside `home`, else the same path re-rooted beneath `home`
+/// (`/Applications/X.app` → `<home>/Applications/X.app`; a drive prefix is dropped).
+fn under(home: &Path, path: PathBuf) -> PathBuf {
+    if path.starts_with(home) {
+        return path;
+    }
+    let rel: PathBuf = path
+        .components()
+        .filter(|c| matches!(c, std::path::Component::Normal(_)))
+        .collect();
+    home.join(rel)
+}
+
+/// The first `bin` on PATH (`.exe`/`.cmd` on Windows). Under [`HOST_SANDBOX_ENV`], only PATH
+/// entries under the home dir count.
 fn find_on_path(bin: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
+    let sandbox = host_sandbox();
     let names: &[String] = if cfg!(windows) {
         &[bin.to_string(), format!("{bin}.exe"), format!("{bin}.cmd")]
     } else {
         &[bin.to_string()]
     };
     std::env::split_paths(&path)
+        .filter(|dir| sandbox.as_ref().is_none_or(|home| dir.starts_with(home)))
         .flat_map(|dir| names.iter().map(move |n| dir.join(n)))
         .find(|p| p.is_file())
+}
+
+/// What to spawn for host CLI `bin`: the name itself (or an explicit path), or under
+/// [`HOST_SANDBOX_ENV`] the path [`find_on_path`] found — `None` when there is none.
+fn host_program(bin: &str) -> Option<std::ffi::OsString> {
+    if host_sandbox().is_none() || Path::new(bin).is_absolute() {
+        return Some(bin.into());
+    }
+    find_on_path(bin).map(PathBuf::into_os_string)
 }
 
 /// Spawn a host CLI (`claude`, `codex`, …) by name. Windows CLIs installed through npm ship
@@ -243,10 +290,10 @@ fn find_on_path(bin: &str) -> Option<PathBuf> {
 /// (Win32's `CreateProcess`, never `PATHEXT`), so a bare spawn silently fails to find a real,
 /// on-PATH shim. Routing through `cmd /C` there reuses the shell's own PATH + `PATHEXT`
 /// search, which does try `.cmd`/`.bat` (T139).
-pub(crate) fn spawn_cli(bin: &str) -> std::process::Command {
+pub(crate) fn spawn_cli(bin: &std::ffi::OsStr) -> std::process::Command {
     if cfg!(windows) {
         let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/C", bin]);
+        cmd.arg("/C").arg(bin);
         cmd
     } else {
         std::process::Command::new(bin)
@@ -262,7 +309,10 @@ pub(crate) fn run_cli(
     args: &[&str],
     env: Option<(&str, &Path)>,
 ) -> std::result::Result<(), String> {
-    let mut cmd = spawn_cli(bin);
+    let Some(program) = host_program(bin) else {
+        return Err(format!("{bin}: not found"));
+    };
+    let mut cmd = spawn_cli(&program);
     cmd.args(args).stdin(std::process::Stdio::null());
     if let Some((key, val)) = env {
         cmd.env(key, val);
@@ -287,28 +337,31 @@ pub fn app_path(v: &Variant) -> Option<PathBuf> {
         .or_else(|| v.bins.iter().find_map(|b| find_on_path(b)))
 }
 
-/// How long `<bin> --version` may run. `cursor --version` never exits when `HOME` is an
-/// empty directory — the home nextest gives every test (`target/test-home`, T255) — so an
-/// unbounded wait stalls `agents list` until the runner kills it.
-const VERSION_PROBE: std::time::Duration = std::time::Duration::from_secs(3);
+/// How long one `<bin> --version` probe may run. `cursor --version` under an empty `$HOME`
+/// with stdout on a pipe never prints and leaves a helper holding the pipe for ~5 minutes
+/// (T280), so `Command::output` hung `agents list` and every test rendering a block.
+const VERSION_PROBE_LIMIT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Version of the installed app, or `"-"` when unknown.
 /// Probes `<bin> --version` and keeps the first line that looks like a version (T168: some
 /// wrappers, e.g. npm-installed CLIs, print noise like `Package extraction took 1234ms`
 /// ahead of the real version line); falls back to the first non-empty line when no line
-/// looks like a version. 32 chars max. A binary that does not exit within [`VERSION_PROBE`]
-/// is skipped, same as one that cannot be started.
+/// looks like a version. 32 chars max. Each probe gets [`VERSION_PROBE_LIMIT`] (T280).
 pub fn app_version(v: &Variant) -> String {
-    version_within(v, VERSION_PROBE)
-}
-
-fn version_within(v: &Variant, limit: std::time::Duration) -> String {
     for bin in v.bins {
-        let Some(text) = probe_version(bin, limit) else {
+        let Some(program) = host_program(bin) else {
             continue;
         };
+        let mut cmd = std::process::Command::new(program);
+        cmd.arg("--version");
+        let out = crate::proc::capture(cmd, Some(VERSION_PROBE_LIMIT));
+        let Ok(out) = out else { continue };
+        let mut s = String::from_utf8_lossy(&out.stdout).into_owned();
+        if s.trim().is_empty() {
+            s = String::from_utf8_lossy(&out.stderr).into_owned();
+        }
         let mut fallback: Option<&str> = None;
-        for raw in text.lines() {
+        for raw in s.lines() {
             let line = raw.trim();
             if line.is_empty() {
                 continue;
@@ -325,58 +378,6 @@ fn version_within(v: &Variant, limit: std::time::Duration) -> String {
         }
     }
     "-".into()
-}
-
-/// stdout of `<bin> --version`, or stderr when stdout is empty. `None` when `bin` cannot
-/// be started or does not exit within `limit` (the child is killed).
-fn probe_version(bin: &str, limit: std::time::Duration) -> Option<String> {
-    let mut cmd = std::process::Command::new(bin);
-    cmd.arg("--version")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    let mut child = cmd.spawn().ok()?;
-    let mut stdout = child.stdout.take()?;
-    let mut stderr = child.stderr.take()?;
-    // Drain while polling. A child that fills the 64 KiB pipe before exiting would
-    // otherwise block on write, never exit, and be scored as a timeout.
-    let out_reader = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = std::io::Read::read_to_end(&mut stdout, &mut buf);
-        buf
-    });
-    let err_reader = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = std::io::Read::read_to_end(&mut stderr, &mut buf);
-        buf
-    });
-    let deadline = std::time::Instant::now() + limit;
-    let finished = loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break true,
-            Ok(None) if std::time::Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break false;
-            }
-            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(20)),
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break false;
-            }
-        }
-    };
-    let stdout = out_reader.join().unwrap_or_default();
-    let stderr = err_reader.join().unwrap_or_default();
-    if !finished {
-        return None;
-    }
-    let mut text = String::from_utf8_lossy(&stdout).into_owned();
-    if text.trim().is_empty() {
-        text = String::from_utf8_lossy(&stderr).into_owned();
-    }
-    Some(text)
 }
 
 /// A digit, then later a dot, then later another digit — enough to tell a version
@@ -445,10 +446,25 @@ pub struct ModuleRow {
     pub note: String,
 }
 
+/// [`Agent::installed`] with `mcp` read per surface through [`mcp::rows`] (T278) wherever the
+/// host has an MCP entry of its own, so `list`, `info`, `update` and the installer's own
+/// read-back all mean the same thing by "installed".
+pub fn installed_modules(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<&'static str> {
+    let mut found = agent.installed(cfg, kind);
+    let rows = mcp::rows(agent, cfg, kind);
+    if !rows.is_empty() {
+        found.retain(|m| *m != "mcp");
+        if rows.iter().any(mcp::McpRow::found) {
+            found.push("mcp");
+        }
+    }
+    found
+}
+
 /// A module found in the host's files counts as installed even where setup cannot write it
 /// (a hand-added MCP entry).
 pub fn module_rows(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<ModuleRow> {
-    let found = agent.installed(cfg, kind);
+    let found = installed_modules(agent, kind, cfg);
     MODULES
         .iter()
         .map(|&name| {
@@ -540,7 +556,7 @@ pub fn expected(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<&'static str
 /// Expected modules that do not read back from the host's files: the installer checking its
 /// own write (a host that rewrote the file, a marker the reader does not recognise).
 pub fn missing(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<&'static str> {
-    let have = agent.installed(cfg, kind);
+    let have = installed_modules(agent, kind, cfg);
     expected(agent, kind, cfg)
         .into_iter()
         .filter(|m| !have.contains(m))
@@ -722,7 +738,15 @@ pub fn block(agent: &dyn Agent, v: &Variant, cfg: &Config, outcome: Outcome) -> 
             out.push('\n');
         }
     }
-    out.push_str(&module_lines(&module_rows(agent, v.kind, cfg), "  ", true));
+    // T278: the `mcp` row becomes one line per surface wherever the host has an entry.
+    let surfaces = mcp::rows(agent, cfg, v.kind);
+    for row in module_rows(agent, v.kind, cfg) {
+        if row.name == "mcp" && !surfaces.is_empty() {
+            out.push_str(&mcp::lines(&surfaces, "  "));
+        } else {
+            out.push_str(&module_lines(std::slice::from_ref(&row), "  ", true));
+        }
+    }
     out.push_str(&plugin_lines(&plugin_rows(agent, v.kind, cfg), "  ", true));
     out
 }
@@ -833,7 +857,7 @@ pub(crate) fn apply_all(
             }
             let carried;
             let cfg = if req.mode == Mode::Update {
-                let have = a.installed(cfg, v.kind);
+                let have = installed_modules(a, v.kind, cfg);
                 if have.is_empty() {
                     out.push_str(&block(a, v, cfg, Outcome::NotInstalled));
                     continue;
@@ -887,7 +911,7 @@ pub fn installed_hosts(cfg: &Config) -> Vec<String> {
             host(id).is_some_and(|a| {
                 a.variants()
                     .iter()
-                    .any(|v| present(a, v, cfg) && !a.installed(cfg, v.kind).is_empty())
+                    .any(|v| present(a, v, cfg) && !installed_modules(a, v.kind, cfg).is_empty())
             })
         })
         .map(ToString::to_string)
@@ -1225,11 +1249,13 @@ pub(crate) struct D21Plugin {
 }
 
 /// `apply()` skeleton for a host whose local-path plugin (via [`offer_plugin`]) is a D21
-/// singleton over hooks + MCP: while it is installed, or on removal, `run`'s own hook
-/// document and `mcpServers.rtok` are taken back instead of written — on the very call that
-/// installs the plugin too — else the plain hook document goes in, then `mcpServers.rtok`
-/// behind `[setup] mcp`. `extra` appends a per-host tail line to both branches ([`no_extra`]
-/// for none, Copilot's skill sync for one); shared by Copilot and Gemini (D21).
+/// singleton over hooks only: while it is installed, or on removal, `run`'s own hook document
+/// is taken back instead of written — on the very call that installs the plugin too — else the
+/// plain hook document goes in. MCP is no longer part of that unit (T275 decision D33): the
+/// host's own `mcpServers.rtok` is written on every install/update behind `[setup] mcp`
+/// regardless of plugin state, and only a remove takes it back — a plugin no longer suppresses
+/// or strips it. `extra` appends a per-host tail line in every case ([`no_extra`] for none,
+/// Copilot's skill sync for one); shared by Copilot and Gemini (D21 for hooks, D33 for MCP).
 pub(crate) fn d21_plugin_apply(
     cfg: &Config,
     mode: Mode,
@@ -1245,18 +1271,17 @@ pub(crate) fn d21_plugin_apply(
     } = ops;
     let remove = mode == Mode::Remove;
     let head = offer(cfg, remove)?;
-    if remove || plugin_installed(cfg) {
-        let mut lines = vec![head, run(cfg, true)?, unregister_mcp(cfg)?];
-        if let Some(e) = extra(cfg, remove)? {
-            lines.push(e);
-        }
-        return Ok(lines);
-    }
-    let mut lines = vec![head, run(cfg, false)?];
-    if cfg.setup.mcp {
-        lines.push(register_mcp(cfg)?);
-    }
-    if let Some(e) = extra(cfg, false)? {
+    let hook_line = run(cfg, remove || plugin_installed(cfg))?;
+    let mcp_line = if remove {
+        Some(unregister_mcp(cfg)?)
+    } else if cfg.setup.mcp {
+        Some(register_mcp(cfg)?)
+    } else {
+        None
+    };
+    let mut lines = vec![head, hook_line];
+    lines.extend(mcp_line);
+    if let Some(e) = extra(cfg, remove)? {
         lines.push(e);
     }
     Ok(lines)
@@ -1963,11 +1988,6 @@ mod tests {
         assert!(resolve(&["claude".into(), "nope".into()]).is_err());
     }
 
-    /// Locks the `rtok agents list` block from T44.2: one block per host variant, headed by
-    /// the kind and the display name (`CLI: Claude Code`, `Desktop: Cursor`), then an `app`
-    /// row and a `config` row. A host added without those lines, or a block that drops them,
-    /// fails here. The version text inside the `app` row is not the contract — `<bin>
-    /// --version` is only how the row is filled, and a binary that never exits prints `-`.
     #[test]
     fn list_prints_one_block_per_app_with_kind_name_app_and_config() {
         let out = list(&Config::default());
@@ -2086,21 +2106,50 @@ mod tests {
     /// `~/x` follows the home dir, `$VAR/x` the variable, and an unset variable is left as
     /// written so the caller's `exists()` says no instead of probing a wrong root.
     #[test]
-    fn expand_app_resolves_home_and_env_vars() {
-        assert_eq!(expand_app("~/Apps/x"), join_rel(&home_dir(), "Apps/x"));
+    fn expand_spec_resolves_home_and_env_vars() {
+        assert_eq!(expand_spec("~/Apps/x"), join_rel(&home_dir(), "Apps/x"));
         let path = std::env::var_os("PATH").expect("PATH");
         assert_eq!(
-            expand_app("$PATH/Claude/claude.exe"),
+            expand_spec("$PATH/Claude/claude.exe"),
             join_rel(Path::new(&path), "Claude/claude.exe")
         );
         assert_eq!(
-            expand_app("$RTOK_NO_SUCH_VAR/app"),
+            expand_spec("$RTOK_NO_SUCH_VAR/app"),
             PathBuf::from("$RTOK_NO_SUCH_VAR/app")
         );
         assert_eq!(
-            expand_app("/Applications/Claude.app"),
+            expand_spec("/Applications/Claude.app"),
             PathBuf::from("/Applications/Claude.app")
         );
+    }
+
+    /// T280: under the host sandbox an app outside the home dir is looked up beneath it, so
+    /// the machine's `/Applications/Cursor.app` is never seen; a path already inside stays.
+    #[test]
+    fn under_reroots_a_path_outside_home() {
+        let home = Path::new("/h/test-home");
+        assert_eq!(
+            under(home, PathBuf::from("/Applications/Cursor.app")),
+            PathBuf::from("/h/test-home/Applications/Cursor.app")
+        );
+        assert_eq!(
+            under(home, PathBuf::from("/h/test-home/.grok/bin/grok")),
+            PathBuf::from("/h/test-home/.grok/bin/grok")
+        );
+        assert_eq!(
+            under(home, PathBuf::from("$LOCALAPPDATA/app")),
+            PathBuf::from("/h/test-home/$LOCALAPPDATA/app")
+        );
+    }
+
+    /// T280: `.config/nextest.toml` turns the host sandbox on for every test, so no test sees
+    /// the agents installed on the machine it runs on.
+    #[test]
+    fn tests_run_inside_the_host_sandbox() {
+        assert_eq!(host_sandbox(), Some(home_dir()));
+        for v in cursor::Cursor.variants() {
+            assert!(app_path(v).is_none(), "{} seen outside the sandbox", v.name);
+        }
     }
 
     /// A proxy on a non-default port read as not installed: the check looked for `8790`.
@@ -2223,51 +2272,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A `--version` that never exits must not stall `agents list`. Nextest's empty `HOME`
-    /// (`target/test-home`) makes the real `cursor --version` do exactly that.
+    /// T280: a `--version` that never answers, with a helper left holding its stdout (what
+    /// `cursor` does under a fresh `$HOME`), costs one probe limit and reads as unknown.
+    #[cfg(unix)]
     #[test]
-    fn app_version_gives_up_when_the_binary_never_exits() {
+    fn app_version_gives_up_on_a_cli_that_never_answers() {
+        use std::os::unix::fs::PermissionsExt;
         let dir =
             std::env::temp_dir().join(format!("rtok-app-version-hang-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let bin = dir.join(if cfg!(windows) {
-            "rtok-test-hang.cmd"
-        } else {
-            "rtok-test-hang"
-        });
-        #[cfg(unix)]
-        {
-            // `exec` so the process we kill is `sleep` itself. A child `sleep` would
-            // inherit the pipes and `read_to_end` would wait out the grandchild.
-            std::fs::write(&bin, "#!/bin/sh\nexec sleep 30\n").unwrap();
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&bin).unwrap().permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&bin, perms).unwrap();
-        }
-        #[cfg(windows)]
-        {
-            // Stay inside `cmd.exe`. A child `ping` would keep the pipes open after
-            // the shell is killed, and the probe would wait for that child.
-            std::fs::write(&bin, "@echo off\r\n:loop\r\ngoto loop\r\n").unwrap();
-        }
+        let bin = dir.join("rtok-test-hang");
+        std::fs::write(&bin, "#!/bin/sh\nsleep 60 &\nsleep 60\n").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         let path: &'static str = Box::leak(bin.to_string_lossy().into_owned().into_boxed_str());
         let bins: &'static [&'static str] = Box::leak(vec![path].into_boxed_slice());
-        let hung = Variant {
+        let hang = Variant {
             kind: Kind::Cli,
-            name: "hung",
+            name: "hang",
             bins,
             apps: &[],
         };
         let start = std::time::Instant::now();
-        assert_eq!(
-            version_within(&hung, std::time::Duration::from_millis(200)),
-            "-"
-        );
+        assert_eq!(app_version(&hang), "-");
         assert!(
-            start.elapsed() < std::time::Duration::from_secs(2),
-            "probe waited {:?}",
+            start.elapsed() < VERSION_PROBE_LIMIT + std::time::Duration::from_secs(2),
+            "{:?}",
             start.elapsed()
         );
         let _ = std::fs::remove_dir_all(&dir);

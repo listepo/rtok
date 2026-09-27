@@ -383,7 +383,7 @@ fn run_headless(
     };
     let mut missing = String::new();
     for (i, bin) in bins.iter().enumerate() {
-        let mut cmd = agents::spawn_cli(bin);
+        let mut cmd = agents::spawn_cli(std::ffi::OsStr::new(bin));
         cmd.args(&args);
         match capture(&mut cmd, timeout) {
             Err(reason) if i + 1 < bins.len() => missing = reason,

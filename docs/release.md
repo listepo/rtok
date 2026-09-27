@@ -20,8 +20,9 @@ just release
 tools/release.sh patch --dry-run
 ```
 
-It lands one `release: v<version>` commit — `Cargo.toml`, `Cargo.lock`, `CHANGELOG.md` — pushes it,
-and dispatches the dist **Release** workflow, which builds three targets, creates the tag and the
+It lands one `release: v<version>` commit — `Cargo.toml`, `Cargo.lock`, `CHANGELOG.md` and every
+plugin version file ([Plugin versions: Releasing](plugin-versions.md#releasing)) — pushes it, and
+dispatches the dist **Release** workflow, which builds three targets, creates the tag and the
 GitHub Release with the shell installer.
 
 **Or merge the release PR** (T18.5). On every push to `main`, `.github/workflows/release-plz.yml`

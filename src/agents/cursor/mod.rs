@@ -54,10 +54,7 @@ impl Agent for Cursor {
     }
 
     fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
-        &[
-            rtok_plugin_sdk::Surface::Hook,
-            rtok_plugin_sdk::Surface::Mcp,
-        ]
+        &[rtok_plugin_sdk::Surface::Hook]
     }
 
     fn shared(&self) -> bool {
@@ -83,7 +80,6 @@ impl Agent for Cursor {
 
     fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
         let h = super::read(&cfg.setup.cursor.hooks_path);
-        let m = super::read(&mcp_path(cfg));
         // T75: `ours`, not any metadata — a foreign directory at the plugin dest is not
         // an rtok install, so it cannot keep the green mark alive after an uninstall
         // that (rightly) left it alone.
@@ -93,8 +89,8 @@ impl Agent for Cursor {
         if h.contains("rtok hook") || plugin {
             out.push("hooks");
         }
-        // The linked plugin serves the MCP itself (D21), and setup then skips `mcp.json`.
-        if m.contains("\"rtok\"") || plugin {
+        // MCP is independent of the plugin now (T275/D33): only the config's own entry counts.
+        if super::mcp::has_entry(&mcp_path(cfg), "mcpServers", "rtok") {
             out.push("mcp");
         }
         if plugin {
@@ -109,9 +105,11 @@ impl Agent for Cursor {
         // none of ours or every shell command would fire rtok twice (D21, T244).
         let plugin = offer_plugin(cfg, remove)?;
         let mut lines = vec![run(cfg, remove || PLUGIN.ours(cfg))?, plugin];
+        // MCP is independent of the plugin (T275/D33): every install/update writes
+        // `mcp.json`'s `mcpServers.rtok` regardless of plugin state; only remove takes it out.
         if remove {
             lines.push(unregister_mcp(cfg)?);
-        } else if cfg.setup.mcp && !plugin_is_mcp(cfg, remove) {
+        } else if cfg.setup.mcp {
             lines.push(register_mcp(cfg)?);
         }
         Ok(lines)
@@ -180,7 +178,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
 }
 
 /// `~/.cursor/mcp.json` — the sibling of `hooks.json`.
-fn mcp_path(cfg: &Config) -> PathBuf {
+pub(crate) fn mcp_path(cfg: &Config) -> PathBuf {
     cfg.setup.cursor.hooks_path.with_file_name("mcp.json")
 }
 
@@ -219,32 +217,11 @@ pub fn plugin_dest(cfg: &Config) -> PathBuf {
         .join("rtok")
 }
 
-/// [`PLUGIN`]'s offer plus Cursor's singleton rule: the plugin *is* the MCP, so a previous
-/// `mcpServers.rtok` entry from a plain install must go, else two writers serve one store.
-/// Cleared on every run while the plugin is ours — not only on the first `+ plugin` — so a
-/// leftover from a declined earlier offer is not kept. Keyed on [`HostPlugin::ours`], not
-/// `linked`: a foreign directory at the dest is "linked" too, and unregistering the plain
-/// MCP entry for it would strip a working install for nothing (T196).
+/// [`PLUGIN`]'s offer, hooks-only (D21). MCP is independent of the plugin (T275/D33):
+/// linking or unlinking never touches `mcp.json` — [`Agent::apply`] registers or
+/// unregisters `mcpServers.rtok` there on its own, plugin state notwithstanding.
 pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
-    let report = PLUGIN.offer_with(cfg, remove, windows_copy)?;
-    if !remove && PLUGIN.ours(cfg) {
-        let cleared = unregister_mcp(cfg)?;
-        if cleared != NO_CHANGES {
-            return Ok(format!("{report}\n{cleared}"));
-        }
-    }
-    Ok(report)
-}
-
-/// True when the Cursor plugin is ours: it *is* the MCP (D21 singleton), so
-/// setup must not also register `mcpServers.rtok` in `mcp.json`. A foreign directory at
-/// the dest is not ours (T196): `plugin_is_mcp` must stay false so the plain `mcp.json`
-/// install still runs instead of being silently suppressed.
-///
-/// Judged only by the link, not `--yes`: a dry-run with `--yes` has not linked
-/// yet and must still show what `mcp.json` would do if the offer is declined.
-pub fn plugin_is_mcp(cfg: &Config, remove: bool) -> bool {
-    !remove && PLUGIN.ours(cfg)
+    PLUGIN.offer_with(cfg, remove, windows_copy)
 }
 
 fn insert_ours(root: &mut Value) -> String {
@@ -394,53 +371,36 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// T275/D33: linking the plugin no longer touches `mcp.json` at all — a leftover
+    /// `mcpServers.rtok` from an earlier plain install stays exactly as it is, and a full
+    /// `apply()` afterward keeps registering it independently (own writer, own entry).
     #[test]
-    fn linked_plugin_clears_leftover_mcp_json_on_later_setup() {
+    fn linked_plugin_leaves_mcp_json_alone() {
         let dir = tmp("singleton-clean");
         let mut c = cfg(dir.join("hooks.json"), false);
         c.setup.yes = true;
         c.setup.backup = false;
-        // Simulate: earlier declined plugin left mcp.json; plugin linked later.
+        // Simulate: earlier plain install left mcp.json; plugin linked later.
         let mcp = dir.join("mcp.json");
         fs::write(
             &mcp,
-            r#"{"mcpServers":{"rtok":{"type":"stdio","command":"rtok","args":["mcp"]}}}"#,
+            r#"{"mcpServers":{"rtok":{"type":"stdio","command":"rtok","args":["mcp"]},"other":{"command":"x"}}}"#,
         )
         .unwrap();
         assert!(offer_plugin(&c, false).unwrap().starts_with("+ plugin"));
         assert!(PLUGIN.linked(&c));
         let body = fs::read_to_string(&mcp).unwrap();
         assert!(
-            !body.contains("\"rtok\""),
-            "fresh link must drop mcpServers.rtok: {body}"
-        );
-        // Re-seed a leftover while the plugin stays linked (manual re-add, or an
-        // older setup that only cleaned on `+ plugin`).
-        fs::write(
-            &mcp,
-            r#"{"mcpServers":{"rtok":{"type":"stdio","command":"rtok","args":["mcp"]},"other":{"command":"x"}}}"#,
-        )
-        .unwrap();
-        // T196: the plugin offer itself is a no-op (already linked, up to date), but the
-        // cleared leftover must be reported, not silently discarded.
-        assert_eq!(
-            offer_plugin(&c, false).unwrap(),
-            format!("{NO_CHANGES}\n- mcpServers.rtok")
-        );
-        let body = fs::read_to_string(&mcp).unwrap();
-        assert!(
-            !body.contains("\"rtok\""),
-            "already-linked setup must still clear leftover rtok: {body}"
+            body.contains("\"rtok\""),
+            "linking the plugin must not touch mcp.json: {body}"
         );
         assert!(body.contains("other"), "foreign servers must stay: {body}");
-        assert!(plugin_is_mcp(&c, false));
+        // A full apply still registers the entry independently of the plugin.
+        Cursor.apply(&c, Kind::Desktop, Mode::Update).unwrap();
+        assert!(Cursor.installed(&c, Kind::Desktop).contains(&"mcp"));
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// T196: `plugin_is_mcp`/`offer_plugin` keyed on `linked()` treated a foreign directory
-    /// at the plugin dest (rightly refused by `PluginLink::run`) as though rtok's plugin were
-    /// serving MCP — wiping a working plain install's `mcpServers.rtok` and then suppressing
-    /// `register_mcp`, so `agents install cursor` deleted the MCP entry and installed nothing.
     #[test]
     fn foreign_plugin_dir_keeps_plain_mcp_working() {
         let dir = tmp("foreign");
@@ -483,14 +443,25 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// T275/D33: install/update always write `mcp.json`'s `mcpServers.rtok`, plugin linked or
+    /// not; only remove takes it out; a user-edited entry is left with a `leave` line.
     #[test]
-    fn plugin_is_mcp_requires_a_real_link_not_just_yes() {
-        let dir = tmp("is-mcp-yes");
+    fn t275_mcp_entry_always_written_except_on_remove() {
+        let dir = tmp("t275-mcp");
         let mut c = cfg(dir.join("hooks.json"), false);
-        c.setup.yes = true;
-        assert!(
-            !plugin_is_mcp(&c, false),
-            "--yes alone must not suppress mcp.json registration"
+        c.setup.backup = false;
+        // Cursor's `default_install: true` links the real plugin tree without needing --yes.
+        assert!(offer_plugin(&c, false).unwrap().starts_with("+ plugin"));
+        assert!(PLUGIN.ours(&c));
+
+        let path = mcp_path(&c);
+        crate::agents::mcp::assert_json_entry_lifecycle(
+            &Cursor,
+            &c,
+            Kind::Desktop,
+            &path,
+            "mcpServers",
+            || register_mcp(&c),
         );
         let _ = fs::remove_dir_all(dir);
     }

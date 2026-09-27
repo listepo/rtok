@@ -60,6 +60,16 @@ python:
 test: && dunnage
     {{cargo}} nextest run --workspace --test-threads {{cpus}}
 
+# T301: `just test` under coverage (cargo-llvm-cov). Writes coverage/lcov.info (SonarCloud
+# reads it) and prints a per-file summary. Slower than `just test` and not part of `just
+# check`. Extra args go to nextest, e.g. `just test-cov -E 'test(formatters)'`.
+[positional-arguments]
+test-cov *args: && dunnage
+    mise exec -- rustup component add llvm-tools-preview
+    mkdir -p coverage
+    {{cargo}} llvm-cov nextest --workspace --test-threads {{cpus}} --lcov --output-path coverage/lcov.info "$@"
+    {{cargo}} llvm-cov report --summary-only
+
 # Inner loop: build and run only the test targets the current change can reach. `nextest -E`
 # filters after the build, so the saving comes from cargo target selection (`--test <name>`);
 # tools/test-changed.sh maps the diff onto it. Selection is by name, so this is an

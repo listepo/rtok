@@ -9,9 +9,12 @@
 //! (`run_shell_command`, `read_file`, …), so a Claude-shaped matcher list (`Bash`, `Read`)
 //! would silently never fire — every event runs on every call instead, the way `PostToolUse`
 //! already does on every other host. The extension tree (`plugins/gemini/`, T118.3) is a D21
-//! singleton with this module: while `gemini extensions link` has it installed, setup takes
-//! back the hooks and `mcpServers.rtok` this module would otherwise write directly into
-//! `settings.json` (mirrors `src/agents/copilot/mod.rs`).
+//! singleton with this module for hooks only: while `gemini extensions link` has it installed,
+//! setup takes back the hooks this module would otherwise write directly into `settings.json`
+//! (mirrors `src/agents/copilot/mod.rs`). MCP is the T275/D33 exception: `mcpServers.rtok` is
+//! written into `settings.json` on every install/update regardless of the extension, because
+//! Gemini's `settings.json` wins over the extension's same-name server (both stay `rtok`, so
+//! they merge into one live process rather than racing two).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -290,14 +293,13 @@ impl Agent for Gemini {
 
     fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
         let text = super::read(&settings_path(cfg));
-        let needles = [
-            ("hooks", " hook PreToolUse --host gemini"),
-            ("mcp", "\"rtok\""),
-        ];
-        let mut out: Vec<&'static str> = needles
-            .into_iter()
-            .filter_map(|(module, needle)| text.contains(needle).then_some(module))
-            .collect();
+        let mut out = Vec::new();
+        if text.contains(" hook PreToolUse --host gemini") {
+            out.push("hooks");
+        }
+        if super::mcp::has_entry(&settings_path(cfg), "mcpServers", NAME) {
+            out.push("mcp");
+        }
         if plugin_installed(cfg) {
             out.push("plugin");
         }
@@ -305,9 +307,10 @@ impl Agent for Gemini {
     }
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
-        // D21: the extension is the unit — its hooks and `rtok mcp` serve already, so
-        // rtok's own settings.json hook entries and mcpServers.rtok go instead of coming,
-        // on the same run that installs it too (mirrors `src/agents/copilot/mod.rs`).
+        // D21: the extension is the hooks unit — its own hooks serve already, so rtok's
+        // settings.json hook entries go instead of coming, on the same run that installs it
+        // too (mirrors `src/agents/copilot/mod.rs`). MCP is the T275/D33 exception: settings.json
+        // always gets `mcpServers.rtok` too, alongside the extension's own.
         super::d21_plugin_apply(
             cfg,
             mode,
@@ -407,6 +410,31 @@ mod tests {
             Gemini.support(Kind::Cli, "plugin"),
             Support::Flag("--yes")
         ));
+    }
+
+    /// T275/D33 check (a)-(e): install and update always write `mcpServers.rtok` into
+    /// `settings.json` — the extension linked or not — with the right command/args; only
+    /// remove takes it out; a user-edited entry is left with a `leave` line instead of touched.
+    /// Gemini is the exception host: unlike Copilot, hooks stay a D21 unit with the extension
+    /// too, so hooks also go missing while it is linked — only MCP is unconditional here.
+    #[test]
+    fn t275_mcp_entry_always_written_except_on_remove() {
+        let (c, dir) = cfg("t275-mcp", false);
+        let manifest = extensions_dir(&c).join("rtok/gemini-extension.json");
+        fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+        fs::write(&manifest, r#"{"name":"rtok"}"#).unwrap();
+        assert!(plugin_installed(&c));
+
+        let path = settings_path(&c);
+        crate::agents::mcp::assert_json_entry_lifecycle(
+            &Gemini,
+            &c,
+            Kind::Cli,
+            &path,
+            "mcpServers",
+            || register_mcp(&c),
+        );
+        let _ = fs::remove_dir_all(dir);
     }
 
     /// T242.5: an rtok hook on another binary path and timeout is rewritten in its slot, a
