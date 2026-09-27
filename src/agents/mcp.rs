@@ -301,6 +301,69 @@ pub(crate) fn rows(agent: &dyn super::Agent, cfg: &Config, kind: Kind) -> Vec<Mc
         .collect()
 }
 
+/// `rtok doctor`'s MCP check (T275 Fix 5, D33): install and update always write rtok's entry
+/// into each agent's own config, so an installed host whose config lacks it, or holds a stale
+/// one, is a line naming the install that writes it. Off under `[setup] mcp = false`, where a
+/// missing entry is intended.
+pub(crate) fn doctor_lines(cfg: &Config) -> Vec<String> {
+    if !cfg.setup.mcp {
+        return Vec::new();
+    }
+    super::HOSTS
+        .iter()
+        .filter_map(|id| super::host(id))
+        .flat_map(|a| host_doctor_lines(a, cfg, |v| super::present(a, v, cfg)))
+        .collect()
+}
+
+/// [`doctor_lines`] for one host: installed once any variant carries a module besides `mcp`
+/// (hooks, plugin, proxy). Then every variant that carries one too or is `present` (Claude
+/// Desktop next to the Claude Code plugin) is checked, one line per surface file.
+fn host_doctor_lines(
+    agent: &dyn super::Agent,
+    cfg: &Config,
+    present: impl Fn(&super::Variant) -> bool,
+) -> Vec<String> {
+    let own = |k| agent.installed(cfg, k).iter().any(|m| *m != "mcp");
+    let variants = agent.variants();
+    if !variants.iter().any(|v| own(v.kind)) {
+        return Vec::new();
+    }
+    let flagged = variants.len() > 1 && !agent.shared();
+    let mut out = Vec::new();
+    for v in variants.iter().filter(|v| own(v.kind) || present(v)) {
+        let flag = flagged.then_some(v.kind);
+        for line in rows(agent, cfg, v.kind)
+            .iter()
+            .filter_map(|r| doctor_line(agent.id(), flag, r))
+        {
+            if !out.contains(&line) {
+                out.push(line);
+            }
+        }
+    }
+    out
+}
+
+/// `missing: <file> has no "rtok" …` or `stale: <file> runs … — rtok side: rtok agents install
+/// <host> [--cli|--desktop]`; `None` for a present entry, or a missing one that something
+/// other than the rtok plugin serves on purpose (Grok's `[compat.claude]` import: its
+/// installer skips the entry then).
+fn doctor_line(host: &str, flag: Option<Kind>, row: &McpRow) -> Option<String> {
+    let deferred = row.plugin.is_some_and(|p| p != RTOK.name);
+    let what = match (row.entry, &row.diff) {
+        (EntryState::Present, _) => return None,
+        (EntryState::Missing, _) if deferred => return None,
+        (EntryState::Missing, Some(err)) => format!("missing: {} ({err})", row.file),
+        (EntryState::Missing, None) => format!("missing: {} has no \"{}\"", row.file, RTOK.name),
+        (EntryState::Stale, d) => format!("stale: {} {}", row.file, d.as_deref().unwrap_or("")),
+    };
+    let flag = flag.map_or(String::new(), |k| format!(" --{}", k.as_str()));
+    Some(format!(
+        "{what} — rtok side: rtok agents install {host}{flag}"
+    ))
+}
+
 /// The read-only disk [`rows`] goes through: status never writes.
 struct Disk;
 
@@ -692,6 +755,87 @@ mod tests {
         );
         assert!(!row.found());
         assert!(lines(&[row], "").contains("mcp     desktop  missing"));
+    }
+
+    /// T275 Fix 5 / 6(d): Claude Code with its plugin installed (temp dir, never `$HOME`) and
+    /// `~/.claude.json` without rtok's entry, with a stale one, and with it.
+    #[test]
+    fn doctor_warns_when_an_installed_agent_lacks_the_entry() {
+        let (mut cfg, plugins) = super::super::test_scratch_cfg(
+            "claude",
+            "t275-doctor",
+            "plugins/installed_plugins.json",
+            true,
+            |_, _| {},
+        );
+        let dir = plugins.parent().unwrap().parent().unwrap().to_path_buf();
+        cfg.setup.claude.settings_path = dir.join("settings.json");
+        cfg.doctor.claude_json = dir.join("claude.json");
+        let claude = &super::super::claude::Claude;
+        let cli_only = |v: &super::super::Variant| v.kind == Kind::Cli;
+        let warn = |cfg: &Config| host_doctor_lines(claude, cfg, cli_only);
+        let write = |entry: Value| {
+            let doc = serde_json::json!({"mcpServers": entry});
+            fs::write(&cfg.doctor.claude_json, doc.to_string()).unwrap();
+        };
+
+        // Not installed: no plugin, no hooks — nothing to warn about.
+        write(serde_json::json!({}));
+        assert!(warn(&cfg).is_empty());
+
+        fs::create_dir_all(plugins.parent().unwrap()).unwrap();
+        fs::write(&plugins, r#"{"plugins": {"rtok@rtok": [{}]}}"#).unwrap();
+        let fix = "— rtok side: rtok agents install claude --cli";
+        let lines = warn(&cfg);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("missing: "), "{lines:?}");
+        assert!(
+            lines[0].contains("claude.json has no \"rtok\""),
+            "{lines:?}"
+        );
+        assert!(lines[0].ends_with(fix), "{lines:?}");
+
+        write(serde_json::json!({"rtok": {"command": "rtok", "args": ["mcp", "--extra"]}}));
+        let lines = warn(&cfg);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("stale: "), "{lines:?}");
+        assert!(lines[0].contains("runs `rtok mcp --extra`"), "{lines:?}");
+        assert!(lines[0].ends_with(fix), "{lines:?}");
+
+        write(serde_json::json!({"rtok": {"command": "rtok", "args": ["mcp"]}}));
+        assert!(warn(&cfg).is_empty());
+
+        write(serde_json::json!({}));
+        cfg.setup.mcp = false;
+        assert!(doctor_lines(&cfg).is_empty(), "[setup] mcp = false");
+    }
+
+    /// The fix names `--desktop` for a desktop surface, no flag where one install covers all.
+    #[test]
+    fn doctor_line_names_the_surface_fix() {
+        let row = |entry| McpRow {
+            surface: "desktop",
+            file: "~/d.json".into(),
+            entry,
+            diff: None,
+            plugin: None,
+        };
+        assert_eq!(doctor_line("claude", None, &row(EntryState::Present)), None);
+        assert_eq!(
+            doctor_line("claude", Some(Kind::Desktop), &row(EntryState::Missing)).unwrap(),
+            "missing: ~/d.json has no \"rtok\" — rtok side: rtok agents install claude --desktop"
+        );
+        assert!(
+            doctor_line("cursor", None, &row(EntryState::Missing))
+                .unwrap()
+                .ends_with("rtok agents install cursor")
+        );
+        let mut rtok_plugin = row(EntryState::Missing);
+        rtok_plugin.plugin = Some(RTOK.name);
+        assert!(doctor_line("gemini", None, &rtok_plugin).is_some(), "D33");
+        let mut import = row(EntryState::Missing);
+        import.plugin = Some("[compat.claude] import");
+        assert_eq!(doctor_line("grok", None, &import), None);
     }
 
     #[test]

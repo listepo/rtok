@@ -3,10 +3,11 @@
 Every host `rtok agents install <host>` configures, per app, with what rtok writes into it and which rtok plugins then reach that app.
 
 - **Hooks**, **MCP**, **Proxy**, **Plugin** are the four modules an install can carry. `yes` is written by a plain install; a flag (`--proxy`, `--yes`) means the module is written only with that flag; `—` means the host has no way to carry it. The host README (linked from the Host column) gives the reason for every `—`.
-- **Plugin** is a directory from `plugins/<host>/` that rtok links into the host (Cursor and ZCode: hooks and MCP as one unit; OpenCode and pi: the bash call path).
+- **MCP** is the `rtok` entry in the app's own config file (D33): install and update always write it, only `remove` takes it out, and a plugin never stands in for it.
+- **Plugin** is a directory from `plugins/<host>/` that rtok links into the host (Cursor and ZCode: the hooks; OpenCode and pi: the bash call path). Where the app would list a plugin's server next to the config entry (Claude Code and Desktop, Cursor, Copilot, Codex, VS Code, ZCode, Kimi, Grok), the rtok plugin ships no MCP server; Gemini's extension keeps one, which the `settings.json` entry overrides.
 - **rtok plugins reached** lists every catalogue plugin with at least one surface (hook, bash call path, MCP, proxy) a module above can carry. `(off)` plugins are disabled by default and need `[plugins.<id>] enabled = true`.
 
-Check what is installed on this machine with `rtok agents list`; `rtok doctor` reports the same modules.
+Check what is installed on this machine with `rtok agents list`; `rtok doctor` reports the same modules, and warns when an installed host's config has no `rtok` MCP entry, or a stale one, naming the `rtok agents install <host>` (with `--cli` or `--desktop`) that writes it.
 
 After an rtok upgrade, `rtok agents update` brings every installed host up to date; for Claude Code it decides by plugin version — see [Plugin versions and updates](plugin-versions.md).
 
