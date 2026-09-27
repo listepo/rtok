@@ -32,7 +32,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
 | T297 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
-| T298 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 
 
 
@@ -562,14 +561,6 @@ Five goldens carry floors of 0–3 % (`cat`, `git_log`, `npm`, `make`, `mvn`) be
 Plan: add realistic long inputs (`cat_long`, `git_log_long`, `npm_install`, `make_long`, `mvn_long`; the short ones stay, `cat.in` keeps its secret-preservation role) and a `[script]` golden; floors are the measured saving minus 5 points.
 
 Check: `cargo nextest run -p rtok --lib cmd::formatters`; lowering a rule's keep list in a scratch copy drops a floor.
-
-### T298. Proxy replay bench with a saving floor
-
-`tests/replay_bench.rs` puts a floor under `cmd` and `read` only. The proxy methods (`archive`, `toon`, `compress`) have unit checks that output shrinks but no floor over a realistic request.
-
-Plan: a fixture Messages request (large tool results, JSON arrays, prose, a short body that must stay) replayed through the proxy against a fake upstream; sum the `Measurement` rows per plugin; assert a total floor (measured minus 5 points), a per-plugin non-zero saving, that each archived id expands to the original bytes, and a mutation check (plugin off → below the floor).
-
-Check: `cargo nextest run -p rtok --test proxy_bench`.
 
 ## Reference
 
