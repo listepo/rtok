@@ -446,10 +446,25 @@ pub struct ModuleRow {
     pub note: String,
 }
 
+/// [`Agent::installed`] with `mcp` read per surface through [`mcp::rows`] (T278) wherever the
+/// host has an MCP entry of its own, so `list`, `info`, `update` and the installer's own
+/// read-back all mean the same thing by "installed".
+pub fn installed_modules(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<&'static str> {
+    let mut found = agent.installed(cfg, kind);
+    let rows = mcp::rows(agent, cfg, kind);
+    if !rows.is_empty() {
+        found.retain(|m| *m != "mcp");
+        if rows.iter().any(mcp::McpRow::found) {
+            found.push("mcp");
+        }
+    }
+    found
+}
+
 /// A module found in the host's files counts as installed even where setup cannot write it
 /// (a hand-added MCP entry).
 pub fn module_rows(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<ModuleRow> {
-    let found = agent.installed(cfg, kind);
+    let found = installed_modules(agent, kind, cfg);
     MODULES
         .iter()
         .map(|&name| {
@@ -541,7 +556,7 @@ pub fn expected(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<&'static str
 /// Expected modules that do not read back from the host's files: the installer checking its
 /// own write (a host that rewrote the file, a marker the reader does not recognise).
 pub fn missing(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<&'static str> {
-    let have = agent.installed(cfg, kind);
+    let have = installed_modules(agent, kind, cfg);
     expected(agent, kind, cfg)
         .into_iter()
         .filter(|m| !have.contains(m))
@@ -723,7 +738,15 @@ pub fn block(agent: &dyn Agent, v: &Variant, cfg: &Config, outcome: Outcome) -> 
             out.push('\n');
         }
     }
-    out.push_str(&module_lines(&module_rows(agent, v.kind, cfg), "  ", true));
+    // T278: the `mcp` row becomes one line per surface wherever the host has an entry.
+    let surfaces = mcp::rows(agent, cfg, v.kind);
+    for row in module_rows(agent, v.kind, cfg) {
+        if row.name == "mcp" && !surfaces.is_empty() {
+            out.push_str(&mcp::lines(&surfaces, "  "));
+        } else {
+            out.push_str(&module_lines(std::slice::from_ref(&row), "  ", true));
+        }
+    }
     out.push_str(&plugin_lines(&plugin_rows(agent, v.kind, cfg), "  ", true));
     out
 }
@@ -834,7 +857,7 @@ pub(crate) fn apply_all(
             }
             let carried;
             let cfg = if req.mode == Mode::Update {
-                let have = a.installed(cfg, v.kind);
+                let have = installed_modules(a, v.kind, cfg);
                 if have.is_empty() {
                     out.push_str(&block(a, v, cfg, Outcome::NotInstalled));
                     continue;
@@ -888,7 +911,7 @@ pub fn installed_hosts(cfg: &Config) -> Vec<String> {
             host(id).is_some_and(|a| {
                 a.variants()
                     .iter()
-                    .any(|v| present(a, v, cfg) && !a.installed(cfg, v.kind).is_empty())
+                    .any(|v| present(a, v, cfg) && !installed_modules(a, v.kind, cfg).is_empty())
             })
         })
         .map(ToString::to_string)

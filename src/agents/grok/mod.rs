@@ -139,7 +139,7 @@ pub fn plugin_detected(cfg: &Config) -> bool {
 /// Grok runs Claude's hooks (`~/.claude/settings.json`) and MCP servers (`~/.claude.json`)
 /// while `[compat.claude]` is on (the default) — the files the import reads, never Claude's
 /// own plugin (T100). `covered` is that import serving rtok already: the D21 say-so state.
-fn covered(cfg: &Config, module: &str) -> bool {
+pub(crate) fn covered(cfg: &Config, module: &str) -> bool {
     let key = match module {
         "hooks" => "hooks",
         "mcp" => "mcps",
