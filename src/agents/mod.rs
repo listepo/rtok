@@ -287,21 +287,28 @@ pub fn app_path(v: &Variant) -> Option<PathBuf> {
         .or_else(|| v.bins.iter().find_map(|b| find_on_path(b)))
 }
 
+/// How long `<bin> --version` may run. `cursor --version` never exits when `HOME` is an
+/// empty directory — the home nextest gives every test (`target/test-home`, T255) — so an
+/// unbounded wait stalls `agents list` until the runner kills it.
+const VERSION_PROBE: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Version of the installed app, or `"-"` when unknown.
 /// Probes `<bin> --version` and keeps the first line that looks like a version (T168: some
 /// wrappers, e.g. npm-installed CLIs, print noise like `Package extraction took 1234ms`
 /// ahead of the real version line); falls back to the first non-empty line when no line
-/// looks like a version. 32 chars max.
+/// looks like a version. 32 chars max. A binary that does not exit within [`VERSION_PROBE`]
+/// is skipped, same as one that cannot be started.
 pub fn app_version(v: &Variant) -> String {
+    version_within(v, VERSION_PROBE)
+}
+
+fn version_within(v: &Variant, limit: std::time::Duration) -> String {
     for bin in v.bins {
-        let out = std::process::Command::new(bin).arg("--version").output();
-        let Ok(out) = out else { continue };
-        let mut s = String::from_utf8_lossy(&out.stdout).into_owned();
-        if s.trim().is_empty() {
-            s = String::from_utf8_lossy(&out.stderr).into_owned();
-        }
+        let Some(text) = probe_version(bin, limit) else {
+            continue;
+        };
         let mut fallback: Option<&str> = None;
-        for raw in s.lines() {
+        for raw in text.lines() {
             let line = raw.trim();
             if line.is_empty() {
                 continue;
@@ -318,6 +325,58 @@ pub fn app_version(v: &Variant) -> String {
         }
     }
     "-".into()
+}
+
+/// stdout of `<bin> --version`, or stderr when stdout is empty. `None` when `bin` cannot
+/// be started or does not exit within `limit` (the child is killed).
+fn probe_version(bin: &str, limit: std::time::Duration) -> Option<String> {
+    let mut cmd = std::process::Command::new(bin);
+    cmd.arg("--version")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().ok()?;
+    let mut stdout = child.stdout.take()?;
+    let mut stderr = child.stderr.take()?;
+    // Drain while polling. A child that fills the 64 KiB pipe before exiting would
+    // otherwise block on write, never exit, and be scored as a timeout.
+    let out_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = std::io::Read::read_to_end(&mut stdout, &mut buf);
+        buf
+    });
+    let err_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = std::io::Read::read_to_end(&mut stderr, &mut buf);
+        buf
+    });
+    let deadline = std::time::Instant::now() + limit;
+    let finished = loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break true,
+            Ok(None) if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break false;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(20)),
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break false;
+            }
+        }
+    };
+    let stdout = out_reader.join().unwrap_or_default();
+    let stderr = err_reader.join().unwrap_or_default();
+    if !finished {
+        return None;
+    }
+    let mut text = String::from_utf8_lossy(&stdout).into_owned();
+    if text.trim().is_empty() {
+        text = String::from_utf8_lossy(&stderr).into_owned();
+    }
+    Some(text)
 }
 
 /// A digit, then later a dot, then later another digit — enough to tell a version
@@ -1904,6 +1963,11 @@ mod tests {
         assert!(resolve(&["claude".into(), "nope".into()]).is_err());
     }
 
+    /// Locks the `rtok agents list` block from T44.2: one block per host variant, headed by
+    /// the kind and the display name (`CLI: Claude Code`, `Desktop: Cursor`), then an `app`
+    /// row and a `config` row. A host added without those lines, or a block that drops them,
+    /// fails here. The version text inside the `app` row is not the contract — `<bin>
+    /// --version` is only how the row is filled, and a binary that never exits prints `-`.
     #[test]
     fn list_prints_one_block_per_app_with_kind_name_app_and_config() {
         let out = list(&Config::default());
@@ -2156,6 +2220,56 @@ mod tests {
             apps: &[],
         };
         assert_eq!(app_version(&noisy), "0.1.0 (fake copilot)");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A `--version` that never exits must not stall `agents list`. Nextest's empty `HOME`
+    /// (`target/test-home`) makes the real `cursor --version` do exactly that.
+    #[test]
+    fn app_version_gives_up_when_the_binary_never_exits() {
+        let dir =
+            std::env::temp_dir().join(format!("rtok-app-version-hang-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join(if cfg!(windows) {
+            "rtok-test-hang.cmd"
+        } else {
+            "rtok-test-hang"
+        });
+        #[cfg(unix)]
+        {
+            // `exec` so the process we kill is `sleep` itself. A child `sleep` would
+            // inherit the pipes and `read_to_end` would wait out the grandchild.
+            std::fs::write(&bin, "#!/bin/sh\nexec sleep 30\n").unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&bin, perms).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            // Stay inside `cmd.exe`. A child `ping` would keep the pipes open after
+            // the shell is killed, and the probe would wait for that child.
+            std::fs::write(&bin, "@echo off\r\n:loop\r\ngoto loop\r\n").unwrap();
+        }
+        let path: &'static str = Box::leak(bin.to_string_lossy().into_owned().into_boxed_str());
+        let bins: &'static [&'static str] = Box::leak(vec![path].into_boxed_slice());
+        let hung = Variant {
+            kind: Kind::Cli,
+            name: "hung",
+            bins,
+            apps: &[],
+        };
+        let start = std::time::Instant::now();
+        assert_eq!(
+            version_within(&hung, std::time::Duration::from_millis(200)),
+            "-"
+        );
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(2),
+            "probe waited {:?}",
+            start.elapsed()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
