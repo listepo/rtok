@@ -10,7 +10,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T131 | todo | P2 | 3 | 70% | |
 | T132 | todo | P2 | 2 | 70% | |
 | T134 | todo | P1 | 2 | 40% | |
-| T156 | todo | P3 | 3 | 50% | |
+| T156 | in progress | P3 | 3 | 50% | Claude Code / claude-opus-5-5 |
 | T159 | todo | P2 | 4 | 0% | |
 | T262.3 | todo | P2 | 2 | 0% | |
 | T261 | in progress | P2 | 3 | 95% | Cursor / grok 4.7 |
@@ -19,12 +19,12 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T275.1 | todo | P2 | 3 | 0% | |
 | T276 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T277 | in progress | P2 | 5 | 20% | Claude Code / claude-opus-5-5 |
-| T278 | todo | P1 | 3 | 0% | |
+| T278 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T279 | in progress | P1 | 5 | 75% | Claude Code / claude-opus-5-5 |
 | T279.1 | todo | P2 | 2 | 0% | |
 | T281 | in progress | P1 | 3 | 70% | Claude Code / claude-opus-5-5 |
 | T283 | in progress | P1 | 3 | 40% | Claude Code / claude-opus-5-5 |
-| T284 | todo | P1 | 3 | 0% | |
+| T284 | in progress | P1 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T285 | in progress | P1 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T286 | todo | P1 | 3 | 0% | |
 | T287 | in progress | P1 | 4 | 0% | Claude Code / claude-opus-5-5 |
@@ -61,6 +61,8 @@ Plan: throwaway hook script (scratch, not committed) that logs the payloads for 
 Progress (2026-09-25, `research.md` §18.4 second data point): part (2) measured. Cold `just check` took 185 s and +6.28 GiB; seeded took 371 s and +3.35 GiB. The clone skipped every dependency rebuild (≈ 23 s saved), but T236's `dunnage` pass then compressed the cloned files (≈ 215 s). Parked as I-99, with no follow-up task. Part (1), the hook payloads from `claude --worktree`, a sub-agent worktree and the desktop app, is still open: it needs live sessions of the creator's.
 
 Check: `research.md` §18 gains the hook payloads and a dated table (cold vs seeded: seconds, bytes); T159's card is corrected against the recorded payloads; seeding gets a follow-up task or an `ideas.md` entry from the numbers; no file under `src/` changes.
+
+Execution (2026-09-27): (1) a probe kit in the session scratchpad (never committed), like T281, that logs `WorktreeCreate`/`WorktreeRemove` payloads and returns a `_worktrees/` path; the creator runs it with `claude --worktree`, a sub-agent `isolation: worktree` and the desktop app. The documented payload fields go into `research.md` §18.3 now, with sources. (2) Seeded (`cp -c -R target`) and cold worktrees of this repo: wall time of `just check` and physical disk delta (`df` before/after, not `du`). The cold run only happens with ≥ 30 GiB free; otherwise the row says so. Result: a dated row in `research.md` §18.4.
 
 ### T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 
@@ -306,6 +308,8 @@ Tests: a table-driven `Vfs` test per host writes each combination (no entry, ent
 
 Check: on the creator's machine, before T275 is fixed `rtok agents info claude` shows Desktop `missing`; after `rtok agents install claude` it shows `present`; `just check`.
 
+Execution (2026-09-27): one PR off main. Status comes from `rtok_mcp::status` (T277, merged in #437) per surface. `agents info`, `agents list`, `installed_hosts` and `web/model.rs` all read it, so a plugin only counts for the surface it serves. Tests: one table-driven `Vfs` test per host, plus the regression "Code plugin installed, Desktop file without `rtok`" → `desktop missing`. The T275 per-host PRs still open (VS Code, ZCode, Kimi, Grok) touch the same host modules, and whichever lands second rebases.
+
 ### T279. One plugin version scheme for every install source (GitHub, local, marketplace), and `agents update` that skips an up-to-date plugin
 
 Problem: every plugin manifest is still `0.0.1` while rtok is at `0.10.0` (tag `v0.10.0`): `plugins/claude/.claude-plugin/plugin.json` (`rtok@rtok`), `plugins/codex/.codex-plugin/plugin.json`, `plugins/cursor/plugin.json` and `.cursor-plugin/plugin.json`, `plugins/copilot/plugin.json`, `plugins/gemini/gemini-extension.json`, `plugins/kimi/kimi.plugin.json`, `plugins/pi/package.json`. Claude Code caches a plugin by its manifest version (`~/.claude/plugins/cache/rtok/rtok/0.0.1/`, `installed_plugins.json` records `"version": "0.0.1"` for commit `12c7e91`), so a new build with the same number is not a new version to it. rtok itself has no way to tell which plugin build is installed or where it came from, so `agents update` either reinstalls every time or trusts the host. A plugin reaches a user from three sources, and the scheme has to work for all of them:
@@ -450,6 +454,8 @@ Plan:
 
 Check: model unit tests over a seeded store (live, idle, ended, sub-agent nesting, prefix lookup); trycmd for `sessions`, `show`, `status`; MCP e2e with a fake client; `surface_parity`, `config_coverage`; `just check`.
 
+Execution (2026-09-27): two PRs. PR 1, cut on top of T283 PR 1 (#449): one model function over the store; `agents sessions` gains `agent`, `worktree` (cwd relative to the project until T285 lands), `activity`, `seen`, `state`, sub-agent nesting and `--all`; `agents show <id-prefix> [--json]`; `agents status "<text>"`; model unit tests on a seeded store and trycmd. PR 2, after T283 PR 2 and T285: MCP `agents_list` / `agent_show` / `agent_status_set`, the claimed-worktree and unread-message fields.
+
 ### T285. Worktree claims: `rtok worktree add` hands the worktree to the calling agent; MCP `worktree_add`
 
 Depends on T282, T283. `rtok worktree add <task> [slug] --owner` exists (T158, `src/worktree/add.rs`) and prints the path, but the owner is free text and nothing links the worktree to an agent; `list` guesses the session from the last cwd seen (T154, `src/worktree/list.rs:174`).
@@ -466,6 +472,8 @@ Plan:
 7. `gc` (`src/worktree/gc.rs`): a worktree whose agent is live is never removed, even when merged; ended or unknown agents keep today's rules.
 
 Check: unit tests for v2 parse/format and old-format compatibility; `add` e2e in a scratch repo with a fake agent row (bound lock, claim row, printed path under the T158 root); MCP e2e `worktree_add` → path exists, lock names the agent; `list` table and JSON snapshots with live / ended / unclaimed / old-format rows; gc keeps a live agent's merged worktree; trycmd and gates; `just check`.
+
+Execution (2026-09-27): two PRs. PR 1, cut on top of T283 PR 1 (#449): lock reason v2 parse/format, migration `0025_worktree_claims`, `worktree add --agent` / `RTOK_AGENT_ID` binding, `worktree claim`, the `agent` column in `worktree list`, gc keeps a live agent's worktree; tests on a scratch repo with fake agent rows. PR 2, after T283 PR 2: MCP `worktree_add` / `worktree_list` and their e2e.
 
 ### T286. `rtok worktree remove` and MCP `worktree_remove`: an agent removes its own worktree
 
@@ -492,6 +500,8 @@ Plan:
 5. Sending to an ended agent is refused; `--all-live` fans out to live agents of the same project only.
 
 Check: store tests (send, inbox order, read marks, 4 KiB cap, control-char strip); CLI e2e with two fake agents; MCP e2e: agent A sends, agent B's `agent_inbox` returns it framed, then empty; trycmd and gates; `just check`.
+
+Execution (2026-09-27): two PRs, like T283. PR 1, cut on top of T283 PR 1 (#449): migration `0026_messages`, store API, CLI `agents send` / `agents inbox` with the fixed frame, store tests and a CLI e2e with two fake agent rows. PR 2, after T283 PR 2 gives `rtok mcp` its agent: MCP `agent_send` / `agent_inbox` and their e2e.
 
 ### T288. Push unread messages to hooked agents
 
