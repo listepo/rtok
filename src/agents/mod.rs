@@ -1168,11 +1168,13 @@ pub(crate) struct D21Plugin {
 }
 
 /// `apply()` skeleton for a host whose local-path plugin (via [`offer_plugin`]) is a D21
-/// singleton over hooks + MCP: while it is installed, or on removal, `run`'s own hook
-/// document and `mcpServers.rtok` are taken back instead of written — on the very call that
-/// installs the plugin too — else the plain hook document goes in, then `mcpServers.rtok`
-/// behind `[setup] mcp`. `extra` appends a per-host tail line to both branches ([`no_extra`]
-/// for none, Copilot's skill sync for one); shared by Copilot and Gemini (D21).
+/// singleton over hooks only: while it is installed, or on removal, `run`'s own hook document
+/// is taken back instead of written — on the very call that installs the plugin too — else the
+/// plain hook document goes in. MCP is no longer part of that unit (T275 decision D33): the
+/// host's own `mcpServers.rtok` is written on every install/update behind `[setup] mcp`
+/// regardless of plugin state, and only a remove takes it back — a plugin no longer suppresses
+/// or strips it. `extra` appends a per-host tail line in every case ([`no_extra`] for none,
+/// Copilot's skill sync for one); shared by Copilot and Gemini (D21 for hooks, D33 for MCP).
 pub(crate) fn d21_plugin_apply(
     cfg: &Config,
     mode: Mode,
@@ -1188,18 +1190,17 @@ pub(crate) fn d21_plugin_apply(
     } = ops;
     let remove = mode == Mode::Remove;
     let head = offer(cfg, remove)?;
-    if remove || plugin_installed(cfg) {
-        let mut lines = vec![head, run(cfg, true)?, unregister_mcp(cfg)?];
-        if let Some(e) = extra(cfg, remove)? {
-            lines.push(e);
-        }
-        return Ok(lines);
-    }
-    let mut lines = vec![head, run(cfg, false)?];
-    if cfg.setup.mcp {
-        lines.push(register_mcp(cfg)?);
-    }
-    if let Some(e) = extra(cfg, false)? {
+    let hook_line = run(cfg, remove || plugin_installed(cfg))?;
+    let mcp_line = if remove {
+        Some(unregister_mcp(cfg)?)
+    } else if cfg.setup.mcp {
+        Some(register_mcp(cfg)?)
+    } else {
+        None
+    };
+    let mut lines = vec![head, hook_line];
+    lines.extend(mcp_line);
+    if let Some(e) = extra(cfg, remove)? {
         lines.push(e);
     }
     Ok(lines)

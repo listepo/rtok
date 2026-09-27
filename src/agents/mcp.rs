@@ -31,6 +31,72 @@ pub(crate) fn has_entry(path: &Path, key: &str, name: &str) -> bool {
     entry_in(&value, key, name)
 }
 
+/// T275/D33 checks (a)-(e) for one host, shared so every host runs the same sequence: with
+/// the host's plugin already in place, (d) no entry reads as no `mcp`; (a) install writes it;
+/// (b) update keeps it; (e) remove leaves an entry the user edited (`edit` adds `--extra` to
+/// it in `file`) with a `leave <label>` line; (c) once `reseed` writes rtok's own entry again,
+/// remove takes it out.
+#[cfg(test)]
+pub(crate) fn assert_entry_lifecycle(
+    agent: &dyn super::Agent,
+    cfg: &crate::config::Config,
+    kind: super::Kind,
+    label: &str,
+    file: &Path,
+    edit: impl Fn(),
+    reseed: impl Fn(),
+) {
+    use super::Mode;
+    let has = || agent.installed(cfg, kind).contains(&"mcp");
+    assert!(!has(), "(d) no {label} yet");
+    agent.apply(cfg, kind, Mode::Install).unwrap();
+    assert!(has(), "(a) install writes {label}");
+    let lines = agent.apply(cfg, kind, Mode::Update).unwrap();
+    let removed = format!("- {label}");
+    assert!(!lines.iter().any(|l| l.contains(&removed)), "(b) {lines:?}");
+    assert!(has(), "(b) update keeps {label}");
+    edit();
+    let lines = agent.apply(cfg, kind, Mode::Remove).unwrap();
+    let leave = format!("leave {label}");
+    assert!(lines.iter().any(|l| l.starts_with(&leave)), "(e) {lines:?}");
+    assert!(
+        super::read(file).contains("--extra"),
+        "(e) edited entry survives"
+    );
+    reseed();
+    assert!(has(), "(c) reseeded {label}");
+    agent.apply(cfg, kind, Mode::Remove).unwrap();
+    assert!(!has(), "(c) remove takes {label} out");
+}
+
+/// [`assert_entry_lifecycle`] for a host whose entry is `rtok` under the dotted JSON `key` in
+/// `file`; `reseed` writes rtok's own entry again.
+#[cfg(test)]
+pub(crate) fn assert_json_entry_lifecycle(
+    agent: &dyn super::Agent,
+    cfg: &crate::config::Config,
+    kind: super::Kind,
+    file: &Path,
+    key: &str,
+    reseed: impl Fn() -> anyhow::Result<String>,
+) {
+    let label = format!("{key}.rtok");
+    let edit = || edit_json_args(file, key);
+    assert_entry_lifecycle(agent, cfg, kind, &label, file, edit, || {
+        reseed().unwrap();
+    });
+}
+
+/// The user edit [`assert_entry_lifecycle`] expects, for a JSON config: `--extra` appended to
+/// the `rtok` entry's `args` under the dotted `key`.
+#[cfg(test)]
+pub(crate) fn edit_json_args(file: &Path, key: &str) {
+    let mut doc: Value = serde_json::from_str(&super::read(file)).unwrap();
+    let entry = key.split('.').fold(&mut doc, |v, k| &mut v[k]);
+    entry["rtok"]["args"] = serde_json::json!(["mcp", "--extra"]);
+    std::fs::write(file, doc.to_string()).unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
