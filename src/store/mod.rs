@@ -16,7 +16,7 @@ mod symbols;
 // T285: which agent a worktree is bound to (the git lock stays the source of truth).
 mod worktree_claims;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
@@ -803,17 +803,30 @@ impl Store {
         Ok(())
     }
 
-    /// This session's archived tool results still in the live window, newest first (T58.2).
+    /// This session's archived tool results still in the live window, newest first (T58.2),
+    /// each archive id once (T306). Ordered by `archive_decisions::ts` — when *this
+    /// session's* pointer to the body was created — not `archive::ts`: archive rows dedupe
+    /// by sha256 and are never re-stamped, so a body re-archived unchanged (e.g. an
+    /// unchanged file re-read) would rank by its first-ever archive time and could be
+    /// dropped by the checkpoint budget as if stale, even though the pointer to it is fresh.
+    /// `tool_use_id` breaks ties deterministically when two decisions land in the same
+    /// second. The same archive id can also back two decisions in one session; keep only
+    /// the newest.
     pub fn session_live_archives(&self, session: &str) -> Result<Vec<(String, String, i64)>> {
         let mut conn = self.lock()?;
         let rows: Vec<(String, Option<String>, i64)> = archive_decisions::table
             .inner_join(archive::table)
             .filter(archive_decisions::session.eq(session))
-            .order((archive::ts.desc(), archive::id.desc()))
+            .order((
+                archive_decisions::ts.desc(),
+                archive_decisions::tool_use_id.desc(),
+            ))
             .select((archive::id, archive::tool, archive::bytes))
             .load(&mut *conn)?;
+        let mut seen = HashSet::new();
         Ok(rows
             .into_iter()
+            .filter(|(id, _, _)| seen.insert(id.clone()))
             .map(|(id, tool, bytes)| {
                 let tool = tool.filter(|t| !t.is_empty()).unwrap_or_else(|| "-".into());
                 (id, tool, bytes)
@@ -3375,6 +3388,62 @@ mod tests {
         );
         let other = store.put_archive("c", b"none", &dir).unwrap();
         assert_eq!(store.live_zone_pointer(&other).unwrap(), None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// T306: `session_live_archives` used to order by `archive::ts` (first-archived time,
+    /// never re-stamped on a dedup hit), so a body re-archived unchanged by a later decision
+    /// ranked as stale. Order by `archive_decisions::ts` instead — this session's own
+    /// pointer time — and return each archive id once even when two decisions name it.
+    #[test]
+    fn session_live_archives_orders_by_decision_time_once_each() {
+        let dir = std::env::temp_dir().join(format!("rtok-t306-order-{}", std::process::id()));
+        let store = Store::open_in_memory().unwrap();
+        let x = store.put_archive("s1", b"body-x", &dir).unwrap();
+        let y = store.put_archive("s1", b"body-y", &dir).unwrap();
+        {
+            // X's body was archived first and stays there: dedup never re-stamps it.
+            let mut conn = store.lock().unwrap();
+            diesel::update(archive::table.filter(archive::id.eq(&x)))
+                .set(archive::ts.eq(100))
+                .execute(&mut *conn)
+                .unwrap();
+            diesel::update(archive::table.filter(archive::id.eq(&y)))
+                .set(archive::ts.eq(200))
+                .execute(&mut *conn)
+                .unwrap();
+        }
+        store
+            .put_archive_decision("tu-x1", &x, "s1", "ptr-x1")
+            .unwrap();
+        store
+            .put_archive_decision("tu-y1", &y, "s1", "ptr-y1")
+            .unwrap();
+        // X re-archived by a new decision (e.g. an unchanged file read again): a new
+        // tool_use_id pointing at the same archive id, decided after Y.
+        store
+            .put_archive_decision("tu-x2", &x, "s1", "ptr-x2")
+            .unwrap();
+        {
+            let mut conn = store.lock().unwrap();
+            for (tool_use_id, ts) in [("tu-x1", 100), ("tu-y1", 200), ("tu-x2", 300)] {
+                diesel::update(
+                    archive_decisions::table
+                        .filter(archive_decisions::session.eq("s1"))
+                        .filter(archive_decisions::tool_use_id.eq(tool_use_id)),
+                )
+                .set(archive_decisions::ts.eq(ts))
+                .execute(&mut *conn)
+                .unwrap();
+            }
+        }
+        let rows = store.session_live_archives("s1").unwrap();
+        let ids: Vec<&str> = rows.iter().map(|(id, _, _)| id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![x.as_str(), y.as_str()],
+            "X's newest decision (tu-x2) outranks Y, and X appears once"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 

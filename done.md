@@ -1434,6 +1434,15 @@ Done when:
 
 **Result (2026-09-18).** Commits `6333958` `2d08e2a` `954a612` `ac50d96` `ac97b9c` `76e1d3c` on `t58.2` (not merged). `rtok stats` prints `sessions N  compact N` by counting transcript `subtype=compact_boundary` (30d: 923 sessions, 271 compacts, 75 sessions with at least one). T2.5 fixture checkpoint body is 144 B before archive-id lines (`checkpoint_tokens` = 400). `Checkpoint.ids` lists live `archive_decisions` newest first as `id <id> <tool> <bytes>`, capped by the existing budget. Hosts: Cursor `preCompact` → `pre_compact` (no post event); Copilot `preCompact` → `pre_compact` (no post); Codex `PreCompact`/`PostCompact` via `~/.codex/hooks.json`. Gemini is not a host. Kimi already installed both via Claude `ENTRIES` (docs confirm `PreCompact`/`PostCompact`) — left untouched. ZCode has none. pi/OpenCode stay with T70.6. `PreCompact` without `transcript_path` still saves (Cursor/Copilot). `docs/agents.md` blessed.
 
+### T306. checkpoint archive ids ordered by this session's decision time, once each
+
+`store::session_live_archives` (T58.2), consumed by `checkpoint::attach_ids`, ordered live archive ids by `archive::ts` — the time a body's bytes were first archived, never re-stamped since `archive` rows dedupe by sha256 — instead of `archive_decisions::ts`, the time this session's own pointer to that body was created. A later turn re-archiving an identical, unchanged body (e.g. re-reading a file) then ranked as the oldest entry, so `attach_ids`'s token budget could drop a genuinely recent archive in its place; the same archive id could also come back twice when two decisions named it.
+
+Check: `store::tests::session_live_archives_orders_by_decision_time_once_each` (new); `cargo test --lib store::` and `--lib checkpoint` pass; workspace clippy (`-D warnings`) and `cargo fmt --check` clean.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-sonnet-5
+
 ## T48.8 — VS Code Copilot Chat host
 
 **T48.8 VS Code Copilot Chat host** · P2, 3/5 · `src/agents/vscode/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `docs/agents.md` (blessed), `src/cli.rs`, `README.md`, `tests/agents_install.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
