@@ -341,7 +341,7 @@ fn claude_desktop_installs_mcp_with_the_absolute_binary_under_a_temp_home() {
     let out = rtok(&["agents", "install", "claude", "--desktop"], &cfg, &home);
     assert!(out.contains("Desktop: Claude Desktop"), "{out}");
     assert!(!out.contains("CLI: Claude Code"), "{out}");
-    assert!(out.contains("✓ mcp     installed"), "{out}");
+    assert!(out.contains("✓ mcp     desktop  entry "), "{out}");
     assert!(
         out.contains("− hooks   not supported: Claude Desktop has no hook events"),
         "{out}"

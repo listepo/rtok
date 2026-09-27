@@ -162,6 +162,8 @@ pub struct AgentListRow {
     pub version: Option<String>,
     pub config: Vec<String>,
     pub modules: Vec<crate::agents::ModuleRow>,
+    /// T278: the `mcp` module per surface — `surface`, `entry`, `plugin`.
+    pub mcp: Vec<crate::agents::mcp::McpRow>,
     pub plugins: Vec<crate::agents::PluginRow>,
 }
 
@@ -885,13 +887,14 @@ fn agent_row(
         .iter()
         .map(|p| p.display().to_string())
         .collect();
-    let (modules, plugins) = if present {
+    let (modules, mcp, plugins) = if present {
         (
             crate::agents::module_rows(a, v.kind, cfg),
+            crate::agents::mcp::rows(a, cfg, v.kind),
             crate::agents::plugin_rows(a, v.kind, cfg),
         )
     } else {
-        (Vec::new(), Vec::new())
+        (Vec::new(), Vec::new(), Vec::new())
     };
     AgentListRow {
         host: a.id(),
@@ -902,6 +905,7 @@ fn agent_row(
         version,
         config,
         modules,
+        mcp,
         plugins,
     }
 }
