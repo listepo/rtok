@@ -409,16 +409,28 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     let registry = Registry::new(&cx.config);
     // T282 (D34): every event registers or touches this session's rtok agent id — one
     // indexed upsert (two when `agent_id` names a sub-agent, so its `parent_id` is set from
-    // the row's first insert). Never lets a store error reach the fail-open hook (D1).
-    if cx.config.agents.enabled {
-        let _ = cx.store.register_agent(
-            cx.host_id(),
-            &cx.session,
-            agent_parent_key(input),
-            cx.cwd.as_deref(),
-            agent_activity(input).as_deref(),
-        );
-    }
+    // the row's first insert). Never lets a store error reach the fail-open hook (D1); skipped
+    // entirely when the host id could not be resolved (`agents.host_id` is `NOT NULL` — SQLite
+    // treats NULL as distinct in a UNIQUE index, so a NULL host_id would insert a fresh row on
+    // every event instead of upserting). `SessionEnd` below reuses this same id rather than
+    // upserting a second time.
+    let agent = cx
+        .config
+        .agents
+        .enabled
+        .then(|| cx.host_id())
+        .flatten()
+        .and_then(|host_id| {
+            cx.store
+                .register_agent(
+                    host_id,
+                    &cx.session,
+                    agent_parent_key(input),
+                    cx.cwd.as_deref(),
+                    agent_activity(input).as_deref(),
+                )
+                .ok()
+        });
     let parent = match cx.record_call("hook", "hook", Some(&input.hook_event_name)) {
         Ok(id) => Some(id),
         // T178: another process held the writer lock past `LOCK_WAIT`. Every later write would
@@ -473,17 +485,10 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
             // T282: end this event's own agent row (the main window, or the sub-agent named
-            // by its `agent_id`) — `register_agent` above already ensured it exists.
-            if cx.config.agents.enabled
-                && let Ok(id) = cx.store.register_agent(
-                    cx.host_id(),
-                    &cx.session,
-                    agent_parent_key(input),
-                    cx.cwd.as_deref(),
-                    None,
-                )
-            {
-                let _ = cx.store.end_agent(&id, now);
+            // by its `agent_id`) — reuse the id `register_agent` above already resolved,
+            // rather than upserting the row a second time.
+            if let Some(id) = &agent {
+                let _ = cx.store.end_agent(id, now);
             }
             if cx
                 .store
@@ -1567,25 +1572,33 @@ mod tests {
 
     // ── T282 (D34): the rtok agent registry ────────────────────────────────────
 
-    #[test]
-    fn dispatch_registers_and_touches_the_agent_with_truncated_activity() {
-        let dir = std::env::temp_dir().join(format!("rtok-hooks-t282-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+    /// `pre_tool_bash.json` with `session_id` overridden, parsed both ways (the raw `Value`
+    /// for further mutation, and the typed `HookInput`) plus a fresh in-memory `Runtime` for
+    /// that same session — the shape every T282 dispatch-level test below starts from.
+    fn agent_fixture(session_id: &str) -> (serde_json::Value, Vec<u8>, HookInput, Runtime) {
         let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
         let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
-        v["session_id"] = serde_json::Value::String("agent-sess-1".into());
+        v["session_id"] = serde_json::Value::String(session_id.into());
+        let stdin = serde_json::to_vec(&v).unwrap();
+        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
+        let cx = Runtime::in_memory(input.session_id.clone()).unwrap();
+        (v, stdin, input, cx)
+    }
+
+    #[test]
+    fn dispatch_registers_and_touches_the_agent_with_truncated_activity() {
+        let (mut v, _, _, mut cx) = agent_fixture("agent-sess-1");
         v["tool_input"]["command"] = serde_json::Value::String(
             "cargo nextest run --no-fail-fast --release --workspace --all-targets --verbose".into(),
         );
         let stdin = serde_json::to_vec(&v).unwrap();
         let input: HookInput = serde_json::from_slice(&stdin).unwrap();
-        let mut cx = Runtime::in_memory(input.session_id.clone()).unwrap();
         cx.cwd = input.cwd.clone();
         let _ = dispatch(&stdin, &input, &cx);
 
         let id = cx
             .store
-            .register_agent(cx.host_id(), &cx.session, None, None, None)
+            .register_agent(cx.host_id().unwrap(), &cx.session, None, None, None)
             .unwrap();
         let row = cx.store.agent_row(&id).unwrap().unwrap();
         assert_eq!(row.host_session_id, "agent-sess-1");
@@ -1595,17 +1608,11 @@ mod tests {
             Some("Bash: cargo nextest run --no-fail-fast --release --workspace --all"),
             "tool name plus the first 60 chars of its main argument"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_sub_agent_hook_event_registers_a_child_row_under_its_parent() {
-        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
-        let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
-        v["session_id"] = serde_json::Value::String("agent-sess-2".into());
-        let stdin = serde_json::to_vec(&v).unwrap();
-        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
-        let cx = Runtime::in_memory(input.session_id.clone()).unwrap();
+        let (v, stdin, input, cx) = agent_fixture("agent-sess-2");
         let _ = dispatch(&stdin, &input, &cx); // the main window's own row
 
         let mut child = v.clone();
@@ -1614,13 +1621,14 @@ mod tests {
         let child_input: HookInput = serde_json::from_slice(&child_stdin).unwrap();
         let _ = dispatch(&child_stdin, &child_input, &cx);
 
+        let host_id = cx.host_id().unwrap();
         let parent_id = cx
             .store
-            .register_agent(cx.host_id(), &cx.session, None, None, None)
+            .register_agent(host_id, &cx.session, None, None, None)
             .unwrap();
         let child_id = cx
             .store
-            .register_agent(cx.host_id(), &cx.session, Some("sub-1"), None, None)
+            .register_agent(host_id, &cx.session, Some("sub-1"), None, None)
             .unwrap();
         assert_ne!(parent_id, child_id);
         let child_row = cx.store.agent_row(&child_id).unwrap().unwrap();
@@ -1630,16 +1638,11 @@ mod tests {
 
     #[test]
     fn session_end_ends_the_agent_row() {
-        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
-        let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
-        v["session_id"] = serde_json::Value::String("agent-sess-3".into());
-        let stdin = serde_json::to_vec(&v).unwrap();
-        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
-        let cx = Runtime::in_memory(input.session_id.clone()).unwrap();
+        let (v, stdin, input, cx) = agent_fixture("agent-sess-3");
         let _ = dispatch(&stdin, &input, &cx);
         let id = cx
             .store
-            .register_agent(cx.host_id(), &cx.session, None, None, None)
+            .register_agent(cx.host_id().unwrap(), &cx.session, None, None, None)
             .unwrap();
         assert_eq!(cx.store.agent_row(&id).unwrap().unwrap().ended_at, None);
 
@@ -1653,34 +1656,12 @@ mod tests {
 
     #[test]
     fn agents_enabled_false_skips_registration() {
-        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
-        let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
-        v["session_id"] = serde_json::Value::String("agent-sess-off".into());
-        let stdin = serde_json::to_vec(&v).unwrap();
-        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
-        let mut cx = Runtime::in_memory(input.session_id.clone()).unwrap();
+        let (_, stdin, input, mut cx) = agent_fixture("agent-sess-off");
         cx.config.agents.enabled = false;
         let _ = dispatch(&stdin, &input, &cx);
         assert!(
-            cx.store
-                .resolve_agent("agent-sess-off")
-                .is_err_and(|e| e.to_string() == "unknown"),
-            "no id looks like the session string, so this only proves the table stayed empty \
-             for it — real proof follows"
-        );
-        // `register_agent` on an empty table always mints a fresh id: two calls disagreeing
-        // means the first `dispatch` never wrote a row (`enabled = false` held).
-        let a = cx
-            .store
-            .register_agent(cx.host_id(), &cx.session, None, None, None)
-            .unwrap();
-        let b = cx
-            .store
-            .register_agent(cx.host_id(), &cx.session, None, None, None)
-            .unwrap();
-        assert_eq!(
-            a, b,
-            "the second call finds the row the first one just made"
+            cx.store.live_agents("1d").unwrap().is_empty(),
+            "[agents] enabled = false must leave the agents table untouched"
         );
     }
 
@@ -1700,7 +1681,12 @@ mod tests {
         .unwrap();
         dispatch_owned_strict(&stdin, "PreToolUse", &cfg).unwrap();
         let store = crate::store::Store::open(&cfg.core.db_path).unwrap();
-        let host_id = store.host_id(&cfg.hook.host).unwrap().or(Some(6));
+        // Same resolution `dispatch` itself used (`Runtime::with_store`'s `[hook] host` lookup,
+        // falling back to `other`) — never a second copy of that fallback here.
+        let host_id = Runtime::open(cfg.clone(), "irrelevant")
+            .unwrap()
+            .host_id()
+            .unwrap();
         let id = store
             .register_agent(host_id, "sess-cursor-282", None, None, None)
             .unwrap();
@@ -1720,7 +1706,10 @@ mod tests {
         .unwrap();
         dispatch_owned_strict(&stdin, "PreToolUse", &cfg).unwrap();
         let store = crate::store::Store::open(&cfg.core.db_path).unwrap();
-        let host_id = store.host_id(&cfg.hook.host).unwrap().or(Some(6));
+        let host_id = Runtime::open(cfg.clone(), "irrelevant")
+            .unwrap()
+            .host_id()
+            .unwrap();
         let id = store
             .register_agent(host_id, "cline-sess-282", None, None, None)
             .unwrap();

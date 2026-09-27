@@ -277,7 +277,7 @@ diesel::table! {
 diesel::table! {
     agents (id) {
         id -> Text,
-        host_id -> Nullable<Integer>,
+        host_id -> Integer,
         host_session_id -> Text,
         parent_key -> Text,
         parent_id -> Nullable<Text>,

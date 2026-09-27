@@ -16,7 +16,7 @@ use super::{coalesce, substr, unixepoch};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentRow {
     pub id: String,
-    pub host_id: Option<i32>,
+    pub host_id: i32,
     pub host_session_id: String,
     pub parent_key: String,
     pub parent_id: Option<String>,
@@ -29,7 +29,7 @@ pub struct AgentRow {
 
 type AgentTuple = (
     String,
-    Option<i32>,
+    i32,
     String,
     String,
     Option<String>,
@@ -93,7 +93,7 @@ impl Store {
     /// event's activity when a later event, e.g. `SessionEnd`, only needs the id back).
     pub fn register_agent(
         &self,
-        host_id: Option<i32>,
+        host_id: i32,
         host_session: &str,
         parent_key: Option<&str>,
         cwd: Option<&str>,
@@ -179,13 +179,19 @@ impl Store {
     }
 
     /// Every agent with no `ended_at` and a `last_seen` within `idle` (`[agents] idle`'s raw
-    /// string, e.g. `"30m"`; see [`parse_idle_secs`]) of now.
+    /// string, e.g. `"30m"`, parsed by `humantime::parse_duration`) of now. The cutoff is
+    /// computed in SQL — `unixepoch() - secs`, not `SystemTime::now()` — so it shares
+    /// SQLite's own clock with the `last_seen` values it is compared against.
     pub fn live_agents(&self, idle: &str) -> Result<Vec<AgentRow>> {
+        let secs: i64 = humantime::parse_duration(idle)
+            .map_err(|e| anyhow::anyhow!("bad [agents] idle {idle:?}: {e}"))?
+            .as_secs()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("[agents] idle {idle:?} is out of range"))?;
         let mut conn = self.lock()?;
-        let cutoff = now_unix() - parse_idle_secs(idle)?;
         Ok(agents::table
             .filter(agents::ended_at.is_null())
-            .filter(agents::last_seen.ge(cutoff))
+            .filter(agents::last_seen.ge(unixepoch().assume_not_null() - secs))
             .select(agent_cols())
             .load::<AgentTuple>(&mut *conn)?
             .into_iter()
@@ -208,34 +214,6 @@ impl Store {
     }
 }
 
-fn now_unix() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-}
-
-/// `[agents] idle` ("30m") → seconds. Suffixes `s`/`m`/`h`/`d`; no suffix is seconds. Unlike
-/// `measure::stats::parse_since` (days/hours only, for `--since`), an idle window needs
-/// minutes — the default is `30m`.
-pub fn parse_idle_secs(s: &str) -> Result<i64> {
-    let s = s.trim();
-    let split = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
-    let (n, unit) = s.split_at(split);
-    let n: i64 = n
-        .parse()
-        .map_err(|_| anyhow::anyhow!("bad [agents] idle {s:?}"))?;
-    let per_unit = match unit {
-        "" | "s" => 1,
-        "m" => 60,
-        "h" => 3_600,
-        "d" => 86_400,
-        _ => bail!("bad [agents] idle unit in {s:?}"),
-    };
-    n.checked_mul(per_unit)
-        .ok_or_else(|| anyhow::anyhow!("[agents] idle {s:?} is out of range"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,7 +221,7 @@ mod tests {
     #[test]
     fn register_is_idempotent_and_returns_the_same_id() {
         let store = Store::open_in_memory().unwrap();
-        let claude = store.host_id("claude").unwrap();
+        let claude = store.host_id("claude").unwrap().unwrap();
         let a = store
             .register_agent(claude, "sess-1", None, Some("/repo"), Some("Bash: ls"))
             .unwrap();
@@ -263,7 +241,7 @@ mod tests {
     #[test]
     fn a_sub_agent_gets_its_own_row_with_the_parent_s_id() {
         let store = Store::open_in_memory().unwrap();
-        let claude = store.host_id("claude").unwrap();
+        let claude = store.host_id("claude").unwrap().unwrap();
         let parent = store
             .register_agent(claude, "sess-2", None, None, None)
             .unwrap();
@@ -289,7 +267,7 @@ mod tests {
     #[test]
     fn touch_sets_activity_and_end_stamps_ended_at() {
         let store = Store::open_in_memory().unwrap();
-        let claude = store.host_id("claude").unwrap();
+        let claude = store.host_id("claude").unwrap().unwrap();
         let id = store
             .register_agent(claude, "sess-3", None, None, None)
             .unwrap();
@@ -305,7 +283,7 @@ mod tests {
     #[test]
     fn resolve_prefix_exact_ambiguous_and_unknown() {
         let store = Store::open_in_memory().unwrap();
-        let claude = store.host_id("claude").unwrap();
+        let claude = store.host_id("claude").unwrap().unwrap();
         let a = store
             .register_agent(claude, "sess-a", None, None, None)
             .unwrap();
@@ -334,19 +312,19 @@ mod tests {
     #[test]
     fn live_excludes_ended_and_stale_rows() {
         let store = Store::open_in_memory().unwrap();
-        let claude = store.host_id("claude").unwrap();
+        let claude = store.host_id("claude").unwrap().unwrap();
         let live = store
             .register_agent(claude, "sess-live", None, None, None)
             .unwrap();
         let ended = store
             .register_agent(claude, "sess-ended", None, None, None)
             .unwrap();
-        store.end_agent(&ended, now_unix()).unwrap();
+        store.end_agent(&ended, 0).unwrap();
         let stale = store
             .register_agent(claude, "sess-stale", None, None, None)
             .unwrap();
         diesel::update(agents::table.filter(agents::id.eq(&stale)))
-            .set(agents::last_seen.eq(now_unix() - 10_000))
+            .set(agents::last_seen.eq(unixepoch().assume_not_null() - 10_000))
             .execute(&mut *store.lock().unwrap())
             .unwrap();
 
@@ -365,12 +343,25 @@ mod tests {
     }
 
     #[test]
-    fn parse_idle_secs_units() {
-        assert_eq!(parse_idle_secs("30m").unwrap(), 1_800);
-        assert_eq!(parse_idle_secs("2h").unwrap(), 7_200);
-        assert_eq!(parse_idle_secs("1d").unwrap(), 86_400);
-        assert_eq!(parse_idle_secs("45s").unwrap(), 45);
-        assert_eq!(parse_idle_secs("90").unwrap(), 90);
-        assert!(parse_idle_secs("30x").is_err());
+    fn live_agents_parses_the_configured_idle_window() {
+        let store = Store::open_in_memory().unwrap();
+        let claude = store.host_id("claude").unwrap().unwrap();
+        let id = store
+            .register_agent(claude, "sess-idle", None, None, None)
+            .unwrap();
+        let ids: Vec<String> = store
+            .live_agents("30m")
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        assert!(
+            ids.contains(&id),
+            "the default [agents] idle (\"30m\") must parse and match"
+        );
+        assert!(
+            store.live_agents("not-a-duration").is_err(),
+            "a bad [agents] idle must error, not panic"
+        );
     }
 }

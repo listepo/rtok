@@ -153,7 +153,7 @@ section! {
 section! {
     /// `[agents]` — the rtok agent registry (T282, D34): one row per host session, resolved
     /// by any unique id prefix of 4+ hex chars. `idle` bounds `live()` (`store::live_agents`,
-    /// parsed by `store::agents::parse_idle_secs`); `enabled` gates registration only — the
+    /// parsed by `humantime::parse_duration`); `enabled` gates registration only — the
     /// hook itself and `[core] enabled` are unaffected.
     Agents {
         enabled: bool = true,

@@ -6,7 +6,9 @@
 -- sub-agent's parent row. `status_text` is written by the agent itself, starting T284.
 CREATE TABLE agents (
     id TEXT PRIMARY KEY,
-    host_id INTEGER REFERENCES hosts(id),
+    -- NOT NULL: SQLite treats NULLs as distinct in a UNIQUE index, so a NULL host_id would
+    -- make `agents_host_session` below insert a new row on every event instead of upserting.
+    host_id INTEGER NOT NULL REFERENCES hosts(id),
     host_session_id TEXT NOT NULL,
     parent_key TEXT NOT NULL DEFAULT '',
     parent_id TEXT REFERENCES agents(id),

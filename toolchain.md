@@ -66,6 +66,7 @@ Project programs and direct packages from the manifests.
 | figment | local | https://crates.io/crates/figment | Config |
 | futures-util | local | https://crates.io/crates/futures-util | Rust dependency |
 | httpmock | local | https://crates.io/crates/httpmock | Rust dependency |
+| humantime | local | https://crates.io/crates/humantime | T282: `[agents] idle` duration parsing; already in the lock as a transitive dep |
 | i-slint-backend-testing | local | https://crates.io/crates/i-slint-backend-testing | Headless backend for Slint UI e2e tests |
 | ignore | local | https://crates.io/crates/ignore | Rust dependency |
 | indicatif | local | https://crates.io/crates/indicatif | Rust dependency |

@@ -3655,6 +3655,7 @@ dependencies = [
  "figment",
  "futures-util",
  "httpmock",
+ "humantime",
  "ignore",
  "indicatif",
  "insta",
