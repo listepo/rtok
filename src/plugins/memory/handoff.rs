@@ -284,7 +284,8 @@ mod tests {
 
     #[test]
     fn stub_records_measurement_when_off() {
-        let cx = crate::plugin::Runtime::in_memory("t596").unwrap();
+        let mut cx = crate::plugin::Runtime::in_memory("t596").unwrap();
+        cx.config.plugins.memory.handoff = false;
         let ctx = Ctx::new(&cx);
         let out = handoff(&ctx, 800);
         assert!(out.contains("disabled"));
@@ -296,8 +297,7 @@ mod tests {
     /// instead of a placeholder string.
     #[test]
     fn handoff_enabled_shares_the_spawn_brief_builder() {
-        let mut cx = crate::plugin::Runtime::in_memory("t596-on").unwrap();
-        cx.config.plugins.memory.handoff = true;
+        let cx = crate::plugin::Runtime::in_memory("t596-on").unwrap();
         touch(&cx, "Read", "/repo/a.rs");
         let ctx = Ctx::new(&cx);
         let out = handoff(&ctx, 300);
@@ -309,8 +309,7 @@ mod tests {
     /// placeholder `build_brief` replaced.
     #[test]
     fn handoff_enabled_with_an_empty_ledger_falls_back() {
-        let mut cx = crate::plugin::Runtime::in_memory("t596-on-empty").unwrap();
-        cx.config.plugins.memory.handoff = true;
+        let cx = crate::plugin::Runtime::in_memory("t596-on-empty").unwrap();
         let ctx = Ctx::new(&cx);
         let out = handoff(&ctx, 300);
         assert_eq!(out, "handoff: nothing read or edited yet.");
