@@ -1,4 +1,5 @@
-//! T121 + D21: the Codex plugin tree is one unit — a manifest, rtok's hooks and one MCP server.
+//! T121 + D21: the Codex plugin tree is a manifest and rtok's hooks (T275/D33 dropped its MCP
+//! server).
 
 mod common;
 
@@ -19,7 +20,13 @@ fn manifest_is_rtok_and_points_at_its_files() {
     let m = read(".codex-plugin/plugin.json");
     assert_eq!(m["name"], "rtok");
     assert_eq!(m["hooks"], "./hooks/hooks.json");
-    assert_eq!(m["mcpServers"], "./.mcp.json");
+    assert!(m.get("mcpServers").is_none(), "{m}");
+    assert!(
+        !PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("plugins/codex/.mcp.json")
+            .exists(),
+        "T275/D33: the plugin no longer ships an MCP server"
+    );
 }
 
 #[test]
@@ -47,14 +54,6 @@ fn root_marketplace_points_at_the_plugins_codex_subdirectory() {
     assert_eq!(
         m["plugins"][0]["source"],
         json!({"source": "local", "path": "./plugins/codex"})
-    );
-}
-
-#[test]
-fn mcp_is_exactly_rtok() {
-    assert_eq!(
-        read(".mcp.json"),
-        json!({"mcpServers": {"rtok": {"command": "rtok", "args": ["mcp"]}}})
     );
 }
 

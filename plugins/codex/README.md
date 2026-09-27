@@ -1,8 +1,10 @@
 # rtok Codex plugin
 
-One plugin directory for Codex (the `codex` CLI and the Codex desktop app): rtok's hooks and its
-MCP server as one unit (D21: plugin and MCP together, one `rtok mcp` per store). The layout is
-Codex's `.codex-plugin/plugin.json` manifest pointing at `hooks/hooks.json` and `.mcp.json`.
+One plugin directory for Codex (the `codex` CLI and the Codex desktop app): rtok's hooks (D21).
+The layout is Codex's `.codex-plugin/plugin.json` manifest pointing at `hooks/hooks.json`. The
+plugin no longer ships an MCP server (T275/D33): `rtok agents install codex` always writes
+`[mcp_servers.rtok]` into `config.toml` itself, plugin enabled or not, so there is exactly one
+path to that entry instead of two copies to keep in sync.
 
 Install:
 
@@ -22,21 +24,19 @@ Install:
 The hooks resolve `rtok` from `PATH`, then `~/.ketch/bin/rtok`, else exit 0 silently (Codex only
 blocks on an explicit decision) — so a hook shell whose `PATH` lacks ketch's install dir still
 finds `rtok`. `commandWindows` keeps the bare `rtok hook <event>` for `cmd.exe`, which cannot run
-the POSIX fallback. The MCP server still needs `rtok` on `PATH` and does not start without it.
-Install with ketch: `ketch install listepo/rtok`.
+the POSIX fallback. Install with ketch: `ketch install listepo/rtok`.
 
-Use the plugin **or** `rtok agents install codex`, not both. That installer writes the same two
-hooks to `~/.codex/hooks.json` and `[mcp_servers.rtok]` to `~/.codex/config.toml`; with both in
-place every event fires twice and two `rtok mcp` processes share one store. Run
-`rtok agents remove codex` before enabling the plugin (keep `--proxy` separately if you use it).
+While the plugin is enabled it is the only path for the compaction hooks (D21): `rtok agents
+install codex` takes its own `~/.codex/hooks.json` copy back instead of adding it, so every event
+fires once. `[mcp_servers.rtok]` is independent of the plugin (T275/D33) and is written on every
+install/update regardless.
 
 Files:
 
-- `.codex-plugin/plugin.json` — manifest (name, version, metadata, `hooks` and `mcpServers` paths).
+- `.codex-plugin/plugin.json` — manifest (name, version, metadata, `hooks` path).
 - `hooks/hooks.json` — `PreCompact` and `PostCompact`, each `timeout: 5`, resolving `rtok` from
   `PATH` then `~/.ketch/bin/rtok` (`commandWindows` bare for `cmd.exe`): the same events
   `rtok agents install codex` registers. Checked by `tests/codex_plugin.rs`.
-- `.mcp.json` — `mcpServers.rtok` → `rtok mcp`.
 - `.agents/plugins/marketplace.json` — the local marketplace that lists this folder.
 
 Known limits:
@@ -45,17 +45,16 @@ Known limits:
   `PostToolUse` can add context, but rtok's handling of Codex's tool payloads has not been checked
   on a live session, so those events stay off here and in the installer until it is.
 - Verified on codex-cli 0.155.1 in a scratch `CODEX_HOME` (2026-09-21): `marketplace add` accepts
-  the `./` entry, `plugin add` copies the tree to `plugins/cache/rtok/rtok/0.0.1/` and enables it,
-  and `codex mcp list` shows `rtok` → `rtok mcp`. Not verified: the hooks firing in a live session
-  (trust prompt) and the working directory Codex gives a plugin's stdio MCP server.
+  the `./` entry and `plugin add` copies the tree to `plugins/cache/rtok/rtok/0.0.1/` and enables
+  it. Not verified: the hooks firing in a live session (trust prompt).
 
 ## Docs
 
 Host documentation this plugin is written against. Re-check every link when the plugin changes.
 
-- Plugins (layout, `.codex-plugin/plugin.json`, `.mcp.json`, `hooks/hooks.json`, marketplaces, `codex plugin marketplace add`): https://developers.openai.com/plugins/build/plugins
+- Plugins (layout, `.codex-plugin/plugin.json`, `hooks/hooks.json`, marketplaces, `codex plugin marketplace add`): https://developers.openai.com/plugins/build/plugins
 - Hooks (events, `matcher`, `timeout` in seconds, plugin-bundled hooks and trust review, `PLUGIN_ROOT`): https://learn.chatgpt.com/docs/hooks
-- MCP (`[mcp_servers.<name>]`, stdio servers): https://learn.chatgpt.com/docs/extend/mcp
+- MCP (`[mcp_servers.<name>]`, stdio servers, written by `rtok agents install codex` itself): https://learn.chatgpt.com/docs/extend/mcp
 - Config reference (`~/.codex/config.toml`): https://learn.chatgpt.com/docs/config-file/config-reference
 
 ## Package docs

@@ -33,6 +33,7 @@ fn plugin_tree(host: &str) -> (&str, bool) {
         "claude" => ("claude", false),
         "copilot" => ("copilot", false),
         "vscode" => ("claude", false),
+        "codex" => ("codex", false),
         _ => (host, true),
     }
 }

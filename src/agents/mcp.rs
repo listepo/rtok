@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use serde_json::Value;
+use toml_edit::{DocumentMut, Item};
 
 /// Whether `<key>.<name>` exists as a JSON object in an already-parsed `value` — never a
 /// substring match. A `key` that is not an object, or a `name` that exists but is not itself an
@@ -29,6 +30,53 @@ pub(crate) fn has_entry(path: &Path, key: &str, name: &str) -> bool {
         return false;
     };
     entry_in(&value, key, name)
+}
+
+/// [`has_entry`]'s TOML equivalent, for Codex's and Grok's `~/.codex/config.toml`-shaped
+/// config: whether `[<table>.<name>]` exists as a table in the TOML document at `path` —
+/// never a substring match on the raw text. An absent, unreadable, or unparsable file, a
+/// `table` that is not itself a table, or a `name` that exists but is not a table (or is
+/// mentioned only elsewhere) all read as `false` — fail open, never a panic.
+pub(crate) fn has_toml_entry(path: &Path, table: &str, name: &str) -> bool {
+    let Ok(doc) = super::read(path).parse::<DocumentMut>() else {
+        return false;
+    };
+    doc.get(table)
+        .and_then(Item::as_table)
+        .and_then(|t| t.get(name))
+        .is_some_and(Item::is_table)
+}
+
+/// `item` as a [`Value`], so a TOML entry (Codex's, Grok's `[mcp_servers.rtok]`) can run
+/// through [`rtok_agent_sdk::judge_owned`] the same way the JSON hosts' entries do (T246.5).
+/// Covers the shapes an `[mcp_servers.rtok]` table can hold.
+pub(crate) fn toml_item_to_json(item: &Item) -> Value {
+    match item {
+        Item::None => Value::Null,
+        Item::Value(v) => toml_value_to_json(v),
+        Item::Table(t) => t
+            .iter()
+            .map(|(k, v)| (k.to_string(), toml_item_to_json(v)))
+            .collect(),
+        Item::ArrayOfTables(_) => Value::Null,
+    }
+}
+
+fn toml_value_to_json(v: &toml_edit::Value) -> Value {
+    match v {
+        toml_edit::Value::String(s) => Value::String(s.value().clone()),
+        toml_edit::Value::Integer(i) => Value::Number((*i.value()).into()),
+        toml_edit::Value::Float(f) => {
+            serde_json::Number::from_f64(*f.value()).map_or(Value::Null, Value::Number)
+        }
+        toml_edit::Value::Boolean(b) => Value::Bool(*b.value()),
+        toml_edit::Value::Datetime(d) => Value::String(d.value().to_string()),
+        toml_edit::Value::Array(a) => a.iter().map(toml_value_to_json).collect(),
+        toml_edit::Value::InlineTable(t) => t
+            .iter()
+            .map(|(k, v)| (k.to_string(), toml_value_to_json(v)))
+            .collect(),
+    }
 }
 
 /// T275/D33 checks (a)-(e) for one host, shared so every host runs the same sequence: with
@@ -97,6 +145,38 @@ pub(crate) fn edit_json_args(file: &Path, key: &str) {
     std::fs::write(file, doc.to_string()).unwrap();
 }
 
+/// [`assert_entry_lifecycle`] for a host whose entry is `rtok` under the TOML `table` in
+/// `file` (Codex's, Grok's `[mcp_servers.rtok]`); `reseed` writes rtok's own entry again.
+#[cfg(test)]
+pub(crate) fn assert_toml_entry_lifecycle(
+    agent: &dyn super::Agent,
+    cfg: &crate::config::Config,
+    kind: super::Kind,
+    file: &Path,
+    table: &str,
+    reseed: impl Fn() -> anyhow::Result<String>,
+) {
+    let label = format!("{table}.rtok");
+    let edit = || edit_toml_args(file, table);
+    assert_entry_lifecycle(agent, cfg, kind, &label, file, edit, || {
+        reseed().unwrap();
+    });
+}
+
+/// The user edit [`assert_entry_lifecycle`] expects, for a TOML config: `--extra` appended to
+/// the `rtok` entry's `args` under the dotted `table`.
+#[cfg(test)]
+pub(crate) fn edit_toml_args(file: &Path, table: &str) {
+    let mut doc: DocumentMut = super::read(file).parse().unwrap();
+    let mut parts = table.split('.');
+    let mut entry = &mut doc[parts.next().unwrap()];
+    for part in parts {
+        entry = &mut entry[part];
+    }
+    entry["rtok"]["args"] = toml_edit::value(toml_edit::Array::from_iter(["mcp", "--extra"]));
+    std::fs::write(file, doc.to_string()).unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,5 +233,66 @@ mod tests {
     fn invalid_file_is_false() {
         let path = tmp_file("invalid", "{ this is not json");
         assert!(!has_entry(&path, "mcpServers", "rtok"));
+    }
+
+    fn tmp_toml(name: &str, contents: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "rtok-mcp-has-toml-entry-{name}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn toml_present_entry_is_true() {
+        let path = tmp_toml(
+            "present",
+            "[mcp_servers.rtok]\ncommand = \"rtok\"\nargs = [\"mcp\"]\n",
+        );
+        assert!(has_toml_entry(&path, "mcp_servers", "rtok"));
+    }
+
+    #[test]
+    fn toml_missing_table_name_or_file_is_false() {
+        let path = tmp_toml("missing", "[mcp_servers.other]\ncommand = \"x\"\n");
+        assert!(!has_toml_entry(&path, "mcp_servers", "rtok"));
+        assert!(!has_toml_entry(&path, "other_table", "rtok"));
+        assert!(!has_toml_entry(
+            Path::new("/does/not/exist/rtok-t275.toml"),
+            "mcp_servers",
+            "rtok"
+        ));
+    }
+
+    /// `"rtok"` shows up as an unrelated string value, never as `[mcp_servers.rtok]` itself.
+    #[test]
+    fn toml_name_mentioned_elsewhere_is_not_an_entry() {
+        let path = tmp_toml(
+            "elsewhere",
+            "notes = \"rtok lives here too\"\n\n[mcp_servers.other]\ncommand = \"rtok\"\n",
+        );
+        assert!(!has_toml_entry(&path, "mcp_servers", "rtok"));
+    }
+
+    #[test]
+    fn toml_invalid_file_is_false() {
+        let path = tmp_toml("invalid", "this is not = [valid toml");
+        assert!(!has_toml_entry(&path, "mcp_servers", "rtok"));
+    }
+
+    #[test]
+    fn toml_item_to_json_converts_a_server_table() {
+        let doc: DocumentMut = "[mcp_servers.rtok]\ncommand = \"rtok\"\nargs = [\"mcp\"]\n"
+            .parse()
+            .unwrap();
+        let item = doc["mcp_servers"]["rtok"].clone();
+        assert_eq!(
+            toml_item_to_json(&item),
+            serde_json::json!({"command": "rtok", "args": ["mcp"]})
+        );
     }
 }
