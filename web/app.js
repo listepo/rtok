@@ -571,7 +571,7 @@
     }));
     calls.forEach((c) => {
       const b = buckets[Math.min(N - 1, Math.floor((c.ts - t0) / step))];
-      if (b[c.surface] != null) b[c.surface]++;
+      if (["hook", "mcp", "proxy"].includes(c.surface)) b[c.surface]++;
       if (!c.ok) b.err++;
     });
     const ms = calls
@@ -586,9 +586,10 @@
           (s) => s.started_at <= b.t + step && (s.ended_at == null || s.ended_at >= b.t),
         ).length,
     );
-    const bySurface = {};
+    const bySurface = new Map();
     calls.forEach((c) => {
-      const o = (bySurface[c.surface] = bySurface[c.surface] || { n: 0, err: 0, last: 0 });
+      let o = bySurface.get(c.surface);
+      if (!o) bySurface.set(c.surface, (o = { n: 0, err: 0, last: 0 }));
       o.n++;
       if (!c.ok) o.err++;
       o.last = Math.max(o.last, c.ts);
@@ -745,6 +746,7 @@
       r = mx - mn || 1;
     const pts = vals.map((v, i) => [(i / (vals.length - 1)) * w, h - 2 - ((v - mn) / r) * (h - 4)]);
     const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join("");
+    const last = pts[pts.length - 1];
     return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" class="overflow-visible" role="img" aria-label="${esc(label)}">
       ${area ? `<path d="${d}L${w} ${h}L0 ${h}Z" fill="${color}" opacity="0.12"/>` : ""}
       <path d="${d}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
@@ -1035,7 +1037,7 @@
       : emptyNote("no sessions yet");
 
     const surfaceRow = (k, label) => {
-      const o = D.bySurface[k];
+      const o = D.bySurface.get(k);
       return `<div class="flex items-center gap-2 text-2xs"><span class="w-12 text-ink-muted">${label}</span><span class="text-ink">${o ? o.n : 0} calls</span>${o && o.err ? `<span class="text-delta-fg">${o.err} failed</span>` : ""}<span class="ml-auto text-ink-subtle">${o ? "last " + ago(o.last, D.now) : "no activity"}</span></div>`;
     };
     const d = S.snap.doctor;
@@ -1080,7 +1082,7 @@
           ${panel(
             "calls over time",
             `<div class="p-3">${D.calls.length ? callsChart(D) : emptyNote("no calls yet (the ledger fills as hooks, MCP and the proxy run)")}
-            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-2xs text-ink-muted">${SERIES.map((s) => `<span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background:${s.fill}"></span>${s.label} ${D.bySurface[s.k] ? D.bySurface[s.k].n : 0}</span>`).join("")}<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-delta-fg"></span>failed ${D.errors.length}</span><span class="ml-auto">p50 ${D.p50 == null ? "—" : D.p50.toFixed(1)} ms · p95 ${D.p95 == null ? "—" : D.p95.toFixed(0)} ms</span></div></div>`,
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-2xs text-ink-muted">${SERIES.map((s) => `<span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background:${s.fill}"></span>${s.label} ${D.bySurface.get(s.k)?.n ?? 0}</span>`).join("")}<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-delta-fg"></span>failed ${D.errors.length}</span><span class="ml-auto">p50 ${D.p50 == null ? "—" : D.p50.toFixed(1)} ms · p95 ${D.p95 == null ? "—" : D.p95.toFixed(0)} ms</span></div></div>`,
             {
               cls: "xl:col-span-8",
               sub: `${D.calls.length} rows · ${Math.max(1, Math.round(D.step / 60))} min buckets`,
@@ -1593,14 +1595,15 @@
       return;
     }
     const D = derive(S.snap);
-    main.innerHTML = {
+    const views = {
       overview: viewOverview,
       plugins: viewPlugins,
       calls: viewCalls,
       sessions: viewSessions,
       doctor: viewDoctor,
       logs: viewLogs,
-    }[S.route](D);
+    };
+    main.innerHTML = (Object.hasOwn(views, S.route) ? views[S.route] : viewOverview)(D);
     if (keep) {
       const el = main.querySelector(`[data-filter="${keep.f}"]`);
       if (el) {
@@ -1629,8 +1632,9 @@
     const params = new URLSearchParams(qs || "");
     return { route: ROUTES.some((r) => r.id === path) ? path : "overview", params };
   }
-  function onRoute() {
+  function onRoute(first) {
     const { route, params } = parseHash();
+    const changed = route !== S.route;
     S.route = route;
     const st = params.get("state");
     if (st && st !== S.preview) setPreview(st, true);

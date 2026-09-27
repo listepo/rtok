@@ -758,7 +758,7 @@
     }));
     calls.forEach((c) => {
       const b = buckets[Math.min(N - 1, Math.floor((c.ts - t0) / step))];
-      if (b[c.surface] != null) b[c.surface]++;
+      if (["hook", "mcp", "proxy"].includes(c.surface)) b[c.surface]++;
       if (!c.ok) b.err++;
     });
     const ms = calls
@@ -773,9 +773,10 @@
           (s) => s.started_at <= b.t + step && (s.ended_at == null || s.ended_at >= b.t),
         ).length,
     );
-    const bySurface = {};
+    const bySurface = new Map();
     calls.forEach((c) => {
-      const o = (bySurface[c.surface] = bySurface[c.surface] || { n: 0, err: 0, last: 0 });
+      let o = bySurface.get(c.surface);
+      if (!o) bySurface.set(c.surface, (o = { n: 0, err: 0, last: 0 }));
       o.n++;
       if (!c.ok) o.err++;
       o.last = Math.max(o.last, c.ts);
@@ -1261,7 +1262,7 @@
       : emptyNote("no sessions yet");
 
     const surfaceRow = (k, label) => {
-      const o = D.bySurface[k];
+      const o = D.bySurface.get(k);
       return `<div class="flex items-center gap-2 text-2xs"><span class="w-12 text-ink-muted">${label}</span><span class="text-ink">${o ? o.n : 0} calls</span>${o && o.err ? `<span class="text-delta-fg">${o.err} failed</span>` : ""}<span class="ml-auto text-ink-subtle">${o ? "last " + ago(o.last, D.now) : "no activity"}</span></div>`;
     };
     const d = S.snap.doctor;
@@ -1290,7 +1291,7 @@
           ${panel(
             "calls over time",
             `<div class="p-3">${D.calls.length ? callsChart(D) : emptyNote("no calls yet (the ledger fills as hooks, MCP and the proxy run)")}
-            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-2xs text-ink-muted">${SERIES.map((s) => `<span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background:${s.fill}"></span>${s.label} ${D.bySurface[s.k] ? D.bySurface[s.k].n : 0}</span>`).join("")}<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-delta-fg"></span>failed ${D.errors.length}</span><span class="ml-auto">p50 ${D.p50 == null ? "—" : D.p50.toFixed(1)} ms · p95 ${D.p95 == null ? "—" : D.p95.toFixed(0)} ms</span></div></div>`,
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-2xs text-ink-muted">${SERIES.map((s) => `<span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background:${s.fill}"></span>${s.label} ${D.bySurface.get(s.k)?.n ?? 0}</span>`).join("")}<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-delta-fg"></span>failed ${D.errors.length}</span><span class="ml-auto">p50 ${D.p50 == null ? "—" : D.p50.toFixed(1)} ms · p95 ${D.p95 == null ? "—" : D.p95.toFixed(0)} ms</span></div></div>`,
             {
               cls: "lg:col-span-2 xl:col-span-8",
               sub: `${D.calls.length} rows · ${Math.max(1, Math.round(D.step / 60))} min buckets`,
@@ -2011,16 +2012,17 @@
         : s === "flag" || s === "env"
           ? `<span class="pill-warn">${esc(s)}</span>`
           : `<span class="pill-info">${esc(s)}</span>`;
-    const groups = {};
+    const groups = new Map();
     rows.forEach((r) => {
       const g = r.key.split(".")[0];
-      (groups[g] = groups[g] || []).push(r);
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(r);
     });
     const bar = toolbar(`${search("q-config", f.q, "filter keys and values")}
       <div class="flex flex-wrap gap-1.5" role="group" aria-label="Source layer">${chip("config.source", "all", f.source, "all", all.length)}${SRC.map((s) => chip("config.source", s, f.source, s, all.filter((r) => r.source === s).length)).join("")}</div>
       <span class="ml-auto flex items-center gap-2"><span class="text-2xs text-ink-subtle">${rows.length} keys</span>${rawBtn()}</span>`);
     const body = rows.length
-      ? Object.entries(groups)
+      ? [...groups]
           .map(
             ([
               g,
@@ -2102,11 +2104,7 @@
       .filter((l) => l !== total)
       .map((l) => {
         const c = cols(l);
-        const o = {};
-        hdr.forEach((h, i) => {
-          o[h] = c[i];
-        });
-        return o;
+        return Object.fromEntries(hdr.map((h, i) => [h, c[i]]));
       });
     const f = S.f.worktrees,
       qq = f.q.toLowerCase();
@@ -2196,7 +2194,7 @@
       return;
     }
     const D = derive(S.snap);
-    main.innerHTML = {
+    const views = {
       overview: viewOverview,
       plugins: viewPlugins,
       calls: viewCalls,
@@ -2210,7 +2208,8 @@
       config: viewConfig,
       services: viewServices,
       worktrees: viewWorktrees,
-    }[S.route](D);
+    };
+    main.innerHTML = (Object.hasOwn(views, S.route) ? views[S.route] : viewOverview)(D);
     if (keep) {
       const el = main.querySelector(`[data-filter="${keep.f}"]`);
       if (el) {
