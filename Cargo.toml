@@ -2,7 +2,7 @@
 # plugin contract; `crates/rtok-webui` is excluded because it builds for wasm through its own
 # toolchain and must not join `cargo test` here.
 [workspace]
-members = ["crates/rtok-agent-sdk", "crates/rtok-hook", "crates/rtok-log", "crates/rtok-plugin-sdk", "crates/rtok-sys", "crates/rtok-wasm-demo-guest"]
+members = ["crates/rtok-agent-sdk", "crates/rtok-hook", "crates/rtok-log", "crates/rtok-mcp", "crates/rtok-plugin-sdk", "crates/rtok-sys", "crates/rtok-wasm-demo-guest"]
 exclude = ["crates/rtok-webui"]
 
 [package]
