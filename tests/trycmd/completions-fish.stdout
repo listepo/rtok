@@ -166,12 +166,16 @@ complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcom
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -l yes -d 'Also remove rtok entries you changed, without asking (T246)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from update" -l source -d 'Compare against this install source instead of the one on record (T279)' -r -f -a "github/t''
+local/t''
+marketplace/t''"
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from update" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from update" -l dry-run -d 'Print the planned edits and exit'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from update" -l cli -d 'Only the CLI app (default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from update" -l desktop -d 'Only the desktop app (default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from update" -l all -d 'All variants (the default when neither `--cli` nor `--desktop` is given)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from update" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from update" -l force -d 'Reinstall the plugin even when it is already at the available version (T279)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from update" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from list" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from list" -l json -d 'JSON instead of the table'
@@ -231,12 +235,16 @@ complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcomm
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -l yes -d 'Also remove rtok entries you changed, without asking (T246)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from update" -l source -d 'Compare against this install source instead of the one on record (T279)' -r -f -a "github/t''
+local/t''
+marketplace/t''"
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from update" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from update" -l dry-run -d 'Print the planned edits and exit'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from update" -l cli -d 'Only the CLI app (default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from update" -l desktop -d 'Only the desktop app (default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from update" -l all -d 'All variants (the default when neither `--cli` nor `--desktop` is given)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from update" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from update" -l force -d 'Reinstall the plugin even when it is already at the available version (T279)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from update" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from list" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from list" -l json -d 'JSON instead of the table'

@@ -211,6 +211,7 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.cursor.hooks_path | ~/.cursor/hooks.json | default |
 | setup.devin.config_path | ~/.config/devin/config.json | default |
 | setup.dry_run | false | default |
+| setup.force | false | default |
 | setup.gemini.dir | ~/.gemini | default |
 | setup.grok.config_path | ~/.grok/config.toml | default |
 | setup.hook_timeout_s | 5 | default |
@@ -225,6 +226,7 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.pi.extensions_path | ~/.pi/agent/extensions | default |
 | setup.pi.tools | false | default |
 | setup.proxy | false | default |
+| setup.source |  | default |
 | setup.vscode.code_user_dir |  | default |
 | setup.vscode.insiders_user_dir |  | default |
 | setup.windsurf.config_path | ~/.codeium/windsurf/mcp_config.json | default |
@@ -261,7 +263,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-215 keys.
+217 keys.
 
 ## Doctor
 

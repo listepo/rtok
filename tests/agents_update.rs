@@ -247,9 +247,11 @@ fn update_reinstalls_the_claude_plugin_when_update_fails() {
     let record = seed_claude_plugin(&home);
     fs::write(home.join("fake-claude-fail-update"), "").unwrap();
 
+    // T279 PR 3: the fallback reinstall now runs through the same `plugin_against` path a
+    // fresh install takes (`+ plugin <src> → rtok@rtok`), not a bespoke "reinstalled" line.
     let out = rtok(&["agents", "update", "claude", "--cli"], &cfg, &home);
     assert!(
-        out.contains("~ plugin rtok@rtok reinstalled (update failed"),
+        out.contains("+ plugin") && out.contains("rtok@rtok") && out.contains("(update failed"),
         "{out}"
     );
     assert_eq!(

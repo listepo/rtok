@@ -308,23 +308,27 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agents;update' {
+            [CompletionResult]::new('--source', '--source', [CompletionResultType]::ParameterName, 'Compare against this install source instead of the one on record (T279)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the planned edits and exit')
             [CompletionResult]::new('--cli', '--cli', [CompletionResultType]::ParameterName, 'Only the CLI app (default is all)')
             [CompletionResult]::new('--desktop', '--desktop', [CompletionResultType]::ParameterName, 'Only the desktop app (default is all)')
             [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'All variants (the default when neither `--cli` nor `--desktop` is given)')
             [CompletionResult]::new('--no-restart', '--no-restart', [CompletionResultType]::ParameterName, 'Skip closing/reopening a running desktop app around the write (T141)')
+            [CompletionResult]::new('--force', '--force', [CompletionResultType]::ParameterName, 'Reinstall the plugin even when it is already at the available version (T279)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
         'rtok;agent;update' {
+            [CompletionResult]::new('--source', '--source', [CompletionResultType]::ParameterName, 'Compare against this install source instead of the one on record (T279)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the planned edits and exit')
             [CompletionResult]::new('--cli', '--cli', [CompletionResultType]::ParameterName, 'Only the CLI app (default is all)')
             [CompletionResult]::new('--desktop', '--desktop', [CompletionResultType]::ParameterName, 'Only the desktop app (default is all)')
             [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'All variants (the default when neither `--cli` nor `--desktop` is given)')
             [CompletionResult]::new('--no-restart', '--no-restart', [CompletionResultType]::ParameterName, 'Skip closing/reopening a running desktop app around the write (T141)')
+            [CompletionResult]::new('--force', '--force', [CompletionResultType]::ParameterName, 'Reinstall the plugin even when it is already at the available version (T279)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break

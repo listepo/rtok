@@ -190,13 +190,17 @@ Arguments:
   [HOST]  Host(s), comma-separated; omitted = every host rtok is installed in
 
 Options:
-      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
-      --dry-run        Print the planned edits and exit
-      --cli            Only the CLI app (default is all)
-      --desktop        Only the desktop app (default is all)
-      --all            All variants (the default when neither `--cli` nor `--desktop` is given)
-      --no-restart     Skip closing/reopening a running desktop app around the write (T141)
-  -h, --help           Print help
+      --config <PATH>    User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --dry-run          Print the planned edits and exit
+      --cli              Only the CLI app (default is all)
+      --desktop          Only the desktop app (default is all)
+      --all              All variants (the default when neither `--cli` nor `--desktop` is given)
+      --no-restart       Skip closing/reopening a running desktop app around the write (T141)
+      --force            Reinstall the plugin even when it is already at the available version
+                         (T279)
+      --source <SOURCE>  Compare against this install source instead of the one on record (T279)
+                         [possible values: github, local, marketplace]
+  -h, --help             Print help
 
 $ rtok agents list --help
 Every known app: kind and name, path and version, config files, rtok modules
