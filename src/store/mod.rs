@@ -1067,11 +1067,17 @@ impl Store {
     }
 
     /// Every note but the session-local `checkpoint:*` / `session:*` rows, id order
-    /// (`memory export`, T66.2 / T71.2): `(project, kind, title, body)`.
+    /// (`memory export`, T66.2 / T71.2; `memory import`'s topic-key dedup, T6.3):
+    /// `(project, kind, title, body)`. `include_retired` decides whether tombstoned notes
+    /// are in the results: `memory import` passes `true` (T304) because the `notes_topic`
+    /// unique index still covers a retired row, so a local key must block an imported line
+    /// whether or not it is retired; `memory export` passes `false` so an export→import into
+    /// another store never resurrects a note the user retired here as a live note there.
     #[allow(clippy::type_complexity)]
     pub fn list_notes(
         &self,
         project: Option<&str>,
+        include_retired: bool,
     ) -> Result<Vec<(Option<String>, String, String, String)>> {
         let mut conn = self.lock()?;
         let mut q = notes::table
@@ -1080,6 +1086,9 @@ impl Store {
             .order(notes::id.asc())
             .select((notes::project, notes::kind, notes::title, notes::body))
             .into_boxed();
+        if !include_retired {
+            q = q.filter(notes::retired.is_null());
+        }
         if let Some(p) = project {
             q = q.filter(notes::project.eq(p));
         }
@@ -1465,7 +1474,10 @@ impl Store {
             .collect())
     }
 
-    /// Per `(project, kind)` note counts for `memory status` (T69.4).
+    /// Per `(project, kind)` note counts for `memory status` (T69.4). Excludes
+    /// `checkpoint:*` and `session:*` housekeeping kinds, same as `list_notes` /
+    /// `list_note_titles` (T304): `session:<id>` is unique per session, so leaving it in
+    /// would grow one row per historical session forever.
     pub fn memory_note_aggs(&self, project: Option<&str>) -> Result<Vec<MemoryNoteKindAgg>> {
         use diesel::dsl::{case_when, max, min};
         type Row = (
@@ -1510,7 +1522,9 @@ impl Store {
                     .load(&mut *conn)?
             };
         }
-        let base = notes::table.filter(notes::kind.not_like("checkpoint%"));
+        let base = notes::table
+            .filter(notes::kind.not_like("checkpoint:%"))
+            .filter(notes::kind.not_like("session:%"));
         let rows: Vec<Row> = match project {
             Some(p) => load_aggs!(base.filter(notes::project.eq(p))),
             None => load_aggs!(base),

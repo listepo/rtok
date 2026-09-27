@@ -60,3 +60,29 @@ fn memory_status_json_matches_model_type() {
     let v: serde_json::Value = serde_json::to_value(&status).unwrap();
     assert_eq!(v["recall"]["recalls"], 1);
 }
+
+/// T304: `session:<id>` rows (`checkpoint.rs`'s per-session handoff note) are unique per
+/// session, so `memory status` must exclude them the same way it already excludes
+/// `checkpoint:*` — otherwise the aggregate grows one row per historical session forever.
+#[test]
+fn memory_status_excludes_session_handoff_notes() {
+    let dir = home("session-kind");
+    let cfg = Config::load_from(&dir).expect("config");
+    let cx = Runtime::open(cfg.clone(), "mem-session-kind").unwrap();
+    cx.store
+        .upsert_note(Some("rtok"), "note", "kept", "alpha")
+        .unwrap();
+    cx.store
+        .upsert_note(Some("rtok"), "session:abc", "handoff", "resume here")
+        .unwrap();
+    let status = model::memory_status(&cfg, None, Some("9999d")).unwrap();
+    assert_eq!(status.notes.live, 1, "{status:?}");
+    assert!(
+        status
+            .by_project
+            .iter()
+            .flat_map(|p| &p.kinds)
+            .all(|k| k.kind != "session:abc"),
+        "{status:?}"
+    );
+}
