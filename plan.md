@@ -15,12 +15,12 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T262.3 | todo | P2 | 2 | 0% | |
 | T261 | in progress | P2 | 3 | 95% | Cursor / grok 4.7 |
 | T271 | todo | P1 | 2 | 40% | |
-| T275 | todo | P1 | 4 | 0% | |
+| T275 | in progress | P1 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T275.1 | todo | P2 | 3 | 0% | |
-| T276 | todo | P2 | 5 | 0% | |
-| T277 | todo | P2 | 8 | 0% | |
+| T276 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
+| T277 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T278 | todo | P1 | 3 | 0% | |
-| T279 | todo | P1 | 5 | 0% | |
+| T279 | in progress | P1 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T279.1 | todo | P2 | 2 | 0% | |
 
 
@@ -164,6 +164,12 @@ Fix:
 
 Check: the tests above pass; on the creator's machine `rtok agents update claude` leaves `mcpServers.rtok` in `claude_desktop_config.json`, Claude Desktop's MCP settings list rtok, the Code tab and Claude Code list one rtok server, `rtok agents info|list` reports every host truthfully, and a Cursor/Codex/Copilot update keeps their config entries; `just check`.
 
+Execution plan (lands before T277; T277 then moves the core into its crate):
+1. Worktree `_worktrees/rtok-T275`, branch `t275-mcp-entry-always`. Research (Fix 1) per host into `research.md`, with version and docs link.
+2. PR A, Claude Code and Desktop: shared MCP core in `src/agents/mcp.rs` (write/remove/status by spec), decision row amending D21, drop `code_serves_mcp` in `apply` and `installed`, Vfs tests (a)-(f) for Claude.
+3. PRs B-D, the other affected hosts in groups of at most 10 files: Copilot and Gemini (`d21_plugin_apply`); Cursor, Codex, VS Code; ZCode, Kimi, Grok. Each deletes that host's MCP branch and adds its table rows to the shared Vfs test.
+4. PR E: `doctor` warning (Fix 5), re-bless `docs/agents.md` and README MCP rows, then the creator-machine Check.
+
 ### T275.1. `rtok mcp ping <agent>`: prove the agent's rtok MCP server is alive and answering
 
 `installed` only says a config entry exists (and today not even that, see T275). This command checks the real path: the agent starts rtok's MCP server from its own config, calls a tool, and writes the answer into its chat.
@@ -235,6 +241,13 @@ Fix:
 
 Check: on a TTY, each of items 1-5 shows its message from the moment the process starts until output appears; `rtok agents update claude` in a terminal shows step loaders and the plugin question is readable; `rtok doctor 2>/dev/null` and `--json` output are unchanged; a Vfs or snapshot test asserts no spinner bytes on non-TTY stderr; every operation with a known total shows a progress bar with its count and a spinner appears only on unmeasurable waits; `just check`.
 
+Execution plan (after T275, T277 and T279, which touch the same `agents` spawn helpers):
+1. Worktree `_worktrees/rtok-T276`. Confirm the audit with `rg` over the workspace and write the site table into this card (Fix 1).
+2. PR 1: `src/proc/` with `ProgressRunner`, `TtyIndicator` / `Hidden`, the four parsers, `Batch`, `proc::suspend`; parser tests on recorded stderr and a no-bytes test for `Hidden`.
+3. PR 2: the shared helpers (`worktree/git.rs::git`, `run_cli` / `spawn_cli` / `app_version`, `spawn_mcp` / `mcp_command`), with `proc::suspend` replacing the T81 switch.
+4. PRs 3-4: the remaining sites file by file, per the audit's `Output` choice.
+5. PR 5: delete `with_loader` / `render::loader` / `render::spinner`, turn on the `clippy.toml` ban, contributor docs and `CHANGELOG.md`.
+
 ### T277. Move rtok's MCP core into its own crate `crates/rtok-mcp`
 
 Problem: install, update, remove, status and ping of rtok's MCP entry are written separately in each host (`register_mcp` / `unregister_mcp` / `installed` in 20+ `src/agents/<host>/mod.rs`, plus `plugin_is_mcp`, `code_serves_mcp`, `installed_mcp_only` and the MCP half of `d21_plugin_apply`). That is how the Claude Desktop entry removal (T275) was repeated on Cursor, Codex, VS Code, ZCode, Kimi, Grok, Copilot and Gemini. T275's architecture principle states the rule; this task makes it a crate boundary so a host cannot grow its own MCP logic again.
@@ -259,6 +272,13 @@ Migration by host:
 6. Delete the now-empty helpers in `src/agents/mod.rs`, add a test that fails when a file under `src/agents/` touches an MCP key directly, generate the host table in `docs/agents.md` from the specs.
 
 Check: every host's install, update, remove, status and ping pass the same table-driven test; `rg 'mcpServers|context_servers|mcp_servers' src/agents` finds only `McpSpec` values; `just check`.
+
+Execution plan (after T275 PR A, which gives the core in `src/agents/mcp.rs`):
+1. Worktree `_worktrees/rtok-T277`. PR 1: crate `crates/rtok-mcp` with `spec`, `registry`, `config` (behind an `Fs` trait the `Vfs` implements), `status`, `ops`, and the table-driven test over sample specs; `toolchain.md` row.
+2. PR 2: Claude moves onto the crate; `src/agents/mcp.rs` shrinks to spec rows.
+3. PRs 3-4: the other hosts, one commit per host, at most 10 files per PR.
+4. PR 5: `doctor`'s MCP probe into the crate; `ping` joins when T275.1 lands.
+5. PR 6: delete leftover helpers, add the guard test against MCP keys under `src/agents/`, generate the `docs/agents.md` host table.
 
 ### T278. `rtok agents info <agent>` reports the real MCP state, not "mcp installed" by assumption
 
@@ -342,6 +362,12 @@ Problem: every plugin manifest is still `0.0.1` while rtok is at `0.10.0` (tag `
    - All of it runs in `just check` and CI on macOS, Linux and Windows.
 
 Check: `rtok agents update claude` on today's install (0.0.1, no file) updates once to `0.10.0` and writes the receipt; a second run prints `up to date` and runs no `claude` command; a local install from a dirty checkout shows `0.10.0+g<sha>.dirty` and a new commit triggers an update; `--dry-run` lists the decision per host; editing one version file to `0.0.2` fails the CI check and the test; `rtok agents update claude --force` reinstalls even when up to date and rewrites the receipt; `just check`.
+
+Execution plan:
+1. Worktree `_worktrees/rtok-T279`. PR 1: `.rtok-plugin-version` files and every manifest at `0.10.0`, `tools/plugin-versions.sh --set/--check` with its shell test, the `CARGO_PKG_VERSION` Rust test, `--check` in `ci.yml`, `release.yml`, `tools/release.sh`.
+2. PR 2: version file and receipt types, the installed/new version lookup, and the pure decision function with its unit tests (step 8, first two groups). No behaviour change yet.
+3. PR 3: `agents update` uses the decision; `--force`, `--dry-run`, `--source`, the legacy path, failure handling; integration tests in `tests/plugin_versions.rs` with a fake host CLI.
+4. PR 4: `docs/plugin-versions.md` with real command output, and its links (step 7).
 
 ### T279.1. `rtok agents outdated`: list only the hosts whose rtok plugin is older than the running rtok
 
