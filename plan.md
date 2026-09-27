@@ -15,12 +15,12 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T262.3 | todo | P2 | 2 | 0% | |
 | T261 | in progress | P2 | 3 | 95% | Cursor / grok 4.7 |
 | T271 | todo | P1 | 2 | 40% | |
-| T275 | in progress | P1 | 4 | 0% | Claude Code / claude-opus-5-5 |
+| T275 | in progress | P1 | 4 | 30% | Claude Code / claude-opus-5-5 |
 | T275.1 | todo | P2 | 3 | 0% | |
 | T276 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T277 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T278 | todo | P1 | 3 | 0% | |
-| T279 | in progress | P1 | 5 | 0% | Claude Code / claude-opus-5-5 |
+| T279 | in progress | P1 | 5 | 25% | Claude Code / claude-opus-5-5 |
 | T279.1 | todo | P2 | 2 | 0% | |
 
 
