@@ -5833,7 +5833,7 @@ Check: `just test-cov -E 'test(every_formatter_arm_has_a_golden) | test(ten_fami
 Status: done 2026-09-27
 Model: Claude Code / claude-opus-5-5
 
-### T310. Shared compile cache across local worktrees
+### T313. Shared compile cache across local worktrees
 
 ~20 local worktrees each compile the ~450 dependencies into their own `target/`; a copied `target/` still rebuilds because cargo fingerprints hold absolute paths. Share compiled artifacts across worktrees for local development only; CI (Swatinem/rust-cache) keeps working unchanged. Done = measured before/after for (a) `just check` in a fresh worktree with an empty `target/`, (b) a second fresh worktree with the cache warm, (c) a warm edit→check cycle that must not get slower. Wire it in only if it is a net win.
 
