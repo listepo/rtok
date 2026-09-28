@@ -101,8 +101,9 @@ max_ms    = 10                        # soft budget; over it, the event is logge
 fail_open = true                      # any error → `{}` and exit 0; false only for debugging
 
 [agents]                              # the rtok agent registry (T282, D34)
-enabled = true                        # false = hooks skip agent register/touch/end (session bookkeeping is unaffected)
-idle    = "30m"                       # `live()`'s window: no `ended_at` and `last_seen` within this of now
+enabled    = true                     # false = hooks skip agent register/touch/end and message push (session bookkeeping is unaffected)
+idle       = "30m"                    # `live()`'s window: no `ended_at` and `last_seen` within this of now
+push_bytes = 1024                     # framed messages pushed per UserPromptSubmit/PostToolUse; the rest → "and N more" (T288)
 
 [mcp]                                 # rtok mcp
 tools                   = []          # [] = all tools from enabled plugins; else an allow-list; `expand` always stays listed (D4)
