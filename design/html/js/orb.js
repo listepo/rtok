@@ -1,4 +1,4 @@
-// rtok web admin — background orb with bloom (vanilla WebGL, no deps).
+// rtok design — background orb (from web/orb.js on design/web-admin) with bloom (vanilla WebGL, no deps).
 // Low opacity, ~30 fps cap, half-resolution buffer, pauses when the tab is
 // hidden, off under prefers-reduced-motion and via the settings toggle.
 // Falls back to the static `.orb-fallback` CSS gradient.
@@ -29,13 +29,13 @@
     " vec2 d=uv-c;float l=length(d);float R=.16+.008*sin(t*.5);",
     " float a=atan(d.y,d.x);",
     " float wob=.012*sin(a*3.+t*.6)+.008*sin(a*5.-t*.4);",
-    " float core=smoothstep(R+wob,R-.06+wob,l);",
+    " float core=smoothstep(R+.02+wob,R-.09+wob,l);",
     " float shade=clamp(1.-dot(normalize(d+1e-4),normalize(vec2(-.6,.8)))*.5,0.,1.);",
     " float b1=exp(-pow(max(l-R,0.)/.05,2.));",
     " float b2=exp(-max(l-R,0.)/.14);",
     " float b3=exp(-max(l-R,0.)/.30)*.4;",
-    " float rim=smoothstep(.04,0.,abs(l-R-wob))*(.5+.5*sin(a*2.-t*.8));",
-    " vec3 col=ca*(core*(.35+.45*shade)+b1*.55+b2*.35+b3*.25)+cd*rim*.35;",
+    " float rim=smoothstep(.07,0.,abs(l-R-wob))*(.5+.5*sin(a*2.-t*.8));",
+    " vec3 col=ca*(core*(.35+.45*shade)+b1*.55+b2*.35+b3*.25)+cd*rim*.18;",
     " col+=(h(gl_FragCoord.xy+t)-.5)*.015;",
     " float alpha=clamp(max(max(col.r,col.g),col.b),0.,1.);",
     " gl_FragColor=vec4(col,alpha);",
@@ -109,8 +109,8 @@
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.uniform2f(uni.r, canvas.width, canvas.height);
     gl.uniform1f(uni.t, (now - t0) / 1000);
-    gl.uniform3fv(uni.ca, cssRGB("--accent"));
-    gl.uniform3fv(uni.cd, cssRGB("--delta"));
+    gl.uniform3fv(uni.ca, cssRGB("--rtok-accent-rgb"));
+    gl.uniform3fv(uni.cd, cssRGB("--rtok-delta-rgb"));
     gl.uniform1f(uni.dark, document.documentElement.classList.contains("dark") ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }

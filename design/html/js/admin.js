@@ -1,4 +1,6 @@
-// rtok web admin — plain JS, no deps. Hash-routed single page.
+// rtok design — admin screens. Plain JS, no deps, works from file://.
+// Adapted from web/app.js on the design/web-admin draft (1e144253): one HTML file per
+// screen (body[data-route]) instead of hash routes, all 13 model::pages() screens.
 // Data contract: the `/ws` snapshot JSON (src/web/model.rs `Snapshot`), the same
 // frame crates/rtok-webui parses. When no rtok server answers, SAMPLE data shaped
 // exactly like that frame is shown and labelled "sample data" everywhere.
@@ -38,7 +40,8 @@
   const fmt = (n) => (n == null ? "—" : nf.format(n));
   const compact = (n) => {
     if (n == null) return "—";
-    n = Number(n); // wire values: never let a string through into HTML
+    n = Number(n);
+    if (!Number.isFinite(n)) return "—";
     const a = Math.abs(n);
     if (a >= 1e9) return (n / 1e9).toFixed(a >= 1e10 ? 0 : 1) + "B";
     if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
@@ -479,15 +482,174 @@
       sessions,
       doctor,
       logs,
-      skills: { header: "", rows: [] },
+      skills: sampleSkills(),
       ref_ids,
-      stats: "",
-      graph: "",
-      hosts: "",
-      config: "",
-      services: "",
-      worktrees: "",
+      stats: SAMPLE_TEXT.stats,
+      graph: SAMPLE_TEXT.graph,
+      hosts: SAMPLE_TEXT.hosts,
+      config: SAMPLE_TEXT.config,
+      services: SAMPLE_TEXT.services,
+      worktrees: SAMPLE_TEXT.worktrees,
       __now: NOW,
+    };
+  }
+
+  // ---------------------------------------------------------------- sample text pages
+  // Snapshot.stats/graph/hosts/config/services/worktrees are plain strings on the wire
+  // (src/web/model.rs:56–87). The samples below follow the exact line formats of the
+  // functions that build them; every value is SAMPLE data.
+  const SAMPLE_TEXT = {
+    // stats_page_text: stats::Report::to_table + price table + "cache health" + cache::table
+    stats:
+      [
+        "sessions 42  compact 3  checkpoint 5  no_checkpoint 37  lines 18204  malformed 0",
+        "usage input=1204332 cache_create=388120 cache_read=9120554 output=96310  hit=85.0%  median_context=61240",
+        "cost (USD at [stats.prices] $/MTok; `-` = no price row)",
+        "model                           input cache_create   cache_read       output       cost      saved",
+        "claude-sonnet-5                902114       301220      7203311        71022      12.84       3.10",
+        "claude-haiku-4-5                88410        20110       611223         9120       0.41       0.07",
+        "gpt-5                          213808        66790      1306020        16168       1.92       0.38",
+        "claude-opus-4-1                   0            0            0            0          -          -",
+        "",
+        "cache health",
+        "session                                   turns   cache_read cache_create  busts",
+        "3f9a2c1e-7b41-4d0a-9c55-0e12ab34cd56          88      2210334       101220      1",
+        "9c0d4e2a-11f3-4b7e-8a20-5d6e7f809a1b          41       903311        48020      0",
+        "a17be5f0-2c9d-4e61-b3a4-7f8091a2b3c4          17       221080        30112      2",
+        "  bust turn 41 cause=tools cache_create=48120 cache_read=0",
+        "  bust turn 6 cause=tools cache_create=31000 cache_read=0",
+      ].join("\n") + "\n",
+    // graph_page_text: status::format_table + "dead symbols" + dead_candidates lines
+    graph:
+      [
+        "root ~/GitHub/listepo/apps/rtok",
+        "rows 48213",
+        "files 612",
+        "pending 2",
+        "  src/web/model.rs",
+        "  src/tui/view.rs",
+        "watch true",
+        "indexed_at 2026-09-27 18:12:40",
+        "",
+        "dead symbols",
+        " src/render.rs:212 function pad_right",
+        " src/measure/cache.rs:188 function shape_digest",
+        " src/plugins/toon/table.rs:77 struct LegacyRow",
+        " src/worktree/list.rs:301 function human_age",
+        " crates/rtok-log/src/lib.rs:54 function rotate_now",
+      ].join("\n") + "\n",
+    // hosts_page_text: agents::list blocks ("<Kind>: <name>[ — note]", app, config, module lines)
+    hosts:
+      [
+        "CLI: Claude Code",
+        "  app     /opt/homebrew/bin/claude (2.1.4)",
+        "  config  ~/.claude/settings.json, ~/.claude.json",
+        "  hooks   installed",
+        "  mcp     installed",
+        "  proxy   installed",
+        "  plugin  not installed --plugin",
+        "CLI: Codex",
+        "  app     /opt/homebrew/bin/codex (0.64.0)",
+        "  config  ~/.codex/config.toml",
+        "  hooks   not supported",
+        "  mcp     installed",
+        "  proxy   not installed --proxy",
+        "Desktop: Cursor",
+        "  app     /Applications/Cursor.app (2.3.1)",
+        "  config  ~/.cursor/hooks.json, ~/.cursor/mcp.json",
+        "  hooks   installed",
+        "  mcp     installed",
+        "  proxy   not supported",
+        "CLI: Gemini CLI — not found",
+        "  app     -",
+        "  config  ~/.gemini/settings.json",
+        "Desktop: Zed — not installed",
+        "  skip    nothing of rtok here; run `rtok agents install zed`",
+      ].join("\n") + "\n",
+    // config_page_text: "{key} = {value} ({source})" per layers::entries row; defaults from config/default.toml
+    config:
+      [
+        "core.enabled = true (default)",
+        'core.db_path = "~/.rtok/rtok.db" (default)',
+        'core.archive_dir = "~/.rtok/archive" (default)',
+        'core.session_env = "CLAUDE_SESSION_ID" (default)',
+        "core.call_io_inline_bytes = 65536 (default)",
+        "core.retain_calls_days = 14 (user)",
+        'log.path = "~/.rtok/logs/rtok.log" (default)',
+        "log.lines = 200 (default)",
+        'log.level = "debug" (env)',
+        "log.to_db = true (default)",
+        "estimator.code = 3.5 (default)",
+        "estimator.prose = 4.2 (default)",
+        "estimator.json = 3.0 (default)",
+        'hook.host = "claude" (default)',
+        "hook.max_ms = 10 (default)",
+        "hook.fail_open = true (default)",
+        "mcp.tools = [] (default)",
+        "mcp.max_description_tokens = 60 (default)",
+        "mcp.max_result_chars = 20000 (default)",
+        "proxy.enabled = true (default)",
+        'proxy.bind = "127.0.0.1" (default)',
+        "proxy.port = 8790 (default)",
+        'proxy.mode = "compress" (project)',
+        'proxy.upstream = "https://api.anthropic.com" (default)',
+        "proxy.timeout_s = 600 (default)",
+        'web.host = "127.0.0.1" (default)',
+        "web.port = 3333 (flag)",
+        "tui.tick_secs = 2 (default)",
+        'demon.services = ["proxy", "web"] (user)',
+        'stats.since = "30d" (default)',
+        "stats.price = true (user)",
+        "plugins.measure.enabled = false (project)",
+        "plugins.graph.enabled = true (default)",
+      ].join("\n") + "\n",
+    // services_page_text: demon::rows lines + otel status line + optional last flush
+    services:
+      [
+        "proxy  running  pid=48211  uptime=18342s  log=~/.rtok/demon/proxy.log",
+        "mcp  stopped  pid=-  uptime=-  log=~/.rtok/demon/mcp.log",
+        "web  running  pid=48230  uptime=18339s  log=~/.rtok/demon/web.log",
+        "hook  stopped  pid=-  uptime=-  log=~/.rtok/demon/hook.log",
+        "otel endpoint=http://127.0.0.1:4318 calls_mark=5102 calls_pending=18 logs_mark=2210 logs_pending=0 sessions_mark=311",
+        "last flush: [info] otel exported 120 calls, 40 logs",
+      ].join("\n") + "\n",
+    // worktrees_page_text: worktree::list::to_table + totals line
+    worktrees:
+      [
+        "path                                            branch                  owner                     state     seen  modified   source    cache",
+        "~/GitHub/listepo/apps/rtok                      main                    -                         main      -     2h          41 MB   6.2 GB",
+        "~/GitHub/listepo/_worktrees/rtok-t307           t307-report-sparkline   claude session 3f9a2c1e   dirty     3m    3m          41 MB   2.8 GB",
+        "~/GitHub/listepo/_worktrees/rtok-web-admin      design/web-admin        locked, owner unknown     unmerged  -     1d          44 MB      0 B",
+        "~/GitHub/listepo/_worktrees/rtok-t305           t305-stats-replay       -                         merged    -     4d          41 MB   3.1 GB",
+        "~/GitHub/listepo/_worktrees/rtok-t290           -                       -                         stale     -     -             0 B      0 B",
+        "5 worktrees: 167 MB source, 12.1 GB build cache (logical bytes; clones and hard links count in full)",
+      ].join("\n") + "\n",
+  };
+
+  // Skills page (SkillsPage / SkillPageRow, src/web/model.rs:170). SAMPLE rows.
+  function sampleSkills() {
+    const rows = [
+      ["worktrees", "user", 212, 3400, 9, 3400, "2026-09-27 17:58", false],
+      ["release", "project", 140, 11200, 0, 0, "-", true],
+      ["rtok-expand", "project", 96, 1800, 31, 1800, "2026-09-27 18:11", false],
+      ["review-pr", "user", 188, 5200, 4, 5200, "2026-09-26 21:40", false],
+      ["sonarcloud-fix", "user", 164, 7300, 0, 0, "-", true],
+      ["plan-task", "project", 120, 2600, 12, 2600, "2026-09-27 16:03", false],
+      ["slint-debug", "user", 230, 9100, 1, 9100, "2026-09-19 10:22", false],
+    ].map(([name, source, desc_chars, body_bytes, invocations, resident, last_invoked, never]) => ({
+      name,
+      source,
+      desc_chars,
+      body_bytes,
+      invocations,
+      resident,
+      last_invoked,
+      never,
+    }));
+    const desc = rows.reduce((s, r) => s + r.desc_chars, 0);
+    return {
+      header: `${rows.length} listed · desc ${desc} B ≈ ${Math.round(desc / 4)} tok/req · resident 29.2 KB · 0.6% of input`,
+      rows,
     };
   }
 
@@ -512,12 +674,19 @@
       logs: [],
       skills: { header: "", rows: [] },
       ref_ids: {},
+      stats: null,
+      graph: null,
+      hosts: "probing hosts…\n",
+      config: null,
+      services: null,
+      worktrees: "reading worktrees…\n",
       error: error || undefined,
       __now: Math.floor(Date.now() / 1000),
     };
   }
 
   // ---------------------------------------------------------------- state
+  // model::pages() order (src/web/model.rs:325).
   const ROUTES = [
     { id: "overview", title: "overview", sub: "usage totals, savings and health at a glance" },
     { id: "plugins", title: "plugins", sub: "catalogue, enable toggles and Measurement stats" },
@@ -525,21 +694,40 @@
     { id: "sessions", title: "sessions", sub: "one row per session, newest first" },
     { id: "doctor", title: "doctor", sub: "hooks, MCP servers, proxy chains, instruction audit" },
     { id: "logs", title: "logs", sub: "newest first — the lines `rtok logs` shows" },
+    { id: "skills", title: "skills", sub: "listed skills, description cost and invocations" },
+    { id: "stats", title: "stats", sub: "`rtok stats --price` plus `stats --cache`" },
+    { id: "graph", title: "graph", sub: "`graph status` index health plus `graph dead`" },
+    { id: "hosts", title: "hosts", sub: "`rtok agents list` — one block per host variant" },
+    {
+      id: "config",
+      title: "config",
+      sub: "`rtok config show --sources` — every key and its layer",
+    },
+    { id: "services", title: "services", sub: "`rtok demon status` plus `rtok otel status`" },
+    {
+      id: "worktrees",
+      title: "worktrees",
+      sub: "`rtok worktree list` — path, branch, owner, state",
+    },
   ];
   const S = {
     route: "overview",
     snap: null,
     source: "sample", // 'live' | 'sample'
     conn: "connecting", // 'connecting' | 'live' | 'reconnecting' | 'offline'
-    preview: "live", // 'live' | 'loading' | 'empty' | 'error'
+    viewState: "live", // 'live' | 'loading' | 'empty' | 'error'
     ws: null,
-    sel: { plugin: 0, call: 0, session: 0 },
+    sel: { plugin: 0, call: 0, session: 0, skill: 0 },
     f: {
       plugins: { q: "", show: "all" },
       calls: { q: "", surface: "all", ok: "all" },
       sessions: { q: "", live: false },
       logs: { q: "", level: "all" },
+      skills: { q: "", never: false },
+      config: { q: "", source: "all" },
+      worktrees: { q: "", state: "all" },
     },
+    raw: {},
     expand: { ref: "", text: "", filter: "" },
     mobileCalls: 20,
   };
@@ -572,9 +760,7 @@
     }));
     calls.forEach((c) => {
       const b = buckets[Math.min(N - 1, Math.floor((c.ts - t0) / step))];
-      if (c.surface === "hook") b.hook++;
-      else if (c.surface === "mcp") b.mcp++;
-      else if (c.surface === "proxy") b.proxy++;
+      if (["hook", "mcp", "proxy"].includes(c.surface)) b[c.surface]++;
       if (!c.ok) b.err++;
     });
     const ms = calls
@@ -589,11 +775,10 @@
           (s) => s.started_at <= b.t + step && (s.ended_at == null || s.ended_at >= b.t),
         ).length,
     );
-    // A Map, not an object: `surface` comes off the wire and must not reach a prototype key.
-    const surfaces = new Map();
+    const bySurface = new Map();
     calls.forEach((c) => {
-      if (!surfaces.has(c.surface)) surfaces.set(c.surface, { n: 0, err: 0, last: 0 });
-      const o = surfaces.get(c.surface);
+      let o = bySurface.get(c.surface);
+      if (!o) bySurface.set(c.surface, (o = { n: 0, err: 0, last: 0 }));
       o.n++;
       if (!c.ok) o.err++;
       o.last = Math.max(o.last, c.ts);
@@ -616,7 +801,7 @@
       buckets,
       step,
       liveSeries,
-      bySurface: Object.fromEntries(surfaces),
+      bySurface,
       p50: q(0.5),
       p95: q(0.95),
       checks: doctorChecks(v.doctor),
@@ -741,7 +926,7 @@
   // ---------------------------------------------------------------- charts (inline SVG)
   function spark(
     vals,
-    { w = 96, h = 28, color = "rgb(var(--accent-fg))", area = true, label = "" } = {},
+    { w = 96, h = 28, color = "var(--rtok-accent-fg)", area = true, label = "" } = {},
   ) {
     if (!vals || vals.length < 2)
       return `<svg width="${w}" height="${h}" aria-hidden="true"></svg>`;
@@ -750,22 +935,20 @@
       r = mx - mn || 1;
     const pts = vals.map((v, i) => [(i / (vals.length - 1)) * w, h - 2 - ((v - mn) / r) * (h - 4)]);
     const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join("");
-    const last = pts[pts.length - 1];
-    return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" class="overflow-visible" role="img" aria-label="${esc(label)}">
+    return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none" class="overflow-visible" role="img" aria-label="${esc(label)}">
       ${area ? `<path d="${d}L${w} ${h}L0 ${h}Z" fill="${color}" opacity="0.12"/>` : ""}
-      <path d="${d}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <circle cx="${last[0]}" cy="${last[1]}" r="2" fill="${color}"/></svg>`;
+      <path d="${d}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
   }
-  function miniBars(vals, { w = 96, h = 28, color = "rgb(var(--accent-fg))", label = "" } = {}) {
+  function miniBars(vals, { w = 96, h = 28, color = "var(--rtok-accent-fg)", label = "" } = {}) {
     if (!vals.length) return "";
     const mx = Math.max(...vals, 1),
       bw = w / vals.length;
-    return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(label)}">${vals.map((v, i) => `<rect x="${(i * bw + 1).toFixed(1)}" y="${(h - (v / mx) * h).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${((v / mx) * h).toFixed(1)}" rx="1" fill="${color}" opacity="${0.45 + 0.55 * (v / mx)}"/>`).join("")}</svg>`;
+    return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">${vals.map((v, i) => `<rect x="${(i * bw + 1).toFixed(1)}" y="${(h - (v / mx) * h).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${((v / mx) * h).toFixed(1)}" rx="1" fill="${color}" opacity="${0.45 + 0.55 * (v / mx)}"/>`).join("")}</svg>`;
   }
   const SERIES = [
-    { k: "hook", label: "hook", fill: "rgb(var(--accent-fg))" },
-    { k: "mcp", label: "mcp", fill: "rgb(var(--accent-fg) / 0.5)" },
-    { k: "proxy", label: "proxy", fill: "rgb(var(--ink-muted) / 0.75)" },
+    { k: "hook", label: "hook", fill: "var(--rtok-accent-fg)" },
+    { k: "mcp", label: "mcp", fill: "rgb(var(--rtok-accent-fg-rgb) / 0.5)" },
+    { k: "proxy", label: "proxy", fill: "rgb(var(--rtok-fg-muted-rgb) / 0.75)" },
   ];
   function callsChart(D) {
     const W = 720,
@@ -781,7 +964,7 @@
     let g = "";
     for (let i = 0; i <= 4; i++) {
       const v = (nice / 4) * i;
-      g += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(v)}" y2="${y(v)}" stroke="rgb(var(--line))" stroke-dasharray="${i ? "2 3" : ""}"/><text x="${P.l - 6}" y="${y(v) + 3}" text-anchor="end" font-size="9" fill="rgb(var(--ink-subtle))">${v}</text>`;
+      g += `<line x1="${P.l}" x2="${W - P.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rtok-border)" stroke-dasharray="${i ? "2 3" : ""}"/><text x="${P.l - 6}" y="${y(v) + 3}" text-anchor="end" font-size="9" fill="var(--rtok-fg-subtle)">${v}</text>`;
     }
     let bars = "";
     b.forEach((x, i) => {
@@ -793,9 +976,9 @@
         acc += v;
       });
       if (x.err)
-        bars += `<circle cx="${(P.l + i * bw + bw / 2).toFixed(1)}" cy="${(y(acc) - 6).toFixed(1)}" r="2.5" fill="rgb(var(--delta-fg))"><title>${x.err} failed</title></circle>`;
+        bars += `<circle cx="${(P.l + i * bw + bw / 2).toFixed(1)}" cy="${(y(acc) - 6).toFixed(1)}" r="2.5" fill="var(--rtok-delta-fg)"><title>${x.err} failed</title></circle>`;
       if (i % 4 === 0)
-        bars += `<text x="${(P.l + i * bw).toFixed(1)}" y="${H - 6}" font-size="9" fill="rgb(var(--ink-subtle))">${hm(x.t)}</text>`;
+        bars += `<text x="${(P.l + i * bw).toFixed(1)}" y="${H - 6}" font-size="9" fill="var(--rtok-fg-subtle)">${hm(x.t)}</text>`;
     });
     const total = sum(b, (x) => x.hook + x.mcp + x.proxy);
     return `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" role="img" aria-label="Calls over time: ${total} calls in ${b.length} buckets of ${Math.round(D.step / 60)} minutes, ${D.errors.length} failed">${g}${bars}</svg>`;
@@ -809,14 +992,14 @@
         h - 4 - (v / mx) * (h - 12),
       ]);
     const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join("");
-    return `<svg viewBox="0 0 ${W} ${h}" class="w-full h-auto" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">
-      <defs><linearGradient id="ag" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="rgb(var(--accent-fg))" stop-opacity="0.28"/><stop offset="1" stop-color="rgb(var(--accent-fg))" stop-opacity="0"/></linearGradient></defs>
-      <line x1="0" x2="${W}" y1="${h - 4}" y2="${h - 4}" stroke="rgb(var(--line))"/>
-      <path d="${d}L${W} ${h}L0 ${h}Z" fill="url(#ag)"/><path d="${d}" fill="none" stroke="rgb(var(--accent-fg))" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+    return `<svg viewBox="0 0 ${W} ${h}" class="w-full h-24" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">
+      <defs><linearGradient id="ag" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--rtok-accent-fg)" stop-opacity="0.28"/><stop offset="1" stop-color="var(--rtok-accent-fg)" stop-opacity="0"/></linearGradient></defs>
+      <line x1="0" x2="${W}" y1="${h - 4}" y2="${h - 4}" stroke="var(--rtok-border)"/>
+      <path d="${d}L${W} ${h}L0 ${h}Z" fill="url(#ag)"/><path d="${d}" fill="none" stroke="var(--rtok-accent-fg)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
   }
   // Bitset mark motif: one dot per plugin, lit when enabled (echoes assets/logo.svg).
   function bitset(plugins) {
-    return `<div class="grid grid-cols-6 gap-1 w-max" role="img" aria-label="${plugins.filter((p) => p.enabled).length} of ${plugins.length} plugins enabled">${plugins.map((p) => `<span title="${esc(p.id)}: ${p.enabled ? "enabled" : "disabled"}" class="w-2 h-2 rounded-full ${p.enabled ? (p.saves_tokens ? "bg-accent-fg" : "bg-accent-fg/40") : "bg-delta-fg/80"}"></span>`).join("")}</div>`;
+    return `<div class="grid grid-cols-6 gap-1 w-max ml-auto" role="img" aria-label="${plugins.filter((p) => p.enabled).length} of ${plugins.length} plugins enabled">${plugins.map((p) => `<span title="${esc(p.id)}: ${p.enabled ? "enabled" : "disabled"}" class="w-2 h-2 rounded-full ${p.enabled ? (p.saves_tokens ? "bg-accent-fg" : "bg-accent-fg/40") : "bg-delta-fg/80"}"></span>`).join("")}</div>`;
   }
 
   // ---------------------------------------------------------------- UI atoms
@@ -862,10 +1045,40 @@
       : st === "not_installed"
         ? '<span class="pill-warn" title="not installed">off</span>'
         : '<span class="pill-muted" title="not supported">n/a</span>';
+  // Hosts × MODULES (agents/mod.rs:76): table from md, stacked cards on phones.
+  const MODS = ["hooks", "mcp", "proxy", "plugin"];
+  const agentsMatrix = (agents) => `
+    <ul class="md:hidden divide-y divide-line/60">${agents
+      .map(
+        (
+          a,
+        ) => `<li class="py-2 first:pt-0"><div class="text-xs font-semibold mb-1.5">${esc(a.host)} <span class="text-ink-subtle font-normal">${esc(a.kind)}</span></div>
+      <div class="grid grid-cols-2 xs:grid-cols-4 gap-1.5">${MODS.map((m) => {
+        const r = a.modules.find((x) => x.name === m);
+        return `<div class="flex items-center justify-between gap-1 rounded-md bg-surface-2 px-2 py-1" title="${esc(r && r.note)}"><span class="text-2xs text-ink-muted">${m}</span>${r ? modPill(r.state) : "—"}</div>`;
+      }).join("")}</div></li>`,
+      )
+      .join("")}</ul>
+    <div class="hidden md:block overflow-x-auto"><table class="tbl"><thead><tr><th scope="col">host</th>${MODS.map((m) => `<th scope="col">${m}</th>`).join("")}</tr></thead>
+      <tbody>${agents
+        .map(
+          (a) =>
+            `<tr><td class="font-semibold">${esc(a.host)} <span class="text-ink-subtle font-normal">${esc(a.kind)}</span></td>${MODS.map(
+              (m) => {
+                const r = a.modules.find((x) => x.name === m);
+                return `<td title="${esc(r && r.note)}">${r ? modPill(r.state) : "—"}</td>`;
+              },
+            ).join("")}</tr>`,
+        )
+        .join("")}</tbody></table></div>`;
   const kv = (rows) =>
     `<dl class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-xs">${rows.map(([k, v]) => `<dt class="text-ink-subtle">${esc(k)}</dt><dd class="text-ink break-words">${v}</dd>`).join("")}</dl>`;
   const chip = (group, val, cur, label, count) =>
     `<button type="button" class="chip focus-ring" data-chip="${group}" data-val="${val}" aria-pressed="${cur === val}">${esc(label)}${count != null ? `<span class="text-ink-subtle font-normal">${count}</span>` : ""}</button>`;
+  // Switch: the <button role=switch> is the hit target (≥44px on touch widths),
+  // the inner .switch span is the visual track. Visible label is optional.
+  const switchBtn = (on, label, attrs, visible = false) =>
+    `<button type="button" role="switch" aria-checked="${on}" ${visible ? "" : `aria-label="${esc(label)}"`} ${attrs} class="switch-btn focus-ring group"><span class="switch" aria-hidden="true"></span>${visible ? `<span class="text-xs">${esc(label)}</span>` : ""}</button>`;
   const search = (id, val, ph) =>
     `<label class="relative flex-1 min-w-[10rem] max-w-sm"><span class="sr-only">${esc(ph)}</span><input id="${id}" data-filter="${id}" type="search" class="field focus-ring pl-7" placeholder="${esc(ph)}" value="${esc(val)}" autocomplete="off" spellcheck="false"><span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-subtle text-xs pointer-events-none" aria-hidden="true">⌕</span></label>`;
   const skeletonRows = (n, cols = 5) =>
@@ -880,10 +1093,8 @@
     const tag = href ? "a" : "div";
     return `<${tag} ${href ? `href="${href}"` : ""} title="${esc(title)}" class="glass shine focus-ring group flex flex-col gap-1.5 p-3 min-w-0 ${href ? "hover:border-line-strong transition-colors duration-fast" : ""}">
       <div class="flex items-center gap-2"><span class="kicker truncate">${label}</span>${href ? '<span class="ml-auto text-ink-subtle text-2xs opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true">→</span>' : ""}</div>
-      <div class="flex items-end justify-between gap-2 min-w-0">
-        <div class="min-w-0"><div class="text-xl font-semibold leading-none truncate ${tone}">${value}</div><div class="mt-1.5 text-2xs text-ink-muted truncate">${sub}</div></div>
-        <div class="shrink-0 hidden sm:block">${viz}</div>
-      </div></${tag}>`;
+      <div class="min-w-0"><div class="text-lg xs:text-xl font-semibold leading-none whitespace-nowrap ${tone}">${value}</div><div class="mt-1.5 text-2xs text-ink-muted truncate">${sub}</div></div>
+      <div class="mt-auto pt-1 h-7 flex items-end [&>svg]:w-full [&>svg]:h-7">${viz}</div></${tag}>`;
   }
 
   function viewOverview(D) {
@@ -933,9 +1144,9 @@
         sub: `est ${compact(D.estBefore)} → ${compact(D.estAfter)}`,
         viz: miniBars(
           top.slice(0, 8).map((x) => x.saved),
-          { color: "rgb(var(--delta-fg))", label: "saved per plugin" },
+          { color: "var(--rtok-delta-fg)", label: "saved per plugin" },
         ),
-        href: "#/plugins",
+        href: "plugins.html",
         title: "Σ plugins[].stats.est_before − est_after",
       }),
       kpi({
@@ -956,7 +1167,7 @@
         value: fmt(D.calls.length),
         sub: `${D.errors.length} failed · p95 ${D.p95 == null ? "—" : D.p95.toFixed(0) + " ms"}`,
         viz: miniBars(callSeries, { label: "calls per bucket" }),
-        href: "#/calls",
+        href: "calls.html",
         title: "calls[] (last 120 ledger rows)",
       }),
       kpi({
@@ -964,7 +1175,7 @@
         value: `${D.live.length}<span class="text-ink-subtle text-sm"> / ${D.sessions.length}</span>`,
         sub: `${new Set(D.sessions.map((s) => s.host)).size} hosts`,
         viz: spark(D.liveSeries, { label: "sessions alive over the calls window" }),
-        href: "#/sessions",
+        href: "sessions.html",
         title: "sessions[].ended_at == null",
       }),
       kpi({
@@ -972,7 +1183,7 @@
         value: `${D.enabled.length}<span class="text-ink-subtle text-sm"> / ${D.plugins.length}</span>`,
         sub: `${D.plugins.length - D.enabled.length} disabled`,
         viz: bitset(D.plugins),
-        href: "#/plugins",
+        href: "plugins.html",
         title: "plugins[].enabled",
       }),
     ].join("");
@@ -984,18 +1195,30 @@
       )
       .join("");
 
+    const plugCards = `<ul class="md:hidden divide-y divide-line/60">${top
+      .map(
+        ({
+          p,
+          saved,
+        }) => `<li><a href="plugins.html?id=${esc(p.id)}" class="row-link focus-ring flex items-center gap-3 px-3 py-2 min-h-[44px]">
+        <div class="min-w-0 flex-1"><div class="flex items-baseline gap-2"><span class="text-xs font-semibold">${esc(p.id)}</span><span class="text-2xs text-ink-subtle truncate">${p.surfaces.map(esc).join(" · ")}</span></div>
+        <div class="mt-1 h-1.5 rounded-full bg-surface-3 overflow-hidden"><div class="h-full bg-delta-fg/80 rounded-full" style="width:${((saved / maxSaved) * 100).toFixed(1)}%"></div></div></div>
+        <div class="text-right shrink-0"><div class="text-xs font-semibold">${compact(saved)}</div><div class="text-2xs text-ink-muted">${pct(saved / p.stats.est_before, 0)} · ${fmt(p.stats.rows)} rows</div></div></a></li>`,
+      )
+      .join("")}</ul>`;
     const plugTable = top.length
-      ? `<div class="overflow-x-auto"><table class="tbl">
-      <thead><tr><th scope="col">plugin</th><th scope="col" class="hidden sm:table-cell">surfaces</th><th scope="col" class="text-right">rows</th><th scope="col" class="text-right hidden md:table-cell">est before → after</th><th scope="col" class="text-right">saved</th><th scope="col" class="w-[28%]">Δ</th></tr></thead>
+      ? plugCards +
+        `<div class="hidden md:block overflow-x-auto"><table class="tbl">
+      <thead><tr><th scope="col">plugin</th><th scope="col" class="hidden 2xl:table-cell">surfaces</th><th scope="col" class="text-right">rows</th><th scope="col" class="text-right hidden xl:table-cell">est before → after</th><th scope="col" class="text-right">saved</th><th scope="col" class="w-[28%]">Δ</th></tr></thead>
       <tbody>${top
         .map(
           ({
             p,
             saved,
-          }) => `<tr><td><a class="row-link focus-ring rounded-sm font-semibold hover:text-accent-fg" href="#/plugins?id=${esc(p.id)}">${esc(p.id)}</a></td>
-        <td class="hidden sm:table-cell text-ink-muted">${p.surfaces.map(esc).join(" · ")}</td>
+          }) => `<tr><td><a class="row-link focus-ring rounded-sm font-semibold hover:text-accent-fg" href="plugins.html?id=${esc(p.id)}">${esc(p.id)}</a></td>
+        <td class="hidden 2xl:table-cell text-ink-muted">${p.surfaces.map(esc).join(" · ")}</td>
         <td class="text-right text-ink-muted">${fmt(p.stats.rows)}</td>
-        <td class="text-right hidden md:table-cell text-ink-muted">${compact(p.stats.est_before)} → ${compact(p.stats.est_after)}</td>
+        <td class="text-right hidden xl:table-cell text-ink-muted">${compact(p.stats.est_before)} → ${compact(p.stats.est_after)}</td>
         <td class="text-right font-semibold">${compact(saved)}</td>
         <td><div class="flex items-center gap-2"><div class="flex-1 h-1.5 rounded-full bg-surface-3 overflow-hidden"><div class="h-full bg-delta-fg/80 rounded-full" style="width:${((saved / maxSaved) * 100).toFixed(1)}%"></div></div><span class="text-2xs text-ink-muted w-10 text-right">${pct(saved / p.stats.est_before, 0)}</span></div></td></tr>`,
         )
@@ -1031,7 +1254,7 @@
           .map(
             (
               s,
-            ) => `<li><a href="#/sessions?id=${esc(s.id)}" class="row-link focus-ring flex items-center gap-3 px-3 py-2 hover:bg-surface-2/70 transition-colors duration-fast">
+            ) => `<li><a href="sessions.html?id=${esc(s.id)}" class="row-link focus-ring flex items-center gap-3 px-3 py-2 hover:bg-surface-2/70 transition-colors duration-fast">
         <div class="w-14 shrink-0">${livePill(s)}</div>
         <div class="min-w-0 flex-1"><div class="text-xs font-semibold truncate">${esc(s.id.slice(0, 8))} <span class="text-ink-muted font-normal">${esc(s.host || "-")} · ${esc(s.model || "-")}</span></div>
         <div class="text-2xs text-ink-subtle truncate">${esc(s.project || "-")}</div></div>
@@ -1041,29 +1264,13 @@
       : emptyNote("no sessions yet");
 
     const surfaceRow = (k, label) => {
-      const o = D.bySurface[k];
+      const o = D.bySurface.get(k);
       return `<div class="flex items-center gap-2 text-2xs"><span class="w-12 text-ink-muted">${label}</span><span class="text-ink">${o ? o.n : 0} calls</span>${o && o.err ? `<span class="text-delta-fg">${o.err} failed</span>` : ""}<span class="ml-auto text-ink-subtle">${o ? "last " + ago(o.last, D.now) : "no activity"}</span></div>`;
     };
     const d = S.snap.doctor;
     const integBody = d
       ? `<div class="p-3 flex flex-col gap-3">
-      <div class="overflow-x-auto"><table class="tbl"><thead><tr><th scope="col">host</th>${["hooks", "mcp", "proxy", "plugin"].map((m) => `<th scope="col">${m}</th>`).join("")}</tr></thead>
-      <tbody>${agents
-        .map(
-          (a) =>
-            `<tr><td class="font-semibold">${esc(a.host)} <span class="text-ink-subtle font-normal">${esc(a.kind)}</span></td>${[
-              "hooks",
-              "mcp",
-              "proxy",
-              "plugin",
-            ]
-              .map((m) => {
-                const r = a.modules.find((x) => x.name === m);
-                return `<td title="${esc(r && r.note)}">${r ? modPill(r.state) : "—"}</td>`;
-              })
-              .join("")}</tr>`,
-        )
-        .join("")}</tbody></table></div>
+      ${agentsMatrix(agents)}
       <div class="flex flex-col gap-1.5 pt-1 border-t border-line/60">${surfaceRow("hook", "hook")}${surfaceRow("mcp", "mcp")}${surfaceRow("proxy", "proxy")}</div>
       <div class="text-2xs text-ink-muted break-words"><span class="text-ink-subtle">proxy</span> ${esc(d.proxy || "—")}</div></div>`
       : emptyNote("doctor did not answer this tick — `rtok doctor` has the details");
@@ -1082,15 +1289,15 @@
       <div class="flex flex-col gap-3">
         ${alerts}
         <div class="grid grid-cols-2 sm:grid-cols-4 2xl:grid-cols-8 gap-2 md:gap-3">${kpis}</div>
-        <div class="grid grid-cols-1 xl:grid-cols-12 gap-3">
+        <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-12 gap-3">
           ${panel(
             "calls over time",
             `<div class="p-3">${D.calls.length ? callsChart(D) : emptyNote("no calls yet (the ledger fills as hooks, MCP and the proxy run)")}
-            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-2xs text-ink-muted">${SERIES.map((s) => `<span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background:${s.fill}"></span>${s.label} ${D.bySurface[s.k] ? D.bySurface[s.k].n : 0}</span>`).join("")}<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-delta-fg"></span>failed ${D.errors.length}</span><span class="ml-auto">p50 ${D.p50 == null ? "—" : D.p50.toFixed(1)} ms · p95 ${D.p95 == null ? "—" : D.p95.toFixed(0)} ms</span></div></div>`,
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-2xs text-ink-muted">${SERIES.map((s) => `<span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background:${s.fill}"></span>${s.label} ${D.bySurface.get(s.k)?.n ?? 0}</span>`).join("")}<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-delta-fg"></span>failed ${D.errors.length}</span><span class="ml-auto">p50 ${D.p50 == null ? "—" : D.p50.toFixed(1)} ms · p95 ${D.p95 == null ? "—" : D.p95.toFixed(0)} ms</span></div></div>`,
             {
-              cls: "xl:col-span-8",
+              cls: "lg:col-span-2 xl:col-span-8",
               sub: `${D.calls.length} rows · ${Math.max(1, Math.round(D.step / 60))} min buckets`,
-              action: '<a href="#/calls" class="btn btn-ghost">calls →</a>',
+              action: '<a href="calls.html" class="btn btn-ghost">calls →</a>',
               id: "h-cot",
             },
           )}
@@ -1104,10 +1311,10 @@
             { cls: "xl:col-span-4", sub: "usage rows, all apis", id: "h-tok" },
           )}
           ${panel("top plugins by savings", plugTable, { cls: "xl:col-span-7", sub: "Measurement rows", id: "h-top" })}
-          ${panel("doctor", doctorBody, { cls: "xl:col-span-5", action: '<a href="#/doctor" class="btn btn-ghost">doctor →</a>', id: "h-doc" })}
-          ${panel("recent sessions", sessBody, { cls: "xl:col-span-4", sub: `${D.live.length} live`, action: '<a href="#/sessions" class="btn btn-ghost">all →</a>', id: "h-ses" })}
+          ${panel("doctor", doctorBody, { cls: "xl:col-span-5", action: '<a href="doctor.html" class="btn btn-ghost">doctor →</a>', id: "h-doc" })}
+          ${panel("recent sessions", sessBody, { cls: "xl:col-span-4", sub: `${D.live.length} live`, action: '<a href="sessions.html" class="btn btn-ghost">all →</a>', id: "h-ses" })}
           ${panel("integrations", integBody, { cls: "xl:col-span-4", sub: "hooks · MCP · proxy", id: "h-int" })}
-          ${panel("logs", logsBody, { cls: "xl:col-span-4", sub: "tail", action: '<a href="#/logs" class="btn btn-ghost">logs →</a>', id: "h-log" })}
+          ${panel("logs", logsBody, { cls: "xl:col-span-4", sub: "tail", action: '<a href="logs.html" class="btn btn-ghost">logs →</a>', id: "h-log" })}
         </div>
       </div>`;
   }
@@ -1120,7 +1327,7 @@
       '<button type="button" class="btn" data-action="clear-filters">clear filters</button>',
     );
   const split = (list, detail) =>
-    `<div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] 2xl:grid-cols-[minmax(0,1fr)_460px] gap-3 items-start">${list}<div id="detail" class="lg:sticky lg:top-[5.25rem] min-w-0">${detail}</div></div>`;
+    `<div class="grid grid-cols-1 min-[1280px]:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_minmax(360px,400px)] 2xl:grid-cols-[minmax(0,1fr)_460px] gap-3 items-start">${list}<div id="detail" class="min-[1280px]:sticky min-[1280px]:top-[5.25rem] min-w-0">${detail}</div></div>`;
 
   function statsWidget(st) {
     // Same six cells as TokenStatsWidget (crates/rtok-webui/ui/app.slint:92).
@@ -1151,8 +1358,7 @@
       );
     const sel = D.plugins[S.sel.plugin] || D.plugins[0];
     const saved = (p) => (p.stats ? p.stats.est_before - p.stats.est_after : null);
-    const sw = (p) =>
-      `<button type="button" class="switch focus-ring" role="switch" aria-checked="${p.enabled}" aria-label="toggle ${esc(p.id)}" data-toggle="${esc(p.id)}"></button>`;
+    const sw = (p) => switchBtn(p.enabled, `toggle ${p.id}`, `data-toggle="${esc(p.id)}"`);
     const bar = toolbar(`${search("q-plugins", f.q, "filter plugins")}
       <div class="flex flex-wrap gap-1.5" role="group" aria-label="Show">${chip("plugins.show", "all", f.show, "all", D.plugins.length)}${chip("plugins.show", "on", f.show, "enabled", D.enabled.length)}${chip("plugins.show", "off", f.show, "disabled", D.plugins.length - D.enabled.length)}${chip("plugins.show", "saves", f.show, "saves tokens", D.plugins.filter((p) => p.saves_tokens).length)}</div>
       <span class="ml-auto text-2xs text-ink-subtle">${rows.length} shown</span>`);
@@ -1192,7 +1398,7 @@
       ? panel(
           esc(sel.title),
           `<div class="p-3 flex flex-col gap-3">
-        <div class="flex items-center gap-3"><button type="button" class="switch focus-ring" role="switch" aria-checked="${sel.enabled}" aria-labelledby="lbl-en" data-toggle="${esc(sel.id)}"></button><span id="lbl-en" class="text-xs">${sel.enabled ? "enabled" : "disabled"}</span><span class="ml-auto flex gap-1">${sel.surfaces.map(surfacePill).join("")}</span></div>
+        <div class="flex items-center gap-3">${switchBtn(sel.enabled, sel.enabled ? "enabled" : "disabled", `data-toggle="${esc(sel.id)}"`, true)}<span class="ml-auto flex gap-1">${sel.surfaces.map(surfacePill).join("")}</span></div>
         <p class="text-xs text-ink-muted">${esc(sel.summary)}</p>
         ${sel.fields.length ? kv(sel.fields.map(([k, v]) => [k, esc(v)])) : ""}
         ${sel.saves_tokens && sel.stats ? statsWidget(sel.stats) : `<p class="text-2xs text-ink-subtle">${sel.saves_tokens ? "no Measurement rows yet" : "does not record Measurement rows"}</p>`}
@@ -1323,7 +1529,7 @@
     const sel = D.sessions[S.sel.session];
     const tot = (s) => s.input + s.cache_create + s.cache_read + s.output;
     const bar = toolbar(`${search("q-sessions", f.q, "filter sessions")}
-      <div class="flex items-center gap-2"><button type="button" class="switch focus-ring" role="switch" aria-checked="${f.live}" aria-labelledby="lbl-live" data-action="live-only"></button><span id="lbl-live" class="text-xs">live only</span></div>
+      ${switchBtn(f.live, "live only", 'data-action="live-only"', true)}
       <span class="ml-auto text-2xs text-ink-subtle">${D.live.length} live · ${D.sessions.length} total</span>`);
     if (!D.sessions.length)
       return `<div class="flex flex-col gap-3">${bar}${panel("sessions", emptyNote("no sessions yet"))}</div>`;
@@ -1446,7 +1652,7 @@
           ${panel("hooks", `<div class="p-3 flex flex-col gap-1.5">${ev.map(([k, n]) => `<div class="flex items-center gap-2 text-xs"><span class="w-36 truncate text-ink-muted">${esc(k)}</span><div class="flex-1 h-1.5 rounded-full bg-surface-3"><div class="h-full rounded-full bg-accent-fg" style="width:${(n / mxE) * 100}%"></div></div><span class="w-6 text-right">${n}</span></div>`).join("") || '<p class="text-xs text-ink-muted">no hooks installed</p>'}</div>`, { sub: `${esc(d.hooks_total)} total`, id: "h-hk" })}
           ${panel("proxy chains", `<div class="p-3 flex flex-col gap-2 text-xs"><div class="flex flex-wrap items-center gap-1.5"><span class="w-16 text-ink-subtle">anthropic</span>${hops(d.proxy)}</div><div class="flex flex-wrap items-center gap-1.5"><span class="w-16 text-ink-subtle">openai</span>${hops(d.proxy_openai)}</div>${d.mcp_tool_search_disabled ? '<p class="text-2xs text-warn-fg">mcp_tool_search likely disabled (ANTHROPIC_BASE_URL is set)</p>' : ""}</div>`, { id: "h-px" })}
         </div>
-        ${panel("MCP servers", `<div class="overflow-x-auto"><table class="tbl"><thead><tr><th scope="col">name</th><th scope="col" class="text-right">tools</th><th scope="col" class="text-right">desc tokens</th><th scope="col">cmd</th></tr></thead><tbody>${d.mcp.map((s) => `<tr><td class="font-semibold">${esc(s.name)}</td><td class="text-right">${esc(s.tools)}</td><td class="text-right">~${fmt(s.desc_tokens)}</td><td class="text-ink-muted truncate max-w-[18rem]">${esc(s.cmd)}</td></tr>`).join("")}</tbody></table></div>`, { cls: "xl:col-span-7", sub: `${d.mcp.length} probed`, id: "h-mcp" })}
+        ${panel("MCP servers", `<ul class="md:hidden divide-y divide-line/60">${d.mcp.map((s) => `<li class="px-3 py-2"><div class="flex items-baseline gap-2"><span class="text-xs font-semibold">${esc(s.name)}</span><span class="ml-auto text-2xs text-ink-muted">${esc(s.tools)} tools · ~${fmt(s.desc_tokens)} desc tok</span></div><div class="text-2xs text-ink-subtle break-all">${esc(s.cmd)}</div></li>`).join("")}</ul><div class="hidden md:block overflow-x-auto"><table class="tbl"><thead><tr><th scope="col">name</th><th scope="col" class="text-right">tools</th><th scope="col" class="text-right">desc tokens</th><th scope="col">cmd</th></tr></thead><tbody>${d.mcp.map((s) => `<tr><td class="font-semibold">${esc(s.name)}</td><td class="text-right">${esc(s.tools)}</td><td class="text-right">~${fmt(s.desc_tokens)}</td><td class="text-ink-muted truncate max-w-[18rem]">${esc(s.cmd)}</td></tr>`).join("")}</tbody></table></div>`, { cls: "xl:col-span-7", sub: `${d.mcp.length} probed`, id: "h-mcp" })}
         ${panel(
           "environment",
           `<div class="p-3">${kv([
@@ -1467,27 +1673,8 @@
           ])}</div>`,
           { cls: "xl:col-span-5", id: "h-env" },
         )}
-        ${d.instructions ? panel("instructions", `<div class="overflow-x-auto"><table class="tbl"><thead><tr><th scope="col">file</th><th scope="col" class="text-right">tokens</th><th scope="col">path</th><th scope="col"></th></tr></thead><tbody>${d.instructions.rows.map((r) => `<tr><td class="font-semibold">${esc(r.name)}</td><td class="text-right">${fmt(r.tokens)}</td><td class="text-ink-muted truncate max-w-[20rem]">${esc(r.path)}</td><td>${r.warn ? '<span class="pill-warn">WARN</span>' : ""}</td></tr>`).join("")}</tbody></table></div>${d.instructions.duplicates.map(([s, n]) => `<p class="px-3 py-2 text-2xs text-warn-fg border-t border-line/60">duplicate “${esc(s)}” in ${esc(n.join(", "))}</p>`).join("")}`, { cls: "xl:col-span-7", id: "h-ins" }) : ""}
-        ${panel(
-          "agents × modules",
-          `<div class="overflow-x-auto"><table class="tbl"><thead><tr><th scope="col">host</th>${["hooks", "mcp", "proxy", "plugin"].map((m) => `<th scope="col">${m}</th>`).join("")}</tr></thead><tbody>${d.agents
-            .map(
-              (a) =>
-                `<tr><td class="font-semibold">${esc(a.host)} <span class="text-ink-subtle font-normal">${esc(a.kind)}</span></td>${[
-                  "hooks",
-                  "mcp",
-                  "proxy",
-                  "plugin",
-                ]
-                  .map((m) => {
-                    const r = a.modules.find((x) => x.name === m);
-                    return `<td title="${esc(r && r.note)}">${r ? modPill(r.state) : "—"}</td>`;
-                  })
-                  .join("")}</tr>`,
-            )
-            .join("")}</tbody></table></div>`,
-          { cls: "xl:col-span-5", id: "h-ag" },
-        )}
+        ${d.instructions ? panel("instructions", `<ul class="md:hidden divide-y divide-line/60">${d.instructions.rows.map((r) => `<li class="px-3 py-2"><div class="flex items-center gap-2"><span class="text-xs font-semibold">${esc(r.name)}</span>${r.warn ? '<span class="pill-warn">WARN</span>' : ""}<span class="ml-auto text-2xs text-ink-muted">${fmt(r.tokens)} tok</span></div><div class="text-2xs text-ink-subtle break-all">${esc(r.path)}</div></li>`).join("")}</ul><div class="hidden md:block overflow-x-auto"><table class="tbl"><thead><tr><th scope="col">file</th><th scope="col" class="text-right">tokens</th><th scope="col">path</th><th scope="col"></th></tr></thead><tbody>${d.instructions.rows.map((r) => `<tr><td class="font-semibold">${esc(r.name)}</td><td class="text-right">${fmt(r.tokens)}</td><td class="text-ink-muted truncate max-w-[20rem]">${esc(r.path)}</td><td>${r.warn ? '<span class="pill-warn">WARN</span>' : ""}</td></tr>`).join("")}</tbody></table></div>${d.instructions.duplicates.map(([s, n]) => `<p class="px-3 py-2 text-2xs text-warn-fg border-t border-line/60">duplicate “${esc(s)}” in ${esc(n.join(", "))}</p>`).join("")}`, { cls: "xl:col-span-7", id: "h-ins" }) : ""}
+        ${panel("agents × modules", `<div class="p-3 md:p-0">${agentsMatrix(d.agents)}</div>`, { cls: "xl:col-span-5", id: "h-ag" })}
       </div></div>`;
   }
 
@@ -1511,13 +1698,442 @@
             .map(
               (
                 l,
-              ) => `<li class="grid grid-cols-[2.5rem_minmax(0,1fr)] md:grid-cols-[2.5rem_9.5rem_3.5rem_11rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 items-baseline px-3 py-1.5 border-b border-line/40 hover:bg-surface-2/60 ${l.level === "error" ? "bg-delta/[0.06]" : ""}">
+              ) => `<li class="grid grid-cols-[2.5rem_minmax(0,1fr)] lg:grid-cols-[2.5rem_9.5rem_3.5rem_11rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 items-baseline px-3 py-1.5 border-b border-line/40 hover:bg-surface-2/60 ${l.level === "error" ? "bg-delta/[0.06]" : ""}">
         <span class="text-ink-subtle text-right text-2xs">${l.i + 1}</span>
-        <span class="md:contents flex flex-wrap items-baseline gap-2"><span class="text-ink-subtle text-2xs" title="UTC">${esc(l.ts)}</span><span>${levelPill(l.level)}</span><span class="text-ink-muted truncate">${esc(l.source)}/${esc(l.name)}</span></span>
-        <span class="col-start-2 md:col-start-auto break-words ${l.level === "error" ? "text-delta-fg" : l.level === "warn" ? "text-warn-fg" : "text-ink"}">${esc(l.msg)}</span></li>`,
+        <span class="lg:contents flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><span class="text-ink-subtle text-2xs" title="UTC">${esc(l.ts)}</span><span>${levelPill(l.level)}</span><span class="text-ink-muted truncate">${esc(l.source)}/${esc(l.name)}</span></span>
+        <span class="col-start-2 lg:col-start-auto break-words ${l.level === "error" ? "text-delta-fg" : l.level === "warn" ? "text-warn-fg" : "text-ink"}">${esc(l.msg)}</span></li>`,
             )
             .join("")}</ol>`;
     return `<div class="flex flex-col gap-3">${bar}${panel("logs", body, { sub: "timestamps UTC, as written", id: "h-lg" })}</div>`;
+  }
+
+  // ---------------------------------------------------------------- text-backed pages
+  // skills / stats / graph / hosts / config / services / worktrees. The frame carries
+  // skills as rows and the other six as the exact text their CLI command prints; the
+  // design parses that text into panels and keeps a "raw" toggle with the verbatim string.
+  const rawBtn = () =>
+    `<button type="button" class="btn btn-ghost btn-sm" data-action="raw" aria-pressed="${!!S.raw[S.route]}">${S.raw[S.route] ? "parsed view" : "raw text"}</button>`;
+  const rawPanel = (text, what) =>
+    panel(
+      `${what} <span class="text-ink-subtle font-normal">raw</span>`,
+      `<pre class="pre m-3 max-h-[70vh]">${esc(text)}</pre>`,
+      { sub: "verbatim /ws string", action: rawBtn() },
+    );
+  const missing = (what, cmd) =>
+    panel(
+      what,
+      `<div class="p-3"><div class="rounded-md border border-delta/40 bg-delta/10 px-3 py-2.5 text-xs text-delta-fg" role="alert">${esc(what)} did not answer this tick (Snapshot.${esc(S.route)} = null) — <code>${esc(cmd)}</code> has the details</div></div>`,
+    );
+  const kpiSmall = (label, value, sub = "", tone = "") =>
+    `<div class="glass shine p-3 min-w-0"><div class="kicker truncate">${esc(label)}</div><div class="mt-1 text-lg font-semibold leading-tight truncate ${tone}">${value}</div>${sub ? `<div class="mt-1 text-2xs text-ink-muted truncate">${sub}</div>` : ""}</div>`;
+  const kvPairs = (line) => {
+    const o = {};
+    line.replace(/([a-z_]+)=(\S+)/g, (_, k, v) => {
+      o[k] = v;
+    });
+    return o;
+  };
+  const kvSpaced = (line) => {
+    const o = {};
+    line.replace(/([a-z_]+) (\d+)/g, (_, k, v) => {
+      o[k] = v;
+    });
+    return o;
+  };
+  const cols = (line) => line.trim().split(/\s{2,}/);
+  const humanSecs = (s) => {
+    s = +s;
+    if (!isFinite(s)) return "—";
+    const h = Math.floor(s / 3600),
+      m = Math.floor((s % 3600) / 60);
+    return h ? `${h}h ${m}m` : `${m}m ${s % 60}s`;
+  };
+
+  // -- skills
+  function viewSkills() {
+    const sk = S.snap.skills || { header: "", rows: [] };
+    const f = S.f.skills,
+      qq = f.q.toLowerCase();
+    const all = sk.rows || [];
+    const rows = all
+      .map((r, i) => ({ r, i }))
+      .filter(
+        ({ r }) =>
+          (!f.never || r.never) && (!qq || (r.name + " " + r.source).toLowerCase().includes(qq)),
+      );
+    const sel = all[S.sel.skill] || all[0];
+    const bar = toolbar(`${search("q-skills", f.q, "filter skills")}
+      ${switchBtn(f.never, "never invoked only", 'data-action="never-only"', true)}
+      <span class="ml-auto text-2xs text-ink-subtle">${rows.length} of ${all.length}</span>`);
+    if (!all.length)
+      return `<div class="flex flex-col gap-3">${bar}${panel("skills", emptyNote("no skills listed"))}</div>`;
+    const head = sk.header
+      ? `<div class="glass flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-2xs text-ink-muted">${sk.header
+          .split(" · ")
+          .map((x) => `<span>${esc(x)}</span>`)
+          .join('<span class="text-ink-subtle" aria-hidden="true">·</span>')}</div>`
+      : "";
+    const warn = (r) =>
+      [
+        r.desc_chars > 180 && '<span class="pill-warn">long description</span>',
+        r.body_bytes > 8192 && '<span class="pill-warn">body &gt; 8 KB</span>',
+        r.never && '<span class="pill-muted">never invoked</span>',
+      ]
+        .filter(Boolean)
+        .join(" ");
+    const table = rows.length
+      ? `<div class="hidden md:block overflow-x-auto"><table class="tbl" aria-label="skills">
+      <thead><tr><th scope="col">skill</th><th scope="col">source</th><th scope="col" class="text-right">desc chars</th><th scope="col" class="text-right">body</th><th scope="col" class="text-right">invocations</th><th scope="col" class="text-right hidden xl:table-cell">resident</th><th scope="col" class="hidden xl:table-cell">last invoked</th></tr></thead>
+      <tbody>${rows
+        .map(
+          ({
+            r,
+            i,
+          }) => `<tr data-select="skill" data-i="${i}" aria-selected="${sel === r}" class="cursor-pointer ${r.never ? "text-ink-muted" : ""}">
+        <td><button type="button" class="row-link focus-ring rounded-sm font-semibold ${sel === r ? "text-accent-fg" : ""}" data-select="skill" data-i="${i}">${esc(r.name)}</button>${r.never ? ' <span class="pill-muted">never</span>' : ""}</td>
+        <td class="text-ink-muted">${esc(r.source)}</td><td class="text-right ${r.desc_chars > 180 ? "text-warn-fg" : ""}">${fmt(r.desc_chars)}</td>
+        <td class="text-right ${r.body_bytes > 8192 ? "text-warn-fg" : ""}">${compact(r.body_bytes)} B</td><td class="text-right">${fmt(r.invocations)}</td>
+        <td class="text-right hidden xl:table-cell text-ink-muted">${r.resident ? compact(r.resident) + " B" : "—"}</td><td class="hidden xl:table-cell text-ink-muted">${esc(r.last_invoked)}</td></tr>`,
+        )
+        .join("")}</tbody></table></div>
+      <ul class="md:hidden divide-y divide-line/60">${rows
+        .map(
+          ({
+            r,
+            i,
+          }) => `<li><button type="button" class="row-link focus-ring w-full text-left px-3 py-2.5 min-h-[44px] ${sel === r ? "bg-accent/10" : ""}" data-select="skill" data-i="${i}">
+        <div class="flex items-center gap-2"><span class="text-sm font-semibold">${esc(r.name)}</span><span class="text-2xs text-ink-subtle">${esc(r.source)}</span><span class="ml-auto text-2xs text-ink-muted">${fmt(r.invocations)}×</span></div>
+        <div class="mt-1 text-2xs text-ink-muted">${fmt(r.desc_chars)} desc chars · ${compact(r.body_bytes)} B body${r.never ? " · never invoked" : ""}</div></button></li>`,
+        )
+        .join("")}</ul>`
+      : noMatch("skills");
+    const detail = sel
+      ? panel(
+          esc(sel.name),
+          `<div class="p-3 flex flex-col gap-3">
+      <div class="flex flex-wrap gap-1.5">${warn(sel) || '<span class="pill-ok">ok</span>'}</div>
+      ${kv([
+        ["source", esc(sel.source)],
+        [
+          "desc chars",
+          `${fmt(sel.desc_chars)} <span class="text-ink-subtle">≈ ${fmt(Math.round(sel.desc_chars / 4))} tok per request</span>`,
+        ],
+        ["body bytes", fmt(sel.body_bytes)],
+        ["invocations", fmt(sel.invocations)],
+        ["resident", fmt(sel.resident)],
+        ["last invoked", esc(sel.last_invoked)],
+      ])}
+      <p class="text-2xs text-ink-subtle">desc ≈ tokens/req uses chars/4 (research.md §10.2)</p></div>`,
+          { sub: "SkillPageRow", id: "h-skd" },
+        )
+      : "";
+    return `<div class="flex flex-col gap-3">${bar}${head}${split(panel("skills", table, { sub: "listed by the host", id: "h-sk" }), detail)}</div>`;
+  }
+
+  // -- stats
+  function viewStats() {
+    const t = S.snap.stats;
+    if (t == null) return missing("stats", "rtok stats --price");
+    if (S.raw.stats) return rawPanel(t, "stats");
+    const L = t.split("\n");
+    const a = kvSpaced(L.find((l) => l.startsWith("sessions ")) || "");
+    const u = kvPairs(L.find((l) => l.startsWith("usage ")) || "");
+    const iModel = L.findIndex((l) => l.startsWith("model ")),
+      iCache = L.indexOf("cache health");
+    const priced = [];
+    for (let i = iModel + 1; iModel >= 0 && i < L.length && L[i].trim(); i++)
+      priced.push(cols(L[i]));
+    const health = [],
+      busts = [];
+    for (let i = iCache + 2; iCache >= 0 && i < L.length; i++) {
+      if (!L[i].trim()) continue;
+      if (L[i].startsWith("  bust")) busts.push(L[i].trim());
+      else health.push(cols(L[i]));
+    }
+    const maxCost = Math.max(1, ...priced.map((r) => +r[5] || 0));
+    const kp = [
+      kpiSmall("sessions", fmt(+a.sessions), `${a.compact} compact · ${a.checkpoint} checkpoint`),
+      kpiSmall("cache hit", esc(u.hit || "—"), `read ${compact(+u.cache_read)}`, "text-accent-fg"),
+      kpiSmall("input", compact(+u.input), `cache create ${compact(+u.cache_create)}`),
+      kpiSmall("output", compact(+u.output), `median ctx ${compact(+u.median_context)}`),
+      kpiSmall(
+        "cost",
+        "$" + priced.reduce((s, r) => s + (+r[5] || 0), 0).toFixed(2),
+        "at [stats.prices] $/MTok",
+      ),
+      kpiSmall(
+        "saved",
+        `<span class="text-delta-fg">Δ</span> $${priced.reduce((s, r) => s + (+r[6] || 0), 0).toFixed(2)}`,
+        "Measurement rows only",
+      ),
+    ].join("");
+    const cost = `<div class="overflow-x-auto"><table class="tbl" aria-label="cost per model"><thead><tr><th scope="col">model</th><th scope="col" class="text-right">input</th><th scope="col" class="text-right hidden lg:table-cell">cache create</th><th scope="col" class="text-right hidden lg:table-cell">cache read</th><th scope="col" class="text-right">output</th><th scope="col" class="text-right">cost $</th><th scope="col" class="text-right">saved $</th><th scope="col" class="w-[18%] hidden md:table-cell"><span class="sr-only">share</span></th></tr></thead>
+      <tbody>${priced
+        .map(
+          (
+            r,
+          ) => `<tr><td class="font-semibold">${esc(r[0])}</td><td class="text-right">${compact(+r[1])}</td><td class="text-right hidden lg:table-cell text-ink-muted">${compact(+r[2])}</td><td class="text-right hidden lg:table-cell text-ink-muted">${compact(+r[3])}</td><td class="text-right">${compact(+r[4])}</td>
+        <td class="text-right ${r[5] === "-" ? "text-ink-subtle" : "font-semibold"}" ${r[5] === "-" ? 'title="no price row"' : ""}>${esc(r[5])}</td><td class="text-right ${r[6] === "-" ? "text-ink-subtle" : "text-delta-fg font-semibold"}">${esc(r[6])}</td>
+        <td class="hidden md:table-cell"><div class="h-1.5 rounded-full bg-surface-3 overflow-hidden"><div class="h-full bg-accent-fg rounded-full" style="width:${(((+r[5] || 0) / maxCost) * 100).toFixed(1)}%"></div></div></td></tr>`,
+        )
+        .join("")}</tbody></table></div>
+      <p class="px-3 py-2 text-2xs text-ink-subtle border-t border-line/60"><code>-</code> = no price row; rtok never guesses a price</p>`;
+    const cache = `<div class="overflow-x-auto"><table class="tbl" aria-label="cache health"><thead><tr><th scope="col">session</th><th scope="col" class="text-right">turns</th><th scope="col" class="text-right">cache read</th><th scope="col" class="text-right hidden md:table-cell">cache create</th><th scope="col" class="text-right">busts</th></tr></thead>
+      <tbody>${health.map((r) => `<tr><td class="font-semibold">${esc(r[0].slice(0, 13))}<span class="text-ink-subtle hidden xl:inline">${esc(r[0].slice(13))}</span></td><td class="text-right">${esc(r[1])}</td><td class="text-right">${compact(+r[2])}</td><td class="text-right hidden md:table-cell text-ink-muted">${compact(+r[3])}</td><td class="text-right">${+r[4] ? `<span class="pill-warn">${esc(r[4])}</span>` : '<span class="text-ink-subtle">0</span>'}</td></tr>`).join("")}</tbody></table></div>
+      ${
+        busts.length
+          ? `<ul class="border-t border-line/60 divide-y divide-line/40">${busts
+              .map((b) => {
+                const k = kvPairs(b);
+                const turn = (b.match(/turn (\d+)/) || [])[1];
+                return `<li class="flex flex-wrap items-center gap-2 px-3 py-2 text-2xs"><span class="pill-warn">bust</span><span class="text-ink">turn ${esc(turn)}</span><span class="text-ink-muted">cause <span class="text-ink font-semibold">${esc(k.cause)}</span></span><span class="ml-auto text-ink-muted">cache create ${compact(+k.cache_create)} · read ${compact(+k.cache_read)}</span></li>`;
+              })
+              .join("")}</ul>`
+          : ""
+      }`;
+    return `<div class="flex flex-col gap-3">
+      <div class="flex items-center gap-2"><p class="text-2xs text-ink-subtle">${fmt(+a.lines)} transcript lines · ${esc(a.malformed)} malformed · ${esc(a.no_checkpoint)} sessions without checkpoint</p><span class="ml-auto">${rawBtn()}</span></div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 md:gap-3">${kp}</div>
+      <div class="grid grid-cols-1 xl:grid-cols-12 gap-3">${panel("cost per model", cost, { cls: "xl:col-span-12 2xl:col-span-7", sub: "stats --price", id: "h-cost" })}${panel("cache health", cache, { cls: "xl:col-span-12 2xl:col-span-5", sub: "stats --cache", id: "h-cache" })}</div></div>`;
+  }
+
+  // -- graph
+  function viewGraph() {
+    const t = S.snap.graph;
+    if (t == null)
+      return panel(
+        "graph",
+        emptyNote(
+          "graph page off: the `graph` feature is not built in, or the store read failed (Snapshot.graph = null)",
+        ),
+      );
+    if (S.raw.graph) return rawPanel(t, "graph");
+    const L = t.split("\n");
+    const get = (k) => {
+      const l = L.find((x) => x.startsWith(k + " "));
+      return l ? l.slice(k.length + 1) : "—";
+    };
+    const iP = L.findIndex((l) => l.startsWith("pending ")),
+      pend = [];
+    for (let i = iP + 1; iP >= 0 && L[i] && L[i].startsWith("  "); i++) pend.push(L[i].trim());
+    const iD = L.indexOf("dead symbols"),
+      dead = [];
+    for (let i = iD + 1; iD >= 0 && i < L.length; i++) {
+      const m = /^ (\S+):(\d+) (\S+) (.+)$/.exec(L[i]);
+      if (m) dead.push(m);
+    }
+    const watch = get("watch") === "true";
+    return `<div class="flex flex-col gap-3">
+      <div class="flex items-center gap-2"><p class="text-2xs text-ink-subtle truncate">root <span class="text-ink-muted">${esc(get("root"))}</span></p><span class="ml-auto">${rawBtn()}</span></div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3">${kpiSmall("rows", fmt(+get("rows")), "tree-sitter-tags defs + refs")}${kpiSmall("files", fmt(+get("files")))}${kpiSmall("pending", fmt(pend.length), pend.length ? "stale since last index" : "index is fresh", pend.length ? "text-warn-fg" : "text-success-fg")}${kpiSmall("watch", watch ? '<span class="text-success-fg">on</span>' : '<span class="text-ink-muted">off</span>', "indexed " + esc(get("indexed_at")))}</div>
+      <div class="grid grid-cols-1 xl:grid-cols-12 gap-3">
+        ${panel("pending files", pend.length ? `<ul class="divide-y divide-line/60">${pend.map((p) => `<li class="flex items-center gap-2 px-3 py-2 text-xs"><span class="pill-warn">pending</span><span class="truncate">${esc(p)}</span></li>`).join("")}</ul>` : emptyNote("nothing pending"), { cls: "xl:col-span-4", id: "h-gp" })}
+        ${panel("dead symbols", dead.length ? `<div class="overflow-x-auto"><table class="tbl" aria-label="dead symbols"><thead><tr><th scope="col">symbol</th><th scope="col">kind</th><th scope="col">location</th></tr></thead><tbody>${dead.map((m) => `<tr><td class="font-semibold">${esc(m[4])}</td><td><span class="pill-muted">${esc(m[3])}</span></td><td class="text-ink-muted">${esc(m[1])}<span class="text-ink-subtle">:${esc(m[2])}</span></td></tr>`).join("")}</tbody></table></div><p class="px-3 py-2 text-2xs text-ink-subtle border-t border-line/60">capped at 200 — <code>rtok graph dead --json</code> has the rest</p>` : emptyNote("no unreferenced definitions"), { cls: "xl:col-span-8", sub: `${dead.length} unreferenced`, id: "h-gd" })}
+      </div></div>`;
+  }
+
+  // -- hosts
+  function viewHosts() {
+    const t = S.snap.hosts || "";
+    if (S.raw.hosts) return rawPanel(t, "hosts");
+    if (t.startsWith("probing hosts"))
+      return panel(
+        "hosts",
+        `<div class="p-3 flex flex-col gap-2" aria-busy="true">${skeletonRows(4, 3)}<p class="text-2xs text-ink-subtle px-3">probing hosts… (first probe runs in the background; the tick never blocks)</p></div>`,
+      );
+    const blocks = [];
+    t.split("\n").forEach((l) => {
+      const h = /^(CLI|Desktop): (.+?)(?: — (.+))?$/.exec(l);
+      if (h) {
+        blocks.push({ kind: h[1], name: h[2], note: h[3] || "", lines: [] });
+        return;
+      }
+      const m = /^  (\S+)\s+(.*)$/.exec(l);
+      if (m && blocks.length) blocks[blocks.length - 1].lines.push([m[1], m[2]]);
+    });
+    const statePill = (v) =>
+      v.startsWith("installed")
+        ? '<span class="pill-ok"><span class="dot"></span>installed</span>'
+        : v.startsWith("not installed")
+          ? `<span class="pill-warn">not installed</span>${v.replace("not installed", "").trim() ? ` <code class="text-2xs text-ink-subtle">${esc(v.replace("not installed", "").trim())}</code>` : ""}`
+          : v.startsWith("not supported")
+            ? '<span class="pill-muted">not supported</span>'
+            : esc(v);
+    const card = (b) => {
+      const app = b.lines.find((x) => x[0] === "app"),
+        conf = b.lines.find((x) => x[0] === "config"),
+        skip = b.lines.find((x) => x[0] === "skip");
+      const mods = b.lines.filter((x) => !["app", "config", "skip"].includes(x[0]));
+      const notePill =
+        b.note === "not found"
+          ? '<span class="pill-muted">not found</span>'
+          : b.note === "not installed"
+            ? '<span class="pill-warn">not installed</span>'
+            : '<span class="pill-ok"><span class="dot"></span>present</span>';
+      return `<section class="glass shine flex flex-col min-w-0" aria-label="${esc(b.name)}"><header class="flex items-center gap-2 px-3 h-11 border-b border-line/70"><h2 class="text-xs font-semibold truncate">${esc(b.name)}</h2><span class="pill-info">${esc(b.kind)}</span><span class="ml-auto">${notePill}</span></header>
+        <div class="p-3 flex flex-col gap-3">${kv([
+          ["app", app ? esc(app[1]) : "—"],
+          [
+            "config",
+            conf
+              ? conf[1]
+                  .split(", ")
+                  .map((c) => `<span class="block break-all">${esc(c)}</span>`)
+                  .join("")
+              : "—",
+          ],
+        ])}
+        ${mods.length ? `<ul class="flex flex-col gap-1.5 pt-2 border-t border-line/60">${mods.map(([k, v]) => `<li class="flex items-center gap-2 text-xs"><span class="w-14 text-ink-muted">${esc(k)}</span>${statePill(v)}</li>`).join("")}</ul>` : ""}
+        ${skip ? `<p class="text-2xs text-ink-muted border-t border-line/60 pt-2">${esc(skip[1])}</p>` : ""}</div></section>`;
+    };
+    return `<div class="flex flex-col gap-3"><div class="flex items-center gap-2"><p class="text-2xs text-ink-subtle">${blocks.length} host variants · same probe as <code>rtok agents list</code>, cached so the 2 s tick never waits</p><span class="ml-auto">${rawBtn()}</span></div>
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">${blocks.map(card).join("")}</div></div>`;
+  }
+
+  // -- config
+  function viewConfig() {
+    const t = S.snap.config;
+    if (t == null) return missing("config", "rtok config show --sources");
+    if (S.raw.config) return rawPanel(t, "config");
+    const f = S.f.config,
+      qq = f.q.toLowerCase();
+    const all = t
+      .split("\n")
+      .map((l) => /^(\S+) = (.*) \((\w+)\)$/.exec(l))
+      .filter(Boolean)
+      .map((m) => ({ key: m[1], value: m[2], source: m[3] }));
+    const SRC = ["default", "user", "project", "env", "flag"];
+    const rows = all.filter(
+      (r) =>
+        (f.source === "all" || r.source === f.source) &&
+        (!qq || (r.key + " " + r.value).toLowerCase().includes(qq)),
+    );
+    const srcPill = (s) =>
+      s === "default"
+        ? '<span class="pill-muted">default</span>'
+        : s === "flag" || s === "env"
+          ? `<span class="pill-warn">${esc(s)}</span>`
+          : `<span class="pill-info">${esc(s)}</span>`;
+    const groups = new Map();
+    rows.forEach((r) => {
+      const g = r.key.split(".")[0];
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(r);
+    });
+    const bar = toolbar(`${search("q-config", f.q, "filter keys and values")}
+      <div class="flex flex-wrap gap-1.5" role="group" aria-label="Source layer">${chip("config.source", "all", f.source, "all", all.length)}${SRC.map((s) => chip("config.source", s, f.source, s, all.filter((r) => r.source === s).length)).join("")}</div>
+      <span class="ml-auto flex items-center gap-2"><span class="text-2xs text-ink-subtle">${rows.length} keys</span>${rawBtn()}</span>`);
+    const body = rows.length
+      ? [...groups]
+          .map(
+            ([
+              g,
+              rs,
+            ]) => `<div class="border-b border-line/60 last:border-b-0"><div class="px-3 pt-3 pb-1 kicker">[${esc(g)}]</div>
+      <dl class="divide-y divide-line/40">${rs.map((r) => `<div class="grid grid-cols-1 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)_auto] gap-x-4 gap-y-0.5 items-baseline px-3 py-2 text-xs"><dt class="font-semibold break-all">${esc(r.key.slice(g.length + 1))}</dt><dd class="text-ink-muted break-all">${esc(r.value)}</dd><dd class="sm:text-right">${srcPill(r.source)}</dd></div>`).join("")}</dl></div>`,
+          )
+          .join("")
+      : noMatch("keys");
+    return `<div class="flex flex-col gap-3">${bar}
+      <p class="text-2xs text-ink-subtle">precedence: default &lt; user (~/.rtok/config.toml) &lt; project (.rtok.toml) &lt; env (RTOK_*) &lt; flag · read-only: a page view never creates files</p>
+      ${panel("effective config", body, { sub: "config show --sources", id: "h-cfg" })}</div>`;
+  }
+
+  // -- services
+  function viewServices() {
+    const t = S.snap.services;
+    if (t == null) return missing("services", "rtok demon status");
+    if (S.raw.services) return rawPanel(t, "services");
+    const L = t.split("\n");
+    const svc = L.filter((l) => /^\w+ {2}(running|stopped) /.test(l)).map((l) => {
+      const [name, state] = l.split(/\s{2}/);
+      const k = kvPairs(l);
+      return {
+        name,
+        state,
+        pid: k.pid,
+        uptime: (k.uptime || "-").replace("s", ""),
+        log: (l.match(/log=(.*)$/) || [])[1],
+      };
+    });
+    const otelL = L.find((l) => l.startsWith("otel ")),
+      otel = otelL ? kvPairs(otelL.replace(/^otel /, "")) : null;
+    const endpoint = otelL ? (otelL.match(/endpoint=(\S+)/) || [])[1] : null;
+    const last = L.find((l) => l.startsWith("last flush: "));
+    const cards = svc
+      .map(
+        (
+          s,
+        ) => `<section class="glass shine p-3 flex flex-col gap-2 min-w-0" aria-label="${esc(s.name)} service"><div class="flex items-center gap-2"><span class="text-sm font-semibold">${esc(s.name)}</span>${s.state === "running" ? '<span class="pill-ok ml-auto"><span class="dot"></span>running</span>' : '<span class="pill-muted ml-auto">stopped</span>'}</div>
+      ${kv([
+        ["pid", esc(s.pid)],
+        ["uptime", s.uptime === "-" ? "—" : humanSecs(s.uptime)],
+        ["log", `<span class="break-all">${esc(s.log || "-")}</span>`],
+      ])}
+      <div class="flex gap-1.5 pt-1"><button type="button" class="btn btn-sm" disabled title="CLI-only today: rtok demon ${s.state === "running" ? "restart" : "start"} ${esc(s.name)}">${s.state === "running" ? "restart" : "start"}</button><span class="text-2xs text-ink-subtle self-center">CLI-only: <code>rtok demon ${s.state === "running" ? "restart" : "start"} ${esc(s.name)}</code></span></div></section>`,
+      )
+      .join("");
+    const otelBody = otel
+      ? `<div class="p-3 flex flex-col gap-3">${kv([["endpoint", esc(endpoint || "-")]])}
+      <div class="grid grid-cols-3 gap-2">${[
+        ["calls", otel.calls_mark, otel.calls_pending],
+        ["logs", otel.logs_mark, otel.logs_pending],
+        ["sessions", otel.sessions_mark, null],
+      ]
+        .map(
+          ([k, mark, pend]) =>
+            `<div class="rounded-md bg-surface-2 p-2.5"><div class="kicker">${k}</div><div class="text-sm font-semibold">${fmt(+mark)}</div><div class="text-2xs ${+pend ? "text-warn-fg" : "text-ink-muted"}">${pend == null ? "watermark" : `${fmt(+pend)} pending`}</div></div>`,
+        )
+        .join("")}</div>
+      ${last ? `<p class="text-2xs text-ink-muted">${esc(last)}</p>` : ""}</div>`
+      : emptyNote("otel status unavailable");
+    return `<div class="flex flex-col gap-3"><div class="flex items-center gap-2"><p class="text-2xs text-ink-subtle">${svc.filter((s) => s.state === "running").length} of ${svc.length} running · supervisor state in ~/.rtok/demon</p><span class="ml-auto">${rawBtn()}</span></div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">${cards}</div>
+      ${panel("OpenTelemetry export", otelBody, { sub: "rtok otel status", id: "h-otel" })}</div>`;
+  }
+
+  // -- worktrees
+  function viewWorktrees() {
+    const t = S.snap.worktrees;
+    if (t == null) return missing("worktrees", "rtok worktree list");
+    if (S.raw.worktrees) return rawPanel(t, "worktrees");
+    if (t.startsWith("reading worktrees") || t.startsWith("not a git repository"))
+      return panel("worktrees", emptyNote(t.trim()));
+    const L = t.split("\n").filter((l) => l.trim());
+    const hdr = cols(L[0]),
+      total = L.find((l) => / worktrees: /.test(l)) || "";
+    const all = L.slice(1)
+      .filter((l) => l !== total)
+      .map((l) => {
+        const c = cols(l);
+        return Object.fromEntries(hdr.map((h, i) => [h, c[i]]));
+      });
+    const f = S.f.worktrees,
+      qq = f.q.toLowerCase();
+    const rows = all.filter(
+      (r) =>
+        (f.state === "all" || r.state === f.state) &&
+        (!qq || (r.path + " " + r.branch + " " + r.owner).toLowerCase().includes(qq)),
+    );
+    const ST = ["main", "dirty", "unmerged", "merged", "stale"];
+    const stPill = (s) =>
+      ({
+        main: '<span class="pill-info">main</span>',
+        dirty: '<span class="pill-warn">dirty</span>',
+        unmerged: '<span class="pill-warn">unmerged</span>',
+        merged: '<span class="pill-ok">merged</span>',
+        stale: '<span class="pill-muted">stale</span>',
+      })[s] || esc(s);
+    const bar = toolbar(`${search("q-worktrees", f.q, "filter path, branch, owner")}
+      <div class="flex flex-wrap gap-1.5" role="group" aria-label="State">${chip("worktrees.state", "all", f.state, "all", all.length)}${ST.map((s) => chip("worktrees.state", s, f.state, s, all.filter((r) => r.state === s).length)).join("")}</div>
+      <span class="ml-auto">${rawBtn()}</span>`);
+    const table = rows.length
+      ? `<div class="hidden md:block overflow-x-auto"><table class="tbl" aria-label="worktrees"><thead><tr><th scope="col">path</th><th scope="col">branch</th><th scope="col" class="hidden lg:table-cell">owner</th><th scope="col">state</th><th scope="col" class="hidden xl:table-cell">seen</th><th scope="col">modified</th><th scope="col" class="text-right">source</th><th scope="col" class="text-right">cache</th></tr></thead>
+      <tbody>${rows.map((r) => `<tr><td class="max-w-[22rem] truncate"><span class="text-ink-subtle">${esc(r.path.replace(/[^/]+$/, ""))}</span><span class="font-semibold">${esc(r.path.split("/").pop())}</span></td><td class="text-ink-muted">${esc(r.branch)}</td><td class="hidden lg:table-cell text-ink-muted">${esc(r.owner)}</td><td>${stPill(r.state)}</td><td class="hidden xl:table-cell text-ink-muted">${esc(r.seen)}</td><td class="text-ink-muted">${esc(r.modified)}</td><td class="text-right">${esc(r.source)}</td><td class="text-right text-ink-muted">${esc(r.cache)}</td></tr>`).join("")}</tbody></table></div>
+      <ul class="md:hidden divide-y divide-line/60">${rows.map((r) => `<li class="px-3 py-2.5"><div class="flex items-center gap-2"><span class="text-sm font-semibold truncate">${esc(r.path.split("/").pop())}</span><span class="ml-auto">${stPill(r.state)}</span></div><div class="mt-1 text-2xs text-ink-muted">${esc(r.branch)} · ${esc(r.owner)} · ${esc(r.source)} src · ${esc(r.cache)} cache</div></li>`).join("")}</ul>`
+      : noMatch("worktrees");
+    return `<div class="flex flex-col gap-3">${bar}${panel("worktrees", table, { sub: esc(total.replace(/ \(.*$/, "")), id: "h-wt" })}
+      <p class="text-2xs text-ink-subtle">${esc((total.match(/\((.*)\)/) || [])[1] || "")} · <code>gc</code> / <code>clean</code> stay CLI-only verdicts</p></div>`;
   }
 
   function viewLoading() {
@@ -1529,7 +2145,8 @@
 
   // ---------------------------------------------------------------- shell
   const statusInfo = () => {
-    if (S.preview === "loading") return { cls: "text-accent-fg", label: "connecting", pulse: true };
+    if (S.viewState === "loading")
+      return { cls: "text-accent-fg", label: "connecting", pulse: true };
     if (S.source === "live")
       return (
         {
@@ -1543,19 +2160,9 @@
 
   function renderShell() {
     const st = statusInfo();
-    const navHtml = (mobile) =>
-      ROUTES.map((r, i) => {
-        const cur = S.route === r.id;
-        return mobile
-          ? `<a href="#/${r.id}" class="nav-item focus-ring flex-1 flex-col justify-center gap-1 h-14 px-1 text-2xs" ${cur ? 'aria-current="page"' : ""}>${icon(r.id)}<span class="truncate max-w-full">${r.title}</span></a>`
-          : `<a href="#/${r.id}" class="nav-item focus-ring max-lg:justify-center" ${cur ? 'aria-current="page"' : ""} title="${r.title} (${i + 1})" aria-label="${r.title}">${icon(r.id)}<span class="hidden lg:inline">${r.title}</span><kbd class="hidden lg:inline ml-auto text-2xs text-ink-subtle font-mono">${i + 1}</kbd></a>`;
-      }).join("");
     $$("[data-icon]").forEach((e) => {
       if (!e.innerHTML) e.innerHTML = icon(e.dataset.icon);
     });
-    $("#side-nav").innerHTML = navHtml(false);
-    $("#tab-nav").innerHTML =
-      `<div class="glass flex items-stretch gap-0.5 p-1">${navHtml(true)}</div>`;
     const dot = `<span class="dot ${st.pulse ? "animate-pulse" : ""} ${st.cls}"></span>`;
     $("#side-status").innerHTML =
       `${dot}<span class="hidden lg:inline truncate">${st.label}</span>`;
@@ -1565,21 +2172,11 @@
         ? `<span class="pill-muted ${st.cls}" role="status">${dot}${st.label}</span>`
         : "";
     $("#source-badge").innerHTML =
-      S.source === "sample" && S.preview !== "loading"
+      S.source === "sample" && S.viewState !== "loading"
         ? '<span class="pill-info" title="Not from a running rtok — sample data shaped like the /ws snapshot">sample<span class="hidden sm:inline">&nbsp;data</span></span>'
         : S.source === "live"
           ? `<span class="pill-muted hidden md:inline-flex ${st.cls}">${dot}${st.label}</span>`
           : "";
-    const dark = document.documentElement.classList.contains("dark");
-    $$("[data-theme-label]").forEach((e) => {
-      e.textContent = dark ? "Light mode" : "Dark mode";
-    });
-    const r = ROUTES.find((x) => x.id === S.route);
-    $("#page-title").textContent = r.title;
-    $("#crumb").textContent = `rtok / ${r.sub}`;
-    document.title = `${r.title} · rtok`;
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.content = dark ? "#06101A" : "#F4F8FB";
     const err = S.snap && S.snap.error;
     $("#banners").innerHTML = err
       ? `<div class="glass mt-2 flex items-center gap-2 px-3 py-2 border-delta/60" role="alert"><span class="pill-fail">error</span><span class="text-xs text-ink min-w-0 break-words">${esc(err)}</span><button type="button" class="btn btn-ghost ml-auto shrink-0" data-action="dismiss-error">dismiss</button></div>`
@@ -1594,31 +2191,27 @@
         : null;
     renderShell();
     const main = $("#main");
-    if (S.preview === "loading" || !S.snap) {
+    if (S.viewState === "loading" || !S.snap) {
       main.innerHTML = viewLoading();
       return;
     }
     const D = derive(S.snap);
-    // `S.route` comes from the URL hash: a fixed switch, no lookup keyed by it.
-    let view = viewOverview;
-    switch (S.route) {
-      case "plugins":
-        view = viewPlugins;
-        break;
-      case "calls":
-        view = viewCalls;
-        break;
-      case "sessions":
-        view = viewSessions;
-        break;
-      case "doctor":
-        view = viewDoctor;
-        break;
-      case "logs":
-        view = viewLogs;
-        break;
-    }
-    main.innerHTML = view(D);
+    const views = {
+      overview: viewOverview,
+      plugins: viewPlugins,
+      calls: viewCalls,
+      sessions: viewSessions,
+      doctor: viewDoctor,
+      logs: viewLogs,
+      skills: viewSkills,
+      stats: viewStats,
+      graph: viewGraph,
+      hosts: viewHosts,
+      config: viewConfig,
+      services: viewServices,
+      worktrees: viewWorktrees,
+    };
+    main.innerHTML = (Object.hasOwn(views, S.route) ? views[S.route] : viewOverview)(D);
     if (keep) {
       const el = main.querySelector(`[data-filter="${keep.f}"]`);
       if (el) {
@@ -1641,18 +2234,17 @@
   }
 
   // ---------------------------------------------------------------- routing
+  // One HTML file per screen: the route is body[data-route]; ?id= and ?state= ride the query.
   function parseHash() {
-    const h = location.hash.replace(/^#\/?/, "");
-    const [path, qs] = h.split("?");
-    const params = new URLSearchParams(qs || "");
+    const path = document.body.dataset.route;
+    const params = new URLSearchParams(location.search || location.hash.replace(/^#\??/, ""));
     return { route: ROUTES.some((r) => r.id === path) ? path : "overview", params };
   }
-  function onRoute(first) {
+  function onRoute() {
     const { route, params } = parseHash();
-    const changed = route !== S.route;
     S.route = route;
     const st = params.get("state");
-    if (st && st !== S.preview) setPreview(st, true);
+    if (st && st !== S.viewState) setViewState(st, true);
     const id = params.get("id");
     if (id && S.snap) {
       if (route === "plugins") {
@@ -1663,21 +2255,24 @@
         const i = (S.snap.sessions || []).findIndex((s) => s.id === id);
         if (i >= 0) S.sel.session = i;
       }
+      if (route === "skills") {
+        const i = ((S.snap.skills && S.snap.skills.rows) || []).findIndex((s) => s.name === id);
+        if (i >= 0) S.sel.skill = i;
+      }
     }
     render();
-    if (changed && !first) {
-      window.scrollTo(0, 0);
-      $("#page-title").focus({ preventScroll: true });
-    }
   }
 
-  function setPreview(p, silent) {
-    S.preview = ["live", "loading", "empty", "error"].includes(p) ? p : "live";
+  function setViewState(p, silent) {
+    S.viewState = ["live", "loading", "empty", "error"].includes(p) ? p : "live";
     if (S.source !== "live") {
-      if (S.preview === "empty") S.snap = emptySnapshot();
-      else if (S.preview === "error") {
+      if (S.viewState === "empty") S.snap = emptySnapshot();
+      else if (S.viewState === "error") {
         S.snap = sampleSnapshot();
         S.snap.doctor = null;
+        S.snap.stats = null;
+        S.snap.config = null;
+        S.snap.services = null;
         S.snap.error =
           "store will not open: database is locked (~/.rtok/rtok.db) — showing the last frame";
       } else S.snap = sampleSnapshot();
@@ -1731,7 +2326,7 @@
       }
       S.source = "live";
       S.snap = v;
-      S.preview = "live";
+      S.viewState = "live";
       render();
     };
     ws.onclose = () => {
@@ -1777,32 +2372,41 @@
     $("#state-chips").innerHTML = ["live", "loading", "empty", "error"]
       .map(
         (p) =>
-          `<button type="button" class="chip focus-ring" data-preview="${p}" aria-pressed="${S.preview === p}" ${S.source === "live" && p !== "live" ? "disabled" : ""}>${p === "live" ? "data" : p}</button>`,
+          `<button type="button" class="chip focus-ring" data-view-state="${p}" aria-pressed="${S.viewState === p}" ${S.source === "live" && p !== "live" ? "disabled" : ""}>${p === "live" ? "data" : p}</button>`,
       )
       .join("");
   }
+  // Theme lives in js/design.js (shared by every page, same 'rtok-theme' key as the Slint UI).
   function toggleTheme() {
-    const dark = !document.documentElement.classList.contains("dark");
-    document.documentElement.classList.toggle("dark", dark);
-    localStorage.setItem("rtok-theme", dark ? "dark" : "light");
+    if (window.rtokTheme) window.rtokTheme.toggle();
+  }
+  document.addEventListener("rtok:theme", () => {
     window.rtokOrb?.refresh();
     render();
     renderSettings();
-  }
+  });
 
   // ---------------------------------------------------------------- events
   document.addEventListener("click", (e) => {
     const t = e.target.closest(
-      "[data-action],[data-select],[data-toggle],[data-chip],[data-expand],[data-setting],[data-preview]",
+      "[data-action],[data-select],[data-toggle],[data-chip],[data-expand],[data-setting],[data-view-state]",
     );
     if (!t) return;
     const a = t.dataset;
-    if (a.action === "theme") return toggleTheme();
     if (a.action === "settings") {
       renderSettings();
       return $("#settings").showModal();
     }
     if (a.action === "help") return $("#help").showModal();
+    if (a.action === "more") return $("#more").showModal();
+    if (a.action === "raw") {
+      S.raw[S.route] = !S.raw[S.route];
+      return render();
+    }
+    if (a.action === "never-only") {
+      S.f.skills.never = !S.f.skills.never;
+      return render();
+    }
     if (a.action === "dismiss-error") {
       S.snap.error = undefined;
       return render();
@@ -1839,8 +2443,9 @@
       const i = +a.i;
       S.sel[a.select] = i;
       render();
-      if (innerWidth < 1024) {
-        $("#detail")?.scrollIntoView({
+      if (innerWidth < 1280) {
+        const d = $("#detail");
+        d?.scrollIntoView({
           behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
           block: "start",
         });
@@ -1873,7 +2478,7 @@
       localStorage.setItem("rtok-opaque", on ? "on" : "off");
       return renderSettings();
     }
-    if (a.preview) return setPreview(a.preview);
+    if (a.viewState) return setViewState(a.viewState);
   });
   document.addEventListener("input", (e) => {
     const f = e.target.dataset && e.target.dataset.filter;
@@ -1898,8 +2503,8 @@
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (/^[1-6]$/.test(e.key)) {
-      location.hash = "#/" + ROUTES[+e.key - 1].id;
+    if (/^[1-9]$/.test(e.key)) {
+      location.href = ROUTES[+e.key - 1].id + ".html";
       e.preventDefault();
     } else if (e.key === "/") {
       const s = $("#main input[type=search]");
@@ -1910,10 +2515,10 @@
     } else if (e.key === "?") $("#help").showModal();
     else if (
       (e.key === "ArrowDown" || e.key === "ArrowUp") &&
-      ["plugins", "calls", "sessions"].includes(S.route)
+      ["plugins", "calls", "sessions", "skills"].includes(S.route)
     ) {
-      const k = { plugins: "plugin", calls: "call", sessions: "session" }[S.route];
-      const list = S.snap[S.route] || [];
+      const k = { plugins: "plugin", calls: "call", sessions: "session", skills: "skill" }[S.route];
+      const list = (S.route === "skills" ? S.snap.skills.rows : S.snap[S.route]) || [];
       if (!list.length) return;
       S.sel[k] = Math.max(
         0,
@@ -1921,17 +2526,18 @@
       );
       e.preventDefault();
       render();
-      $(`#main tr[aria-selected="true"]`)?.scrollIntoView({ block: "nearest" });
+      const row = $(`#main tr[aria-selected="true"]`);
+      row?.scrollIntoView({ block: "nearest" });
     }
   });
-  addEventListener("hashchange", () => onRoute(false));
   matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", renderSettings);
 
   // ---------------------------------------------------------------- boot
   const initialState = parseHash().params.get("state");
+  S.route = parseHash().route;
   S.snap = sampleSnapshot();
-  setPreview(initialState || "live", true);
-  onRoute(true);
+  setViewState(initialState || "live", true);
+  onRoute();
   renderSettings();
   connect();
 })();
