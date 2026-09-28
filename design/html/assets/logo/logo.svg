@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="rtok">
+  <rect width="32" height="32" rx="6" fill="#06101A"/>
+  <g fill="#5CE1FF">
+    <circle cx="9" cy="9" r="1.6"/><circle cx="14" cy="9" r="1.6"/><circle cx="19" cy="9" r="1.6"/><circle cx="24" cy="9" r="1.6"/>
+    <circle cx="9" cy="14" r="1.6"/><circle cx="14" cy="14" r="1.6"/><circle cx="19" cy="14" r="1.6"/>
+  </g>
+  <g fill="#5CE1FF" opacity="0.35">
+    <circle cx="9" cy="19" r="1.6"/><circle cx="14" cy="19" r="1.6"/>
+  </g>
+  <g fill="#FF6B4A">
+    <circle cx="19" cy="19" r="1.6"/><circle cx="24" cy="19" r="1.6"/>
+    <circle cx="9" cy="24" r="1.6"/>
+  </g>
+</svg>

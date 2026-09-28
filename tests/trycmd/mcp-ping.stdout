@@ -1,0 +1,14 @@
+Prove the agent's rtok MCP server is alive and answering
+
+Usage: rtok mcp ping [OPTIONS] [AGENT]
+
+Arguments:
+  [AGENT]  Host (`claude`, `cursor`, …); omitted checks every host with MCP installed
+
+Options:
+      --cli             Only the CLI app
+      --config <PATH>   User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --desktop         Only the desktop app
+      --timeout <SECS>  Seconds to wait for the agent or the server [default: 60]
+      --json            One JSON object per host
+  -h, --help            Print help

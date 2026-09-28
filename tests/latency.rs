@@ -1,5 +1,5 @@
 //! T2.2: spawn `rtok hook PreToolUse` 200×; p95 < 10 ms (release).
-//! Gate P17 asks the same of `PostToolUse`; both print p50/p95/max under `--nocapture`.
+//! Gate P17 asks the same of `PostToolUse`, T288 of `UserPromptSubmit`; each prints p50/p95/max under `--nocapture`.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -82,6 +82,16 @@ fn latency_hook_post_tool_p95_under_10ms() {
     );
 }
 
+/// T288: `UserPromptSubmit` also reads the caller's undelivered messages (one indexed
+/// query); an empty inbox still prints `{}` inside the budget.
+#[test]
+fn latency_hook_user_prompt_submit_p95_under_10ms() {
+    p95_under_10ms(
+        "UserPromptSubmit",
+        include_bytes!("fixtures/hooks/user_prompt_submit.json"),
+    );
+}
+
 /// T201: guard's `post_tool` used to sha256 + write to disk synchronously on every cached
 /// Read/Bash, and the hook's stdin read was unbounded — a multi-MB `PostToolUse` body paid
 /// two full hashing passes plus disk I/O on top of the JSON parse. With the archive cap in
@@ -136,7 +146,7 @@ fn hook_dispatches_a_5mb_post_tool_body_under_50ms() {
 /// handler sleeps 1 + 2 + 2 ms and each Windows `Sleep` rounds up to the 15.6 ms
 /// timer tick, so the `windows-latest` debug run took 107 ms (ci run 35947867095).
 ///
-/// T304: a fixed ms bound measured the runner, not the hook: 102.7 ms on `macos-latest` and
+/// T309: a fixed ms bound measured the runner, not the hook: 102.7 ms on `macos-latest` and
 /// 313.7 ms on `windows-latest` under suite load (2026-09-27), both green on rerun. The bound is
 /// now half the hold on every platform — a hook that returns in `HOLD / 2` cannot have waited
 /// for the release — and the test runs alone (`.config/nextest.toml`). The few-ms bound on the

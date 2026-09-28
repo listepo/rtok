@@ -1,0 +1,186 @@
+/* rtok design — Tailwind CSS v4 entry.
+ * Compiled offline into ../css/app.css (committed; no runtime Tailwind). Rebuild: see ../README.md.
+ * Tokens: ../css/tailwind-v4.css + ../css/tokens.css, verbatim copies of the brand repo's dist/.
+ * Component classes mirror web/src/input.css from the design/web-admin draft (1e144253),
+ * renamed onto the brand's --rtok-* variables. */
+@import "tailwindcss" source(none);
+@import "../css/tailwind-v4.css";
+
+@source "../index.html";
+@source "../*.html";
+@source "../admin/*.html";
+@source "../site/*.html";
+@source "../auth/*.html";
+@source "../js/*.js";
+
+/* Admin-draft vocabulary (canvas / ink / line) aliased onto brand semantics. */
+@theme inline {
+  --color-canvas: var(--rtok-bg);
+  --color-navy: var(--rtok-brand-navy);
+  --color-ink: var(--rtok-fg);
+  --color-ink-muted: var(--rtok-fg-muted);
+  --color-ink-subtle: var(--rtok-fg-subtle);
+  --color-line: var(--rtok-border);
+  --color-line-strong: var(--rtok-border-strong);
+}
+
+@layer base {
+  html { background: var(--rtok-bg); color: var(--rtok-fg); font-family: var(--rtok-font-mono);
+         -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-size: 16px;
+         -webkit-tap-highlight-color: transparent; }
+  body { min-height: 100vh; font-size: var(--rtok-text-sm); line-height: var(--rtok-leading-sm); font-variant-numeric: tabular-nums; }
+  ::selection { background: var(--rtok-selection); }
+  [hidden] { display: none !important; }
+  a { color: inherit; text-decoration: none; }
+  code, kbd, pre, samp { font-family: var(--rtok-font-mono); }
+  :root { --orb-opacity: 0.22; --glass-alpha: var(--rtok-glass-alpha, 0.86); }
+  :root.dark, :root[data-theme="dark"] { --orb-opacity: 0.42; }
+}
+
+@layer components {
+  /* Glass panel: mostly-opaque surface so text contrast never depends on the background. */
+  .glass { background: rgb(var(--rtok-surface-rgb) / var(--glass-alpha));
+           -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%);
+           border: 1px solid var(--rtok-border); border-radius: var(--rtok-radius-lg); box-shadow: var(--rtok-shadow-e2); }
+  .shine { position: relative; isolation: isolate; }
+  .shine::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+                   background: linear-gradient(160deg, rgb(var(--rtok-shine-rgb) / 0.06) 0%, transparent 38%); }
+
+  /* One focus ring for every interactive element (keyboard only). */
+  .focus-ring { outline: none; }
+  .focus-ring:focus-visible, .btn:focus-visible, .chip:focus-visible, .field:focus-visible, .select:focus-visible,
+  .nav-item:focus-visible, .row-link:focus-visible, .switch-btn:focus-visible, .dbar a:focus-visible,
+  .dbar button:focus-visible, .link:focus-visible, .check:focus-visible { outline: none; box-shadow: var(--rtok-ring); }
+
+  .btn { @apply inline-flex items-center justify-center gap-2 h-8 px-3 rounded-md border border-line bg-surface-2 text-ink text-xs font-semibold
+           whitespace-nowrap cursor-pointer select-none transition-colors duration-fast hover:bg-surface-3 hover:border-line-strong active:translate-y-px
+           disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-surface-2 disabled:active:translate-y-0 max-md:h-11 max-md:px-4; }
+  .btn-primary { @apply bg-accent text-accent-on border-transparent hover:bg-accent/90 hover:border-transparent disabled:hover:bg-accent; }
+  .btn-ghost { @apply bg-transparent border-transparent text-ink-muted hover:text-ink hover:bg-surface-2 disabled:hover:bg-transparent; }
+  .btn-danger { @apply bg-transparent border-danger/50 text-danger-fg hover:bg-danger/10 hover:border-danger; }
+  .btn-icon { @apply w-8 px-0 max-md:w-11 max-md:px-0; }
+  .btn-sm { @apply h-7 px-2.5 text-2xs; }
+  .btn-lg { @apply h-11 px-5 text-sm; }
+
+  .chip { @apply inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-line text-2xs font-semibold text-ink-muted cursor-pointer
+            hover:text-ink hover:border-line-strong transition-colors duration-fast max-md:h-11 max-md:px-3 max-md:min-w-[44px] justify-center
+            aria-pressed:bg-accent/15 aria-pressed:text-accent-fg aria-pressed:border-accent/50 disabled:opacity-40 disabled:cursor-not-allowed; }
+  .field { @apply h-8 w-full rounded-md border border-line bg-canvas/60 px-2.5 text-xs text-ink placeholder:text-ink-subtle
+             hover:border-line-strong transition-colors duration-fast max-md:h-11 max-md:text-sm
+             aria-[invalid=true]:border-danger aria-[invalid=true]:text-danger-fg disabled:opacity-40 disabled:cursor-not-allowed; }
+  textarea.field { @apply h-auto py-2 leading-5; }
+  .select { @apply h-8 w-full rounded-md border border-line bg-canvas/60 pl-2.5 pr-8 text-xs text-ink hover:border-line-strong transition-colors duration-fast max-md:h-11 max-md:text-sm aria-[invalid=true]:border-danger disabled:opacity-40 disabled:cursor-not-allowed appearance-none cursor-pointer;
+            background-image: linear-gradient(45deg, transparent 50%, var(--rtok-fg-muted) 50%), linear-gradient(135deg, var(--rtok-fg-muted) 50%, transparent 50%);
+            background-position: calc(100% - 14px) 50%, calc(100% - 10px) 50%; background-size: 4px 4px; background-repeat: no-repeat; }
+  .label { @apply block text-2xs font-semibold text-ink-muted mb-1; }
+  .help { @apply text-2xs text-ink-muted mt-1; }
+  .help-error { @apply text-2xs text-danger-fg mt-1; }
+  .check { @apply appearance-none w-4 h-4 rounded-sm border border-line-strong bg-surface-2 grid place-content-center cursor-pointer shrink-0
+             checked:bg-accent checked:border-accent disabled:opacity-40 disabled:cursor-not-allowed; }
+  .check:checked::after { content: ""; width: 8px; height: 5px; border-left: 2px solid var(--rtok-on-accent); border-bottom: 2px solid var(--rtok-on-accent); transform: rotate(-45deg) translate(1px, -1px); }
+
+  .pill, .pill-ok, .pill-warn, .pill-fail, .pill-info, .pill-muted {
+    @apply inline-flex items-center gap-1.5 h-5 px-2 rounded-full text-2xs font-semibold whitespace-nowrap border; }
+  .pill-ok { @apply text-success-fg border-success/40 bg-success/10; }
+  .pill-warn { @apply text-warn-fg border-warn/40 bg-warn/10; }
+  .pill-fail { @apply text-delta-fg border-delta/40 bg-delta/10; }
+  .pill-info { @apply text-accent-fg border-accent/40 bg-accent/10; }
+  .pill-muted { @apply text-ink-muted border-line bg-surface-2; }
+  .pill-concept { @apply inline-flex items-center gap-1.5 h-5 px-2 rounded-full text-2xs font-bold uppercase tracking-[0.08em] whitespace-nowrap border border-warn/60 bg-warn/15 text-warn-fg; }
+  .dot { @apply inline-block w-1.5 h-1.5 rounded-full bg-current shrink-0; }
+
+  .nav-item { @apply flex items-center gap-3 h-9 px-2.5 rounded-md text-xs text-ink-muted transition-colors duration-fast
+               hover:bg-surface-2 hover:text-ink aria-[current=page]:bg-accent/15 aria-[current=page]:text-accent-fg; }
+  .switch-btn { @apply inline-flex items-center gap-2 rounded-md shrink-0 min-h-[44px] min-w-[44px] justify-center md:min-h-0 md:min-w-0 md:justify-start
+                 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed; }
+  .switch { @apply relative inline-flex shrink-0 w-9 h-5 rounded-full border border-line-strong bg-surface-3 transition-colors duration-fast
+             group-aria-checked:bg-accent group-aria-checked:border-accent; }
+  .switch::after { content: ""; @apply absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-ink-muted transition-transform duration-base; }
+  .group[aria-checked="true"] .switch::after { @apply translate-x-4 bg-accent-on; }
+
+  .kicker { @apply text-2xs uppercase tracking-[0.08em] text-ink-subtle font-semibold; }
+  .tbl { @apply w-full text-xs border-separate border-spacing-0; }
+  .tbl th { @apply sticky top-0 z-10 bg-surface text-left font-semibold text-2xs uppercase tracking-[0.06em] text-ink-subtle px-3 h-8 border-b border-line whitespace-nowrap; }
+  .tbl td { @apply px-3 h-9 border-b border-line/60 whitespace-nowrap; }
+  .tbl tbody tr { @apply transition-colors duration-fast hover:bg-surface-2/70; }
+  .tbl tbody tr[aria-selected="true"] { @apply bg-accent/10; }
+  .skeleton { @apply rounded-sm bg-surface-3 animate-pulse; }
+  .link { @apply text-accent-fg underline decoration-accent/40 underline-offset-2 hover:decoration-accent rounded-sm; }
+  .pre { @apply rounded-md bg-canvas/70 border border-line p-3 text-2xs leading-relaxed text-ink-muted overflow-auto whitespace-pre; }
+  .mark-tile { @apply inline-block rounded-md bg-mark; }
+
+  /* Design bar: shared navigation between every page of this design (not product UI). */
+  .dbar { @apply relative z-40 border-b border-line bg-surface; }
+  .dbar-inner { @apply flex items-center gap-2 h-11 px-2 md:px-4 max-w-[1920px] mx-auto; }
+  .dbar-links { @apply flex items-center gap-0.5 overflow-x-auto min-w-0 flex-1;
+                scrollbar-width: none; mask-image: linear-gradient(90deg, #000 92%, transparent); }
+  .dbar-links::-webkit-scrollbar { display: none; }
+  .dbar-links a { @apply inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-2xs font-semibold text-ink-muted whitespace-nowrap
+                    transition-colors duration-fast hover:text-ink hover:bg-surface-2 aria-[current=page]:bg-accent/15 aria-[current=page]:text-accent-fg; }
+  .dbar-theme { @apply inline-flex items-center gap-2 h-8 px-2.5 rounded-md border border-line text-2xs font-semibold text-ink-muted shrink-0 cursor-pointer
+                  hover:text-ink hover:border-line-strong transition-colors duration-fast max-md:h-11 max-md:w-11 max-md:justify-center max-md:px-0; }
+  .icon-16 > svg, .icon-16 > img { width: 16px; height: 16px; }
+
+  /* Prose for docs/landing/design pages. */
+  .prose { @apply text-sm text-ink max-w-[72ch]; }
+  .prose h1 { @apply text-2xl font-bold mb-3 mt-0 tracking-tight; }
+  .prose h2 { @apply text-lg font-bold mt-8 mb-2; }
+  .prose h3 { @apply text-base font-semibold mt-6 mb-2; }
+  .prose p { @apply my-3 text-ink-muted leading-6; }
+  .prose ul { @apply my-3 pl-5 list-disc text-ink-muted; }
+  .prose li { @apply my-1; }
+  .prose code:not(pre code) { @apply px-1 py-0.5 rounded-sm bg-surface-2 border border-line text-[0.92em] text-ink; }
+  .prose a { @apply text-accent-fg underline decoration-accent/40 underline-offset-2 hover:decoration-accent; }
+  .prose table { @apply w-full text-xs border-separate border-spacing-0 my-4; }
+  .prose th { @apply text-left text-2xs uppercase tracking-[0.06em] text-ink-subtle font-semibold px-3 h-8 border-b border-line; }
+  .prose td { @apply px-3 py-2 border-b border-line/60 text-ink-muted align-top; }
+}
+
+/* Background (admin + landing): static gradient behind the WebGL orb, decorative. */
+.orb-fallback {
+  background:
+    radial-gradient(40% 50% at 78% 18%, rgb(var(--rtok-accent-rgb) / 0.16), transparent 70%),
+    radial-gradient(30% 40% at 88% 30%, rgb(var(--rtok-delta-rgb) / 0.08), transparent 70%);
+  opacity: var(--orb-opacity);
+}
+@media (max-width: 767px) { :root { --orb-opacity: 0.14; } :root.dark { --orb-opacity: 0.35; } }
+
+/* Landing hero screenshot frame (site/assets/css/custom.css .rtok-hero-shot). */
+.hero-shot { border-radius: 12px; border: 1px solid var(--rtok-border); box-shadow: 0 24px 48px rgb(0 0 0 / 0.35); overflow: hidden; background: var(--rtok-surface); }
+.hero-shot img { display: block; width: 100%; height: auto; }
+@media (max-width: 639px) { .hero-shot { border-radius: 8px; box-shadow: 0 8px 20px rgb(0 0 0 / 0.3); } }
+
+/* Theme-swapped images: <img class="only-dark"> / <img class="only-light">. */
+:root.light .only-dark, :root[data-theme="light"] .only-dark { display: none !important; }
+:root.dark .only-light, :root[data-theme="dark"] .only-light { display: none !important; }
+
+/* TUI terminal mock (ratatui colours from src/tui/theme.rs, mapped to brand tokens). */
+.term { background: #06101A; color: #E8F7FF; border: 1px solid #1A3348; border-radius: 10px; overflow: auto; font-size: 12px; line-height: 18px; }
+.term .t-acc { color: #5CE1FF; } .term .t-mut { color: #7F9AAE; } .term .t-ok { color: #3DDC97; }
+.term .t-warn { color: #F5C451; } .term .t-err { color: #FF6B4A; } .term .t-b { font-weight: 700; }
+.term .t-badge { background: #5CE1FF; color: #06101A; font-weight: 700; }
+.term .t-sel { background: #5CE1FF; color: #06101A; font-weight: 700; }
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass { background: var(--rtok-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .shine::before { display: none; }
+}
+html.opaque .glass { background: var(--rtok-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+@media (forced-colors: active) {
+  .glass, .pill, .pill-ok, .pill-warn, .pill-fail, .pill-info, .pill-muted, .chip, .btn, .field, .switch { border: 1px solid CanvasText; }
+  .focus-ring:focus-visible, .btn:focus-visible, .chip:focus-visible, .field:focus-visible, .nav-item:focus-visible { outline: 2px solid Highlight; }
+}
+
+/* Static state simulation for the components page (hover / focus-visible can't be forced in markup). */
+.is-focus { outline: none !important; box-shadow: var(--rtok-ring) !important; }
+.btn.is-hover { background: var(--rtok-surface-3); border-color: var(--rtok-border-strong); }
+.btn-primary.is-hover { background: rgb(var(--rtok-accent-rgb) / 0.9); border-color: transparent; }
+.btn-ghost.is-hover { background: var(--rtok-surface-2); color: var(--rtok-fg); border-color: transparent; }
+.btn-danger.is-hover { background: rgb(var(--rtok-danger-rgb) / 0.1); border-color: var(--rtok-danger); }
+.chip.is-hover, .field.is-hover, .select.is-hover { border-color: var(--rtok-border-strong); color: var(--rtok-fg); }
+.nav-item.is-hover { background: var(--rtok-surface-2); color: var(--rtok-fg); }
+.tbl tbody tr.is-hover { background: rgb(var(--rtok-surface-2-rgb) / 0.7); }

@@ -290,7 +290,7 @@ fn host_program(bin: &str) -> Option<std::ffi::OsString> {
 /// (Win32's `CreateProcess`, never `PATHEXT`), so a bare spawn silently fails to find a real,
 /// on-PATH shim. Routing through `cmd /C` there reuses the shell's own PATH + `PATHEXT`
 /// search, which does try `.cmd`/`.bat` (T139).
-fn spawn_cli(bin: &std::ffi::OsStr) -> std::process::Command {
+pub(crate) fn spawn_cli(bin: &std::ffi::OsStr) -> std::process::Command {
     if cfg!(windows) {
         let mut cmd = std::process::Command::new("cmd");
         cmd.arg("/C").arg(bin);
