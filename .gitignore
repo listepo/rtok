@@ -29,3 +29,7 @@ rtok.db-wal
 # T183: tools/publish_marketplace's own test runs
 __pycache__/
 .pytest_cache/
+
+# T310.1: web/ SPA (Vite + React)
+/web/node_modules/
+/web/dist/

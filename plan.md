@@ -32,6 +32,18 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
 | T297 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
+| T310 | todo | P1 | 5 | 0% | |
+| T310.2 | todo | P1 | 3 | 0% | |
+| T310.3 | todo | P1 | 3 | 0% | |
+| T310.4 | todo | P1 | 3 | 0% | |
+| T310.5 | todo | P1 | 3 | 0% | |
+| T310.6 | todo | P1 | 3 | 0% | |
+| T310.7 | todo | P2 | 3 | 0% | |
+| T310.8 | todo | P2 | 3 | 0% | |
+| T310.9 | todo | P1 | 4 | 0% | |
+| T310.10 | todo | P1 | 3 | 0% | |
+| T310.11 | todo | P2 | 3 | 0% | |
+| T310.12 | todo | P2 | 3 | 0% | |
 
 
 
@@ -561,6 +573,50 @@ Five goldens carry floors of 0–3 % (`cat`, `git_log`, `npm`, `make`, `mvn`) be
 Plan: add realistic long inputs (`cat_long`, `git_log_long`, `npm_install`, `make_long`, `mvn_long`; the short ones stay, `cat.in` keeps its secret-preservation role) and a `[script]` golden; floors are the measured saving minus 5 points.
 
 Check: `cargo nextest run -p rtok --lib cmd::formatters`; lowering a rule's keep list in a scratch copy drops a floor.
+
+### T310. React SPA replaces the Slint web UI (epic)
+
+`rtok web` draws its admin with Slint compiled to WASM on one `<canvas>` (`crates/rtok-webui`, D20). The creator chose to replace it with a React SPA in `web/`. Stack (creator's picks): React 19, TanStack (Router, Query, Table, Virtual, Form where a page needs it), Vite 8, Vitest 5, Tailwind CSS v4, Storybook 10, Playwright e2e. Data stays the `/ws` snapshot of D23; its TypeScript types are generated from the Rust types (`schemars` → JSON Schema → TS), so Rust stays the one source of truth. The visual reference is `design/html/` (all 13 pages, tokens, icons, fonts) and the `web/` prototype. When the SPA covers every page, `crates/rtok-webui`, the WASM build in CI/release, `design/html/` and the HTML prototype are deleted. One subtask = one PR (≤300 LOC hand-written, ≤10 files; lockfiles and generated files excepted).
+
+Done when: `rtok web` serves the SPA from the binary, every page of `model::pages()` renders on it, Playwright drives the real binary, and no Slint code is left.
+
+### T310.2. `/ws` contract: JSON Schema from Rust types, generated TS
+
+Derive `schemars::JsonSchema` on `web::model::Snapshot`, everything it holds (store rows, `doctor::Report`, skills page) and the client messages (`set`, `expand`) and server frames (`message`, `expand`). Commit the schema, generate `web/src/api/snapshot.gen.ts` from it (`json-schema-to-typescript`), and fail a test when the committed schema or TS is stale.
+
+### T310.3. Data layer: WebSocket client + TanStack Query
+
+A typed `/ws` client (same-origin `ws`/`wss`, backoff reconnect, connection state) that pushes each snapshot into the TanStack Query cache; mutations for `set` and `expand`; a fixture source (`?sample`) with a snapshot fixture for Storybook, Vitest and offline e2e. Vitest covers reconnect and frame handling.
+
+### T310.4. App shell: router, layout, theme, states
+
+TanStack Router (code-based route tree built from one page list), sidebar/top bar from `design/html`, theme toggle (`rtok-theme` in localStorage, system default), the orb background, reduced motion, and shared loading/empty/error/offline states.
+
+### T310.5. UI kit + Storybook
+
+Storybook 10 (`@storybook/react-vite`, addon-vitest, addon-a11y): Panel, Kpi, Pill, Switch, Search, Chip, Sparkline, DataTable (TanStack Table + Virtual) with stories for every state; stories run as Vitest browser tests.
+
+### T310.6. Pages: overview, plugins (toggle), calls (expand)
+
+### T310.7. Pages: sessions, doctor, logs
+
+### T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
+
+### T310.9. Serve the SPA from `rtok web`
+
+Embed `web/dist` in the binary (hashed assets, precompressed, SPA fallback, CSP), keep `RTOK_WEB_PKG`-style dev override for a local `dist`, build the SPA in CI and release before cargo. Rewrite `tests/web.rs`, `tests/web_e2e.rs`, `tests/release_bundle.rs` and `tests/surface_parity.rs` for the SPA (parity reads the SPA's page list).
+
+### T310.10. Playwright e2e against the real binary
+
+Playwright drives `rtok web` on a fixture store (no real agents): every page renders, plugin toggle round-trips through `/ws`, expand works, offline/reconnect state shows. Runs in CI on Linux; Storybook tests run in the same job.
+
+### T310.11. CI job for the SPA
+
+One CI job: `npm ci`, typecheck, oxlint/oxfmt, Vitest, Storybook tests, Playwright, `vite build`; cache npm and Playwright browsers.
+
+### T310.12. Delete Slint, the WASM build and the HTML design
+
+Remove `crates/rtok-webui`, `tools/webui-bundle.sh`, `just web-bundle`/`webui-check`, the wasm steps in CI/release, `tests/web_wasm.rs`, `design/html/` and the rest of the prototype; update D20, `architecture.md`, `toolchain.md` and `rust.md`.
 
 ## Reference
 

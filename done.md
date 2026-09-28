@@ -759,6 +759,14 @@ Check: `tests/web_e2e.rs` spawns the real `rtok web` (temp `HOME`/`RTOK_HOME`, n
 
 Check result (2026-09-21): with `crates/rtok-webui/pkg` moved aside, `RTOK_WEB_EMBED=require cargo check` fails naming the missing files and a plain `cargo check` succeeds. `just check` green: 1087 passed, 4 skipped.
 
+### T310.1. Scaffold the SPA in `web/`
+
+Plan: replace the prototype in `web/` with a Vite 8 + React 19 + TypeScript (strict) app: `package.json` (npm, lockfile committed), `vite.config.ts`, `tsconfig.json`, `index.html`, `src/main.tsx` with one placeholder route. Tailwind v4 through `@tailwindcss/vite`, with `design/html/css/tokens.css` and the fonts moved under `web/src/styles`. Keep `web/assets` (icons, fonts, logo). The old `app.js`/`orb.js`/`tailwind.config.js` go (their copy lives in `design/html/js` until T310.12). Add `just spa-*` recipes (install, dev, build, typecheck), keep `just js` green (oxlint/oxfmt see the new `.ts/.tsx`), add rows to `toolchain.md`.
+
+Check: `just spa-build` produces `web/dist`; `just js`; `npm run typecheck`.
+
+Result: `web/` is a Vite 8.3.1 + React 19.3.0 + TypeScript 7.0.2 (strict) app with Tailwind 4.3.3 via `@tailwindcss/vite`; `web/src/styles/tokens.css` is a copy of `design/html/css/tokens.css`, `app.css` ports its `@theme inline` block, fonts come from `web/assets/fonts`. The theme is set before paint from `rtok-theme` (system default). The prototype's `app.js`, `orb.js`, Tailwind v3 config and CSS are gone (their copy stays in `design/html/js` until T310.12). `just spa-install|spa-dev|spa-build|spa-typecheck` added; `just js` lints the new `.ts/.tsx`. Checked: `just spa-build` (JS 220 kB / 69 kB gzip, CSS 14 kB), `just js`, `cargo nextest run --test toolchain_rows`, and the built page in dark and light in a browser.
+
 ### T80. `rtok web` from an installed binary 404s the whole UI
 
 Do (2026-09-21): `src/web/mod.rs` resolved the Slint bundle as `env!("CARGO_MANIFEST_DIR")/crates/rtok-webui/pkg` — baked at compile time, so the v0.3.2 ketch binary looked for CI's `/Users/runner/work/rtok/rtok/crates/rtok-webui/pkg`. That directory exists on no user machine, `pkg.is_dir()` was false, `/pkg` was never mounted, and the dashboard answered `/` 200 with a blank canvas while `GET /pkg/rtok_webui.js` 404'd, saying nothing about why. `pkg_dir` now resolves at run time and returns an `Option`: `RTOK_WEB_PKG`, then `pkg/` beside the executable (where a release archive unpacks), then `share/rtok/pkg` beside and one level above `bin/`, then the source tree as the dev fallback. `app` splits into `app_with_pkg(state, Option<PathBuf>)` so both surfaces are testable without touching the process environment (same reason as T78's handed-in gate). With no bundle, `/pkg/{*path}` answers 503 with the paths tried and how to build one, and `serve` prints that same text once at startup — one string, two places.
