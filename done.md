@@ -625,6 +625,16 @@ The one lint hit was real: `tests/node/fake-rtok.ts` used a ternary as a stateme
 
 Check: `just js` exits 0 (0 warnings, 6 files formatted); the plugin behaviour tests that drive these files (`filter::opencode_plugin_unit_test_with_api_mock`, `pi_plugin::*`, `opencode_plugin::*`) pass after the reformat; `just check` green.
 
+### T312. Run the non-cargo gates of just check in parallel
+
+`just check` ran `fmt-check lint test build-min dup js python` one after another. The cargo recipes share one `target/` and serialize on cargo's lock, but `dup` (jscpd), `js` (oxlint, oxfmt) and `python` (pytest) need no build.
+
+Layout: `check: fmt-check gates`; `gates` is `[parallel]` over `cargo-gates` (`lint test build-min`, still sequential) and `dup js python`. `fmt-check` stays first and alone, so a formatting slip still fails in about a second before any cargo work. just 1.58.0 (pinned) runs a `[parallel]` recipe's dependencies on scoped threads, waits for all of them and returns the first error in declaration order (https://github.com/casey/just/blob/1.58.0/src/justfile.rs#L602-L676 (`run_dependencies`), checked 2026-09-28; attribute documented since 1.42.0 in https://github.com/casey/just/blob/1.58.0/README.md#parallelism). So any failing gate still fails `check` with its exit code; a lint failure stops `test` and `build-min` as before; a `dup`/`js`/`python` failure is reported when the cargo chain ends, which is where the old order reported it anyway. Output is not grouped: the three tools' lines appear among clippy's first lines, each tool's format is distinct and just's `error: recipe <name> failed` line names the gate. If two branches fail, only the first is named; the other's output is still in the log. CI's `lint` job (`just fmt-check lint build-min dup js python`, no `test`) stays as is: its critical path is clippy; `verify.yml` and release-plz run `just check` and get the new layout.
+
+Result (2026-09-28, macOS, warm target/, `web/` JS excluded via `js_files=` because main's `web/*.js` failed `just js` at the time): the gates moved off the critical path take 2.8 s idle (`dup` 0.3 s, `js` 0.4 s, `python` 2.1 s) and 3.5–15.5 s under the load other sessions put on the host (load average 25–40). End-to-end warm `just check` wall clock under that load was noise-bound: base 274 s / 297 s, new 278 s / 362 s (nextest alone varied 103–244 s); `the_agent_alias_prints_what_agents_prints` timed out once in each layout. Failure checks with stubbed tools: `CARGO=false` fails at `fmt-check` (exit 1, nothing else runs); `JSCPD=false` fails `check` with `dup` exit 1 after the chain; a clippy stub exiting 7 fails with exit 7 while `dup js python` still finish; all stubs passing exits 0.
+
+Model: Claude Code / claude-opus-5-5
+
 ### T108. Guard tests for the Windows CI job
 
 Asked for by the creator on the T82/T93 PR. `tests/windows_ci.rs`, no new dependency (`regex`, `ignore` are already in `Cargo.toml`):
