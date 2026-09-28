@@ -61,10 +61,20 @@ complete -c rtok -n "__fish_rtok_using_subcommand hook" -l host -d 'Overlay `[ho
 complete -c rtok -n "__fish_rtok_using_subcommand hook" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand hook" -l serve -d 'Run the resident hook process `rtok-hook` talks to (T178, D32)'
 complete -c rtok -n "__fish_rtok_using_subcommand hook" -s h -l help -d 'Print help'
-complete -c rtok -n "__fish_rtok_using_subcommand mcp" -l call -d 'Call one listed tool and print the text result (pi `registerTool` shim, T70.3)' -r
-complete -c rtok -n "__fish_rtok_using_subcommand mcp" -l json -d 'JSON arguments for `--call`' -r
-complete -c rtok -n "__fish_rtok_using_subcommand mcp" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
-complete -c rtok -n "__fish_rtok_using_subcommand mcp" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and not __fish_seen_subcommand_from ping help" -l call -d 'Call one listed tool and print the text result (pi `registerTool` shim, T70.3)' -r
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and not __fish_seen_subcommand_from ping help" -l json -d 'JSON arguments for `--call`' -r
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and not __fish_seen_subcommand_from ping help" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and not __fish_seen_subcommand_from ping help" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and not __fish_seen_subcommand_from ping help" -a "ping" -d 'Prove the agent/'s rtok MCP server is alive and answering'
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and not __fish_seen_subcommand_from ping help" -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and __fish_seen_subcommand_from ping" -l timeout -d 'Seconds to wait for the agent or the server' -r
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and __fish_seen_subcommand_from ping" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and __fish_seen_subcommand_from ping" -l cli -d 'Only the CLI app'
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and __fish_seen_subcommand_from ping" -l desktop -d 'Only the desktop app'
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and __fish_seen_subcommand_from ping" -l json -d 'One JSON object per host'
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and __fish_seen_subcommand_from ping" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and __fish_seen_subcommand_from help" -f -a "ping" -d 'Prove the agent/'s rtok MCP server is alive and answering'
+complete -c rtok -n "__fish_rtok_using_subcommand mcp; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand proxy" -l port -d 'Override `[proxy] port`' -r
 complete -c rtok -n "__fish_rtok_using_subcommand proxy" -l upstream -d 'Override `[proxy] upstream`' -r
 complete -c rtok -n "__fish_rtok_using_subcommand proxy" -l mode -d 'Override `[proxy] mode` (`passthrough` | `compress`)' -r
@@ -202,7 +212,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcom
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from list" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from info" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from info" -l json -d 'JSON instead of the table'
-complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from info" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from info" -s h -l help -d 'Print help (see more with /'--help/')'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from sessions" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from sessions" -l all -d 'Also show sessions that have ended'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from sessions" -l json -d 'JSON instead of the table'
@@ -296,7 +306,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcomm
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from list" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from info" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from info" -l json -d 'JSON instead of the table'
-complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from info" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from info" -s h -l help -d 'Print help (see more with /'--help/')'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from sessions" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from sessions" -l all -d 'Also show sessions that have ended'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from sessions" -l json -d 'JSON instead of the table'
@@ -608,6 +618,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subc
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor worktree info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "logs" -d 'rtok/'s own log (`rtok logs` prints, `rtok logs export` strips numbering and colour)'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor worktree info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "report" -d 'The operator model as one document (D24): Markdown, HTML and PDF'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor worktree info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from mcp" -f -a "ping" -d 'Prove the agent/'s rtok MCP server is alive and answering'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from worktree" -f -a "add" -d 'Create the worktree for a task: one location, one name, one locked owner; prints its path'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from worktree" -f -a "claim" -d 'Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from worktree" -f -a "remove" -d 'Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees'

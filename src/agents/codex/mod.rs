@@ -363,7 +363,7 @@ pub fn register_proxy(cfg: &Config, remove: bool) -> Result<String> {
     let mut doc = load(path)?;
     let url = super::openai_proxy_url(cfg);
     let report = if remove {
-        strip_proxy(&mut doc)
+        strip_proxy(&apply(cfg), path, &mut doc, &url)
     } else {
         insert_proxy(&mut doc, &url)?
     };
@@ -486,7 +486,17 @@ fn insert_proxy(doc: &mut DocumentMut, url: &str) -> Result<String> {
     if old.as_deref() == Some(NAME) && ours {
         return Ok(NO_CHANGES.into());
     }
-    doc["model_provider"] = value(NAME);
+    // A re-install keeps the value the first install replaced.
+    let was = match old.as_deref() {
+        Some(NAME) => replaced_provider(doc),
+        other => other.map(str::to_string),
+    };
+    let mut key = toml_edit::Value::from(NAME);
+    if let Some(s) = &was {
+        let s = toml_edit::Value::from(s.as_str());
+        key.decor_mut().set_suffix(format!(" {WAS}{s}"));
+    }
+    doc["model_provider"] = Item::Value(key);
     let tables = doc
         .entry("model_providers")
         .or_insert(Item::Table(Table::new()));
@@ -498,29 +508,68 @@ fn insert_proxy(doc: &mut DocumentMut, url: &str) -> Result<String> {
     entry["name"] = value(NAME);
     entry["base_url"] = value(url);
     tables.insert(NAME, Item::Table(entry));
-    let revert = match old.as_deref() {
-        Some(s) if s != NAME => format!("revert: set model_provider to {s}"),
-        _ => "revert: remove [model_providers.rtok]".into(),
+    let revert = match &was {
+        Some(s) => format!("revert: set model_provider to {s}"),
+        None => "revert: remove [model_providers.rtok]".into(),
     };
     Ok(format!(
         "+ [model_providers.rtok]\nbase_url = \"{url}\"\n{revert}"
     ))
 }
 
-fn strip_proxy(doc: &mut DocumentMut) -> String {
+/// Trailing comment [`insert_proxy`] leaves on the `model_provider` line it took over: the
+/// value it replaced, as a TOML string, so [`strip_proxy`] can put it back (T307). It lives
+/// in the file itself, so it survives re-installs and needs no state outside Codex's config.
+const WAS: &str = "# rtok: was ";
+
+/// The `model_provider` value rtok replaced, read back from its [`WAS`] comment.
+fn replaced_provider(doc: &DocumentMut) -> Option<String> {
+    let suffix = doc.get("model_provider")?.as_value()?.decor().suffix()?;
+    let was = suffix.as_str()?.trim().strip_prefix(WAS)?;
+    let was = was.parse::<toml_edit::Value>().ok()?;
+    was.as_str().map(str::to_string)
+}
+
+/// The `[model_providers.rtok]` table [`insert_proxy`] writes, as JSON.
+fn proxy_entry(url: &str) -> serde_json::Value {
+    json!({"name": NAME, "base_url": url})
+}
+
+/// Undo [`insert_proxy`] only as far as rtok wrote it (T307): a `[model_providers.rtok]`
+/// the user changed from [`proxy_entry`] stays, with `model_provider`, unless `--yes` (or an
+/// accepted prompt) says remove — [`rtok_agent_sdk::keep_edited`], the ownership half of
+/// `judge_owned` (its "runs the rtok binary" half does not fit a provider table). A
+/// `model_provider` rtok replaced is restored; one rtok added is removed.
+fn strip_proxy(apply: &Apply, path: &Path, doc: &mut DocumentMut, url: &str) -> String {
+    let have = doc
+        .get("model_providers")
+        .and_then(|t| t.get(NAME))
+        .map(super::mcp::toml_item_to_json);
+    if have.is_some_and(|have| have != proxy_entry(url)) {
+        let at = format!("model_providers.{NAME} in {}", path.display());
+        if let Some(leave) = rtok_agent_sdk::keep_edited(apply, &at) {
+            return leave;
+        }
+    }
     let key = doc.get("model_provider").and_then(Item::as_str) == Some(NAME);
-    if key {
-        doc.remove("model_provider");
+    let restored = key.then(|| replaced_provider(doc)).flatten();
+    match &restored {
+        Some(was) => doc["model_provider"] = value(was.as_str()),
+        None if key => drop(doc.remove("model_provider")),
+        None => {}
     }
     let table = doc
         .get_mut("model_providers")
         .and_then(Item::as_table_mut)
         .and_then(|t| t.remove(NAME))
         .is_some();
-    if key || table {
-        "- [model_providers.rtok]".into()
-    } else {
-        NO_CHANGES.into()
+    match restored {
+        Some(was) => format!(
+            "- [model_providers.rtok]\nrestore model_provider = {}",
+            toml_edit::Value::from(was)
+        ),
+        None if key || table => "- [model_providers.rtok]".into(),
+        None => NO_CHANGES.into(),
     }
 }
 
@@ -656,6 +705,65 @@ mod tests {
         let gone = fs::read_to_string(&path).unwrap();
         assert!(!gone.contains("model_providers.rtok"), "{gone}");
         assert!(gone.contains("# keep me"), "{gone}");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// T307: the `model_provider` rtok replaced comes back on remove, byte for byte, even
+    /// after a re-install over rtok's own value.
+    #[test]
+    fn proxy_remove_restores_the_replaced_model_provider() {
+        let (c, path) = cfg("proxy-restore", false);
+        let before = "# keep me\nmodel_provider = \"openai\"\nmodel = \"o3\"\n";
+        fs::write(&path, before).unwrap();
+        let first = register_proxy(&c, false).unwrap();
+        assert!(
+            first.contains("revert: set model_provider to openai"),
+            "{first}"
+        );
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(
+            raw.contains("model_provider = \"rtok\" # rtok: was \"openai\"\n"),
+            "{raw}"
+        );
+        // A re-install that rewrites rtok's table still remembers "openai", not "rtok".
+        fs::write(&path, raw.replace("8790", "1")).unwrap();
+        let again = register_proxy(&c, false).unwrap();
+        assert!(
+            again.contains("revert: set model_provider to openai"),
+            "{again}"
+        );
+        assert_eq!(register_proxy(&c, false).unwrap(), NO_CHANGES);
+        assert_eq!(
+            register_proxy(&c, true).unwrap(),
+            "- [model_providers.rtok]\nrestore model_provider = \"openai\""
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), before);
+        assert_eq!(register_proxy(&c, true).unwrap(), NO_CHANGES);
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// T307: a `[model_providers.rtok]` the user edited stays on remove (with
+    /// `model_provider`), unless `--yes` says remove.
+    #[test]
+    fn proxy_remove_leaves_a_hand_edited_provider_table() {
+        let (mut c, path) = cfg("proxy-edited", false);
+        fs::write(&path, "model_provider = \"openai\"\n").unwrap();
+        register_proxy(&c, false).unwrap();
+        let edited = fs::read_to_string(&path)
+            .unwrap()
+            .replace("http://127.0.0.1:8790/v1", "http://example.test/v1");
+        assert!(edited.contains("example.test"), "{edited}");
+        fs::write(&path, &edited).unwrap();
+        let out = register_proxy(&c, true).unwrap();
+        assert!(out.starts_with("leave model_providers.rtok"), "{out}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), edited);
+        c.setup.yes = true;
+        let out = register_proxy(&c, true).unwrap();
+        assert!(out.contains("restore model_provider = \"openai\""), "{out}");
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "model_provider = \"openai\"\n"
+        );
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 

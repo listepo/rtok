@@ -449,8 +449,15 @@ pub fn agent_message_frame(m: &crate::store::Message) -> String {
         out.push_str(line);
         out.push('\n');
     }
-    out.push_str(&format!("[end of rtok message #{}]\n", m.id));
+    out.push_str(&agent_message_end(m.id));
+    out.push('\n');
     out
+}
+
+/// The frame's closing line. Every body line is quoted with `> `, so a whole line equal to
+/// this can only come from the frame — T288 checks it to tell which frames reached a context.
+pub fn agent_message_end(id: i32) -> String {
+    format!("[end of rtok message #{id}]")
 }
 
 #[cfg(test)]
