@@ -625,6 +625,16 @@ The one lint hit was real: `tests/node/fake-rtok.ts` used a ternary as a stateme
 
 Check: `just js` exits 0 (0 warnings, 6 files formatted); the plugin behaviour tests that drive these files (`filter::opencode_plugin_unit_test_with_api_mock`, `pi_plugin::*`, `opencode_plugin::*`) pass after the reformat; `just check` green.
 
+### T312. Run the non-cargo gates of just check in parallel
+
+`just check` ran `fmt-check lint test build-min dup js python` one after another. The cargo recipes share one `target/` and serialize on cargo's lock, but `dup` (jscpd), `js` (oxlint, oxfmt) and `python` (pytest) need no build.
+
+Layout: `check: fmt-check gates`; `gates` is `[parallel]` over `cargo-gates` (`lint test build-min`, still sequential) and `dup js python`. `fmt-check` stays first and alone, so a formatting slip still fails in about a second before any cargo work. just 1.58.0 (pinned) runs a `[parallel]` recipe's dependencies on scoped threads, waits for all of them and returns the first error in declaration order (https://github.com/casey/just/blob/1.58.0/src/justfile.rs#L602-L676 (`run_dependencies`), checked 2026-09-28; attribute documented since 1.42.0 in https://github.com/casey/just/blob/1.58.0/README.md#parallelism). So any failing gate still fails `check` with its exit code; a lint failure stops `test` and `build-min` as before; a `dup`/`js`/`python` failure is reported when the cargo chain ends, which is where the old order reported it anyway. Output is not grouped: the three tools' lines appear among clippy's first lines, each tool's format is distinct and just's `error: recipe <name> failed` line names the gate. If two branches fail, only the first is named; the other's output is still in the log. CI's `lint` job (`just fmt-check lint build-min dup js python`, no `test`) stays as is: its critical path is clippy; `verify.yml` and release-plz run `just check` and get the new layout.
+
+Result (2026-09-28, macOS, warm target/, `web/` JS excluded via `js_files=` because main's `web/*.js` failed `just js` at the time): the gates moved off the critical path take 2.8 s idle (`dup` 0.3 s, `js` 0.4 s, `python` 2.1 s) and 3.5–15.5 s under the load other sessions put on the host (load average 25–40). End-to-end warm `just check` wall clock under that load was noise-bound: base 274 s / 297 s, new 278 s / 362 s (nextest alone varied 103–244 s); `the_agent_alias_prints_what_agents_prints` timed out once in each layout. Failure checks with stubbed tools: `CARGO=false` fails at `fmt-check` (exit 1, nothing else runs); `JSCPD=false` fails `check` with `dup` exit 1 after the chain; a clippy stub exiting 7 fails with exit 7 while `dup js python` still finish; all stubs passing exits 0. Unstubbed `just check` on the branch merged with main: exit 0 (1967 tests passed).
+
+Model: Claude Code / claude-opus-5-5
+
 ### T108. Guard tests for the Windows CI job
 
 Asked for by the creator on the T82/T93 PR. `tests/windows_ci.rs`, no new dependency (`regex`, `ignore` are already in `Cargo.toml`):
@@ -5839,6 +5849,49 @@ Result: `just test-cov` (`justfile`) adds `llvm-tools-preview`, runs `cargo llvm
 Check: `just test-cov -E 'test(every_formatter_arm_has_a_golden) | test(ten_families)'` — 2 passed, `coverage/lcov.info` written, TOTAL row printed; `cargo nextest run -p rtok --test toolchain_rows --test plugin_plans` green.
 
 Status: done 2026-09-27
+Model: Claude Code / claude-opus-5-5
+
+### T311. Drop debug info from just check builds
+
+`cargo build --tests --workspace` took 48.0 s by default and 37.45 s with `CARGO_PROFILE_DEV_DEBUG=0` (warm `target/`, 2026-09-28). CI already builds without debug info (`ci.yml`); `[profile.dev]` keeps `line-tables-only` locally for backtrace line numbers. Done = the fastest option that does not slow the interactive loop is wired into `just check`, with before/after numbers; or the task closes with the measurements and no change.
+
+Plan: measure a realistic cycle (edit one `src` file → gate cargo steps → `cargo build` → edit → `cargo build` → gate) for (a) status quo, (b) `CARGO_PROFILE_DEV_DEBUG=0` inside the justfile's cargo recipes, (c) a custom profile inheriting `dev` with `debug = false` used through `--profile` / nextest `--cargo-profile`, with its disk cost; wire in the winner or close with the numbers.
+
+Result: no change — nothing is a net win on macOS. Measured 2026-09-28 in one worktree (M-series, 16 CPUs, rust 1.98.1, nextest 0.9.143). Other agents kept the load at 20–40, so wall times swung 2x run to run; the comparison uses child CPU seconds (user+sys) of the gate's cargo steps (both clippy runs, `nextest run --no-run`, `build-min`), four edit→gate samples per option:
+
+| Option | Gate CPU s (mean) | `cargo build` right after the gate | edit → `cargo build` |
+| --- | --- | --- | --- |
+| (a) status quo | 223, 216, 231, 241 (228) | 7.0, 6.6 | 6.2, 6.8 |
+| (b) `CARGO_PROFILE_DEV_DEBUG=0` for the gate | 241, 235, 237, 240 (238, +5 %) | 6.6, 6.5 | 6.2, 6.8 |
+| (c) `[profile.gate]`, `inherits = "dev"`, `debug = false` | 166, 168, 163, 182 (170, −25 %) | 7.2, 7.1 | 6.6, 6.5 |
+
+- No option thrashes the interactive loop. Cargo hashes the whole profile into each unit's metadata and file-name suffix, so `debug = 0` and `line-tables-only` artifacts of test and check units sit side by side in `target/debug/deps` (`compute_metadata`: `unit.profile.hash(...)`; `use_extra_filename` is true for tests and check units, and for executables on non-MSVC hosts — https://github.com/rust-lang/cargo/blob/rust-1.98.0/src/cargo/core/compiler/build_runner/compilation_files.rs, checked 2026-09-28). Dependencies already have `debug = false`, so (b) shares them.
+- Debug info itself costs nothing measurable here. With the target dir held fixed (`target/gate`), only `CARGO_PROFILE_GATE_DEBUG` changed, three alternating reps: `nextest --no-run` CPU 135/139/141 with `line-tables-only` against 144/145/150 without; clippy 21/24/29 against 23/27/31. On macOS the dev default is `split-debuginfo = "unpacked"` (https://doc.rust-lang.org/cargo/reference/profiles.html#split-debuginfo, checked 2026-09-28): DWARF stays in the `.o` files and the linker never copies it into the ~90 test binaries — the cost `debug = 0` removes on Linux, where CI keeps it (T261). The 48.0 → 37.45 s evidence was wall time on a loaded machine.
+- The −25 % of (c) is the fresh directory, not the debug setting: `target/debug` here held 138 k files in `deps` (131 k `.o` files kept by unpacked split-debuginfo), 13 GB of `incremental`, and many rlibs/rmeta compressed by `dunnage` (T236); `target/gate` started with 2.9 k files. It erodes as the directory ages — after `dunnage run target` compressed `target/gate`, the same steps took clippy 35/34 and tests 155/152 CPU s. And (c) costs every worktree a second cold build of all dependencies (315 s wall, +6.3 GB), which the one-worktree-per-task workflow pays on every task.
+- Backtraces: nextest does not set `RUST_BACKTRACE` (https://nexte.st/docs/configuration/env-vars/, checked 2026-09-28) and nothing in the repo does, so a failing test in `just check` prints the panic's `file:line` from `std::panic::Location` either way; only frames of an explicit `RUST_BACKTRACE=1` run would lose line numbers. Not a factor.
+- `check` is a reserved profile name (cargo 1.98.1: "profile name `check` is reserved").
+
+Check: numbers above (scripts in the session scratchpad, not committed); `just check` green on the unchanged tree.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-opus-5-5
+
+### T313. Shared compile cache across local worktrees
+
+~20 local worktrees each compile the ~450 dependencies into their own `target/`; a copied `target/` still rebuilds because cargo fingerprints hold absolute paths. Share compiled artifacts across worktrees for local development only; CI (Swatinem/rust-cache) keeps working unchanged. Done = measured before/after for (a) `just check` in a fresh worktree with an empty `target/`, (b) a second fresh worktree with the cache warm, (c) a warm edit→check cycle that must not get slower. Wire it in only if it is a net win.
+
+Result: not a net win, so no config change. Candidates, checked 2026-09-28:
+- cargo `build.build-dir` (stable in 1.98) only moves intermediate artifacts; its templates (`{workspace-root}`, `{workspace-path-hash}`) keep one build dir per workspace, and cargo's own "Shared cache" section points to sccache for sharing across workspaces (https://github.com/rust-lang/cargo/blob/rust-1.98.0/src/doc/src/reference/config.md#buildbuild-dir, https://github.com/rust-lang/cargo/blob/rust-1.98.0/src/doc/src/reference/build-cache.md#shared-cache). One fixed build dir for all worktrees is the shared-`CARGO_TARGET_DIR` build-lock problem already rejected in research.md §18.4.
+- sccache 0.18.0 (latest, released 2026-09-14, https://github.com/mozilla/sccache/releases/tag/v0.18.0) as `RUSTC_WRAPPER`. It cannot cache incremental crates (all workspace crates in the dev/test profile) or `bin`/`dylib`/`cdylib`/`proc-macro` crates (https://github.com/mozilla/sccache/blob/v0.18.0/docs/Rust.md). Its Rust hash key includes the cwd, every `CARGO_*` variable and every env var named in dep-info, such as a build script's absolute `OUT_DIR` under `target/` (https://github.com/mozilla/sccache/blob/v0.18.0/src/compiler/rust.rs, `generate_hash_key`). `SCCACHE_BASEDIRS` is applied only to C/C++ (`src/compiler/c.rs`, `preprocessor_cache.rs`, PR #2840), not to Rust.
+
+Measured on a Mac with 16 CPUs, load average 22–40 throughout from other sessions' builds, so single seconds are rough. sccache ran with its own server and cache dir (scratchpad, deleted afterwards).
+- (a) Fresh worktree, empty `target/`, `just check`: without a wrapper clippy 102 s and test build 83 s; with sccache and an empty cache clippy 118 s and test build 174 s (0 hits, 1,223 misses). Both runs stopped at a test (this card's own missing `Check:` line; a load-sensitive timing assert in `hook_resident`), before `build-min`.
+- (b) Second fresh worktree (`_worktrees/rtok-t310b`) with the cache warm from (a): Rust hit rate 71.6 % (586 of 818), C/C++ 99.7 %; 115 compilations not cacheable because of their crate type and 103 because they were incremental. Clippy 176 s and test build 92 s: no faster than (a) without a wrapper. Paired back-to-back runs of the cargo phases of `just check` (both clippy runs, `nextest --no-run`, `build-min`) at a target path the cache had never seen: with sccache 171 s and 198 s (Rust hit 67.7 %), without 160 s and 193 s. For comparison, rebuilding the same path after a clean (the cache already holds that path) is faster with sccache, at 216 s and 245 s against 346 s and 320 s (93–100 % hits). That is not the cross-worktree case this task is about. What misses (path-dependent crates and the crates that depend on them) and what cannot be cached (proc macros, build scripts, the workspace crates) makes up the critical path.
+- (c) Warm edit→check (edit `src/render.rs`; lint plus test build; 4 interleaved pairs): without a wrapper 62/131/173/120 s (median 126 s), with sccache 97/130/109/144 s (median 120 s). Only the two workspace units rebuild and sccache passes them through, so there is no measurable difference. The full warm `just check` after the edit, without a wrapper, took 112 s.
+
+Check: raw logs of every run above; `sccache --show-stats` after each wrapped run; no files other than `plan.md`/`todo.md`/`done.md` changed.
+
+Status: done 2026-09-28
 Model: Claude Code / claude-opus-5-5
 
 ### T226. A modern look for `rtok tui`

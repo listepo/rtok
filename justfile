@@ -21,7 +21,16 @@ cpus := `case "$(uname -s)" in Linux) nproc;; Darwin|*BSD) sysctl -n hw.ncpu;; *
 default: check
 
 # fmt --check, clippy -D warnings, tests, min-feature build, copy-paste detector, JS/TS lint+format, Python tests
-check: fmt-check lint test build-min dup js python
+check: fmt-check gates
+
+# T312: fmt-check fails first, in a second; then dup/js/python run beside the cargo chain, which
+# stays sequential (one target/, cargo's lock). just waits for every branch; any failure fails.
+[parallel]
+[private]
+gates: cargo-gates dup js python
+
+[private]
+cargo-gates: lint test build-min
 
 fmt:
     {{cargo}} fmt

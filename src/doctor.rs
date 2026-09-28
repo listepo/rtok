@@ -888,20 +888,9 @@ fn mcp_servers(claude: Option<&Value>, mcp_json: &Path) -> Vec<Server> {
     out
 }
 
-/// Start one MCP server for probing.
-///
 /// On Windows, bare names like `npx` / `uvx` (and explicit `.cmd` / `.bat`
 /// paths) must go through `cmd.exe /D /C`: CreateProcess will not run those
-/// shims, so doctor used to report 0 tools for every npx-launched server.
-fn spawn_mcp(s: &Server) -> std::io::Result<std::process::Child> {
-    let mut cmd = mcp_command(&s.cmd, &s.args);
-    cmd.envs(&s.env)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-}
-
+/// shims, so a probe used to report 0 tools for every npx-launched server.
 fn mcp_command(command: &str, args: &[String]) -> Command {
     if cfg!(windows) && windows_needs_cmd_host(command) {
         let mut c = Command::new("cmd.exe");
@@ -927,24 +916,39 @@ fn windows_needs_cmd_host(command: &str) -> bool {
     !command.contains('/') && !command.contains('\\') && !command.contains(':')
 }
 
-fn list_tools(s: &Server, timeout: Duration, est: &crate::config::Estimator) -> (usize, u32) {
-    if s.cmd.is_empty() {
-        return (0, 0);
+/// `initialize`, `notifications/initialized`, `tools/list`, then `call` when set.
+/// One JSON-RPC response value per answered request. Used by doctor's tool count and
+/// by `rtok mcp ping` (T275.1) so both speak the same client.
+pub(crate) fn mcp_roundtrip(
+    command: &str,
+    args: &[String],
+    env: &BTreeMap<String, String>,
+    call: Option<&str>,
+    timeout: Duration,
+) -> Result<Vec<Value>, String> {
+    if command.is_empty() {
+        return Err("server failed to start: empty command".into());
     }
-    let payload = concat!(
+    let mut payload = String::from(concat!(
         r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"rtok","version":"0.1.0"}}}"#,
         "\n",
         r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
         "\n",
         r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
-        "\n"
-    );
-    let mut child = match spawn_mcp(s) {
-        Ok(c) => c,
-        Err(_) => return (0, 0),
-    };
-    // Keep stdin open until we have the answer: some servers exit on EOF before replying,
-    // and slow starters (uvx, npx) need the full timeout rather than a wait-for-exit.
+        "\n",
+    ));
+    if let Some(line) = call {
+        payload.push_str(line);
+        payload.push('\n');
+    }
+    let mut cmd = mcp_command(command, args);
+    cmd.envs(env)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("server failed to start: {e}"))?;
     let mut stdin = child.stdin.take();
     if let Some(si) = stdin.as_mut() {
         let _ = si.write_all(payload.as_bytes());
@@ -954,19 +958,64 @@ fn list_tools(s: &Server, timeout: Duration, est: &crate::config::Estimator) -> 
     std::thread::spawn(move || {
         let Some(so) = stdout else { return };
         for line in BufReader::new(so).lines().map_while(Result::ok) {
-            if let Ok(v) = serde_json::from_str::<Value>(&line)
-                && let Some(tools) = v.pointer("/result/tools")
-            {
-                let _ = tx.send(tools.clone());
-                return;
+            if let Ok(v) = serde_json::from_str::<Value>(&line) {
+                let _ = tx.send(v);
             }
         }
     });
-    let tools = rx.recv_timeout(timeout).ok();
+    let mut out = Vec::new();
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            drop(stdin);
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("timed out after {}s", timeout.as_secs()));
+        }
+        match rx.recv_timeout(left) {
+            Ok(v) => {
+                let done = if call.is_some() {
+                    v.get("id")
+                        .is_some_and(|id| id.as_i64() == Some(3) || id.as_str() == Some("3"))
+                } else {
+                    v.pointer("/result/tools").is_some()
+                };
+                out.push(v);
+                if done {
+                    break;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                drop(stdin);
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("timed out after {}s", timeout.as_secs()));
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
     drop(stdin);
     let _ = child.kill();
     let _ = child.wait();
-    let Some(tools) = tools.as_ref().and_then(Value::as_array) else {
+    if out.is_empty() {
+        return Err("server failed to start".into());
+    }
+    Ok(out)
+}
+
+fn list_tools(s: &Server, timeout: Duration, est: &crate::config::Estimator) -> (usize, u32) {
+    if s.cmd.is_empty() {
+        return (0, 0);
+    }
+    let Ok(values) = mcp_roundtrip(&s.cmd, &s.args, &s.env, None, timeout) else {
+        return (0, 0);
+    };
+    let Some(tools) = values
+        .iter()
+        .find_map(|v| v.pointer("/result/tools"))
+        .and_then(Value::as_array)
+    else {
         return (0, 0);
     };
     let tokens: u32 = tools

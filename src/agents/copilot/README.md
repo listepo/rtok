@@ -7,6 +7,11 @@ other server survives; `hooks/rtok.json` is rtok's own file, since Copilot loads
 `hooks/*.json`, so no user file is touched and `remove` simply deletes it. `list` shows the CLI
 and the app as one shared host, as it does for Cursor.
 
+Headless ping (`rtok mcp ping copilot --cli`): `copilot -p "<prompt>" --allow-all-tools`.
+`-p` / `--prompt` is the programmatic flag; `--allow-all-tools` lets the unattended run call
+MCP (https://docs.github.com/en/copilot/concepts/agents/copilot-cli/about-copilot-cli, checked
+2026-09-27). `--desktop` checks `mcp-config.json` and prints the prompt.
+
 ## Modules
 
 | Module | Support | Why |
@@ -49,5 +54,6 @@ Host documentation setup writes against; re-check the links when this host chang
 - Hooks (`hooks/*.json` shape, event names, stdin and stdout keys, exit codes): https://docs.github.com/en/copilot/reference/hooks-reference
 - Plugins (`installed-plugins/`, `copilot plugin`): https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference
 - BYOK (`COPILOT_PROVIDER_BASE_URL`, `providers.json`): https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-byok-models
+- Non-interactive prompt (`copilot -p` / `--prompt`; `rtok mcp ping copilot`): https://docs.github.com/en/copilot/concepts/agents/copilot-cli/about-copilot-cli
 - Agent skills (`~/.copilot/skills/<name>/`): https://docs.github.com/en/copilot/concepts/agents/about-agent-skills
 - GitHub Copilot app (reuses the CLI's MCP, skills and plugins): https://docs.github.com/en/copilot/how-tos/github-copilot-app/customize-github-copilot-app
