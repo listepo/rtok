@@ -5833,6 +5833,24 @@ Check: `just test-cov -E 'test(every_formatter_arm_has_a_golden) | test(ten_fami
 Status: done 2026-09-27
 Model: Claude Code / claude-opus-5-5
 
+### T310. Shared compile cache across local worktrees
+
+~20 local worktrees each compile the ~450 dependencies into their own `target/`; a copied `target/` still rebuilds because cargo fingerprints hold absolute paths. Share compiled artifacts across worktrees for local development only; CI (Swatinem/rust-cache) keeps working unchanged. Done = measured before/after for (a) `just check` in a fresh worktree with an empty `target/`, (b) a second fresh worktree with the cache warm, (c) a warm edit→check cycle that must not get slower. Wire it in only if it is a net win.
+
+Result: not a net win, so no config change. Candidates, checked 2026-09-28:
+- cargo `build.build-dir` (stable in 1.98) only moves intermediate artifacts; its templates (`{workspace-root}`, `{workspace-path-hash}`) keep one build dir per workspace, and cargo's own "Shared cache" section points to sccache for sharing across workspaces (https://github.com/rust-lang/cargo/blob/rust-1.98.0/src/doc/src/reference/config.md#buildbuild-dir, https://github.com/rust-lang/cargo/blob/rust-1.98.0/src/doc/src/reference/build-cache.md#shared-cache). One fixed build dir for all worktrees is the shared-`CARGO_TARGET_DIR` build-lock problem already rejected in research.md §18.4.
+- sccache 0.18.0 (latest, released 2026-09-14, https://github.com/mozilla/sccache/releases/tag/v0.18.0) as `RUSTC_WRAPPER`. It cannot cache incremental crates (all workspace crates in the dev/test profile) or `bin`/`dylib`/`cdylib`/`proc-macro` crates (https://github.com/mozilla/sccache/blob/v0.18.0/docs/Rust.md). Its Rust hash key includes the cwd, every `CARGO_*` variable and every env var named in dep-info, such as a build script's absolute `OUT_DIR` under `target/` (https://github.com/mozilla/sccache/blob/v0.18.0/src/compiler/rust.rs, `generate_hash_key`). `SCCACHE_BASEDIRS` is applied only to C/C++ (`src/compiler/c.rs`, `preprocessor_cache.rs`, PR #2840), not to Rust.
+
+Measured on a Mac with 16 CPUs, load average 22–40 throughout from other sessions' builds, so single seconds are rough. sccache ran with its own server and cache dir (scratchpad, deleted afterwards).
+- (a) Fresh worktree, empty `target/`, `just check`: without a wrapper clippy 102 s and test build 83 s; with sccache and an empty cache clippy 118 s and test build 174 s (0 hits, 1,223 misses). Both runs stopped at a test (this card's own missing `Check:` line; a load-sensitive timing assert in `hook_resident`), before `build-min`.
+- (b) Second fresh worktree (`_worktrees/rtok-t310b`) with the cache warm from (a): Rust hit rate 71.6 % (586 of 818), C/C++ 99.7 %; 115 compilations not cacheable because of their crate type and 103 because they were incremental. Clippy 176 s and test build 92 s: no faster than (a) without a wrapper. Paired back-to-back runs of the cargo phases of `just check` (both clippy runs, `nextest --no-run`, `build-min`) at a target path the cache had never seen: with sccache 171 s and 198 s (Rust hit 67.7 %), without 160 s and 193 s. For comparison, rebuilding the same path after a clean (the cache already holds that path) is faster with sccache, at 216 s and 245 s against 346 s and 320 s (93–100 % hits). That is not the cross-worktree case this task is about. What misses (path-dependent crates and the crates that depend on them) and what cannot be cached (proc macros, build scripts, the workspace crates) makes up the critical path.
+- (c) Warm edit→check (edit `src/render.rs`; lint plus test build; 4 interleaved pairs): without a wrapper 62/131/173/120 s (median 126 s), with sccache 97/130/109/144 s (median 120 s). Only the two workspace units rebuild and sccache passes them through, so there is no measurable difference. The full warm `just check` after the edit, without a wrapper, took 112 s.
+
+Check: raw logs of every run above; `sccache --show-stats` after each wrapped run; no files other than `plan.md`/`todo.md`/`done.md` changed.
+
+Status: done 2026-09-28
+Model: Claude Code / claude-opus-5-5
+
 ### T226. A modern look for `rtok tui`
 
 Why: the TUI drew every page in the terminal's default colour — bare tables, a `>` cursor, plain text hints — so the operator model (D23) read like a log dump. Done means one palette and one set of frames across every page, with the tests still pinning the model's text, not the chrome.
