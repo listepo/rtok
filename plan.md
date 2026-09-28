@@ -580,43 +580,67 @@ Check: `cargo nextest run -p rtok --lib cmd::formatters`; lowering a rule's keep
 
 Done when: `rtok web` serves the SPA from the binary, every page of `model::pages()` renders on it, Playwright drives the real binary, and no Slint code is left.
 
+Check: `rtok web` from a release build shows every page of `model::pages()` from the embedded SPA; no `slint`/`rtok-webui` left in the tree; `just check` and the SPA CI job green.
+
 ### T310.2. `/ws` contract: JSON Schema from Rust types, generated TS
 
 Derive `schemars::JsonSchema` on `web::model::Snapshot`, everything it holds (store rows, `doctor::Report`, skills page) and the client messages (`set`, `expand`) and server frames (`message`, `expand`). Commit the schema, generate `web/src/api/snapshot.gen.ts` from it (`json-schema-to-typescript`), and fail a test when the committed schema or TS is stale.
+
+Check: the stale-schema test fails after a field is added to `Snapshot` and passes after regenerating; regenerating leaves `git diff` empty; `just spa-typecheck`.
 
 ### T310.3. Data layer: WebSocket client + TanStack Query
 
 A typed `/ws` client (same-origin `ws`/`wss`, backoff reconnect, connection state) that pushes each snapshot into the TanStack Query cache; mutations for `set` and `expand`; a fixture source (`?sample`) with a snapshot fixture for Storybook, Vitest and offline e2e. Vitest covers reconnect and frame handling.
 
+Check: Vitest covers frame parsing, reconnect with backoff, `set`/`expand` mutations and the `?sample` source; the app renders on sample data with no server.
+
 ### T310.4. App shell: router, layout, theme, states
 
 TanStack Router (code-based route tree built from one page list), sidebar/top bar from `design/html`, theme toggle (`rtok-theme` in localStorage, system default), the orb background, reduced motion, and shared loading/empty/error/offline states.
+
+Check: Vitest covers the route tree built from the page list, theme persistence across reload and the four shared states; every route reachable by keyboard.
 
 ### T310.5. UI kit + Storybook
 
 Storybook 10 (`@storybook/react-vite`, addon-vitest, addon-a11y): Panel, Kpi, Pill, Switch, Search, Chip, Sparkline, DataTable (TanStack Table + Virtual) with stories for every state; stories run as Vitest browser tests.
 
+Check: `storybook build` succeeds; stories run as Vitest browser tests with no a11y violations.
+
 ### T310.6. Pages: overview, plugins (toggle), calls (expand)
+
+Check: each page matches `design/html/admin/<page>.html` in dark and light at 375 and 1280 px on sample data; toggle and expand round-trip against `rtok web`; stories and Vitest for page logic.
 
 ### T310.7. Pages: sessions, doctor, logs
 
+Check: each page matches `design/html/admin/<page>.html` in dark and light at 375 and 1280 px on sample data; stories and Vitest for page logic.
+
 ### T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
+
+Check: each page matches `design/html/admin/<page>.html` in dark and light at 375 and 1280 px on sample data; stories and Vitest for page logic.
 
 ### T310.9. Serve the SPA from `rtok web`
 
 Embed `web/dist` in the binary (hashed assets, precompressed, SPA fallback, CSP), keep `RTOK_WEB_PKG`-style dev override for a local `dist`, build the SPA in CI and release before cargo. Rewrite `tests/web.rs`, `tests/web_e2e.rs`, `tests/release_bundle.rs` and `tests/surface_parity.rs` for the SPA (parity reads the SPA's page list).
 
+Check: `cargo nextest run --test web --test web_e2e --test release_bundle --test surface_parity`; a release build serves the SPA with no `dist` on disk.
+
 ### T310.10. Playwright e2e against the real binary
 
 Playwright drives `rtok web` on a fixture store (no real agents): every page renders, plugin toggle round-trips through `/ws`, expand works, offline/reconnect state shows. Runs in CI on Linux; Storybook tests run in the same job.
+
+Check: `npx playwright test` green locally and in CI; breaking the toggle round-trip on purpose fails it.
 
 ### T310.11. CI job for the SPA
 
 One CI job: `npm ci`, typecheck, oxlint/oxfmt, Vitest, Storybook tests, Playwright, `vite build`; cache npm and Playwright browsers.
 
+Check: the job is green on a PR and goes red when a Vitest, Storybook or Playwright test is broken on purpose.
+
 ### T310.12. Delete Slint, the WASM build and the HTML design
 
 Remove `crates/rtok-webui`, `tools/webui-bundle.sh`, `just web-bundle`/`webui-check`, the wasm steps in CI/release, `tests/web_wasm.rs`, `design/html/` and the rest of the prototype; update D20, `architecture.md`, `toolchain.md` and `rust.md`.
+
+Check: `just check` green; `git grep -i slint` finds only history docs; the release workflow dry-run builds.
 
 ## Reference
 
