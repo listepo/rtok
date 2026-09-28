@@ -1,5 +1,6 @@
 agents.enabled = true
 agents.idle = 30m
+agents.push_bytes = 1024
 bench.configs.a = bench/configs/legacy.json
 bench.configs.b = bench/configs/rtok.json
 bench.dry_run = false

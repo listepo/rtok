@@ -154,10 +154,13 @@ section! {
     /// `[agents]` — the rtok agent registry (T282, D34): one row per host session, resolved
     /// by any unique id prefix of 4+ hex chars. `idle` bounds `live()` (`store::live_agents`,
     /// parsed by `humantime::parse_duration`); `enabled` gates registration only — the
-    /// hook itself and `[core] enabled` are unaffected.
+    /// hook itself and `[core] enabled` are unaffected (and, off, no message is pushed).
     Agents {
         enabled: bool = true,
         idle: String = s("30m"),
+        /// T288: bytes of framed messages one `UserPromptSubmit`/`PostToolUse` pushes into
+        /// the agent's context; the rest become one "and N more" line.
+        push_bytes: u32 = 1024,
     }
 }
 
