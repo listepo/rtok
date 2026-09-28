@@ -6279,7 +6279,7 @@ Result: `hook_returns_despite_exclusive_lock` now proves the fail-open by work: 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
-### T304. Latency lock test: prove fail-open without a runner-speed bound
+### T309. Latency lock test: prove fail-open without a runner-speed bound
 
 `tests/latency.rs` `hook_returns_despite_exclusive_lock` flaked on unrelated PRs on 2026-09-27: `ci / check (macos-latest)` for listepo/rtok#461 ("hook waited 102.74ms", 100 ms bound, job 108701481370) and `ci / windows (2/2)` for listepo/rtok#466 ("313.66ms", 250 ms bound, job 108706221829); both green on rerun. The `calls` assert (T237) is the proof that the hook gave up instead of waiting; the wall bound is a fixed guess at runner speed and shares the CPUs with the whole suite. Done means the test keeps catching a hook that waits on the lock, without depending on how loaded the runner is.
 
@@ -6768,6 +6768,18 @@ Check: `tests/agent_remove.rs` leaves an edited zed and grok entry without `--ye
 Result: zed (JSONC) and grok (TOML) run the T246.1 ownership check on their own values through a new `rtok_agent_sdk::judge_owned`, which `unregister_owned` now uses too, so the check exists once. Grok converts its `[mcp_servers.rtok]` table to JSON for it. `unregister_server` is private: no remove path drops an entry by name alone. Tests: `zed_remove_asks_before_taking_an_edited_mcp_entry` and `grok_remove_asks_before_taking_an_edited_mcp_entry` (an edited entry stays without `--yes`, goes with it; a foreign `rtok` entry stays); unchanged entries are still removed without `--yes` (`agents_install::remove_twice_says_no_changes_and_the_second_takes_no_backup`).
 
 Model: Claude Code / opus-5-5 (first draft, abandoned uncommitted in another session's worktree), claude-sonnet-5 (finished), claude-opus-5-5 (review)
+
+### T307. Codex proxy removal restores the old model_provider
+
+`insert_proxy` overwrote a pre-existing `model_provider` (e.g. `"openai"`) and printed "revert: set model_provider to openai", but `strip_proxy` deleted the key instead, and removed `[model_providers.rtok]` even after the user edited it.
+
+Plan: in `src/agents/codex/mod.rs`, `insert_proxy` keeps the replaced value as a trailing comment on the `model_provider` line it owns (`# rtok: was "openai"`, survives re-install); `strip_proxy` restores it when present, and compares `[model_providers.rtok]` against what rtok writes, routing a changed table through `rtok_agent_sdk::keep_edited` (leave + note unless `--yes`). Tests next to `proxy_apply_is_idempotent_and_remove_strips`.
+
+Check: `just check`.
+
+Result: install then remove over `model_provider = "openai"` gives the original file back byte for byte (`proxy_remove_restores_the_replaced_model_provider`, re-install over rtok's own value included); an edited `[model_providers.rtok]` stays with `model_provider` and a `leave …` note unless `--yes` (`proxy_remove_leaves_a_hand_edited_provider_table`). `judge_owned` itself does not fit: its "runs the rtok binary" gate calls every provider table "not rtok's", so the check uses its ownership half, `keep_edited`. A proxy URL changed in rtok's config since install also reads as "changed by you" on remove.
+
+Model: Claude Code / claude-opus-5-5
 
 ### T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
 

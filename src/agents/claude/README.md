@@ -15,6 +15,11 @@ keep separate files, so each selected app installs on its own (`--cli` / `--desk
 Every file is copied to `_backup/<name>.bak-<ts>` before the first write; an unchanged file is not
 copied twice.
 
+Headless ping (`rtok mcp ping claude --cli`): `claude -p "<prompt>"`. `--print` / `-p` prints
+the response and exits (https://code.claude.com/docs/en/cli-reference, checked 2026-09-27).
+`--desktop` has no headless prompt; ping reads `claude_desktop_config.json` and prints the
+prompt to paste.
+
 ## Modules
 
 | Module | Support | Why |
@@ -52,3 +57,4 @@ Host documentation setup writes against; re-check the links when this host chang
 - MCP (user scope in `~/.claude.json` `mcpServers`): https://code.claude.com/docs/en/mcp
 - Skills (`~/.claude/skills/<name>/SKILL.md`): https://code.claude.com/docs/en/skills
 - Claude Desktop (`claude_desktop_config.json` `mcpServers.<name>.command` / `args`): https://modelcontextprotocol.io/docs/develop/connect-local-servers
+- Non-interactive prompt (`claude -p "<prompt>"` queries, then exits; `rtok mcp ping claude --cli`): https://code.claude.com/docs/en/cli-reference

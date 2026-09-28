@@ -488,6 +488,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "reads the event JSON on stdin, writes JSON to stdout, exits",
     ),
     ("mcp", "serves MCP tools over stdio"),
+    (
+        "mcp ping",
+        "proves a host's rtok MCP server answers (T275.1); not a page",
+    ),
     ("run", "executes a command and filters its live output"),
     // `wrap` (T51.4) joins EXEMPT when the clap command lands — not before.
     ("filter", "filters stdin without executing"),

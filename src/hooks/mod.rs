@@ -3,6 +3,7 @@
 //! - [`types`] — stdin/stdout JSON contract (plan T0.6)
 //! - dispatcher — plan T2.1
 
+mod push;
 pub mod resident;
 pub mod types;
 
@@ -24,7 +25,7 @@ const LOCK_WAIT: crate::store::LockWait = crate::store::LockWait {
     migrate: std::time::Duration::from_millis(5),
 };
 
-// T304: each lock wait stays within half the 10 ms hook budget (D1). `tests/latency.rs` proves
+// T309: each lock wait stays within half the 10 ms hook budget (D1). `tests/latency.rs` proves
 // the hook gives up instead of waiting for the holder; the ms bound lives here, where it is exact.
 const _: () = assert!(LOCK_WAIT.busy.as_millis() <= 5 && LOCK_WAIT.migrate.as_millis() <= 5);
 
@@ -510,7 +511,7 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     };
     let out = match input.hook_event_name.as_str() {
         "PreToolUse" => pre_tool(input, cx, &registry),
-        "PostToolUse" => post_tool(input, cx, &registry),
+        "PostToolUse" => post_tool(input, cx, &registry, agent.as_deref()),
         "AfterMCPExecution" => after_mcp(input, cx),
         // T295: Claude Code's PostCompact has no decision control and rejects any
         // `hookSpecificOutput` (code.claude.com/docs/en/hooks, checked 2026-09-27); its
@@ -675,7 +676,12 @@ fn pre_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput 
     HookOutput::default()
 }
 
-fn post_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput {
+fn post_tool(
+    input: &HookInput,
+    cx: &Runtime,
+    registry: &Registry,
+    agent: Option<&str>,
+) -> HookOutput {
     let Some(ev) = input.post_tool() else {
         return HookOutput::default();
     };
@@ -689,7 +695,15 @@ fn post_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput
             Err(e) => log_panic(cx, p.manifest().id, "PostToolUse", e),
         }
     }
+    // T288: pushed messages lead, so `cap_budget` keeps them over later plugin context.
+    let push = push::pending(cx, agent);
+    if let Some(p) = &push {
+        parts.insert(0, p.text.clone());
+    }
     let text = cap_budget(cx, &parts.join("\n"));
+    if let Some(p) = &push {
+        p.settle(cx, &text);
+    }
     let updated = cursor_mcp_output(input, cx);
     if text.is_empty() && updated.is_none() {
         return HookOutput::default();
@@ -833,6 +847,14 @@ fn inject_event(
     {
         inj.push(i);
     }
+    // T288: the agent's undelivered messages, on UserPromptSubmit only (PostToolUse pushes
+    // through `post_tool`); an empty inbox offers nothing.
+    let push = (input.hook_event_name == "UserPromptSubmit")
+        .then(|| push::pending(cx, agent))
+        .flatten();
+    if let Some(p) = &push {
+        inj.push(p.injection());
+    }
     // No offerings → no Measurement noise (D3): UserPromptSubmit usually has none.
     if inj.is_empty() {
         return HookOutput::default();
@@ -844,6 +866,9 @@ fn inject_event(
         let _ = inj;
         String::new()
     };
+    if let Some(p) = &push {
+        p.settle(cx, &text);
+    }
     if text.is_empty() {
         return HookOutput::default();
     }
@@ -1690,7 +1715,7 @@ mod tests {
             serde_json::from_str(include_str!("../../tests/fixtures/hooks/post_tool.json"))
                 .unwrap();
 
-        let out = post_tool(&input, &cx, &registry);
+        let out = post_tool(&input, &cx, &registry, None);
 
         let ctx = out
             .hook_specific_output
@@ -1971,5 +1996,108 @@ mod tests {
             .unwrap();
         assert_eq!(ctx, expected_agent_line(&sub_id));
         assert_ne!(ctx, expected_agent_line(&parent_id));
+    }
+
+    // ── T288: undelivered messages ride the next prompt / tool result ───────────
+
+    const PROMPT: &str = include_str!("../../tests/fixtures/hooks/user_prompt_submit.json");
+    const POST_TOOL: &str = include_str!("../../tests/fixtures/hooks/post_tool.json");
+
+    /// `fixture`'s event for a fresh session, the runtime, and that session's agent id (the
+    /// same row `dispatch` upserts).
+    fn push_fixture(fixture: &str, session: &str) -> (Vec<u8>, HookInput, Runtime, String) {
+        let mut v: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        v["session_id"] = session.into();
+        let stdin = serde_json::to_vec(&v).unwrap();
+        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
+        let cx = Runtime::in_memory(session.to_string()).unwrap();
+        let id = cx
+            .store
+            .register_agent(cx.host_id().unwrap(), &cx.session, None, None, None)
+            .unwrap();
+        (stdin, input, cx, id)
+    }
+
+    fn frames(cx: &Runtime, to: &str) -> Vec<String> {
+        let rows = cx.store.undelivered(to).unwrap();
+        rows.iter()
+            .map(crate::render::agent_message_frame)
+            .collect()
+    }
+
+    #[test]
+    fn one_message_is_pushed_framed_on_prompt_and_tool_result() {
+        for fixture in [PROMPT, POST_TOOL] {
+            let (stdin, input, cx, id) = push_fixture(fixture, "t288-one");
+            cx.store.send_message(None, &id, "hello").unwrap();
+            let frame = frames(&cx, &id).remove(0);
+            let ctx = additional_context(&dispatch(&stdin, &input, &cx));
+            assert!(ctx.starts_with(frame.trim_end()), "{ctx}");
+            assert!(cx.store.undelivered(&id).unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn an_over_budget_batch_pushes_what_fits_and_counts_the_rest_then_drains() {
+        let (stdin, input, mut cx, id) = push_fixture(PROMPT, "t288-batch");
+        for body in ["one", "two", "six"] {
+            cx.store.send_message(None, &id, body).unwrap();
+        }
+        let f = frames(&cx, &id);
+        let more = |n| format!("… and {n} more: run rtok agents inbox");
+        cx.config.agents.push_bytes = (f[0].len() + more(3).len() + 1) as u32;
+        let ctx = || additional_context(&dispatch(&stdin, &input, &cx));
+        assert_eq!(ctx(), format!("{}{}", f[0], more(2)));
+        assert_eq!(ctx(), format!("{}{}", f[1], more(1)));
+        assert_eq!(ctx(), f[2].trim_end());
+        assert_eq!(ctx(), "", "each message is pushed once");
+    }
+
+    #[test]
+    fn a_message_over_push_bytes_is_announced_once_by_the_more_line() {
+        let (stdin, input, mut cx, id) = push_fixture(PROMPT, "t288-big");
+        cx.store.send_message(None, &id, "hello").unwrap();
+        cx.config.agents.push_bytes = 64;
+        let ctx = additional_context(&dispatch(&stdin, &input, &cx));
+        assert_eq!(ctx, "… and 1 more: run rtok agents inbox");
+        assert_eq!(dispatch(&stdin, &input, &cx), b"{}");
+        assert_eq!(cx.store.inbox(&id, true, false).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_empty_inbox_prints_nothing_and_records_no_measurement() {
+        for fixture in [PROMPT, POST_TOOL] {
+            let (stdin, input, cx, _) = push_fixture(fixture, "t288-empty");
+            assert_eq!(dispatch(&stdin, &input, &cx), b"{}");
+            assert_eq!(cx.store.measurement_count("inject").unwrap(), 0);
+        }
+    }
+
+    #[test]
+    fn a_pushed_message_is_delivered_once_and_stays_unread() {
+        let (stdin, input, cx, id) = push_fixture(PROMPT, "t288-once");
+        cx.store.send_message(None, &id, "hello").unwrap();
+        assert!(!additional_context(&dispatch(&stdin, &input, &cx)).is_empty());
+        let post: HookInput = serde_json::from_str(POST_TOOL).unwrap();
+        let post = HookInput {
+            session_id: cx.session.clone(),
+            ..post
+        };
+        assert_eq!(dispatch(POST_TOOL.as_bytes(), &post, &cx), b"{}");
+        assert_eq!(dispatch(&stdin, &input, &cx), b"{}");
+        let unread = cx.store.inbox(&id, true, false).unwrap();
+        assert_eq!(unread.len(), 1, "delivered, not read");
+        assert!(unread[0].delivered_at.is_some() && unread[0].read_at.is_none());
+    }
+
+    #[test]
+    fn no_push_when_agents_are_disabled() {
+        for fixture in [PROMPT, POST_TOOL] {
+            let (stdin, input, mut cx, id) = push_fixture(fixture, "t288-off");
+            cx.store.send_message(None, &id, "hello").unwrap();
+            cx.config.agents.enabled = false;
+            assert_eq!(dispatch(&stdin, &input, &cx), b"{}");
+            assert_eq!(cx.store.undelivered(&id).unwrap().len(), 1);
+        }
     }
 }
