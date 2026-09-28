@@ -11,6 +11,7 @@ jscpd := env("JSCPD", "mise exec -- jscpd")
 oxlint := env("OXLINT", "mise exec -- oxlint")
 oxfmt := env("OXFMT", "mise exec -- oxfmt")
 node := env("NODE", "mise exec -- node")
+npm := env("NPM", "mise exec -- npm")
 pytest := env("PYTEST", "mise exec -- pytest")
 tspin := env("TSPIN", "mise exec -- tspin")
 
@@ -58,6 +59,20 @@ js:
 
 js-fmt:
     {{oxfmt}} {{js_files}}
+
+# T310.1: the rtok admin SPA in web/ (Vite + React + TypeScript), separate from `just check`
+# until it covers the same screens as crates/rtok-webui.
+spa-install:
+    {{npm}} --prefix web ci
+
+spa-dev:
+    {{npm}} --prefix web run dev
+
+spa-build:
+    {{npm}} --prefix web run build
+
+spa-typecheck:
+    {{npm}} --prefix web run typecheck
 
 # T183: tools/publish_marketplace's own test suite (no network, no real `gh`).
 python:

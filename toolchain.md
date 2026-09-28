@@ -46,6 +46,20 @@ Project programs and direct packages from the manifests.
 | --- | --- | --- | --- |
 | dunnage | global | https://github.com/listepo/dunnage | Lossless `target/` cleanup after tests |
 
+## npm (web/)
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| react | local | https://github.com/facebook/react | T310.1: the admin SPA UI |
+| react-dom | local | https://github.com/facebook/react | T310.1: React DOM renderer |
+| vite | local | https://github.com/vitejs/vite | T310.1: SPA dev server + build (`just spa-dev` / `just spa-build`) |
+| @vitejs/plugin-react | local | https://github.com/vitejs/vite-plugin-react | T310.1: React fast refresh + JSX transform for Vite |
+| typescript | local | https://github.com/microsoft/TypeScript | T310.1: strict typecheck (`just spa-typecheck`) |
+| @types/react | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.1: React types |
+| @types/react-dom | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.1: React DOM types |
+| tailwindcss | local | https://github.com/tailwindlabs/tailwindcss | T310.1: utility CSS, themed from the design tokens |
+| @tailwindcss/vite | local | https://github.com/tailwindlabs/tailwindcss | T310.1: Tailwind v4 Vite plugin |
+
 ## cargo
 
 | Package | Where | Source | Why here |
