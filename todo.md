@@ -25,7 +25,6 @@
 - T288. Push unread messages to hooked agents
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
-- T297. Saving floors that catch a regression
 - T310. React SPA replaces the Slint web UI (epic)
 - T310.2. `/ws` contract: JSON Schema from Rust types, generated TS
 - T310.3. Data layer: WebSocket client + TanStack Query

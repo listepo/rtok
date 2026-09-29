@@ -1,0 +1,140 @@
+argv: mvn install
+exit: 0
+min_saving: 78
+---
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Building foo 1.0.0
+[INFO] ------------------------------------------------------------------------
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib1/1.0/lib1-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib1/1.0/lib1-1.0.jar (11 kB at 31 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib2/1.0/lib2-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib2/1.0/lib2-1.0.jar (12 kB at 32 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib3/1.0/lib3-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib3/1.0/lib3-1.0.jar (13 kB at 33 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib4/1.0/lib4-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib4/1.0/lib4-1.0.jar (14 kB at 34 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib5/1.0/lib5-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib5/1.0/lib5-1.0.jar (15 kB at 35 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib6/1.0/lib6-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib6/1.0/lib6-1.0.jar (16 kB at 36 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib7/1.0/lib7-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib7/1.0/lib7-1.0.jar (17 kB at 37 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib8/1.0/lib8-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib8/1.0/lib8-1.0.jar (18 kB at 38 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib9/1.0/lib9-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib9/1.0/lib9-1.0.jar (19 kB at 39 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib10/1.0/lib10-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib10/1.0/lib10-1.0.jar (110 kB at 310 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib11/1.0/lib11-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib11/1.0/lib11-1.0.jar (111 kB at 311 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib12/1.0/lib12-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib12/1.0/lib12-1.0.jar (112 kB at 312 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib13/1.0/lib13-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib13/1.0/lib13-1.0.jar (113 kB at 313 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib14/1.0/lib14-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib14/1.0/lib14-1.0.jar (114 kB at 314 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib15/1.0/lib15-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib15/1.0/lib15-1.0.jar (115 kB at 315 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib16/1.0/lib16-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib16/1.0/lib16-1.0.jar (116 kB at 316 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib17/1.0/lib17-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib17/1.0/lib17-1.0.jar (117 kB at 317 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib18/1.0/lib18-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib18/1.0/lib18-1.0.jar (118 kB at 318 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib19/1.0/lib19-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib19/1.0/lib19-1.0.jar (119 kB at 319 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib20/1.0/lib20-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib20/1.0/lib20-1.0.jar (120 kB at 320 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib21/1.0/lib21-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib21/1.0/lib21-1.0.jar (121 kB at 321 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib22/1.0/lib22-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib22/1.0/lib22-1.0.jar (122 kB at 322 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib23/1.0/lib23-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib23/1.0/lib23-1.0.jar (123 kB at 323 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib24/1.0/lib24-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib24/1.0/lib24-1.0.jar (124 kB at 324 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib25/1.0/lib25-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib25/1.0/lib25-1.0.jar (125 kB at 325 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib26/1.0/lib26-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib26/1.0/lib26-1.0.jar (126 kB at 326 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib27/1.0/lib27-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib27/1.0/lib27-1.0.jar (127 kB at 327 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib28/1.0/lib28-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib28/1.0/lib28-1.0.jar (128 kB at 328 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib29/1.0/lib29-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib29/1.0/lib29-1.0.jar (129 kB at 329 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib30/1.0/lib30-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib30/1.0/lib30-1.0.jar (130 kB at 330 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib31/1.0/lib31-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib31/1.0/lib31-1.0.jar (131 kB at 331 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib32/1.0/lib32-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib32/1.0/lib32-1.0.jar (132 kB at 332 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib33/1.0/lib33-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib33/1.0/lib33-1.0.jar (133 kB at 333 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib34/1.0/lib34-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib34/1.0/lib34-1.0.jar (134 kB at 334 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib35/1.0/lib35-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib35/1.0/lib35-1.0.jar (135 kB at 335 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib36/1.0/lib36-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib36/1.0/lib36-1.0.jar (136 kB at 336 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib37/1.0/lib37-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib37/1.0/lib37-1.0.jar (137 kB at 337 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib38/1.0/lib38-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib38/1.0/lib38-1.0.jar (138 kB at 338 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib39/1.0/lib39-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib39/1.0/lib39-1.0.jar (139 kB at 339 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib40/1.0/lib40-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib40/1.0/lib40-1.0.jar (140 kB at 340 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib41/1.0/lib41-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib41/1.0/lib41-1.0.jar (141 kB at 341 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib42/1.0/lib42-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib42/1.0/lib42-1.0.jar (142 kB at 342 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib43/1.0/lib43-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib43/1.0/lib43-1.0.jar (143 kB at 343 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib44/1.0/lib44-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib44/1.0/lib44-1.0.jar (144 kB at 344 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib45/1.0/lib45-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib45/1.0/lib45-1.0.jar (145 kB at 345 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib46/1.0/lib46-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib46/1.0/lib46-1.0.jar (146 kB at 346 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib47/1.0/lib47-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib47/1.0/lib47-1.0.jar (147 kB at 347 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib48/1.0/lib48-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib48/1.0/lib48-1.0.jar (148 kB at 348 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib49/1.0/lib49-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib49/1.0/lib49-1.0.jar (149 kB at 349 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib50/1.0/lib50-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib50/1.0/lib50-1.0.jar (150 kB at 350 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib51/1.0/lib51-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib51/1.0/lib51-1.0.jar (151 kB at 351 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib52/1.0/lib52-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib52/1.0/lib52-1.0.jar (152 kB at 352 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib53/1.0/lib53-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib53/1.0/lib53-1.0.jar (153 kB at 353 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib54/1.0/lib54-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib54/1.0/lib54-1.0.jar (154 kB at 354 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib55/1.0/lib55-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib55/1.0/lib55-1.0.jar (155 kB at 355 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib56/1.0/lib56-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib56/1.0/lib56-1.0.jar (156 kB at 356 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib57/1.0/lib57-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib57/1.0/lib57-1.0.jar (157 kB at 357 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib58/1.0/lib58-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib58/1.0/lib58-1.0.jar (158 kB at 358 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib59/1.0/lib59-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib59/1.0/lib59-1.0.jar (159 kB at 359 kB/s)
+Downloading from central: https://repo1.maven.org/maven2/org/foo/lib60/1.0/lib60-1.0.jar
+Downloaded from central: https://repo1.maven.org/maven2/org/foo/lib60/1.0/lib60-1.0.jar (160 kB at 360 kB/s)
+[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ foo ---
+[INFO] Changes detected - recompiling the module!
+[ERROR] COMPILATION ERROR :
+[ERROR] /src/main/java/Main.java:[8,5] cannot find symbol
+[ERROR]   symbol:   method doThing()
+[ERROR]   location: class Main
+[INFO] 1 error
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile (default-compile) on project foo: Compilation failure
+[ERROR] /src/main/java/Main.java:[8,5] cannot find symbol

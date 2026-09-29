@@ -1,0 +1,41 @@
+2026-09-20T10:00:00Z INFO  starting worker pool size=8
+2026-09-20T10:00:00Z INFO  connected to redis at localhost:6379
+2026-09-20T10:00:01Z INFO  loaded config from /etc/app/config.yaml
+2026-09-20T10:00:01Z INFO  listening on :8080
+2026-09-20T10:00:01Z DEBUG health check ok request_id=req-1 latency_ms=2
+2026-09-20T10:00:02Z DEBUG health check ok request_id=req-2 latency_ms=3
+2026-09-20T10:00:03Z DEBUG health check ok request_id=req-3 latency_ms=4
+2026-09-20T10:00:04Z DEBUG health check ok request_id=req-4 latency_ms=5
+2026-09-20T10:00:05Z DEBUG health check ok request_id=req-5 latency_ms=6
+2026-09-20T10:00:06Z DEBUG health check ok request_id=req-6 latency_ms=7
+2026-09-20T10:00:07Z DEBUG health check ok request_id=req-7 latency_ms=1
+2026-09-20T10:00:08Z DEBUG health check ok request_id=req-8 latency_ms=2
+2026-09-20T10:00:09Z DEBUG health check ok request_id=req-9 latency_ms=3
+2026-09-20T10:00:10Z DEBUG health check ok request_id=req-10 latency_ms=4
+2026-09-20T10:00:11Z DEBUG health check ok request_id=req-11 latency_ms=5
+2026-09-20T10:00:12Z DEBUG health check ok request_id=req-12 latency_ms=6
+2026-09-20T10:00:13Z DEBUG health check ok request_id=req-13 latency_ms=7
+2026-09-20T10:00:14Z DEBUG health check ok request_id=req-14 latency_ms=1
+2026-09-20T10:00:15Z DEBUG health check ok request_id=req-15 latency_ms=2
+2026-09-20T10:00:16Z DEBUG health check ok request_id=req-16 latency_ms=3
+… 155 lines omitted (expand deadbeef)
+2026-09-20T10:02:52Z DEBUG health check ok request_id=req-172 latency_ms=5
+2026-09-20T10:02:53Z DEBUG health check ok request_id=req-173 latency_ms=6
+2026-09-20T10:02:54Z DEBUG health check ok request_id=req-174 latency_ms=7
+2026-09-20T10:02:55Z DEBUG health check ok request_id=req-175 latency_ms=1
+2026-09-20T10:02:56Z DEBUG health check ok request_id=req-176 latency_ms=2
+2026-09-20T10:02:57Z DEBUG health check ok request_id=req-177 latency_ms=3
+2026-09-20T10:02:58Z DEBUG health check ok request_id=req-178 latency_ms=4
+2026-09-20T10:02:59Z DEBUG health check ok request_id=req-179 latency_ms=5
+2026-09-20T10:03:00Z DEBUG health check ok request_id=req-180 latency_ms=6
+2026-09-20T10:03:01Z DEBUG health check ok request_id=req-181 latency_ms=7
+2026-09-20T10:03:02Z DEBUG health check ok request_id=req-182 latency_ms=1
+2026-09-20T10:03:03Z DEBUG health check ok request_id=req-183 latency_ms=2
+2026-09-20T10:03:04Z DEBUG health check ok request_id=req-184 latency_ms=3
+2026-09-20T10:03:05Z DEBUG health check ok request_id=req-185 latency_ms=4
+2026-09-20T10:03:06Z DEBUG health check ok request_id=req-186 latency_ms=5
+2026-09-20T10:03:07Z DEBUG health check ok request_id=req-187 latency_ms=6
+2026-09-20T10:03:08Z DEBUG health check ok request_id=req-188 latency_ms=7
+2026-09-20T10:03:09Z DEBUG health check ok request_id=req-189 latency_ms=1
+2026-09-20T10:03:10Z DEBUG health check ok request_id=req-190 latency_ms=2
+2026-09-20T10:03:20Z INFO  shutting down worker pool

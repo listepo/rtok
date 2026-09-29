@@ -31,7 +31,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T288 | in progress | P2 | 3 | 40% | Claude Code / claude-opus-5-5 |
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
-| T297 | in progress | P2 | 2 | 0% | Claude Code / claude-opus-5-5 |
 | T310 | todo | P1 | 5 | 0% | |
 | T310.2 | todo | P1 | 3 | 0% | |
 | T310.3 | todo | P1 | 3 | 0% | |
@@ -572,14 +571,6 @@ Plan:
 4. `tests/agents_worktrees.rs`: table-driven over every host in `src/agents/*` with fakes only (`RTOK_HOST_SANDBOX`, T280): fake session start (hook payload or MCP initialize, per the host's surface) → agent registered → `worktree_add` → `worktree list` shows the id → `agent_send` from a second fake agent → inbox / push → `worktree_remove`. Every host must produce the same worktree path rule, lock format and list row.
 
 Check: `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where host tables change; the new test green on macOS, Linux and Windows CI; `just check`.
-
-### T297. Saving floors that catch a regression
-
-Five goldens carry floors of 0–3 % (`cat`, `git_log`, `npm`, `make`, `mvn`) because their inputs are too short to save anything, and the `[script]` mixed-chain rule has no golden with a floor.
-
-Plan: add realistic long inputs (`cat_long`, `git_log_long`, `npm_install`, `make_long`, `mvn_long`; the short ones stay, `cat.in` keeps its secret-preservation role) and a `[script]` golden; floors are the measured saving minus 5 points.
-
-Check: `cargo nextest run -p rtok --lib cmd::formatters`; lowering a rule's keep list in a scratch copy drops a floor.
 
 ### T310. React SPA replaces the Slint web UI (epic)
 
