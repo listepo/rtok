@@ -18,13 +18,38 @@ use super::cap;
 const READY: Duration = Duration::from_secs(40);
 
 pub(crate) fn on_path(bin: &str) -> bool {
-    Command::new(bin)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    // File presence only — `bin --version` can hang on a broken shim (tests and MCP share
+    // this probe). rust-analyzer may live only behind `rustup which`.
+    if path_has_bin(bin) {
+        return true;
+    }
+    if bin == "rust-analyzer"
+        && let Ok(o) = Command::new("rustup")
+            .args(["which", "rust-analyzer"])
+            .stderr(Stdio::null())
+            .output()
+        && o.status.success()
+    {
+        let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        return !p.is_empty() && Path::new(&p).is_file();
+    }
+    false
+}
+
+fn path_has_bin(name: &str) -> bool {
+    let Some(paths) = std::env::var_os("PATH") else {
+        return false;
+    };
+    for dir in std::env::split_paths(&paths) {
+        if dir.join(name).is_file() {
+            return true;
+        }
+        #[cfg(windows)]
+        if dir.join(format!("{name}.exe")).is_file() {
+            return true;
+        }
+    }
+    false
 }
 
 fn resolve_bin(name: &str) -> PathBuf {
@@ -60,6 +85,37 @@ fn pick(root: &Path) -> Result<(&'static str, &'static [&'static str])> {
         "lsp: no Cargo.toml / compile_commands.json / tsconfig.json / pubspec.yaml in {}",
         root.display()
     )
+}
+
+/// State dirs for a spawned language server, always under `root` (never the user's home).
+///
+/// Cargo workspaces use `target/rtok-lsp-xdg` (already gitignored); Dart uses
+/// `.dart_tool/rtok-lsp-xdg`; everything else gets `.rtok-lsp-xdg`.
+fn lsp_state_root(root: &Path) -> PathBuf {
+    if root.join("Cargo.toml").is_file() {
+        root.join("target").join("rtok-lsp-xdg")
+    } else if root.join("pubspec.yaml").is_file() {
+        root.join(".dart_tool").join("rtok-lsp-xdg")
+    } else {
+        root.join(".rtok-lsp-xdg")
+    }
+}
+
+/// Pin XDG_* and PUB_CACHE on `cmd` under [`lsp_state_root`] so rust-analyzer / dart never
+/// create files in the invoking user's real cache.
+fn confine_lsp_state(cmd: &mut Command, root: &Path) {
+    let base = lsp_state_root(root);
+    let cache = base.join("cache");
+    let data = base.join("data");
+    let state = base.join("state");
+    let pub_cache = base.join("pub-cache");
+    for d in [&cache, &data, &state, &pub_cache] {
+        let _ = std::fs::create_dir_all(d);
+    }
+    cmd.env("XDG_CACHE_HOME", &cache)
+        .env("XDG_DATA_HOME", &data)
+        .env("XDG_STATE_HOME", &state)
+        .env("PUB_CACHE", &pub_cache);
 }
 
 fn percent_encode_path(s: &str) -> String {
@@ -204,6 +260,9 @@ impl Session {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .current_dir(root);
+        // Language servers inherit the process env and would otherwise write into the
+        // invoking user's `~/.cache` / pub-cache. Pin XDG + PUB_CACHE under the workspace.
+        confine_lsp_state(&mut cmd, root);
         match std::fs::File::create(&err_path) {
             Ok(f) => {
                 cmd.stderr(Stdio::from(f));

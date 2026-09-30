@@ -1,10 +1,13 @@
 //! T30.2 / Gate P30: same MCP names; tags miss the type-position fixture; LSP hits it.
 //!
-//! Skips the rust-analyzer path when `rust-analyzer --version` is not on PATH.
+//! Skips the rust-analyzer / dart path when the binary is absent from PATH (file probe
+//! only — never `… --version`, which can hang on a broken shim). Language-server state
+//! is confined under the temp crate by `lsp::Session::spawn` (`target/rtok-lsp-xdg` or
+//! `.dart_tool/rtok-lsp-xdg`); this file asserts that after each LSP run.
 
 use std::fs;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rtok::plugin::{Ctx, Plugin, Runtime};
 use rtok::plugins::graph::{Graph, callers, outline, symbol};
@@ -16,28 +19,46 @@ pub struct OnlyTyped;
 pub fn user(_t: Vec<OnlyTyped>) {}
 ";
 
-fn rust_analyzer_on_path() -> bool {
-    Command::new("rust-analyzer")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-fn dart_on_path() -> bool {
-    Command::new("dart")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+/// True when `name` resolves to an existing file on PATH (no process spawn).
+fn bin_on_path(name: &str) -> bool {
+    let Some(paths) = std::env::var_os("PATH") else {
+        return false;
+    };
+    for dir in std::env::split_paths(&paths) {
+        let cand = dir.join(name);
+        if cand.is_file() {
+            return true;
+        }
+        #[cfg(windows)]
+        {
+            let exe = dir.join(format!("{name}.exe"));
+            if exe.is_file() {
+                return true;
+            }
+        }
+    }
+    // rust-analyzer is often only reachable through rustup's proxy layout.
+    if name == "rust-analyzer"
+        && let Ok(o) = std::process::Command::new("rustup")
+            .args(["which", "rust-analyzer"])
+            .output()
+        && o.status.success()
+    {
+        let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        if !p.is_empty() && Path::new(&p).is_file() {
+            return true;
+        }
+    }
+    false
 }
 
 fn open(tag: &str, backend: &str) -> (Runtime, PathBuf) {
-    let dir = std::env::temp_dir().join(format!("rtok-{tag}-{}", std::process::id()));
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "rtok-{tag}-{}-{n}",
+        std::process::id()
+    ));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let mut cfg = rtok::testutil::config_in(&dir);
@@ -47,7 +68,7 @@ fn open(tag: &str, backend: &str) -> (Runtime, PathBuf) {
     (Runtime::open(cfg, tag).unwrap(), dir)
 }
 
-fn onlytyped_crate(dir: &std::path::Path) -> PathBuf {
+fn onlytyped_crate(dir: &Path) -> PathBuf {
     let root = dir.join("crate");
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(
@@ -57,6 +78,28 @@ fn onlytyped_crate(dir: &std::path::Path) -> PathBuf {
     .unwrap();
     fs::write(root.join("src/lib.rs"), FIXTURE).unwrap();
     root
+}
+
+/// Every path under `root` whose name is an XDG / pub-cache state dir must stay inside `dir`.
+fn assert_lsp_state_stays_in(dir: &Path, root: &Path) {
+    let expected = if root.join("Cargo.toml").is_file() {
+        root.join("target").join("rtok-lsp-xdg")
+    } else if root.join("pubspec.yaml").is_file() {
+        root.join(".dart_tool").join("rtok-lsp-xdg")
+    } else {
+        root.join(".rtok-lsp-xdg")
+    };
+    assert!(
+        expected.starts_with(dir),
+        "lsp state root {} escapes temp {}",
+        expected.display(),
+        dir.display()
+    );
+    assert!(
+        expected.is_dir(),
+        "lsp state dir was not created under the temp crate: {}",
+        expected.display()
+    );
 }
 
 #[test]
@@ -100,7 +143,7 @@ fn tags_backend_misses_onlytyped_type_position() {
 /// Gate P30: rust-analyzer `textDocument/references` hits `user`'s `Vec<OnlyTyped>`.
 #[test]
 fn lsp_backend_hits_onlytyped_type_position() {
-    if !rust_analyzer_on_path() {
+    if !bin_on_path("rust-analyzer") {
         eprintln!("skip: rust-analyzer not on PATH");
         return;
     }
@@ -128,6 +171,7 @@ fn lsp_backend_hits_onlytyped_type_position() {
     assert!(sym.contains("OnlyTyped"), "{sym}");
     let map = outline(&ctx, &root.join("src/lib.rs").to_string_lossy()).unwrap();
     assert!(map.contains("OnlyTyped") || map.contains("user"), "{map}");
+    assert_lsp_state_stays_in(&dir, &root);
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -135,7 +179,7 @@ fn lsp_backend_hits_onlytyped_type_position() {
 /// `dart language-server`. Skips when `dart` is not on PATH.
 #[test]
 fn lsp_backend_outlines_dart_main() {
-    if !dart_on_path() {
+    if !bin_on_path("dart") {
         eprintln!("skip: dart not on PATH");
         return;
     }
@@ -152,5 +196,6 @@ fn lsp_backend_outlines_dart_main() {
     let map = outline(&ctx, &root.join("lib/main.dart").to_string_lossy()).unwrap();
     assert!(map.contains("helper"), "{map}");
     assert!(map.contains("main"), "{map}");
+    assert_lsp_state_stays_in(&dir, &root);
     let _ = fs::remove_dir_all(&dir);
 }
