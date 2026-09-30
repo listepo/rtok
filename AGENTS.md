@@ -2,6 +2,8 @@
 
 **What.** One Rust binary cutting tokens for coding agents; every method is a plugin. Surfaces: `rtok hook <event>`, `rtok mcp`, `rtok proxy`.
 
+**Platforms.** Only Windows, macOS, and Linux (first-class); see `docs/agency.md`.
+
 **Read first.** `plan.md`, `architecture.md`, `research.md`. Also `roadmap.md`, `ideas.md` (never implement), `done.md`. Per plugin: `src/plugins/<id>/AGENTS.md`. No unplanned work.
 
 **Workflow.** Claim a `todo` row in `plan.md` first. One task = one branch = one PR off `origin/main`; ≤300 LOC, ≤10 files. Finish: `just check`, commit `<id>: <title>`, move task to `done.md`.
