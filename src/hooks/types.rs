@@ -337,6 +337,8 @@ impl HookInput {
             name
         };
         self.hook_event_name = cline_event(name).to_string();
+    }
+
     /// Command Code (https://commandcode.ai/docs/hooks, fetched 2026-09-23) sends
     /// Claude's key shapes with its own tool names: stdin `tool_name` is
     /// `shell_command` / `read_file` / `write_file` / `edit_file`, the shell input
@@ -1205,6 +1207,8 @@ mod tests {
         bare.adapt_cline("PreToolUse");
         assert_eq!(bare.hook_event_name, "PreToolUse");
         assert_eq!(bare.session_id, "task-9");
+    }
+
     /// Payloads as https://commandcode.ai/docs/hooks gives them: Claude's key shapes
     /// with Command Code's tool names (`shell_command`, `read_file`, …).
     #[test]

@@ -16,7 +16,7 @@ Install by hand:
   `.*` on `PostToolUse`, none on lifecycle events).
 - Register the MCP: `cmd mcp add rtok -- <path to scripts/mcp.sh>` (user scope).
 
-`rtok` must be on `PATH` or under `~/.ketch/bin` (`ketch install listepo/rtok`);
+`rtok` must be on `PATH` or under `~/.ketch/bin` (`ketch install pyrlyn/rtok`);
 every hook fails open when it is missing (exit 0, empty stdout except the one
 SessionStart note) and the MCP script exits 1 with the ketch hint.
 
@@ -30,7 +30,7 @@ Files:
 
 - `hooks/rtok-hook` (executable) — takes its event from its own file name and runs
   `rtok hook <event> --host commandcode`; with `rtok` missing it prints `{}`, exits 0
-  and names `ketch install listepo/rtok` on stderr.
+  and names `ketch install pyrlyn/rtok` on stderr.
 - `scripts/mcp.sh` (executable) — `rtok mcp` with the same binary resolution.
 
 ## Docs

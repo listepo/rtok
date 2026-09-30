@@ -33,7 +33,7 @@ fn hook_script_is_executable_and_fails_open_without_rtok() {
         assert!(out.status.success(), "{event}");
         assert!(out.stdout.is_empty(), "{event}");
         let err = String::from_utf8_lossy(&out.stderr);
-        assert!(err.contains("ketch install listepo/rtok"), "{event}: {err}");
+        assert!(err.contains("ketch install pyrlyn/rtok"), "{event}: {err}");
     }
     let _ = std::fs::remove_dir_all(&home);
 }
@@ -67,6 +67,6 @@ fn mcp_script_is_executable_and_names_ketch_without_rtok() {
         "no binary: the server must not start"
     );
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("ketch install listepo/rtok"), "{err}");
+    assert!(err.contains("ketch install pyrlyn/rtok"), "{err}");
     let _ = fs::remove_dir_all(&home);
 }

@@ -184,13 +184,7 @@ mod tests {
         let cfg = Config::default();
         for id in HOSTS {
             match *id {
-                "claude"
-                | "cursor"
-                | "codex"
-                | "opencode"
-                | "copilot"
-                | "commandcode"
-                | "pi"
+                "claude" | "cursor" | "codex" | "opencode" | "copilot" | "commandcode" | "pi"
                 | "antigravity" => {
                     assert!(root(id, &cfg).is_some(), "{id} has a §10.1 skill root");
                     assert!(label(id).is_some(), "{id} root has a label");

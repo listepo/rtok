@@ -7,5 +7,5 @@ for bin in "$(command -v rtok 2>/dev/null)" "$HOME/.ketch/bin/rtok" \
     exec "$bin" mcp
   fi
 done
-printf '%s\n' "rtok is not installed." "" "Install with ketch:" "  ketch install listepo/rtok" "" "If ketch is not installed:" "  curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash" "  ketch install listepo/rtok" >&2
+printf '%s\n' "rtok is not installed." "" "Install with ketch:" "  ketch install pyrlyn/rtok" "" "If ketch is not installed:" "  curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash" "  ketch install pyrlyn/rtok" >&2
 exit 1

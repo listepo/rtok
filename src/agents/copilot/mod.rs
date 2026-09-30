@@ -162,7 +162,8 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
 }
 
 /// Copilot's flat `additionalContext` fallback note, shown once on `sessionStart` when `rtok` resolves nowhere.
-const MISSING_RTOK_NOTE: &str = r#"{"additionalContext":"rtok is not installed; run ketch install pyrlyn/rtok to enable it."}"#;
+const MISSING_RTOK_NOTE: &str =
+    r#"{"additionalContext":"rtok is not installed; run ketch install pyrlyn/rtok to enable it."}"#;
 
 /// `{version: 1, hooks: {<event>: [{type: "command", bash, powershell, timeoutSec}]}}`.
 /// The plugin tree's `hooks/hooks.json` is this document with `bin = "rtok"`, pinned by

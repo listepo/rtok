@@ -163,13 +163,13 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
     )
 }
 
-/// Drop `mcpServers.rtok` from `mcp.json`.
+/// Drop `mcpServers.rtok` from `mcp.json`, unless the user edited it (T246).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::unregister_server(&apply(cfg), &mcp_path(cfg), "mcpServers", "rtok")
+    super::unregister_mcp_ours(cfg, &mcp_path(cfg), "rtok")
 }
 
 /// The linked Command Code plugin tree (D21). Dry-run and the unaccepted offer MUST
-/// contain the substrings `plugins/commandcode` and `ketch install listepo/rtok`.
+/// contain the substrings `plugins/commandcode` and `ketch install pyrlyn/rtok`.
 pub static PLUGIN: HostPlugin = HostPlugin {
     src_rel: "plugins/commandcode",
     host: "Command Code",
@@ -435,7 +435,7 @@ mod tests {
         let c = cfg(dir.clone(), true);
         let s = offer_plugin(&c, false).unwrap();
         assert!(s.contains("plugins/commandcode"), "{s}");
-        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(s.contains("ketch install pyrlyn/rtok"), "{s}");
         assert!(!plugin_dest(&c).exists());
         let _ = fs::remove_dir_all(dir);
     }
