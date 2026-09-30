@@ -176,7 +176,7 @@ fn native_redirect(tool: &str, cx: &Ctx) -> Option<PreToolDecision> {
     Some(PreToolDecision::Deny { reason })
 }
 
-fn cache_key(tool: &str, input: &Value, agent: Option<&str>) -> Option<String> {
+pub(crate) fn cache_key(tool: &str, input: &Value, agent: Option<&str>) -> Option<String> {
     let key = match tool {
         // Claude Code sends `file_path`; Copilot's `read_file`/`view` are adapted to the
         // tool name `Read` but keep their own input key `path` — either names the file.

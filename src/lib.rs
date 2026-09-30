@@ -22,6 +22,10 @@ pub mod demon;
 pub mod doctor;
 pub mod expand;
 pub mod fs;
+/// `cargo fuzz` entry points (`fuzz/`); absent from every normal build.
+#[cfg(fuzzing)]
+#[doc(hidden)]
+pub mod fuzzing;
 pub mod hooks;
 pub mod info;
 pub mod log;
