@@ -1,0 +1,20 @@
+# Configuration for pyrlyn/infra's ci.yml, called from pipeline.yml (docs/config.md in
+# pyrlyn/infra). Rust CI stays in the local ci.yml (`just` recipes); this file turns on the
+# scans and SonarCloud, which replaces the former sonarcloud.yml.
+version: 1
+
+codeql:
+  languages: [actions, javascript-typescript, python, rust]
+
+sonarcloud:
+  enabled: true
+  events: [push, workflow_dispatch] # main-branch analysis only, as before
+  rust: true
+  mise-install-args: "" # everything in mise.toml (just, cargo-llvm-cov, node, vitest, ...)
+  coverage-command: just test-cov
+  soft-fail: false
+
+# actionlint stays off for now: dist-generated release.yml (never hand-edited) has shellcheck
+# findings. Turn on once .github/actionlint.yaml ignores that file.
+lint:
+  enabled: false

@@ -1,6 +1,7 @@
 # SonarCloud OSS setup (rtok)
 
-Maintainer guide for the GitHub Actions workflow in `.github/workflows/sonarcloud.yml`.
+Maintainer guide for the SonarCloud job: pyrlyn/infra's `sonarcloud.yml`, run by its `ci.yml`
+from `.github/workflows/pipeline.yml` and configured under `sonarcloud:` in `.github/infra.yml`.
 Analysis runs on **push to `main`** and on **`workflow_dispatch`** (not on pull requests).
 
 The `sonar.organization` / `sonar.projectKey` values in `sonar-project.properties`
@@ -93,7 +94,8 @@ just test-cov
 
 ## References
 
-- Workflow: `.github/workflows/sonarcloud.yml`
+- Workflow: `.github/workflows/pipeline.yml` -> pyrlyn/infra `ci.yml` / `sonarcloud.yml`
+- Configuration: `.github/infra.yml` (`sonarcloud:`)
 - Properties: `sonar-project.properties`
 - Official CI action: `SonarSource/sonarqube-scan-action` (current; prefer over the
   legacy `sonarcloud-github-action`)
