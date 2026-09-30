@@ -27,8 +27,8 @@ layout: hextra-home
 {{< hextra/hero-button text="Get started" link="docs/getting-started" >}}
 <a class="rtok-pyrlyn-credit rtok-byline" href="https://github.com/pyrlyn" target="_blank" rel="noopener noreferrer">
   <span>by</span>
-  <img class="hx:block hx:dark:hidden" src="pyrlyn/pyrlyn-lockup-on-light.svg" alt="Pyrlyn" width="62" height="18">
-  <img class="hx:hidden hx:dark:block" src="pyrlyn/pyrlyn-lockup-on-dark.svg" alt="Pyrlyn" width="62" height="18">
+  <img class="hx:block hx:dark:hidden" src="pyrlyn/pyrlyn-lockup-on-light.svg" alt="Pyrlyn" width="78" height="18">
+  <img class="hx:hidden hx:dark:block" src="pyrlyn/pyrlyn-lockup-on-dark.svg" alt="Pyrlyn" width="78" height="18">
 </a>
 </div>
 

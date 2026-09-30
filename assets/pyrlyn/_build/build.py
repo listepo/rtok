@@ -1,70 +1,82 @@
-"""Pyrlyn 'Monolith P' production build. 32x32 grid, 2 units = 1px at 16px."""
+"""Pyrlyn 'Prompt' (>_) production build. 32x32 grid, 2 units = 1 px at 16 px.
+Usage: python3 build.py [OUT_DIR]   (needs fonttools, cairosvg; JetBrains Mono variable font via JBMONO_VF)"""
 import os, sys, cairosvg
 from fontTools.ttLib import TTFont
 from fontTools.varLib import instancer
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
-from fontTools.pens.recordingPen import RecordingPen
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 os.makedirs(OUT, exist_ok=True)
 INK, PAPER = "#0C0E11", "#F4F2ED"
-EMBER_ON_DARK, EMBER_ON_LIGHT = "#FF5A36", "#E2431E"
-# --- mark (all integer, even = whole pixels at 16px) ---
-# stem x6-12, bowl y4-22 (outer r=9, inner r=3, centre 17,13), stroke 6; cursor 6x4 at x16 y24
-P = "M6 4H17A9 9 0 0 1 17 22H12V28H6ZM12 10V16H17A3 3 0 0 0 17 10Z"
-CUR = (16, 24, 6, 4)
-def mark_body(fg, acc):
+AMBER_ON_DARK, AMBER_ON_LIGHT = "#F2B33D", "#B97C06"
+# --- mark: chevron with flat ends (horizontal thickness 6, 45 deg arms), cursor 10x4 on the baseline row
+CHEV = "M4 6H10L20 16L10 26H4L14 16Z"
+CUR = (18, 22, 10, 4)
+def cur_d(dx=0):
     x, y, w, h = CUR
-    if fg == acc:  # mono: one path
-        return f'<path fill="{fg}" fill-rule="evenodd" d="{P}M{x} {y}h{w}v{h}h-{w}z"/>'
-    return (f'<path fill="{fg}" fill-rule="evenodd" d="{P}"/>'
-            f'<path fill="{acc}" d="M{x} {y}h{w}v{h}h-{w}z"/>')
-# --- wordmark: Inter wght 560 opsz 32, outlined; l top = mark top (y4), baseline = bowl foot (y22)
-FONT = os.environ.get("INTER_VF", "/usr/share/fonts/truetype/sand-box/google/Inter/Inter-VariableFont_opsz,wght.ttf")
-f = instancer.instantiateVariableFont(TTFont(FONT), {"wght": 600, "opsz": 32})
+    return f"M{x+dx} {y}h{w}v{h}h-{w}z"
+def mark_body(fg, acc, dx=0):
+    chev = CHEV if dx == 0 else "M{} 6H{}L{} 16L{} 26H{}L{} 16Z".format(4+dx, 10+dx, 20+dx, 10+dx, 4+dx, 14+dx)
+    if fg == acc:
+        return f'<path fill="{fg}" d="{chev}{cur_d(dx)}"/>'
+    return f'<path fill="{fg}" d="{chev}"/><path fill="{acc}" d="{cur_d(dx)}"/>'
+# --- wordmark: JetBrains Mono wght 600, outlined. l top = chevron top (y6), baseline y22 = cursor top,
+# so the cursor sits where an underscore would and the chevron centre matches the x-height centre.
+FONT = os.environ.get("JBMONO_VF", "/usr/share/fonts/truetype/sand-box/google/JetBrains Mono/JetBrainsMono-VariableFont_wght.ttf")
+f = instancer.instantiateVariableFont(TTFont(FONT), {"wght": 600})
 gs, cmap, hmtx = f.getGlyphSet(), f.getBestCmap(), f["hmtx"]
-BASE, TOP = 22, 4
-s = (BASE - TOP) / f["OS/2"].sCapHeight           # 'l' ascender == cap height in Inter
-TRACK = -16                                        # font units, display-size tracking
-KERN = {"py": -58, "yr": -14, "rl": -34, "ly": -22, "yn": -18}  # hand pass, font units
+BASE, TOP = 22, 6
+s = (BASE - TOP) / f["OS/2"].sCapHeight
+KERN = {"py": -21, "yr": -35, "rl": 12, "ly": -5, "yn": -22}  # hand pass (font units, 1000 upm): even optical gaps
 def wordmark(x0):
     pen = SVGPathPen(gs, ntos=lambda v: ("%.2f" % v).rstrip("0").rstrip("."))
-    x = x0; text = "pyrlyn"; ink = []
-    for i, ch in enumerate(text):
+    x = x0; t = "pyrlyn"
+    for i, ch in enumerate(t):
         g = cmap[ord(ch)]
         gs[g].draw(TransformPen(pen, (s, 0, 0, -s, x, BASE)))
-        if i < len(text) - 1:
-            x += (hmtx[g][0] + TRACK + KERN.get(text[i:i+2], 0)) * s
-    last = cmap[ord("n")]
-    return pen.getCommands(), x0 + hmtx[cmap[ord("p")]][1] * s, x + 1047.56 * s
-GAP = 8  # mark-to-wordmark: 8 units ≈ 1.33 stroke, optically equal to p's counter width
-def svg(vb_w, vb_h, body, w=None, h=None, vb_x=0):
-    wh = f' width="{w}" height="{h}"' if w else ""
-    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb_x} 0 {vb_w} {vb_h}"{wh}>{body}</svg>\n'
-def lockup_body(fg, acc):
-    # mark occupies x6..26; shift so it starts at x=0 via path offsets? keep integers: build shifted path
-    d = "M0 4H11A9 9 0 0 1 11 22H6V28H0ZM6 10V16H11A3 3 0 0 0 11 10Z"
-    x, y, w, h = CUR
-    wm_d, ink_l, ink_r = wordmark(0)
-    shift = 20 + GAP - ink_l
-    wm_d, ink_l, ink_r = wordmark(shift)
-    W = round(ink_r + 0.0)
-    if fg == acc:  # mono: one path
-        return f'<path fill="{fg}" d="{d}M{x-6} {y}h{w}v{h}h-{w}z{wm_d}"/>', W
-    body = (f'<path fill="{fg}" fill-rule="evenodd" d="{d}"/>'
-            f'<path fill="{acc}" d="M{x-6} {y}h{w}v{h}h-{w}z"/>'
-            f'<path fill="{fg}" d="{wm_d}"/>')
-    return body, W
-res = {}
-for name, fg, acc in (("on-dark", PAPER, EMBER_ON_DARK), ("on-light", INK, EMBER_ON_LIGHT), ("mono", "currentColor", "currentColor")):
-    m = svg(32, 32, mark_body(fg, acc), 32, 32)
-    b, W = lockup_body(fg, acc)
-    # lockup viewBox: 0..W x 4..28 cropped to ink height with 0 padding (use 0 4 W 24)
-    l = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 2 {W+4} 28" width="{(W+4)*4}" height="112">{b}</svg>\n'
+        if i < len(t) - 1:
+            x += (hmtx[g][0] + KERN.get(t[i:i+2], 0)) * s
+    from fontTools.pens.boundsPen import BoundsPen
+    bp = BoundsPen(gs); gs[cmap[ord("n")]].draw(bp)
+    return pen.getCommands(), x0 + bp.bounds[0] * 0 + 80.49 * s, x + bp.bounds[2] * s
+GAP = 7  # cursor to wordmark
+def svg(vb, w, h, body):
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb}" width="{w}" height="{h}">{body}</svg>\n'
+def lockup(fg, acc):
+    mk = mark_body(fg, acc, dx=-4)          # mark ink x 0..24
+    d0, l0, _ = wordmark(0)
+    d, l, r = wordmark(24 + GAP - (l0 - 0))
+    W = round(r)
+    if fg == acc:
+        mk = mk.replace('"/>', f'{d}"/>')
+        body = mk
+    else:
+        body = mk + f'<path fill="{fg}" d="{d}"/>'
+    # padding 2 units; y from 4 (above l/chevron top 6) to 30 (below descenders ~25.9 and cursor 26)
+    return svg(f"-2 4 {W+4} 26", (W+4)*4, 104, body), W
+def png(s_, path, w, h):
+    cairosvg.svg2png(bytestring=s_.encode(), write_to=path, output_width=w, output_height=h)
+for name, fg, acc in (("on-dark", PAPER, AMBER_ON_DARK), ("on-light", INK, AMBER_ON_LIGHT), ("mono", "currentColor", "currentColor")):
+    m = svg("0 0 32 32", 32, 32, mark_body(fg, acc))
+    l, W = lockup(fg, acc)
     open(f"{OUT}/pyrlyn-mark-{name}.svg", "w").write(m)
     open(f"{OUT}/pyrlyn-lockup-{name}.svg", "w").write(l)
-    res[name] = (m, l, W)
     if name != "mono":
-        cairosvg.svg2png(bytestring=m.encode(), write_to=f"{OUT}/pyrlyn-mark-{name}-1000.png", output_width=1000, output_height=1000)
-        cairosvg.svg2png(bytestring=l.encode(), write_to=f"{OUT}/pyrlyn-lockup-{name}-2000.png", output_width=2000, output_height=round(2000*28/(W+4)))
-print("lockup W", res["on-dark"][2], "scale", s, "xheight", f["OS/2"].sxHeight*s)
+        png(m, f"{OUT}/pyrlyn-mark-{name}-1000.png", 1000, 1000)
+        png(l, f"{OUT}/pyrlyn-lockup-{name}-2000.png", 2000, round(2000 * 26 / (W + 4)))
+# favicons: adaptive SVG; PNGs on an ink rounded tile; apple-touch + GitHub avatar opaque ink squares
+fav = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+       f'<style>path{{fill:{INK}}}.c{{fill:{AMBER_ON_LIGHT}}}'
+       f'@media (prefers-color-scheme:dark){{path{{fill:{PAPER}}}.c{{fill:{AMBER_ON_DARK}}}}}</style>'
+       f'<path d="{CHEV}"/><path class="c" d="{cur_d()}"/></svg>\n')
+open(f"{OUT}/pyrlyn-favicon.svg", "w").write(fav)
+tile = svg("0 0 32 32", 32, 32, f'<rect width="32" height="32" rx="6" fill="{INK}"/>' + mark_body(PAPER, AMBER_ON_DARK))
+for px in (32, 64):
+    png(tile, f"{OUT}/pyrlyn-favicon-{px}.png", px, px)
+def square(scale):  # opaque ink square, mark scaled about the centre (16,16)
+    t = 16 * (1 - scale)
+    return svg("0 0 32 32", 32, 32, f'<rect width="32" height="32" fill="{INK}"/>'
+               f'<g transform="translate({t:g} {t:g}) scale({scale:g})">{mark_body(PAPER, AMBER_ON_DARK)}</g>')
+png(square(0.75), f"{OUT}/pyrlyn-apple-touch-icon.png", 180, 180)
+png(square(0.625), f"{OUT}/pyrlyn-github-avatar-1000.png", 1000, 1000)
+print("lockup W", W)
