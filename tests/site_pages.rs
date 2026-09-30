@@ -22,7 +22,7 @@ const EXEMPT: &[(&str, &str)] = &[
     (
         "site.md",
         "project card for the listepo project site, not this Hugo site: \
-         .github/workflows/sync-docs.yml copies it to listepo/landing \
+         .github/workflows/sync-docs.yml copies it to pyrlyn/landing \
          content/projects/rtok.md; its front matter is that site's contract",
     ),
 ];

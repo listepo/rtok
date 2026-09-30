@@ -14,7 +14,7 @@ so there is nothing to symlink and a changed source needs a reinstall:
 - Remove: `/plugins remove rtok`.
 
 `rtok` must be on `PATH`. If it is missing, every hook exits non-zero without blocking the call
-(only exit 2 blocks); install it with ketch: `ketch install listepo/rtok`.
+(only exit 2 blocks); install it with ketch: `ketch install pyrlyn/rtok`.
 
 Use the plugin **or** `rtok agents install kimi`, not both, for hooks — unless you installed
 the plugin through Kimi: while `<kimi home>/plugins/managed/rtok/kimi.plugin.json` exists,

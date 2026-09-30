@@ -3,7 +3,7 @@
 Every tool named here is real, useful, and was measured before rtok was written. The raw
 survey — 19 repositories, GitHub API metadata, 27 vendor claims fact-checked, 17 local
 session transcripts — is
-[`research.md`](https://github.com/listepo/rtok/blob/main/research.md) §4–§7. This page is the reading of
+[`research.md`](https://github.com/pyrlyn/rtok/blob/main/research.md) §4–§7. This page is the reading of
 that survey: what each category does well, what rtok does differently, and which of rtok's
 claims are backed by a row in a database rather than by a README.
 

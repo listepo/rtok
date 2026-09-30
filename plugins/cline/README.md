@@ -38,7 +38,7 @@ With `rtok` missing the hook fails open silently: `{}`, exit 0, no stderr — a
 blob on every tool call was 380 "command not found"-shaped errors/week in the
 field. `TaskStart` (Cline's session start) is the one exception: it names the
 install command once, in Cline's own shape (`{"context": "... ketch install
-listepo/rtok ..."}`), the same T174/T250 convention as
+pyrlyn/rtok ..."}`), the same T174/T250 convention as
 `plugins/claude/scripts/hook.sh` and `plugins/zcode/scripts/hook.sh`.
 
 MCP is not a file in this tree: T96 writes `mcpServers.rtok` → `rtok mcp` directly

@@ -10,10 +10,10 @@ ci = "github"
 # The installers to generate for each app.
 # Homebrew builds Formula/rtok.rb as a Release asset only. Do NOT add
 # publish-jobs = ["homebrew"]: that job needs HOMEBREW_TAP_TOKEN and pushes
-# straight to listepo/homebrew-tap. The tap instead opens a PR via its own
+# straight to pyrlyn/homebrew-tap. The tap instead opens a PR via its own
 # sync-rtok.yml (GITHUB_TOKEN in the tap repo) — see docs/release.md.
 installers = ["shell", "homebrew"]
-tap = "listepo/homebrew-tap"
+tap = "pyrlyn/homebrew-tap"
 # Target platforms to build apps for (Rust target-triple syntax)
 # Apple Silicon + Linux + Windows. Intel macOS (`x86_64-apple-darwin`) was dropped:
 # `macos-15-intel` runners are scarce/slow and usually set release wall-clock.

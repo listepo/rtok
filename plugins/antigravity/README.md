@@ -7,7 +7,7 @@ this folder at `~/.gemini/config/plugins/rtok` and restart the desktop app.
 `rtok agents install antigravity --yes` links it for the desktop apps and prints the
 `agy plugin install` line for the CLI (T91.1).
 
-`rtok` must be on `PATH`. If it is missing, install it with ketch: `ketch install listepo/rtok`.
+`rtok` must be on `PATH`. If it is missing, install it with ketch: `ketch install pyrlyn/rtok`.
 
 Files:
 

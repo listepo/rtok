@@ -59,7 +59,7 @@ fn dry_run_offers_the_claude_commands_and_runs_nothing() {
         "{out}"
     );
     assert!(out.contains("claude plugin install rtok@rtok"), "{out}");
-    assert!(out.contains("ketch install listepo/rtok"), "{out}");
+    assert!(out.contains("ketch install pyrlyn/rtok"), "{out}");
     assert_eq!(claude_log(&home), "", "a dry run calls no claude");
     let _ = fs::remove_dir_all(&home);
 }
@@ -209,7 +209,7 @@ fn hook_sh_fails_open_silently_except_one_session_start_note() {
         v["hookSpecificOutput"]["additionalContext"]
             .as_str()
             .unwrap()
-            .contains("ketch install listepo/rtok"),
+            .contains("ketch install pyrlyn/rtok"),
         "{note}"
     );
 

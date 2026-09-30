@@ -16,7 +16,7 @@ Install (on this machine only; a local folder cannot go into your Devin Cloud ma
 Each hook shells out with `command -v rtok`, falls back to `~/.ketch/bin/rtok`, and exits 0
 silently if neither exists (fail open). Devin also treats any non-zero exit other than 2 as
 non-blocking, and plugin hooks are best effort on its side. The MCP server needs `rtok` on
-`PATH` and does not start without it; install it with ketch: `ketch install listepo/rtok`.
+`PATH` and does not start without it; install it with ketch: `ketch install pyrlyn/rtok`.
 
 Use the plugin **or** rtok's Claude install, not both. Devin imports hooks from
 `~/.claude/settings.json` and `~/.claude.json`, and MCP servers from `~/.claude.json`, by default.

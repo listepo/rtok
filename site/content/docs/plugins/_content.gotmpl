@@ -9,7 +9,7 @@
   {{ $.AddPage (dict
     "path" $id
     "title" $id
-    "params" (dict "editURL" (printf "https://github.com/listepo/rtok/edit/main/src/plugins/%s/README.md" $id))
+    "params" (dict "editURL" (printf "https://github.com/pyrlyn/rtok/edit/main/src/plugins/%s/README.md" $id))
     "content" (dict "value" $body "mediaType" "text/markdown")
   ) }}
 {{ end }}

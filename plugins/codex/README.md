@@ -24,7 +24,7 @@ Install:
 The hooks resolve `rtok` from `PATH`, then `~/.ketch/bin/rtok`, else exit 0 silently (Codex only
 blocks on an explicit decision) — so a hook shell whose `PATH` lacks ketch's install dir still
 finds `rtok`. `commandWindows` keeps the bare `rtok hook <event>` for `cmd.exe`, which cannot run
-the POSIX fallback. Install with ketch: `ketch install listepo/rtok`.
+the POSIX fallback. Install with ketch: `ketch install pyrlyn/rtok`.
 
 While the plugin is enabled it is the only path for the compaction hooks (D21): `rtok agents
 install codex` takes its own `~/.codex/hooks.json` copy back instead of adding it, so every event

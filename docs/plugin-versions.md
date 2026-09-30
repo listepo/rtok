@@ -165,7 +165,7 @@ CLI: Claude Code — dry run, nothing written
 plugin rtok@rtok 0.10.0 up to date (github)
 $ rtok agents update claude --cli --no-restart --dry-run --force
 CLI: Claude Code — dry run, nothing written
-offer plugins/claude → claude plugin uninstall rtok@rtok && claude plugin install rtok@rtok ketch install listepo/rtok
+offer plugins/claude → claude plugin uninstall rtok@rtok && claude plugin install rtok@rtok ketch install pyrlyn/rtok
 ```
 
 An older available version (receipt at `0.11.0`, rtok at `0.10.0`) is left in place:

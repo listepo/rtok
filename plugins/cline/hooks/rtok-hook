@@ -30,7 +30,7 @@ done
 # in the field — and name the install command exactly once, on TaskStart (Cline's
 # session start), in Cline's own hook shape (`context` is injected into the turn).
 if [ "$event" = "TaskStart" ]; then
-  printf '%s' '{"context":"rtok is not installed; run ketch install listepo/rtok to enable it."}'
+  printf '%s' '{"context":"rtok is not installed; run ketch install pyrlyn/rtok to enable it."}'
   exit 0
 fi
 printf '%s\n' '{}'

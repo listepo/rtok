@@ -22,11 +22,11 @@ const KETCH_HINT = [
   "rtok is not installed.",
   "",
   "Install with ketch:",
-  "  ketch install listepo/rtok",
+  "  ketch install pyrlyn/rtok",
   "",
   "If ketch is not installed:",
-  "  curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash",
-  "  ketch install listepo/rtok",
+  "  curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash",
+  "  ketch install pyrlyn/rtok",
 ].join("\n");
 
 const FILE_TOOLS = new Set(["read", "grep", "find", "ls"]);

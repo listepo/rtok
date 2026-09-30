@@ -11,7 +11,7 @@ unless the project's `AGENTS.md` or the user says otherwise.
 Use rtok, not raw `git worktree`: git records no owner, age or size for a worktree
 and never cleans build output.
 
-No `rtok` on PATH? Install it: `ketch install listepo/rtok`. Until then, fall back to
+No `rtok` on PATH? Install it: `ketch install pyrlyn/rtok`. Until then, fall back to
 `git worktree add --lock --reason "<owner> | <task> | <date>" --no-track -b <task> <path> origin/main`.
 
 ## Create

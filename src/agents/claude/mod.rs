@@ -102,7 +102,7 @@ fn command(bin: &str, event: &str) -> String {
         return format!("{bin} hook {event}");
     }
     let note = (event == "SessionStart").then_some(
-        r#"{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok is not installed; run ketch install listepo/rtok to enable it."}}"#,
+        r#"{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok is not installed; run ketch install pyrlyn/rtok to enable it."}}"#,
     );
     super::hook_resolver(&format!("hook {event}"), note)
 }
@@ -1033,7 +1033,7 @@ mod tests {
             v["hookSpecificOutput"]["additionalContext"]
                 .as_str()
                 .unwrap()
-                .contains("ketch install listepo/rtok"),
+                .contains("ketch install pyrlyn/rtok"),
             "{note}"
         );
 

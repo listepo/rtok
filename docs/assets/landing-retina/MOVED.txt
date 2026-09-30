@@ -7,4 +7,4 @@ dedicated brand repo:
 Logo and icon exports are also under ~/GitHub/listepo/brand/logo/png/ and
 ~/GitHub/listepo/brand/icons/feature/. The images the docs site actually serves are in
 site/static/ and were not moved. README.md stays here because the sync-docs workflow publishes
-docs/**/*.md to listepo/landing. This note is a .txt file so that workflow does not publish it.
+docs/**/*.md to pyrlyn/landing. This note is a .txt file so that workflow does not publish it.

@@ -13,7 +13,7 @@
     ],
     "sessionStart": [
       {
-        "command": "{ command -v rtok >/dev/null 2>&1 && exec rtok hook SessionStart --host cursor; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook SessionStart --host cursor; true && printf '%s' '{\"additional_context\":\"rtok is not installed; run ketch install listepo/rtok to enable it.\"}'; exit 0; }"
+        "command": "{ command -v rtok >/dev/null 2>&1 && exec rtok hook SessionStart --host cursor; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook SessionStart --host cursor; true && printf '%s' '{\"additional_context\":\"rtok is not installed; run ketch install pyrlyn/rtok to enable it.\"}'; exit 0; }"
       }
     ],
     "preCompact": [

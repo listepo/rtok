@@ -119,7 +119,7 @@ impl Agent for Kilo {
 }
 
 /// Offer / link / unlink the OpenCode plugin into Kilo's config dir (D21). Dry-run and the
-/// unaccepted offer name `plugins/opencode` and `ketch install listepo/rtok`.
+/// unaccepted offer name `plugins/opencode` and `ketch install pyrlyn/rtok`.
 pub static PLUGIN: HostPlugin = HostPlugin {
     src_rel: "plugins/opencode/rtok.ts",
     host: "Kilo Code",
@@ -166,7 +166,7 @@ mod tests {
         let lines = Kilo.apply(&c, Kind::Cli, Mode::Install).unwrap();
         let s = lines.join("\n");
         assert!(s.contains("plugins/opencode"), "{s}");
-        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(s.contains("ketch install pyrlyn/rtok"), "{s}");
         assert!(!c.setup.kilo.config_path.exists());
         assert!(!plugin_dest(&c).exists());
         let _ = fs::remove_dir_all(dir);

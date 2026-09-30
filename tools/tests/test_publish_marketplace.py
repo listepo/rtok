@@ -54,11 +54,11 @@ def test_verify_local_wrong_entry_path_raises(tmp_path):
 
 def test_dispatch_command_shape():
     assert cli.dispatch_command("claude") == [
-        "gh", "workflow", "run", "marketplace.yml", "--repo", "listepo/rtok", "-f", "host=claude",
+        "gh", "workflow", "run", "marketplace.yml", "--repo", "pyrlyn/rtok", "-f", "host=claude",
     ]
 
 
-def _fake_runner(list_stdout='[{"url": "https://github.com/listepo/rtok/actions/runs/1"}]'):
+def _fake_runner(list_stdout='[{"url": "https://github.com/pyrlyn/rtok/actions/runs/1"}]'):
     calls = []
 
     def runner(args):
@@ -72,7 +72,7 @@ def _fake_runner(list_stdout='[{"url": "https://github.com/listepo/rtok/actions/
 
 def test_trigger_returns_run_url_from_fake_gh():
     runner, calls = _fake_runner()
-    assert cli.trigger("claude", runner=runner) == "https://github.com/listepo/rtok/actions/runs/1"
+    assert cli.trigger("claude", runner=runner) == "https://github.com/pyrlyn/rtok/actions/runs/1"
     assert calls[0] == cli.dispatch_command("claude")
 
 
@@ -96,4 +96,4 @@ def test_cli_real_run_triggers_and_prints_url(capsys):
     runner, _ = _fake_runner()
     rc = cli.main(["claude"], runner=runner)
     assert rc == 0
-    assert "claude: https://github.com/listepo/rtok/actions/runs/1" in capsys.readouterr().out
+    assert "claude: https://github.com/pyrlyn/rtok/actions/runs/1" in capsys.readouterr().out

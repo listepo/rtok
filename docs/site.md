@@ -1,12 +1,12 @@
 ---
 title: rtok
 tagline: Token-reduction CLI for AI coding agents — hooks, an MCP server and an API proxy in one Rust binary.
-repo: https://github.com/listepo/rtok
-homepage: https://listepo.github.io/rtok/
-install: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/listepo/rtok/releases/latest/download/rtok-installer.sh | sh"
+repo: https://github.com/pyrlyn/rtok
+homepage: https://pyrlyn.github.io/rtok/
+install: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/pyrlyn/rtok/releases/latest/download/rtok-installer.sh | sh"
 install_alternatives:
-  - 'ketch install listepo/rtok'
-  - 'brew install listepo/tap/rtok'
+  - 'ketch install pyrlyn/rtok'
+  - 'brew install pyrlyn/tap/rtok'
   - 'npm i -g rtok-cli'
   - 'uv tool install rtok-cli'
 version: "0.10.0"
@@ -18,7 +18,7 @@ order: 1
 ---
 
 <!-- Website copy for the listepo project site. The sync-docs workflow copies this file to
-listepo/landing (main) as content/projects/rtok.md on every change to main and on every v*
+pyrlyn/landing (main) as content/projects/rtok.md on every change to main and on every v*
 tag; front matter follows CONTENT_CONTRACT.md in that repository.
 Sources (checked 2026-09-27): README.md and the clap CLI in src/cli.rs; version from the latest
 GitHub release (v0.10.0); accent from site/assets/css/custom.css (--rtok-accent). -->
@@ -58,19 +58,19 @@ including rtok's own.
 macOS (Apple silicon or Intel) and Linux x86-64, installed into `~/.cargo/bin`:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/listepo/rtok/releases/latest/download/rtok-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/pyrlyn/rtok/releases/latest/download/rtok-installer.sh | sh
 ```
 
-With [ketch](https://github.com/listepo/ketch), straight from the GitHub Release archives:
+With [ketch](https://github.com/pyrlyn/ketch), straight from the GitHub Release archives:
 
 ```bash
-ketch install listepo/rtok
+ketch install pyrlyn/rtok
 ```
 
 Homebrew, npm or PyPI (the packages carry the same native binary):
 
 ```bash
-brew install listepo/tap/rtok
+brew install pyrlyn/tap/rtok
 npm i -g rtok-cli
 uv tool install rtok-cli
 ```
@@ -78,7 +78,7 @@ uv tool install rtok-cli
 From source:
 
 ```bash
-git clone https://github.com/listepo/rtok && cd rtok
+git clone https://github.com/pyrlyn/rtok && cd rtok
 mise install
 mise exec -- cargo install --path .
 rtok --version
@@ -127,10 +127,10 @@ rtok config show --sources
 
 ## Links
 
-- Repository: <https://github.com/listepo/rtok>
-- Documentation: <https://listepo.github.io/rtok/>
-- Getting started: <https://github.com/listepo/rtok/blob/main/docs/getting-started.md>
-- Releases: <https://github.com/listepo/rtok/releases>
-- Changelog: <https://github.com/listepo/rtok/blob/main/CHANGELOG.md>
+- Repository: <https://github.com/pyrlyn/rtok>
+- Documentation: <https://pyrlyn.github.io/rtok/>
+- Getting started: <https://github.com/pyrlyn/rtok/blob/main/docs/getting-started.md>
+- Releases: <https://github.com/pyrlyn/rtok/releases>
+- Changelog: <https://github.com/pyrlyn/rtok/blob/main/CHANGELOG.md>
 - License: your choice of GNU GPLv3, a royalty-free license for proprietary desktop, mobile and web
-  apps (with attribution), or a commercial license (see <https://github.com/listepo/rtok#license>)
+  apps (with attribution), or a commercial license (see <https://github.com/pyrlyn/rtok#license>)

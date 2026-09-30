@@ -14,11 +14,11 @@ Install:
   plugin components — re-run the install after changing this folder.
 - Remove: `copilot plugin uninstall rtok` (the manifest's `name`, not the path).
 
-`rtok` must be on `PATH` (`ketch install listepo/rtok`) for `mcp-config.json`'s `mcpServers.rtok`
+`rtok` must be on `PATH` (`ketch install pyrlyn/rtok`) for `mcp-config.json`'s `mcpServers.rtok`
 entry to start (written by the installer, not this plugin). Hooks are more forgiving
 (T250.2): each line resolves `rtok` from PATH, then `~/.ketch/bin/rtok`, else fails open
 silently — except `sessionStart`, whose fallback prints one flat `additionalContext` note
-naming `ketch install listepo/rtok`.
+naming `ketch install pyrlyn/rtok`.
 
 D21 singleton (hooks only): use the plugin **or** `rtok agents install copilot`'s hooks, not
 both. The installer writes `~/.copilot/hooks/rtok.json` only while this plugin is absent; with
