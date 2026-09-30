@@ -202,10 +202,10 @@ enum Cmd {
         #[command(subcommand)]
         action: ArchiveCmd,
     },
-    /// Print shell completions for `bash`, `zsh`, `fish` or `powershell`
+    /// Print shell completions (bash, zsh, fish, powershell, elvish; clink for cmd.exe)
     Completions {
         /// Shell to complete for
-        shell: clap_complete::Shell,
+        shell: crate::completions::Shell,
     },
     /// Print the man page (roff), or write every page with `--dir`
     Man {
@@ -1567,8 +1567,7 @@ pub fn run() -> Result<()> {
             }
         }
         Cmd::Completions { shell } => {
-            let mut cmd = Cli::command();
-            clap_complete::generate(shell, &mut cmd, "rtok", &mut io::stdout());
+            crate::completions::generate(shell, Cli::command(), &mut io::stdout());
         }
         Cmd::Man { dir } => match dir {
             Some(dir) => {

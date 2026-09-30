@@ -1819,6 +1819,14 @@ Check: a test walks `Cli::command()` and asserts one page per visible subcommand
 
 Result: `src/man.rs` walks the clap tree (`disable_help_subcommand`, hidden commands skipped) and renders each page with `clap_mangen`, then a `SEE ALSO` naming the parent and children; every page shares the `.TH` source `rtok <version>` (a subcommand's footer used to be its bare name). `rtok man` prints `rtok.1` through the same renderer, so `man.stdout` gained `SEE ALSO` and lost the `help` row; `rtok man --dir <path>` writes 79 pages and prints their paths. Unit tests: one page per visible subcommand, `SEE ALSO` links, shared source. Checked: `mandoc -Tlint` reports no errors (only clap_mangen's own `.TH` date and `br`/`sp` warnings, present before this change), a sample page renders with `mandoc -Tascii`, the trycmd fence (`man.stdout` with `v[..]` restored, completions snapshots for the new flag) is green; `just check`.
 
+### T317. `cmd.exe` completion through Clink: `rtok completions clink`
+
+`cmd.exe` has no completion system of its own; Clink is the standard way to add one (Lua scripts from its profile directory). Add `clink` to the shells `rtok completions` accepts, next to clap_complete's `bash`, `zsh`, `fish`, `powershell`, `elvish`. Before writing code, evaluate `clap_complete_clink` (1.0.0, 2025-10-18, 1 star, 465 downloads at planning time): take it only if it is maintained and covers nested subcommands and flag values; otherwise implement `clap_complete::Generator` in one small module and say why in the commit. POSIX `sh` gets nothing: it has no completion API, and ksh/dash users source the bash script.
+
+Check: the generated Lua is snapshot-tested (insta) against a small fixture command and against `Cli::command()` (every subcommand name appears); `luac -p` parses it where `luac` is available; `rtok completions --help` lists `clink`; docs in `README.md` show the Clink line; `just check`.
+
+Result: `src/completions.rs` owns `rtok completions`: its `Shell` enum adds `clink` to clap_complete's bash, zsh, fish, powershell and elvish. `clap_complete_clink` 1.0.0 was evaluated and not taken: it lists hidden subcommands, leaves `\` unescaped in Lua strings, completes no option or positional values, and has had no change since 2025-10; the in-tree `Clink` generator (`clap_complete::Generator`) writes one nested `clink.argmatcher` chain with `addarg` for subcommands and possible values, `clink.filematches` for path arguments, `addflags` and `adddescriptions`. Tests: a fixture checks values, escaping and hidden commands; every visible `rtok` subcommand appears; `luac -p` parses the real script when `luac` is on `PATH` (checked with Lua 5.4.9); `tests/completions.rs` now walks the same enum, so clink is rendered too; `completions-clink` trycmd snapshot. POSIX `sh` gets nothing, as planned. README shows the Clink line; `just check`.
+
 
 ## T48.5 — Windsurf host
 

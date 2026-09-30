@@ -45,7 +45,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.12 | todo | P2 | 3 | 0% | |
 | T314 | in progress | P2 | 3 | 60% | Grok Bot |
 | T315 | in progress | P2 | 3 | 60% | Grok Bot |
-| T317 | todo | P2 | 3 | 0% | |
 | T318 | todo | P2 | 3 | 0% | |
 | T319 | todo | P2 | 3 | 0% | |
 
@@ -675,12 +674,6 @@ Plan:
 Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
 
 Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
-
-### T317. `cmd.exe` completion through Clink: `rtok completions clink`
-
-`cmd.exe` has no completion system of its own; Clink is the standard way to add one (Lua scripts from its profile directory). Add `clink` to the shells `rtok completions` accepts, next to clap_complete's `bash`, `zsh`, `fish`, `powershell`, `elvish`. Before writing code, evaluate `clap_complete_clink` (1.0.0, 2025-10-18, 1 star, 465 downloads at planning time): take it only if it is maintained and covers nested subcommands and flag values; otherwise implement `clap_complete::Generator` in one small module and say why in the commit. POSIX `sh` gets nothing: it has no completion API, and ksh/dash users source the bash script.
-
-Check: the generated Lua is snapshot-tested (insta) against a small fixture command and against `Cli::command()` (every subcommand name appears); `luac -p` parses it where `luac` is available; `rtok completions --help` lists `clink`; docs in `README.md` show the Clink line; `just check`.
 
 ### T318. `rtok completions --install`
 

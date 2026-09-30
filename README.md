@@ -70,7 +70,8 @@ Shell completions and the man page are generated from the same clap tree as
 `--help`, so they never drift from the CLI surface:
 
 ```bash
-rtok completions bash > ~/.bash_completion.d/rtok   # or zsh, fish, powershell
+rtok completions bash > ~/.bash_completion.d/rtok   # or zsh, fish, powershell, elvish
+rtok completions clink > %LOCALAPPDATA%\clink\rtok.lua  # cmd.exe through Clink
 rtok man | man -l -                                  # or save as manpath/rtok.1
 rtok man --dir ~/.local/share/man/man1               # rtok.1 plus rtok-<command>.1 for every subcommand
 ```

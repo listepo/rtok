@@ -445,12 +445,12 @@ Options:
   -h, --help           Print help
 
 $ rtok completions --help
-Print shell completions for `bash`, `zsh`, `fish` or `powershell`
+Print shell completions (bash, zsh, fish, powershell, elvish; clink for cmd.exe)
 
 Usage: rtok completions [OPTIONS] <SHELL>
 
 Arguments:
-  <SHELL>  Shell to complete for [possible values: bash, elvish, fish, powershell, zsh]
+  <SHELL>  Shell to complete for [possible values: bash, zsh, fish, powershell, elvish, clink]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)

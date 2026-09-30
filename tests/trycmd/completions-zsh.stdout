@@ -1121,7 +1121,7 @@ _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '-h[Print help]' /
 '--help[Print help]' /
-':shell -- Shell to complete for:(bash elvish fish powershell zsh)' /
+':shell -- Shell to complete for:(bash zsh fish powershell elvish clink)' /
 && ret=0
 ;;
 (man)
@@ -2361,7 +2361,7 @@ _rtok_commands() {
 'filter:Filter text from stdin without executing' /
 'expand:Print an archived payload' /
 'archive:The archive live zone (/`rtok archive rewrite/` — pi /`context/` carrier, T70.2)' /
-'completions:Print shell completions for /`bash/`, /`zsh/`, /`fish/` or /`powershell/`' /
+'completions:Print shell completions (bash, zsh, fish, powershell, elvish; clink for cmd.exe)' /
 'man:Print the man page (roff), or write every page with /`--dir/`' /
 'plugins:List plugins/: id, enabled, surfaces' /
 'config:The one config file' /
@@ -3003,7 +3003,7 @@ _rtok__subcmd__help_commands() {
 'filter:Filter text from stdin without executing' /
 'expand:Print an archived payload' /
 'archive:The archive live zone (/`rtok archive rewrite/` — pi /`context/` carrier, T70.2)' /
-'completions:Print shell completions for /`bash/`, /`zsh/`, /`fish/` or /`powershell/`' /
+'completions:Print shell completions (bash, zsh, fish, powershell, elvish; clink for cmd.exe)' /
 'man:Print the man page (roff), or write every page with /`--dir/`' /
 'plugins:List plugins/: id, enabled, surfaces' /
 'config:The one config file' /

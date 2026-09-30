@@ -17,6 +17,7 @@
 pub mod agents;
 pub mod bench;
 pub mod cli;
+pub mod completions;
 pub mod config;
 pub mod demon;
 pub mod doctor;
