@@ -229,6 +229,18 @@ section! {
 }
 
 section! {
+    /// `[ui]` — the look of rtok's own lines for a person at a terminal: status, success,
+    /// warning and error lines, summaries, `--help`. `emoji` prefixes them with one emoji,
+    /// `color` paints them. Neither ever reaches a pipe, a hook, `--json`, or the output an
+    /// agent reads: emoji need a terminal and colour follows `NO_COLOR` / `CLICOLOR_FORCE` /
+    /// `TERM=dumb` too (`ui::style`).
+    Ui {
+        emoji: bool = true,
+        color: bool = true,
+    }
+}
+
+section! {
     /// `[demon]` — `rtok demon` (P20, D22). Supervises the long-running surfaces.
     Demon {
         services: Vec<String> = strs(&["proxy"]),
@@ -841,6 +853,7 @@ pub struct Config {
     pub proxy: Proxy,
     pub web: Web,
     pub tui: Tui,
+    pub ui: Ui,
     /// Renamed in T21.3: `[dashboard]` is now `[web]`. Accepted from an old file with a
     /// warning, then dropped.
     #[serde(skip_serializing_if = "Option::is_none")]

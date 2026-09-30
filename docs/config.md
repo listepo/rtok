@@ -155,6 +155,10 @@ port = 3333                           # --port
 tab       = ""                        # "" = first tab          (--tab <page>)
 tick_secs = 2                         # model re-read cadence, same as the web 2 s tick (--tick-secs)
 
+[ui]                                  # rtok's own lines on a terminal; pipes, --json stay plain
+emoji = true                          # emoji before status/warn/error lines (RTOK_UI_EMOJI)
+color = true                          # colour them; NO_COLOR/CLICOLOR_FORCE apply (RTOK_UI_COLOR)
+
 [stats]                               # rtok stats
 since           = "30d"
 format          = "table"             # table | json      (--json)
@@ -496,6 +500,27 @@ the flag is visible in `rtok config show --sources` but has no loader.
 `backend = "lsp"` routes `symbol` / `callers` / `impact` / `outline` / `explore` through a
 language server from `PATH` instead of the tags index. Setup walkthrough for
 Rust (rust-analyzer) and Dart (Dart SDK): `docs/lsp.md`.
+
+### Terminal output (`[ui]`)
+
+rtok's own lines for a person at a terminal — `ok …`, `… started` / `… stopped`, `warning: …`,
+`Error: …`, the `graph index` summary, `--help` — carry an emoji and a colour by default:
+✅ success (green), 💡 status (cyan), ⚠️ warning (yellow), ❌ error (red).
+
+```toml
+[ui]
+emoji = false   # RTOK_UI_EMOJI=false
+color = false   # RTOK_UI_COLOR=false
+```
+
+- **Emoji** need `emoji = true` *and* a terminal on that stream.
+- **Colour** needs `color = true` *and* a stream that takes colour: a terminal, `NO_COLOR`
+  unset, `TERM` not `dumb` — or `CLICOLOR_FORCE` / `FORCE_COLOR` forcing it on a pipe.
+  `color = false` also turns off the diff, state-word and log-level colours.
+- What agents read never changes: hook and MCP JSON, filtered command output, `--json`, and
+  anything written to a pipe or a file stay plain, byte for byte.
+- `--help` colour is clap's own decision (terminal, `NO_COLOR`, `CLICOLOR_FORCE`): it prints
+  before the config is read.
 
 ## TLS and corporate CAs
 

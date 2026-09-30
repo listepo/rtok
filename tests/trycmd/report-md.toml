@@ -263,11 +263,13 @@ Every effective key with its origin — the `config show --sources` page.
 | stats.transcripts_dir | tests/trycmd/input/stats-price-tx | user |
 | tui.tab |  | default |
 | tui.tick_secs | 2 | default |
+| ui.color | true | default |
+| ui.emoji | true | default |
 | web.host | 127.0.0.1 | default |
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-221 keys.
+223 keys.
 
 ## Doctor
 

@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,321 @@
+@@ -0,0 +1,325 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -75,6 +75,10 @@ target/tmp/t60-2-config-init.toml
 +[tui]                                 # rtok tui (same data as rtok web)
 +tab       = ""                        # "" = first tab          (--tab <page>)
 +tick_secs = 2                         # model re-read cadence, same as the web 2 s tick (--tick-secs)
++
++[ui]                                  # rtok's own lines on a terminal; pipes, --json stay plain
++emoji = true                          # emoji before status/warn/error lines (RTOK_UI_EMOJI)
++color = true                          # colour them; NO_COLOR/CLICOLOR_FORCE apply (RTOK_UI_COLOR)
 +
 +[demon]                               # rtok demon start | stop | restart | status | kill
 +services       = ["proxy"]            # what `rtok demon start` starts when given no name

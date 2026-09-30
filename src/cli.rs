@@ -7,6 +7,7 @@ use crate::config::Config;
 use crate::config::layers;
 use crate::config::validate;
 use crate::demon::Service;
+use crate::ui::style;
 use crate::web::model;
 use anyhow::{Result, bail};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
@@ -19,6 +20,7 @@ pub(crate) const VERSION: &str =
 #[derive(Parser)]
 // `bin_name`: clap would print argv[0]'s file name, `rtok.exe` on Windows (T83.7).
 #[command(name = "rtok", bin_name = "rtok", version = VERSION, about)]
+#[command(styles = crate::ui::style::CLAP)]
 pub struct Cli {
     /// User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
     #[arg(long, global = true, value_name = "PATH")]
@@ -971,10 +973,10 @@ pub fn run() -> Result<()> {
                         &cfg.plugins.cmd.rules_dir,
                     ));
                     if errs.is_empty() {
-                        println!("ok {}", path.display());
+                        println!("{}", style::success(&format!("ok {}", path.display())));
                     } else {
                         for e in &errs {
-                            eprintln!("{e}");
+                            eprintln!("{}", style::error(&e.to_string()));
                             crate::log::append(&cfg, "error", "config", "validate", &e.to_string());
                         }
                         std::process::exit(1);
@@ -1161,7 +1163,10 @@ pub fn run() -> Result<()> {
             let done = remove::run(&cwd, &target, &who, keep_branch)?;
             let released = store.as_ref().map(|s| s.release_worktree_claim(&done.path));
             if let Some(Err(e)) = released {
-                eprintln!("warning: claim not released: {e:#}");
+                eprintln!(
+                    "{}",
+                    style::warn(&format!("warning: claim not released: {e:#}"))
+                );
             }
             if json {
                 print_json(&done)?;
@@ -1290,7 +1295,7 @@ pub fn run() -> Result<()> {
         }
         Cmd::Dashboard { host, port } => {
             let msg = "`rtok dashboard` is deprecated; use `rtok web`";
-            eprintln!("warning: {msg}");
+            eprintln!("{}", style::warn(&format!("warning: {msg}")));
             let cfg = Config::load_with(config_file.as_deref(), layers::web_flags(host, port))?;
             crate::log::append(&cfg, "warn", "cli", "dashboard", msg);
             crate::web::serve_blocking(cfg)?;
@@ -1441,7 +1446,7 @@ pub fn run() -> Result<()> {
                 "`rtok setup {0}` is deprecated; use `rtok agents install {0}`",
                 args.host
             );
-            eprintln!("warning: {msg}");
+            eprintln!("{}", style::warn(&format!("warning: {msg}")));
             let cfg = Config::load_lenient(config_file.as_deref(), None);
             crate::log::append(&cfg, "warn", "cli", "setup", &msg);
             setup_host(config_file.as_deref(), args)?;
@@ -1604,8 +1609,13 @@ pub fn run() -> Result<()> {
                     let (new, retired) =
                         crate::plugins::memory::mem_revise(&cx, id, &title, &body)?;
                     match retired {
-                        Some(old) => println!("revised note {old} → {new}"),
-                        None => println!("updated note {new} in place"),
+                        Some(old) => {
+                            println!("{}", style::success(&format!("revised note {old} → {new}")))
+                        }
+                        None => println!(
+                            "{}",
+                            style::success(&format!("updated note {new} in place"))
+                        ),
                     }
                 }
                 MemoryCmd::Sync {
@@ -1641,7 +1651,7 @@ pub fn run() -> Result<()> {
                         dry_run,
                         &pb,
                     )?;
-                    println!(
+                    let summary = format!(
                         "indexed {} files · {} rows · {} skipped · {} read · exclude {} · include {} · mapped {}",
                         r.indexed,
                         r.inserted,
@@ -1651,6 +1661,7 @@ pub fn run() -> Result<()> {
                         r.include_added,
                         r.extension_mapped,
                     );
+                    println!("{}", style::success(&summary));
                 }
                 GraphCmd::Dead { path, json } => {
                     let root = path.unwrap_or(std::env::current_dir()?);
@@ -1796,7 +1807,7 @@ pub fn run() -> Result<()> {
                 return Ok(());
             }
             if out.is_empty() {
-                println!("no logs yet");
+                println!("{}", style::info("no logs yet"));
             } else {
                 for line in out {
                     println!("{line}");
@@ -2037,7 +2048,10 @@ fn update_hosts(config_file: Option<&std::path::Path>, args: UpdateArgs) -> Resu
     };
     if hosts.is_empty() {
         println!(
-            "nothing to update: rtok is not installed in any host (rtok agents install <host>)"
+            "{}",
+            style::info(
+                "nothing to update: rtok is not installed in any host (rtok agents install <host>)"
+            )
         );
         return Ok(());
     }
