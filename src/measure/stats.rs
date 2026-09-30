@@ -301,7 +301,7 @@ impl ImageRow {
 /// T61.1: one skill's injected bodies — the `isMeta` user records keyed to that
 /// skill's `Skill` tool_use. `resident` is the number the context actually carried:
 /// body bytes × the API requests of the session that came after the injection.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SkillRow {
     pub count: u64,
     pub bytes: u64,

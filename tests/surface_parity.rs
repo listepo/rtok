@@ -158,7 +158,7 @@ fn expand_payload_exists_on_both_surfaces() {
         "the TUI opens model::expand_payload"
     );
     assert!(
-        inbound.contains(r#""expand""#) && inbound.contains("expand_payload"),
+        inbound.contains("ClientMessage::Expand") && inbound.contains("expand_payload"),
         "web inbound answers expand through expand_payload"
     );
     assert!(

@@ -62,6 +62,20 @@
     tools/webui-bundle.sh --require
     echo "RTOK_WEB_EMBED=require" >> "$GITHUB_ENV"
 
+# T319: every archive carries share/ (dist `include`): man pages from `rtok man --dir` and the
+# completion scripts. Same profile and target as `dist build`, so that build reuses this compile.
+- name: Generate man pages and completions
+  shell: bash
+  env:
+    TARGETS: ${{ join(matrix.targets, ' ') }}
+  run: |
+    set -euo pipefail
+    target="${TARGETS%% *}"
+    cargo build --locked --profile dist --target "$target" -p rtok --bin rtok
+    bin="target/$target/dist/rtok"
+    [ -x "$bin" ] || bin="$bin.exe"
+    tools/share-files.sh "$bin" share
+
 - name: Discover macOS codesign identity
   if: runner.os == 'macOS'
   env:

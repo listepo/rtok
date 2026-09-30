@@ -2411,7 +2411,9 @@ pub struct UsageRow {
 /// session sums of `usage`, `last_activity` is the MAX ts over the session's `usage`
 /// and `calls` rows (falling back to `started_at` when there are none), and `ended_at`
 /// `None` means live.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Queryable, QueryableByName)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema, Queryable, QueryableByName,
+)]
 pub struct SessionTotals {
     #[diesel(sql_type = Text)]
     pub id: String,
@@ -2446,7 +2448,7 @@ pub struct SessionTotals {
 /// that recorded usage — the newest `usage` row linked to it. One query's output, so
 /// no renderer can re-derive a field differently (D27); `api` `None` means no usage
 /// row is linked (a hook, MCP call or plugin run carries none).
-#[derive(Debug, Clone, PartialEq, Serialize, Queryable, QueryableByName)]
+#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema, Queryable, QueryableByName)]
 pub struct CallRow {
     #[diesel(sql_type = Integer)]
     pub id: i32,

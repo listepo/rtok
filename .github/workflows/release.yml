@@ -173,6 +173,17 @@ jobs:
           tools/webui-bundle.sh --require
           echo "RTOK_WEB_EMBED=require" >> "$GITHUB_ENV"
         shell: "bash"
+      - name: "Generate man pages and completions"
+        run: |
+          set -euo pipefail
+          target="${TARGETS%% *}"
+          cargo build --locked --profile dist --target "$target" -p rtok --bin rtok
+          bin="target/$target/dist/rtok"
+          [ -x "$bin" ] || bin="$bin.exe"
+          tools/share-files.sh "$bin" share
+        shell: "bash"
+        env:
+          "TARGETS": "${{ join(matrix.targets, ' ') }}"
       - name: "Discover macOS codesign identity"
         if: "runner.os == 'macOS'"
         run: |

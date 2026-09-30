@@ -1,0 +1,12 @@
+name: cancel-run
+description: >-
+  Cancel the whole workflow run. Called with `if: failure()` as a job's last step, so the
+  first broken step stops every other job instead of letting them run to the end.
+  The job needs `actions: write`.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" || true

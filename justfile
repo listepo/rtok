@@ -150,6 +150,11 @@ pypi-publish *flags:
 readme-check:
     python3 -c 'import re; from pathlib import Path; print("".join(block[len("# check\\n"):] for block in re.findall(r"```bash\\n(.*?)\\n```", Path("README.md").read_text(), re.S) if block.startswith("# check\\n")), end="")' | bash -euo pipefail
 
+# T319: man pages and completion scripts into share/ (what the release archives carry).
+share:
+    {{cargo}} build -q
+    tools/share-files.sh target/debug/rtok share
+
 # T10.4 check: cargo-dist can plan a release from dist-workspace.toml
 dist-plan:
     {{dist}} plan

@@ -31,6 +31,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      actions: write # ci.yml cancels the run on the first failed step
 
   pipeline:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
@@ -47,10 +48,11 @@ jobs:
 
   gate:
     needs: [ci, pipeline]
-    # !cancelled(): report a failed, cancelled or skipped need, but do not hold a cancelled run.
+    # always(): ci.yml cancels the run on its first failure, and a skipped gate would read as
+    # passing, so the gate still runs and reports the failed or cancelled need.
     # Skipped on draft PRs like every other job, so a draft never leaves a green `gate` behind.
     if: >-
-      !cancelled()
+      always()
       && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     steps:
