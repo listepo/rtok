@@ -93,3 +93,21 @@ them the proxy stays the only path.
 
 Every one of those tasks begins by re-verifying the host's API against its current
 documentation: the table above is a survey of vendor docs, not a measurement.
+
+## Outdated plugins
+
+`rtok agents outdated` lists only hosts where rtok's plugin is installed and its version is
+older than the running rtok binary (SemVer precedence; build metadata on the same release is
+still current). Hosts that are up to date, not installed, or newer are omitted. `rtok agents
+update --check` prints the same report.
+
+```bash
+rtok agents outdated              # every host in the table above
+rtok agents outdated claude,cursor
+rtok agents outdated --json
+rtok agents outdated --exit-code  # exit 10 when anything is outdated (CI)
+```
+
+When every installed plugin matches the binary, the command prints how many are installed and
+the rtok version; when none are installed it prints `no rtok plugins installed`. The check is
+local only (receipt, version file, host records) — no network and no host CLI.
