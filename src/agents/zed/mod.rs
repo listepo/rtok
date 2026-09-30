@@ -127,11 +127,29 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
     Ok(report)
 }
 
-/// Drop `context_servers.rtok`, keeping every comment and foreign server. An object left with
-/// no entries and no comments goes with it; a comment-only object stays.
+/// Drop `context_servers.rtok`, keeping every comment and foreign server — but only as far as
+/// rtok wrote it (T246.5): an entry that does not run the rtok binary is not ours and stays;
+/// one that does but differs from [`want_entry`] was changed by the user and is kept unless
+/// `--yes` (or an interactive yes) says remove. A malformed document is left for
+/// [`jsonc::remove_member`] to error on, as before. An object left with no entries and no
+/// comments goes with it; a comment-only object stays.
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     let path = &cfg.setup.zed.config_path;
     let raw = jsonc::read_or_empty(path)?;
+    if let Ok(root) = jsonc::parse(&raw)
+        && let Some(have) = root.pointer("/context_servers/rtok")
+    {
+        let at = format!("context_servers.{NAME} in {}", path.display());
+        if !rtok_agent_sdk::runs_bin(have, super::is_rtok_bin) {
+            return Ok(format!("leave {at} (not rtok's; remove by hand)"));
+        }
+        if rtok_agent_sdk::rtok_as_one(have, super::is_rtok_bin)
+            != rtok_agent_sdk::rtok_as_one(&want_entry(), super::is_rtok_bin)
+            && let Some(leave) = rtok_agent_sdk::keep_edited(&apply(cfg), &at)
+        {
+            return Ok(leave);
+        }
+    }
     let (body, removed) = jsonc::remove_member(&raw, path, "context_servers", NAME)?;
     jsonc::parse(&body).with_context(|| path.display().to_string())?;
     let report = if removed {

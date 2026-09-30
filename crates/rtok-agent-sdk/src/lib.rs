@@ -491,7 +491,11 @@ pub fn keep_edited(apply: &Apply, at: &str) -> Option<String> {
         .then(|| format!("leave {at} (changed by you; remove by hand)"))
 }
 
-fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
+/// True when `v` (or anything nested in it) is a string naming the rtok binary —
+/// [`unregister_owned`]'s "not rtok's" check, `pub` (T246.5) so a host whose config is not
+/// plain JSON (Zed's JSONC, Grok's TOML) can run the same check on a value it converted
+/// itself instead of duplicating it.
+pub fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
     match v {
         Value::String(s) => is_bin(s),
         Value::Array(a) => a.iter().any(|x| runs_bin(x, is_bin)),
@@ -500,8 +504,9 @@ fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
     }
 }
 
-/// `v` with every string naming the rtok binary replaced by one placeholder.
-fn rtok_as_one(v: &Value, is_bin: fn(&str) -> bool) -> Value {
+/// `v` with every string naming the rtok binary replaced by one placeholder. `pub` alongside
+/// [`runs_bin`] for the same reason (T246.5).
+pub fn rtok_as_one(v: &Value, is_bin: fn(&str) -> bool) -> Value {
     match v {
         Value::String(s) if is_bin(s) => Value::Null,
         Value::Array(a) => a.iter().map(|x| rtok_as_one(x, is_bin)).collect(),
