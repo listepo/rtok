@@ -527,7 +527,10 @@ mod tests {
             .filter(|r| r.kind == "mem_get")
             .collect();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].after_bytes, i64::try_from(body.len()).unwrap_or(i64::MAX));
+        assert_eq!(
+            rows[0].after_bytes,
+            i64::try_from(body.len()).unwrap_or(i64::MAX)
+        );
         assert!(rows[0].est_after > 0);
     }
 
