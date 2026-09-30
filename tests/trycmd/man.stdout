@@ -65,7 +65,7 @@ rtok/-archive(1)
 The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)
 .TP
 rtok/-completions(1)
-Print shell completions (bash, zsh, fish, powershell, elvish; clink for cmd.exe)
+Print shell completions (bash, zsh, fish, powershell, elvish; clink for Windows cmd)
 .TP
 rtok/-man(1)
 Print the man page (roff), or write every page with `/-/-dir`

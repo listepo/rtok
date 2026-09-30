@@ -2363,7 +2363,7 @@ _rtok_commands() {
 'filter:Filter text from stdin without executing' /
 'expand:Print an archived payload' /
 'archive:The archive live zone (/`rtok archive rewrite/` — pi /`context/` carrier, T70.2)' /
-'completions:Print shell completions (bash, zsh, fish, powershell, elvish; clink for cmd.exe)' /
+'completions:Print shell completions (bash, zsh, fish, powershell, elvish; clink for Windows cmd)' /
 'man:Print the man page (roff), or write every page with /`--dir/`' /
 'plugins:List plugins/: id, enabled, surfaces' /
 'config:The one config file' /
@@ -3005,7 +3005,7 @@ _rtok__subcmd__help_commands() {
 'filter:Filter text from stdin without executing' /
 'expand:Print an archived payload' /
 'archive:The archive live zone (/`rtok archive rewrite/` — pi /`context/` carrier, T70.2)' /
-'completions:Print shell completions (bash, zsh, fish, powershell, elvish; clink for cmd.exe)' /
+'completions:Print shell completions (bash, zsh, fish, powershell, elvish; clink for Windows cmd)' /
 'man:Print the man page (roff), or write every page with /`--dir/`' /
 'plugins:List plugins/: id, enabled, surfaces' /
 'config:The one config file' /

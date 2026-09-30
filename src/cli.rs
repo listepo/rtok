@@ -202,7 +202,7 @@ enum Cmd {
         #[command(subcommand)]
         action: ArchiveCmd,
     },
-    /// Print shell completions (bash, zsh, fish, powershell, elvish; clink for cmd.exe)
+    /// Print shell completions (bash, zsh, fish, powershell, elvish; clink for Windows cmd)
     Completions {
         /// Shell to complete for (with `--install`/`--uninstall`: default `$SHELL`)
         #[arg(required_unless_present_any = ["install", "uninstall"])]

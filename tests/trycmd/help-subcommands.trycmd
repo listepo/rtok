@@ -445,7 +445,7 @@ Options:
   -h, --help           Print help
 
 $ rtok completions --help
-Print shell completions (bash, zsh, fish, powershell, elvish; clink for cmd.exe)
+Print shell completions (bash, zsh, fish, powershell, elvish; clink for Windows cmd)
 
 Usage: rtok completions [OPTIONS] [SHELL]
 
