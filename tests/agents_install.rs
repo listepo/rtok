@@ -69,6 +69,11 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             vec![],
             Some(home.join(".copilot/hooks/rtok.json")),
         ),
+        (
+            "commandcode",
+            vec!["--yes"],
+            Some(home.join(".commandcode/settings.json")),
+        ),
         ("aider", vec!["--proxy"], Some(home.join(".aider.conf.yml"))),
         (
             "windsurf",

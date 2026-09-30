@@ -41,6 +41,7 @@ const DOC_DOMAINS: &[(&str, &str)] = &[
     ("plugins/claude", "code.claude.com"),
     ("plugins/cline", "docs.cline.bot"),
     ("plugins/codex", "chatgpt.com"),
+    ("plugins/commandcode", "commandcode.ai"),
     ("plugins/copilot", "docs.github.com"),
     ("plugins/cursor", "cursor.com"),
     ("plugins/devin", "docs.devin.ai"),
@@ -56,6 +57,7 @@ const DOC_DOMAINS: &[(&str, &str)] = &[
     ("src/agents/cline", "docs.cline.bot"),
     ("src/agents/codewhale", "github.com"),
     ("src/agents/codex", "chatgpt.com"),
+    ("src/agents/commandcode", "commandcode.ai"),
     ("src/agents/copilot", "docs.github.com"),
     ("src/agents/cursor", "cursor.com"),
     ("src/agents/devin", "docs.devin.ai"),
@@ -121,6 +123,7 @@ const SKILL_HOSTS: &[(&str, &str)] = &[
     ("opencode", "opencode.ai/docs/skills"),
     ("copilot", "copilot/concepts/agents/about-agent-skills"),
     ("pi", "pi.dev/docs/latest/skills"),
+    ("commandcode", "CommandCodeAI/agent-skills"),
 ];
 
 #[test]

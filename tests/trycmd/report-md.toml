@@ -146,14 +146,14 @@ Every effective key with its origin — the `config show --sources` page.
 | plugins.memory.embed.model | all-MiniLM-L6-v2 | default |
 | plugins.memory.embed.provider | local | default |
 | plugins.memory.enabled | true | default |
-| plugins.memory.handoff | false | default |
-| plugins.memory.prompt_recall | 0 | default |
+| plugins.memory.handoff | true | default |
+| plugins.memory.prompt_recall | 5 | default |
 | plugins.memory.recall_titles | 5 | default |
 | plugins.memory.recall_tokens | 200 | default |
 | plugins.memory.search_limit | 5 | default |
-| plugins.memory.spawn_brief | false | default |
+| plugins.memory.spawn_brief | true | default |
 | plugins.memory.spawn_brief_tokens | 300 | default |
-| plugins.memory.startup_recall | false | default |
+| plugins.memory.startup_recall | true | default |
 | plugins.memory.sync_tokens | 300 | default |
 | plugins.proxy.enabled | true | default |
 | plugins.proxy.semantic_cache.cache_by_model | true | default |
@@ -210,6 +210,7 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.cline.mcp_path | ~/.cline/data/settings/cline_mcp_settings.json | default |
 | setup.codewhale.dir | ~/.codewhale | default |
 | setup.codex.config_path | ~/.codex/config.toml | default |
+| setup.commandcode.dir | ~/.commandcode | default |
 | setup.copilot.dir | ~/.copilot | default |
 | setup.cursor.hooks_path | ~/.cursor/hooks.json | default |
 | setup.devin.config_path | ~/.config/devin/config.json | default |
@@ -266,7 +267,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-220 keys.
+221 keys.
 
 ## Doctor
 
@@ -275,7 +276,7 @@ Live probes (the `rtok doctor` page), not store rows.
 ```text
 hooks 0
 mcp
-  rtok (15 tools, ~273 desc tokens) [CWD]/target/[..]
+  rtok (15 tools, ~274 desc tokens) [CWD]/target/[..]
 proxy 
 proxy openai 
 BASH_MAX_OUTPUT_LENGTH (unset)
@@ -377,6 +378,11 @@ agents
     mcp     not installed
     proxy   not supported: Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy
     plugin  not supported: the GitHub Copilot app does not document plugin installs; `copilot plugin` serves the CLI
+  commandcode (cli)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: Command Code has no documented base-URL override for the proxy
+    plugin  not installed
   aider (cli)
     hooks   not supported: aider has no hook events; it reads .aider.conf.yml and .env
     mcp     not supported: aider has no MCP support

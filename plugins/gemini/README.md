@@ -14,7 +14,7 @@ Install:
   gemini --yes` runs exactly this line through the `gemini` CLI.
 - Remove: `gemini extensions uninstall rtok` (the manifest's `name`, not the path).
 
-`rtok` must be on `PATH` (`ketch install listepo/rtok`); every hook fails open when it is
+`rtok` must be on `PATH` (`ketch install pyrlyn/rtok`); every hook fails open when it is
 missing and the MCP server does not start.
 
 D21 singleton: use the extension **or** `rtok agents install gemini`, not both. The

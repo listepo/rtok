@@ -14,6 +14,9 @@ use rtok_plugin_sdk::{
 };
 use serde_json::json;
 
+/// One line in the hook index: titles only; names the MCP tools that fetch bodies (T293).
+const INDEX_GUIDE: &str = "titles only; mem_search this turn; mem_get matching id for body";
+
 pub struct Memory;
 
 impl Plugin for Memory {
@@ -51,7 +54,7 @@ impl Plugin for Memory {
             },
             ToolDef {
                 name: "mem_get",
-                description: "Return one note body by id.",
+                description: "Body by note id; see hook index.",
                 input_schema: json!({"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}),
             },
             ToolDef {
@@ -88,6 +91,48 @@ impl Plugin for Memory {
     }
 }
 
+fn resolved_project(cx: &Ctx) -> Option<String> {
+    cx.cwd()
+        .map(std::path::Path::new)
+        .and_then(project_name)
+        .or_else(|| std::env::current_dir().ok().and_then(|d| project_name(&d)))
+}
+
+fn project_label(project: Option<&str>) -> &str {
+    project.unwrap_or("none")
+}
+
+fn empty_project_line(project: Option<&str>) -> String {
+    format!("memory project {}: no notes", project_label(project))
+}
+
+fn title_line(id: i32, title: &str, body_tokens: u32) -> String {
+    format!("{id} {title} ({body_tokens}t body)")
+}
+
+/// Build capped index text from `(id, title, body_token_estimate)` rows, dropping newest last.
+fn render_title_index(cx: &Ctx, entries: &mut Vec<(i32, String, u32)>, cap: u32) -> String {
+    loop {
+        let mut lines = vec![INDEX_GUIDE.to_string()];
+        for (id, title, tok) in entries.iter() {
+            lines.push(title_line(*id, title, *tok));
+        }
+        let text = lines.join("\n");
+        if cx.estimate(&text, Class::Prose) <= cap || entries.len() <= 1 {
+            return text;
+        }
+        entries.pop();
+    }
+}
+
+fn body_token_estimate(cx: &Ctx, id: i32) -> u32 {
+    cx.get_note_body(id)
+        .ok()
+        .flatten()
+        .map(|body| cx.estimate(&body, Class::Prose))
+        .unwrap_or(0)
+}
+
 fn remember_save(ev: &PromptSubmit, cx: &Ctx) -> Option<Injection> {
     let first = ev.prompt.lines().next()?.trim();
     let rest = first.strip_prefix("remember:")?.trim();
@@ -109,6 +154,7 @@ fn remember_save(ev: &PromptSubmit, cx: &Ctx) -> Option<Injection> {
 fn prompt_recall(ev: &PromptSubmit, cx: &Ctx) -> Option<Injection> {
     let cfg = cx.plugin_config::<crate::config::Memory>("memory");
     let n = cfg.prompt_recall;
+    let cap = cfg.recall_tokens.max(1);
     if n == 0 {
         return None;
     }
@@ -125,19 +171,19 @@ fn prompt_recall(ev: &PromptSubmit, cx: &Ctx) -> Option<Injection> {
     if hits.is_empty() {
         return None;
     }
-    let mut lines = vec!["notes".to_string()];
-    for h in &hits {
-        lines.push(format!("{} {}", h.id, h.title));
-    }
-    let text = lines.join("\n");
+    let mut entries: Vec<(i32, String, u32)> = hits
+        .iter()
+        .map(|h| (h.id, h.title.clone(), body_token_estimate(cx, h.id)))
+        .collect();
+    let text = render_title_index(cx, &mut entries, cap);
     let sha = crate::store::hex_sha256(text.as_bytes());
     if cx.last_measurement_ref("memory", "prompt_recall").ok()? == Some(sha.clone()) {
         return None;
     }
     let mut before_bytes = 0u64;
     let mut est_before = 0u32;
-    for h in &hits {
-        if let Ok(Some(body)) = cx.get_note_body(h.id) {
+    for (id, _, _) in &entries {
+        if let Ok(Some(body)) = cx.get_note_body(*id) {
             before_bytes += body.len() as u64;
             est_before = est_before.saturating_add(cx.estimate(&body, Class::Prose));
         }
@@ -165,29 +211,25 @@ fn recall(cx: &Ctx) -> Option<Injection> {
     let cfg = cx.plugin_config::<crate::config::Memory>("memory");
     let n = cfg.recall_titles.max(1);
     let cap = cfg.recall_tokens.max(1);
-    let project = cx
-        .cwd()
-        .map(std::path::Path::new)
-        .and_then(project_name)
-        .or_else(|| std::env::current_dir().ok().and_then(|d| project_name(&d)));
+    let project = resolved_project(cx);
     let rows = cx.list_note_titles(project.as_deref(), n).ok()?;
-    if rows.is_empty() {
-        return None;
-    }
-    let mut entries = rows;
-    let mut lines = vec!["notes".to_string()];
-    for (id, title) in &entries {
-        lines.push(format!("{id} {title}"));
-    }
-    let mut text = lines.join("\n");
-    while cx.estimate(&text, Class::Prose) > cap && entries.len() > 1 {
-        entries.pop();
-        lines.pop();
-        text = lines.join("\n");
-    }
+    let mut kept: Vec<(i32, String, u32)> = Vec::new();
+    let text = if rows.is_empty() {
+        let line = empty_project_line(project.as_deref());
+        if cx.estimate(&line, Class::Prose) > cap {
+            return None;
+        }
+        line
+    } else {
+        kept = rows
+            .into_iter()
+            .map(|(id, title)| (id, title, body_token_estimate(cx, id)))
+            .collect();
+        render_title_index(cx, &mut kept, cap)
+    };
     let mut before_bytes = 0u64;
     let mut est_before = 0u32;
-    for (id, _) in &entries {
+    for (id, _, _) in &kept {
         if let Ok(Some(body)) = cx.get_note_body(*id) {
             before_bytes += body.len() as u64;
             est_before = est_before.saturating_add(cx.estimate(&body, Class::Prose));
@@ -251,7 +293,7 @@ pub fn mem_get(rt: &crate::plugin::Runtime, id: i32) -> anyhow::Result<Option<St
     let Some(row) = rt.store.note_row(id)? else {
         return Ok(None);
     };
-    Ok(Some(match row.retired {
+    let body = match row.retired {
         None => row.body,
         Some(ts) => {
             // Nothing is lost (D4): a retired note still reads whole, one line saying why.
@@ -261,7 +303,20 @@ pub fn mem_get(rt: &crate::plugin::Runtime, id: i32) -> anyhow::Result<Option<St
             }
             format!("{head}\n{}", row.body)
         }
-    }))
+    };
+    let after_bytes = body.len() as u64;
+    let est_after = rt.estimate(&body, Class::Prose);
+    let _ = rt.record(&Measurement {
+        plugin: "memory",
+        kind: "mem_get",
+        before_bytes: 0,
+        after_bytes,
+        est_before: 0,
+        est_after,
+        ref_id: Some(id.to_string()),
+        call_id: rt.call_id,
+    });
+    Ok(Some(body))
 }
 
 /// T69.1 lifecycle, one call path for MCP `mem_update` and `rtok memory retire|pin|unpin`:
@@ -345,9 +400,34 @@ mod tests {
     }
 
     #[test]
-    fn prompt_recall_is_off_by_default() {
+    fn prompt_recall_is_on_by_default_and_skips_bodies() {
         use rtok_plugin_sdk::PromptSubmit;
-        let cx = crate::plugin::Runtime::in_memory("t695-recall-off").unwrap();
+        let cx = crate::plugin::Runtime::in_memory("t695-recall-on").unwrap();
+        assert_eq!(cx.config.plugins.memory.prompt_recall, 5);
+        mem_save(&cx, "note", "walrus", "the walrus journal lives here", None).unwrap();
+        let ctx = Ctx::new(&cx);
+        assert!(!mem_search(&cx, "walrus", 5).unwrap().is_empty());
+        let ev = PromptSubmit {
+            prompt: "walrus journal",
+        };
+        let inj = Memory
+            .prompt_submit(&ev, &ctx)
+            .expect("prompt_recall on by default");
+        assert!(inj.text.starts_with(INDEX_GUIDE), "{}", inj.text);
+        assert!(inj.text.contains(" walrus"), "{}", inj.text);
+        assert!(inj.text.contains("t body"), "{}", inj.text);
+        assert!(
+            !inj.text.contains("journal lives"),
+            "titles only: {}",
+            inj.text
+        );
+    }
+
+    #[test]
+    fn prompt_recall_off_injects_nothing() {
+        use rtok_plugin_sdk::PromptSubmit;
+        let mut cx = crate::plugin::Runtime::in_memory("t695-recall-off").unwrap();
+        cx.config.plugins.memory.prompt_recall = 0;
         mem_save(&cx, "note", "alpha", "hooks fail open", None).unwrap();
         let ctx = Ctx::new(&cx);
         let ev = PromptSubmit {
@@ -391,6 +471,92 @@ mod tests {
         assert!(hits[0].snippet.len() <= 120);
         let body = mem_get(&cx, a).unwrap().unwrap();
         assert_eq!(body, "the walrus journal lives here");
+        let rows: Vec<_> = cx
+            .store
+            .list_measurements("memory")
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.kind == "mem_get")
+            .collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].after_bytes,
+            i64::try_from(body.len()).unwrap_or(i64::MAX)
+        );
+    }
+
+    /// T293: recall index shows ids, titles, body token estimates; bodies stay out.
+    #[test]
+    fn recall_index_names_fetch_without_bodies() {
+        let cx = crate::plugin::Runtime::in_memory("t293-index").unwrap();
+        let secret = "vault-secret-never-inject";
+        let a = mem_save(&cx, "note", "alpha", secret, None).unwrap().0;
+        let b = mem_save(&cx, "note", "beta", "plain beta body", None)
+            .unwrap()
+            .0;
+        let c = mem_save(&cx, "note", "gamma", "plain gamma body", None)
+            .unwrap()
+            .0;
+        let inj = recall(&Ctx::new(&cx)).unwrap();
+        for id in [a, b, c] {
+            assert!(inj.text.contains(&id.to_string()), "{}", inj.text);
+        }
+        for title in ["alpha", "beta", "gamma"] {
+            assert!(inj.text.contains(title), "{}", inj.text);
+        }
+        assert!(inj.text.contains("t body"), "{}", inj.text);
+        assert!(inj.text.contains(INDEX_GUIDE), "{}", inj.text);
+        assert!(!inj.text.contains(secret), "{}", inj.text);
+        assert!(cx.estimate(&inj.text, Class::Prose) <= 200);
+    }
+
+    /// T293: zero notes for the resolved project inject one line naming that key.
+    #[test]
+    fn recall_empty_project_names_the_key() {
+        let pid = std::process::id();
+        let dir = std::env::temp_dir().join(format!("rtok-mem-empty-{pid}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        let mut cx = crate::plugin::Runtime::in_memory("t293-empty").unwrap();
+        cx.cwd = Some(dir.to_string_lossy().into_owned());
+        mem_save(
+            &cx,
+            "note",
+            "elsewhere",
+            "other project body",
+            Some("other"),
+        )
+        .unwrap();
+        let inj = recall(&Ctx::new(&cx)).unwrap();
+        assert_eq!(inj.text, format!("memory project {name}: no notes"));
+        assert!(cx.estimate(&inj.text, Class::Prose) <= 200);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T293: `mem_get` records one measurement and returns the full body, prefix included.
+    #[test]
+    fn mem_get_records_measurement_and_returns_full_body() {
+        let cx = crate::plugin::Runtime::in_memory("t293-get").unwrap();
+        let id = mem_save(&cx, "note", "t", "verbatim body", None).unwrap().0;
+        mem_update(&cx, id, true, None, None).unwrap();
+        assert_eq!(cx.store.measurement_count("memory").unwrap(), 0);
+        let body = mem_get(&cx, id).unwrap().unwrap();
+        assert!(body.starts_with("retired "));
+        assert!(body.contains("verbatim body"));
+        let rows: Vec<_> = cx
+            .store
+            .list_measurements("memory")
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.kind == "mem_get")
+            .collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].after_bytes,
+            i64::try_from(body.len()).unwrap_or(i64::MAX)
+        );
+        assert!(rows[0].est_after > 0);
     }
 
     /// T69.1: revise saves the replacement through `mem_save`, then retires the old row
@@ -469,10 +635,11 @@ mod tests {
         let b = recall(&Ctx::new(&cx)).unwrap();
         assert_eq!(a.text, b.text);
         assert!(
-            a.text.contains(&format!("notes\n{keep} keep me first")),
+            a.text.contains(&format!("{keep} keep me first")),
             "{}",
             a.text
         );
+        assert!(a.text.contains(INDEX_GUIDE), "{}", a.text);
         assert_eq!(
             mem_update(&cx, keep, false, None, Some(false)).unwrap(),
             format!("unpinned note {keep}")
@@ -528,6 +695,8 @@ mod tests {
         let b = recall(&Ctx::new(&cx)).unwrap();
         assert_eq!(a.text, b.text);
         assert!(!a.text.contains("secret"), "{}", a.text);
+        assert!(a.text.contains(INDEX_GUIDE), "{}", a.text);
+        assert!(a.text.contains("t body"), "{}", a.text);
         assert_eq!(a.text.lines().count(), 6, "{}", a.text);
         assert!(cx.estimate(&a.text, Class::Prose) <= 200);
         assert_eq!(a.priority, 10);

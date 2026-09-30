@@ -30,6 +30,16 @@ struct Line {
     body: String,
     #[serde(default)]
     project: Option<String>,
+    #[serde(default)]
+    id: Option<i32>,
+    #[serde(default)]
+    ts: Option<i64>,
+    #[serde(default)]
+    retired: Option<i64>,
+    #[serde(default)]
+    superseded_by: Option<i32>,
+    #[serde(default)]
+    pinned: Option<i32>,
 }
 
 fn sha(body: &str) -> String {
@@ -84,12 +94,19 @@ pub fn run(cfg: &Config, path: &Path, dry_run: bool) -> Result<Report> {
             r.inserted += 1;
             continue;
         }
-        match cx.store.insert_note_if_absent(
-            row.project.as_deref(),
-            &row.kind,
-            &row.title,
-            &row.body,
-        )? {
+        match cx
+            .store
+            .insert_portable_note_if_absent(crate::store::PortableNote {
+                project: row.project.as_deref(),
+                kind: &row.kind,
+                title: &row.title,
+                body: &row.body,
+                id: row.id,
+                ts: row.ts,
+                retired: row.retired,
+                superseded_by: row.superseded_by,
+                pinned: row.pinned,
+            })? {
             Some(_) => r.inserted += 1,
             // Lost a race to a concurrent local write between the pre-load above and
             // this statement — the local body stands, same as the in-memory check.
@@ -192,6 +209,33 @@ mod tests {
             )],
             "the local body survives the import untouched"
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn old_four_field_line_still_imports() {
+        let (c, dir) = cfg("legacy-import");
+        let p = dir.join("n.jsonl");
+        fs::write(
+            &p,
+            r#"{"kind":"note","title":"legacy","body":"from old export","project":"p"}"#
+                .to_string()
+                + "\n",
+        )
+        .unwrap();
+        let report = run(&c, &p, false).unwrap();
+        assert_eq!(
+            report,
+            Report {
+                inserted: 1,
+                skipped: 0,
+                malformed: 0
+            }
+        );
+        let cx = crate::plugin::Runtime::open(c.clone(), "verify").unwrap();
+        let rows = cx.store.list_notes(Some("p"), false).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].3, "from old export");
         let _ = fs::remove_dir_all(&dir);
     }
 }

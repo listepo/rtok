@@ -369,8 +369,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("t.jsonl"), FIXTURE).unwrap();
-        let mut cfg = crate::config::Config::default();
-        cfg.core.db_path = dir.join("rtok.db");
+        let cfg = crate::testutil::config_in(&dir);
         let pre = serde_json::json!({"hook_event_name":"PreCompact","session_id":"t25","transcript_path":dir.join("t.jsonl").to_str().unwrap(),"trigger":"auto"});
         let mut out = Vec::new();
         crate::hooks::run("PreCompact", pre.to_string().as_bytes(), &mut out, &cfg);
@@ -453,9 +452,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("t.jsonl"), FIXTURE).unwrap();
-        let mut cfg = crate::config::Config::default();
-        cfg.core.db_path = dir.join("rtok.db");
-        cfg.core.archive_dir = dir.join("archive");
+        let cfg = crate::testutil::config_in(&dir);
         let store = crate::store::Store::open(&cfg.core.db_path).unwrap();
         let mut ids = Vec::new();
         for (i, body) in [b"one-result".as_slice(), b"two-result", b"three-result"]
@@ -515,7 +512,7 @@ mod tests {
     }
 
     /// T71.2 e2e: `SessionEnd` saves the transcript under `session:<id>` with the project
-    /// from the hook cwd; `startup_recall` off injects nothing at startup, on restores the
+    /// from the hook cwd; `startup_recall` off injects nothing, on (the default) restores the
     /// newest project note byte-stably within `checkpoint_tokens`, measured as `handoff`.
     #[test]
     fn session_end_note_and_startup_recall() {
@@ -524,8 +521,7 @@ mod tests {
         let repo = dir.join("myproj");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
         std::fs::write(repo.join("t.jsonl"), FIXTURE).unwrap();
-        let mut cfg = crate::config::Config::default();
-        cfg.core.db_path = dir.join("rtok.db");
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.plugins.inject.modes.clear();
         let end = serde_json::json!({
             "hook_event_name":"SessionEnd",
@@ -553,6 +549,7 @@ mod tests {
             "source":"startup",
             "cwd":repo.display().to_string()
         });
+        cfg.plugins.memory.startup_recall = false;
         let mut off = Vec::new();
         crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut off, &cfg);
         // T283: SessionStart always offers this session's own rtok agent id; `startup_recall`
@@ -640,8 +637,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("t.jsonl"), FIXTURE).unwrap();
-        let mut cfg = crate::config::Config::default();
-        cfg.core.db_path = dir.join("rtok.db");
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.plugins.inject.modes.clear();
         let pre = serde_json::json!({
             "hook_event_name":"PreCompact",
@@ -738,8 +734,7 @@ mod tests {
         let expected = extract(&content);
         assert!(!expected.paths.is_empty() && !expected.errors.is_empty());
 
-        let mut cfg = crate::config::Config::default();
-        cfg.core.db_path = dir.join("rtok.db");
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.plugins.inject.modes.clear();
         let end = serde_json::json!({
             "hook_event_name":"SessionEnd",

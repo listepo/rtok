@@ -52,7 +52,7 @@ function nativeBinary() {
     const supported = PLATFORMS.map((p) => p.pkg).join(", ");
     throw new Error(
       `no prebuilt rtok binary for ${describeHost()}. Supported: ${supported}. ` +
-        "Install from source instead: https://github.com/listepo/rtok#install",
+        "Install from source instead: https://github.com/pyrlyn/rtok#install",
     );
   }
   let dir;

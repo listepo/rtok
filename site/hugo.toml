@@ -1,4 +1,4 @@
-baseURL = "https://listepo.github.io/rtok/"
+baseURL = "https://pyrlyn.github.io/rtok/"
 title = "rtok"
 locale = "en-us"
 enableRobotsTXT = true
@@ -74,7 +74,7 @@ type = "search"
 
 [[menu.main]]
 name = "GitHub"
-url = "https://github.com/listepo/rtok"
+url = "https://github.com/pyrlyn/rtok"
 weight = 5
 [menu.main.params]
 icon = "github"
@@ -111,7 +111,7 @@ displayPoweredBy = false
 
 [params.editURL]
 enable = true
-base = "https://github.com/listepo/rtok/edit/main"
+base = "https://github.com/pyrlyn/rtok/edit/main"
 
 [params.page]
 width = "wide"

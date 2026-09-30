@@ -5,7 +5,7 @@ layout: hextra-home
 
 <div class="rtok-home-hero">
 
-{{< hextra/hero-badge link="https://github.com/listepo/rtok/releases" >}}
+{{< hextra/hero-badge link="https://github.com/pyrlyn/rtok/releases" >}}
   <div class="hx:w-2 hx:h-2 hx:rounded-full hx:bg-primary-400"></div>
   <span>Δtok · measured, not claimed</span>
   {{< icon name="arrow-circle-right" attributes="height=14" >}}

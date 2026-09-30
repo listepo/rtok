@@ -194,7 +194,7 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
 }
 
 /// The linked Cursor plugin (D21, T10.5). Dry-run and the unaccepted offer MUST contain the
-/// substrings `plugins/cursor` and `~/.cursor/plugins/local` and `ketch install listepo/rtok`.
+/// substrings `plugins/cursor` and `~/.cursor/plugins/local` and `ketch install pyrlyn/rtok`.
 pub static PLUGIN: HostPlugin = HostPlugin {
     src_rel: "plugins/cursor",
     host: "Cursor",
@@ -353,7 +353,7 @@ mod tests {
         let s = offer_plugin(&c, false).unwrap();
         assert!(s.contains("plugins/cursor"), "{s}");
         assert!(s.contains("~/.cursor/plugins/local"), "{s}");
-        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(s.contains("ketch install pyrlyn/rtok"), "{s}");
         assert!(!plugin_dest(&c).exists());
         let _ = fs::remove_dir_all(dir);
     }
@@ -491,10 +491,8 @@ mod tests {
     #[test]
     fn cursor_payload_wraps_command() {
         let dir = tmp("wrap");
-        let mut c = Config::default();
+        let mut c = crate::testutil::config_in(&dir);
         c.hook.host = "cursor".into();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
         let cx = Runtime::open(c, "cur").unwrap();
         let raw = json!({
             "hook_event_name": "beforeShellExecution",
@@ -517,10 +515,8 @@ mod tests {
     #[test]
     fn cursor_after_shell_reaches_post_tool_use() {
         let dir = tmp("after");
-        let mut c = Config::default();
+        let mut c = crate::testutil::config_in(&dir);
         c.hook.host = "cursor".into();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
         let cx = Runtime::open(c, "cur").unwrap();
         let raw = json!({
             "hook_event_name": "afterShellExecution",
@@ -579,10 +575,8 @@ mod tests {
     #[test]
     fn pre_compact_writes_a_checkpoint_note() {
         let dir = tmp("precompact");
-        let mut c = Config::default();
+        let mut c = crate::testutil::config_in(&dir);
         c.hook.host = "cursor".into();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
         let pre = serde_json::json!({
             "conversation_id": "cur-compact",
             "trigger": "auto"
@@ -622,7 +616,7 @@ mod tests {
 
     /// Cursor's flat sessionStart output, printed only when no rtok is found (T250.3).
     #[cfg(unix)]
-    const MISSING_RTOK_NOTE: &str = r#"{"additional_context":"rtok is not installed; run ketch install listepo/rtok to enable it."}"#;
+    const MISSING_RTOK_NOTE: &str = r#"{"additional_context":"rtok is not installed; run ketch install pyrlyn/rtok to enable it."}"#;
 
     fn plugin_hooks() -> Vec<u8> {
         include_bytes!("../../../plugins/cursor/hooks/hooks.json").to_vec()

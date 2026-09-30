@@ -11,19 +11,19 @@ installer is POSIX `sh` and puts `rtok` (plus `rtok-update`) in `~/.cargo/bin`.
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/listepo/rtok/releases/latest/download/rtok-installer.sh | sh
+  https://github.com/pyrlyn/rtok/releases/latest/download/rtok-installer.sh | sh
 ```
 
-Or with [ketch](https://github.com/listepo/ketch), from the same release archives:
+Or with [ketch](https://github.com/pyrlyn/ketch), from the same release archives:
 
 ```bash
-ketch install listepo/rtok
+ketch install pyrlyn/rtok
 ```
 
 From source (toolchain pinned in `mise.toml`):
 
 ```bash
-git clone https://github.com/listepo/rtok && cd rtok
+git clone https://github.com/pyrlyn/rtok && cd rtok
 mise install
 mise exec -- cargo install --path .
 rtok --version
@@ -82,6 +82,7 @@ file it writes. See the root [README](../README.md) for other hosts
 
 ## Next
 
+- [batch-flex.md](batch-flex.md) — Batch / Flex / routing on the proxy (pass-through vs rewrite)
 - [config.md](config.md) — full key reference and precedence
 - [comparison.md](comparison.md) — against the tools rtok replaces (and where it is behind)
 - [otel.md](otel.md) — OTLP export of the ledger

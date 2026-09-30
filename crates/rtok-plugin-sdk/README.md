@@ -1,6 +1,6 @@
 # rtok-plugin-sdk
 
-The plugin contract for [rtok](https://github.com/listepo/rtok) — one Rust binary that
+The plugin contract for [rtok](https://github.com/pyrlyn/rtok) — one Rust binary that
 reduces the tokens an AI coding agent spends. Every method rtok uses is a plugin, and this
 crate is the trait they all implement: the ten that ship inside rtok and any written
 elsewhere.
@@ -71,8 +71,8 @@ let host = MemoryHost::new();
 ## Documentation
 
 - API: [docs.rs/rtok-plugin-sdk](https://docs.rs/rtok-plugin-sdk)
-- Writing and shipping a plugin: [`docs/plugin-authoring.md`](https://github.com/listepo/rtok/blob/main/docs/plugin-authoring.md)
-- What rtok is: <https://listepo.github.io/rtok/>
+- Writing and shipping a plugin: [`docs/plugin-authoring.md`](https://github.com/pyrlyn/rtok/blob/main/docs/plugin-authoring.md)
+- What rtok is: <https://pyrlyn.github.io/rtok/>
 
 ## Licence
 

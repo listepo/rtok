@@ -19,7 +19,7 @@ Files:
   `rtok hook <event>` through `scripts/hook.sh` (`type: "process"`, `timeoutMs` 5000; the
   stdin/stdout protocol is Claude's, so no `--host` is needed).
 - `scripts/hook.sh` — a launcher that resolves `rtok` from PATH or the ketch store; a
-  missing `rtok` fails the hook open (exit 0), printing `ketch install listepo/rtok`.
+  missing `rtok` fails the hook open (exit 0), printing `ketch install pyrlyn/rtok`.
 
 Windows: the hook launcher is POSIX, so the plugin cannot run there, but `rtok agents
 install zcode` still links it by default (T164) — it has no way to know a launcher will

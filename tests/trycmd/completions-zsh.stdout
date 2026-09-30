@@ -362,9 +362,23 @@ _arguments "${_arguments_options[@]}" : /
 '--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
 '--no-restart[Skip closing/reopening a running desktop app around the write (T141)]' /
 '--force[Reinstall the plugin even when it is already at the available version (T279)]' /
+'--check[List outdated plugins only (same output as /`agents outdated/`)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 '::host -- Host(s), comma-separated; omitted = every host rtok is installed in:_default' /
+&& ret=0
+;;
+(outdated)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--cli[Only the CLI app (default is all)]' /
+'--desktop[Only the desktop app (default is all)]' /
+'--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
+'--json[JSON instead of the table]' /
+'--exit-code[Exit with code 10 when at least one plugin is outdated]' /
+'-h[Print help]' /
+'--help[Print help]' /
+'::host -- Host(s), comma-separated; omitted = every host in `agents list`:_default' /
 && ret=0
 ;;
 (list)
@@ -555,6 +569,10 @@ _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
 (update)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(outdated)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -704,9 +722,23 @@ _arguments "${_arguments_options[@]}" : /
 '--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
 '--no-restart[Skip closing/reopening a running desktop app around the write (T141)]' /
 '--force[Reinstall the plugin even when it is already at the available version (T279)]' /
+'--check[List outdated plugins only (same output as /`agents outdated/`)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 '::host -- Host(s), comma-separated; omitted = every host rtok is installed in:_default' /
+&& ret=0
+;;
+(outdated)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--cli[Only the CLI app (default is all)]' /
+'--desktop[Only the desktop app (default is all)]' /
+'--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
+'--json[JSON instead of the table]' /
+'--exit-code[Exit with code 10 when at least one plugin is outdated]' /
+'-h[Print help]' /
+'--help[Print help]' /
+'::host -- Host(s), comma-separated; omitted = every host in `agents list`:_default' /
 && ret=0
 ;;
 (list)
@@ -900,6 +932,10 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
+(outdated)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
 (list)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
@@ -1012,7 +1048,7 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 '--cmd=[Command family hint (/`git status/`, /`cargo test/`, …)]:CMD:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
-'--stdin[Read the payload from stdin (OpenCode /`tool[..]cute.after/`)]' /
+'--stdin[Read the payload from stdin (OpenCode /`tool.execute.after/`)]' /
 '--archive[Archive stdin and print the expand trailer (same path as /`run/`)]' /
 '-h[Print help]' /
 '--help[Print help]' /
@@ -1923,6 +1959,10 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
+(outdated)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
 (list)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
@@ -2343,6 +2383,7 @@ _rtok__subcmd__agents_commands() {
 'uninstall:Take rtok back out of a host/: hooks, MCP entry, proxy variable, plugin link' /
 'remove:Take rtok back out of a host/: hooks, MCP entry, proxy variable, plugin link' /
 'update:Bring what rtok installed up to date/: in place where it can, reinstalled where not' /
+'outdated:List hosts whose rtok plugin is older than this binary' /
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
@@ -2362,6 +2403,7 @@ _rtok__subcmd__agents__subcmd__help_commands() {
 'install:Install hooks, MCP server and proxy into a host' /
 'uninstall:Take rtok back out of a host/: hooks, MCP entry, proxy variable, plugin link' /
 'update:Bring what rtok installed up to date/: in place where it can, reinstalled where not' /
+'outdated:List hosts whose rtok plugin is older than this binary' /
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
@@ -2411,6 +2453,11 @@ _rtok__subcmd__agents__subcmd__help__subcmd__junk__subcmd__clear_commands() {
 _rtok__subcmd__agents__subcmd__help__subcmd__list_commands() {
     local commands; commands=()
     _describe -t commands 'rtok agents help list commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__outdated_commands] )) ||
+_rtok__subcmd__agents__subcmd__help__subcmd__outdated_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents help outdated commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__send_commands] )) ||
 _rtok__subcmd__agents__subcmd__help__subcmd__send_commands() {
@@ -2504,6 +2551,11 @@ _rtok__subcmd__agents__subcmd__junk__subcmd__help__subcmd__help_commands() {
 _rtok__subcmd__agents__subcmd__list_commands() {
     local commands; commands=()
     _describe -t commands 'rtok agents list commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__outdated_commands] )) ||
+_rtok__subcmd__agents__subcmd__outdated_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents outdated commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__agents__subcmd__send_commands] )) ||
 _rtok__subcmd__agents__subcmd__send_commands() {
@@ -2972,6 +3024,7 @@ _rtok__subcmd__help__subcmd__agents_commands() {
 'install:Install hooks, MCP server and proxy into a host' /
 'uninstall:Take rtok back out of a host/: hooks, MCP entry, proxy variable, plugin link' /
 'update:Bring what rtok installed up to date/: in place where it can, reinstalled where not' /
+'outdated:List hosts whose rtok plugin is older than this binary' /
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
@@ -3015,6 +3068,11 @@ _rtok__subcmd__help__subcmd__agents__subcmd__junk__subcmd__clear_commands() {
 _rtok__subcmd__help__subcmd__agents__subcmd__list_commands() {
     local commands; commands=()
     _describe -t commands 'rtok help agents list commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__outdated_commands] )) ||
+_rtok__subcmd__help__subcmd__agents__subcmd__outdated_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help agents outdated commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__send_commands] )) ||
 _rtok__subcmd__help__subcmd__agents__subcmd__send_commands() {

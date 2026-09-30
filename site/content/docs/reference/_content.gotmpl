@@ -4,6 +4,7 @@
 */}}
 {{ $pages := slice
   (dict "path" "architecture"     "title" "Architecture"     "file" "repo/architecture.md"           "edit" "architecture.md")
+  (dict "path" "agency"           "title" "Agency"           "file" "repo/docs/agency.md"            "edit" "docs/agency.md")
   (dict "path" "agents"           "title" "Agents"           "file" "repo/docs/agents.md"            "edit" "docs/agents.md")
   (dict "path" "comparison"       "title" "Comparison"       "file" "repo/docs/comparison.md"        "edit" "docs/comparison.md")
   (dict "path" "configuration"    "title" "Configuration"    "file" "repo/docs/config.md"            "edit" "docs/config.md")
@@ -14,6 +15,9 @@
   (dict "path" "plugin-authoring" "title" "Plugin authoring" "file" "repo/docs/plugin-authoring.md"  "edit" "docs/plugin-authoring.md")
   (dict "path" "plugin-versions"  "title" "Plugin versions"  "file" "repo/docs/plugin-versions.md"   "edit" "docs/plugin-versions.md")
   (dict "path" "prompt-cache"     "title" "Prompt cache"     "file" "repo/docs/prompt-cache.md"      "edit" "docs/prompt-cache.md")
+  (dict "path" "batch-flex"       "title" "Batch, Flex, and routing" "file" "repo/docs/batch-flex.md" "edit" "docs/batch-flex.md")
+  (dict "path" "llm-soft-compression" "title" "LLM soft compression" "file" "repo/docs/llm-soft-compression.md" "edit" "docs/llm-soft-compression.md")
+  (dict "path" "model-routing"    "title" "Model routing"    "file" "repo/docs/model-routing.md"     "edit" "docs/model-routing.md")
   (dict "path" "report"           "title" "Report"           "file" "repo/docs/report.md"             "edit" "docs/report.md")
   (dict "path" "release"          "title" "Release process"  "file" "repo/docs/release.md"           "edit" "docs/release.md")
   (dict "path" "windows"          "title" "Developing on Windows" "file" "repo/docs/windows.md"      "edit" "docs/windows.md")
@@ -37,7 +41,7 @@
       "path" $p.path
       "title" $p.title
       "weight" (add $i 1)
-      "params" (dict "editURL" (printf "https://github.com/listepo/rtok/edit/main/%s" $p.edit))
+      "params" (dict "editURL" (printf "https://github.com/pyrlyn/rtok/edit/main/%s" $p.edit))
       "content" (dict "value" $body "mediaType" "text/markdown")
     ) }}
   {{ else }}

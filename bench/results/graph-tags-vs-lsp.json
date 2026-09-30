@@ -1,0 +1,166 @@
+{
+  "baseline_repo_bytes": 442,
+  "baseline_repo_chars": 442,
+  "baseline_repo_est_tokens": 127,
+  "estimator_code_chars_per_token": 3.5,
+  "live_model": "not run in this file; set RTOK_BENCH_LIVE=1 and `rtok bench` suite=graph for billed Claude usage",
+  "lsp": [
+    {
+      "bytes": 112,
+      "chars": 112,
+      "est_tokens": 32,
+      "mean_ms": 0.49224987499999995,
+      "p50_ms": 0.48841599999999996,
+      "p95_ms": 0.635583,
+      "qps": 2031.488580875719,
+      "query": "sink",
+      "tool": "symbol"
+    },
+    {
+      "bytes": 105,
+      "chars": 101,
+      "est_tokens": 29,
+      "mean_ms": 0.422547,
+      "p50_ms": 0.42874999999999996,
+      "p95_ms": 0.46462499999999995,
+      "qps": 2366.600638508852,
+      "query": "sink",
+      "tool": "callers"
+    },
+    {
+      "bytes": 74,
+      "chars": 74,
+      "est_tokens": 22,
+      "mean_ms": 0.50063525,
+      "p50_ms": 0.507041,
+      "p95_ms": 0.531,
+      "qps": 1997.462224244098,
+      "query": "sink depth=2",
+      "tool": "impact"
+    },
+    {
+      "bytes": 32,
+      "chars": 32,
+      "est_tokens": 10,
+      "mean_ms": 0.32532825,
+      "p50_ms": 0.33995800000000004,
+      "p95_ms": 0.348584,
+      "qps": 3073.8185202176574,
+      "query": "src/callers.rs",
+      "tool": "outline"
+    },
+    {
+      "bytes": 150,
+      "chars": 148,
+      "est_tokens": 43,
+      "mean_ms": 3.0547081250000003,
+      "p50_ms": 0.8265,
+      "p95_ms": 9.325375000000001,
+      "qps": 327.36351856857027,
+      "query": "who calls sink",
+      "tool": "explore"
+    },
+    {
+      "bytes": 48,
+      "chars": 46,
+      "est_tokens": 14,
+      "mean_ms": 3.003812375,
+      "p50_ms": 2.759792,
+      "p95_ms": 5.25275,
+      "qps": 332.91027373172733,
+      "query": "OnlyTyped",
+      "tool": "callers"
+    },
+    {
+      "bytes": 104,
+      "chars": 104,
+      "est_tokens": 30,
+      "mean_ms": 1.359926875,
+      "p50_ms": 1.392958,
+      "p95_ms": 1.592916,
+      "qps": 735.3336553481965,
+      "query": "alpha",
+      "tool": "symbol"
+    }
+  ],
+  "tags": [
+    {
+      "bytes": 70,
+      "chars": 70,
+      "est_tokens": 20,
+      "mean_ms": 0.87561975,
+      "p50_ms": 0.811708,
+      "p95_ms": 1.075042,
+      "qps": 1142.0482463991932,
+      "query": "sink",
+      "tool": "symbol"
+    },
+    {
+      "bytes": 133,
+      "chars": 131,
+      "est_tokens": 38,
+      "mean_ms": 0.881443,
+      "p50_ms": 0.750584,
+      "p95_ms": 1.7498340000000001,
+      "qps": 1134.5033087789002,
+      "query": "sink",
+      "tool": "callers"
+    },
+    {
+      "bytes": 218,
+      "chars": 218,
+      "est_tokens": 63,
+      "mean_ms": 0.891395875,
+      "p50_ms": 0.789417,
+      "p95_ms": 1.5458749999999999,
+      "qps": 1121.8360192658508,
+      "query": "sink depth=2",
+      "tool": "impact"
+    },
+    {
+      "bytes": 34,
+      "chars": 34,
+      "est_tokens": 10,
+      "mean_ms": 1.1058855000000003,
+      "p50_ms": 0.622666,
+      "p95_ms": 4.634292,
+      "qps": 904.2527458764943,
+      "query": "src/callers.rs",
+      "tool": "outline"
+    },
+    {
+      "bytes": 178,
+      "chars": 176,
+      "est_tokens": 51,
+      "mean_ms": 0.9916825,
+      "p50_ms": 1.001292,
+      "p95_ms": 1.125167,
+      "qps": 1008.3872610437312,
+      "query": "who calls sink",
+      "tool": "explore"
+    },
+    {
+      "bytes": 26,
+      "chars": 26,
+      "est_tokens": 8,
+      "mean_ms": 0.5463386250000001,
+      "p50_ms": 0.55325,
+      "p95_ms": 0.563667,
+      "qps": 1830.3666521838902,
+      "query": "OnlyTyped",
+      "tool": "callers"
+    },
+    {
+      "bytes": 69,
+      "chars": 69,
+      "est_tokens": 20,
+      "mean_ms": 0.6478124999999999,
+      "p50_ms": 0.640458,
+      "p95_ms": 0.736042,
+      "qps": 1543.6565364206467,
+      "query": "alpha",
+      "tool": "symbol"
+    }
+  ],
+  "tags_index_ms": 14.244458999999999
+}

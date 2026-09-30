@@ -172,7 +172,7 @@ mod tests {
             let s = offer_cli(&cfg(&dir, dry, true), false);
             assert!(s.contains("plugins/antigravity"), "{s}");
             assert!(s.contains("agy plugin install "), "{s}");
-            assert!(s.contains("ketch install listepo/rtok"), "{s}");
+            assert!(s.contains("ketch install pyrlyn/rtok"), "{s}");
         }
         assert!(fs::read_dir(&dir).unwrap().next().is_none());
         let _ = fs::remove_dir_all(dir);

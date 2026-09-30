@@ -28,8 +28,8 @@
     "sessionStart": [
       {
         "type": "command",
-        "bash": "command -v rtok >/dev/null 2>&1 && exec rtok hook SessionStart --host copilot; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook SessionStart --host copilot; true && printf '%s' '{\"additionalContext\":\"rtok is not installed; run ketch install listepo/rtok to enable it.\"}'; exit 0",
-        "powershell": "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) { $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) { $r = $k } }; if ($r) { & $r hook SessionStart --host copilot; exit $LASTEXITCODE }; '{\"additionalContext\":\"rtok is not installed; run ketch install listepo/rtok to enable it.\"}'; exit 0",
+        "bash": "command -v rtok >/dev/null 2>&1 && exec rtok hook SessionStart --host copilot; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook SessionStart --host copilot; true && printf '%s' '{\"additionalContext\":\"rtok is not installed; run ketch install pyrlyn/rtok to enable it.\"}'; exit 0",
+        "powershell": "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) { $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) { $r = $k } }; if ($r) { & $r hook SessionStart --host copilot; exit $LASTEXITCODE }; '{\"additionalContext\":\"rtok is not installed; run ketch install pyrlyn/rtok to enable it.\"}'; exit 0",
         "timeoutSec": 5
       }
     ],

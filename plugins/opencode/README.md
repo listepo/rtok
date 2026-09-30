@@ -13,7 +13,7 @@ appends the budgeted checkpoint to `output.context` (never `output.prompt`). The
 are T58.2. `rtok agents install opencode` links it into `<config dir>/plugins/rtok.ts` by
 default, once OpenCode itself is detected (T164), for the CLI and the desktop app (T44.5).
 `rtok.test.ts` is its unit test (vitest). Missing `rtok`: install with ketch
-(`ketch install listepo/rtok`).
+(`ketch install pyrlyn/rtok`).
 
 Kilo Code 7 runs on the OpenCode server and loads the same file: the default export is
 `{ id: "rtok", server }` (Kilo's module descriptor,

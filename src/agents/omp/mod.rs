@@ -92,7 +92,7 @@ impl Agent for Omp {
 }
 
 /// Offer / link / unlink `plugins/pi` into omp's extensions directory. Dry-run and the
-/// unaccepted offer MUST contain `plugins/pi` and `ketch install listepo/rtok`.
+/// unaccepted offer MUST contain `plugins/pi` and `ketch install pyrlyn/rtok`.
 pub static PLUGIN: HostPlugin = HostPlugin {
     src_rel: "plugins/pi",
     host: "oh my pi",
@@ -166,7 +166,7 @@ mod tests {
         let c = cfg(&dir, true, false);
         let lines = Omp.apply(&c, Kind::Cli, Mode::Install).unwrap();
         assert!(lines[0].contains("plugins/pi"), "{lines:?}");
-        assert!(lines[0].contains("ketch install listepo/rtok"), "{lines:?}");
+        assert!(lines[0].contains("ketch install pyrlyn/rtok"), "{lines:?}");
         assert!(!plugin_dest(&c).exists());
         assert!(!c.setup.omp.mcp_path.exists());
         let _ = fs::remove_dir_all(dir);

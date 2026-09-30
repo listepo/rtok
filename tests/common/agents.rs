@@ -31,54 +31,6 @@ pub fn tmp(name: &str) -> PathBuf {
     dir
 }
 
-/// The invoking user's own config at home-relative `rel` (`.cursor/hooks.json`), or `None`
-/// when this machine has no such file — or when `CI` is set, so a runner that happens to
-/// carry one skips anyway.
-///
-/// Tests built on this are local-only by construction: a developer who actually runs the host
-/// checks rtok against the file it will really meet, and everyone else — CI included — skips
-/// instead of failing. Read from the test process's own `HOME`, which [`raw`] never changes:
-/// only the child binary is redirected into the throwaway home.
-pub fn real_config(rel: &str) -> Option<PathBuf> {
-    real_config_from(
-        std::env::var_os("CI").is_some(),
-        real_home().as_deref(),
-        rel,
-    )
-}
-
-/// This machine's home as the *test process* sees it.
-pub fn real_home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-}
-
-/// The gate with its two inputs handed in, so a test can exercise both sides without setting
-/// `CI` — `unsafe` is denied in this crate, and a mutated environment leaks across threads.
-pub fn real_config_from(ci: bool, home: Option<&Path>, rel: &str) -> Option<PathBuf> {
-    if ci {
-        return None;
-    }
-    let path = home?.join(rel);
-    path.is_file().then_some(path)
-}
-
-/// Copy [`real_config`] into the throwaway `home` at the same relative path, so the binary
-/// edits a copy and the user's own file is never opened for writing.
-pub fn seed_real(home: &Path, rel: &str) -> Option<PathBuf> {
-    let src = real_config(rel)?;
-    let dest = home.join(rel);
-    fs::create_dir_all(dest.parent().expect("rel has a parent")).unwrap();
-    fs::copy(&src, &dest).unwrap();
-    Some(dest)
-}
-
-/// One line saying which check did not run here — a skip must be visible, not silent.
-pub fn skip(what: &str) {
-    println!("skipped {what}: no such config under this HOME, or CI is set");
-}
-
 /// One config pointing every host at files inside `home`; the host dirs exist so `present`
 /// says yes for each of them.
 pub fn write_cfg(home: &Path) -> PathBuf {
@@ -96,6 +48,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         "Library/Application Support/Code/User",
         "Library/Application Support/Code - Insiders/User",
         ".copilot/hooks",
+        ".commandcode",
         ".codeium/windsurf",
         ".config/zed",
         "Documents/Cline/Hooks",
@@ -128,7 +81,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.grok]\nconfig_path = \"{h}/.grok/config.toml\"\n\
              [setup.vscode]\ncode_user_dir = \"{h}/Library/Application Support/Code/User\"\n\
              insiders_user_dir = \"{h}/Library/Application Support/Code - Insiders/User\"\n\
-             [setup.copilot]\ndir = \"{h}/.copilot\"\n\
+              [setup.copilot]\ndir = \"{h}/.copilot\"\n\
+              [setup.commandcode]\ndir = \"{h}/.commandcode\"\n\
              [setup.aider]\nconfig_path = \"{h}/.aider.conf.yml\"\n\
               [setup.windsurf]\nconfig_path = \"{h}/.codeium/windsurf/mcp_config.json\"\n\
               [setup.zed]\nconfig_path = \"{h}/.config/zed/settings.json\"\n\
@@ -373,6 +327,20 @@ esac
             fs::write(&codex, FAKE_CODEX_SH).unwrap();
             fs::set_permissions(&codex, fs::Permissions::from_mode(0o755)).unwrap();
         }
+        // `app_version` runs `cursor`, `cursor-agent`, and `agent` with `--version` once
+        // the desktop bundle is present. These shims answer and exit so the real CLIs
+        // never start.
+        for name in ["cursor", "cursor-agent", "agent"] {
+            let bin = dir.join(name);
+            if !bin.exists() {
+                fs::write(
+                    &bin,
+                    "#!/bin/sh\n[ \"$1\" = --version ] && echo 0.0.0\nexit 0\n",
+                )
+                .unwrap();
+                fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
         let mut dirs = vec![dir];
         dirs.extend(std::env::split_paths(&path));
         return std::env::join_paths(dirs).unwrap();
@@ -425,6 +393,16 @@ if "%ALLARGS%"=="plugin update rtok@rtok" (
         let codex = dir.join("codex.cmd");
         if !codex.exists() {
             fs::write(&codex, FAKE_CODEX_CMD).unwrap();
+        }
+        for name in ["cursor.cmd", "cursor-agent.cmd", "agent.cmd"] {
+            let bin = dir.join(name);
+            if !bin.exists() {
+                fs::write(
+                    &bin,
+                    "@echo off\r\nif \"%~1\"==\"--version\" echo 0.0.0\r\nexit /b 0\r\n",
+                )
+                .unwrap();
+            }
         }
         let mut dirs = vec![dir];
         dirs.extend(std::env::split_paths(&path));

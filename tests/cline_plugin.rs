@@ -98,7 +98,7 @@ fn task_start_names_ketch_once_in_clines_own_shape() {
         v["context"]
             .as_str()
             .unwrap_or_default()
-            .contains("ketch install listepo/rtok"),
+            .contains("ketch install pyrlyn/rtok"),
         "{stdout}"
     );
 

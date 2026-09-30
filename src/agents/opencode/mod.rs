@@ -63,7 +63,7 @@ fn path_for(cfg: &Config, kind: Kind) -> PathBuf {
 
 /// The config with `config_path` pointed at this variant's file, so every step below reads
 /// one key.
-fn for_kind(cfg: &Config, kind: Kind) -> Config {
+pub(crate) fn for_kind(cfg: &Config, kind: Kind) -> Config {
     let mut c = cfg.clone();
     c.setup.opencode.config_path = path_for(cfg, kind);
     c
@@ -149,7 +149,7 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
 }
 
 /// Offer / link / unlink `plugins/opencode/rtok.ts` (D21, T44.5). Dry-run and the unaccepted
-/// offer name `plugins/opencode` and `ketch install listepo/rtok`.
+/// offer name `plugins/opencode` and `ketch install pyrlyn/rtok`.
 pub static PLUGIN: HostPlugin = HostPlugin {
     src_rel: "plugins/opencode/rtok.ts",
     host: "OpenCode",
@@ -274,7 +274,7 @@ mod tests {
         let (mut c, path) = cfg("plugin", true);
         let dry = PLUGIN.offer(&c, false).unwrap();
         assert!(dry.contains("plugins/opencode"), "{dry}");
-        assert!(dry.contains("ketch install listepo/rtok"), "{dry}");
+        assert!(dry.contains("ketch install pyrlyn/rtok"), "{dry}");
         assert!(!plugin_dest(&c).exists());
         c.setup.dry_run = false;
         c.setup.yes = true;

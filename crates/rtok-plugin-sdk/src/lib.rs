@@ -1,7 +1,7 @@
 //! The rtok plugin contract: what a plugin is, the events it answers, and what it may
 //! hand back to the host.
 //!
-//! [rtok](https://github.com/listepo/rtok) reduces the tokens an AI coding agent spends, and
+//! [rtok](https://github.com/pyrlyn/rtok) reduces the tokens an AI coding agent spends, and
 //! every method it uses is a plugin. This crate is the contract those plugins implement —
 //! the ten that ship inside `rtok` and any written elsewhere — so a plugin author depends on
 //! three small crates instead of the whole binary.

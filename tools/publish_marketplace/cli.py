@@ -16,7 +16,7 @@ from . import PublishError
 from . import registry
 
 WORKFLOW_FILE = "marketplace.yml"
-REPO = "listepo/rtok"
+REPO = "pyrlyn/rtok"
 
 Runner = Callable[[Sequence[str]], "subprocess.CompletedProcess[str]"]
 

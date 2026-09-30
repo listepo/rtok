@@ -1,4 +1,4 @@
-module github.com/listepo/rtok/site
+module github.com/pyrlyn/rtok/site
 
 go 1.27.0
 

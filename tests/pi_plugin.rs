@@ -1,7 +1,7 @@
 //! T10.6 + D21: pi host plugin is one bash call path, no MCP, ketch if missing.
 //!
 //! Check: `rtok agents install pi --dry-run` names `plugins/pi` and
-//! `ketch install listepo/rtok` and touches nothing; `--yes` links the
+//! `ketch install pyrlyn/rtok` and touches nothing; `--yes` links the
 //! extension, second apply is `no changes`, `--remove` unlinks; the TS
 //! extension owns the single bash call path with no `read`/`search`
 //! duplication; pi's own loader loads the linked directory once (T48.1).
@@ -89,7 +89,7 @@ fn pi_extension_owns_the_single_bash_call_path() {
     assert!(ts.contains("\"tool_result\""), "compresses results");
     assert!(ts.contains("rtok filter"), "filter path");
     assert!(ts.contains("expand"), "expand trailer");
-    assert!(ts.contains("ketch install listepo/rtok"), "ketch hint");
+    assert!(ts.contains("ketch install pyrlyn/rtok"), "ketch hint");
     assert!(ts.contains("\"read\""), "filters pi read results (T70.1)");
     assert!(ts.contains("\"grep\""), "filters pi grep results");
     assert!(ts.contains("\"find\""), "filters pi find results");
@@ -123,7 +123,7 @@ fn setup_pi_dry_run_offers_plugin() {
     assert_eq!(code, 0, "stderr={stderr}");
     assert!(stdout.contains("plugins/pi"), "stdout={stdout}");
     assert!(
-        stdout.contains("ketch install listepo/rtok"),
+        stdout.contains("ketch install pyrlyn/rtok"),
         "stdout={stdout}"
     );
     assert!(

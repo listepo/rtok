@@ -1,22 +1,14 @@
-//! T78: the installers against copies of this machine's own agent configs.
+//! T78: the installers against foreign configs that live only under the throwaway home.
 //!
-//! Every other agents test writes a synthetic config — a couple of keys, all of them ours.
-//! That never meets what install actually edits: a 25 KB `settings.json`, a `hooks.json`
-//! already carrying other tools' hooks, an `mcp.json` holding a dozen foreign servers. A
-//! regression that dropped or rewrote foreign content would pass the whole suite.
-//!
-//! Each test copies the user's real file into a throwaway `HOME` (the original is never
-//! opened for writing), runs `agents install <host> --yes` and then `agents remove <host>`,
-//! and checks that every entry rtok does not own is still there, unchanged, after both — and
-//! that a second install changes nothing a first one did not.
-//!
-//! Local-only by construction: [`common::agents::real_config`] returns `None` when the file
-//! is absent or `CI` is set, and the test prints a skip line instead of failing. Nothing here
-//! asserts that any particular host is installed on the machine running it.
+//! Each test writes a fixture (another tool's hook, server, or setting — never this
+//! machine's files) into `tmp()`, runs `agents install <host> --yes` and then
+//! `agents remove <host>`, and checks that every entry rtok does not own is still
+//! there, unchanged, after both — and that a second install changes nothing a first
+//! one did not.
 
 mod common;
 
-use common::agents::{raw, seed_real, skip, tmp, write_cfg};
+use common::agents::{raw, tmp, write_cfg};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -196,23 +188,62 @@ fn survives(before: &str, after: &str, stage: &str, path: &Path) -> usize {
     checked
 }
 
-/// Seed one host's real configs, install, install again, remove — and hold every foreign entry
-/// to its seeded value at each stage.
+/// The bytes written under the throwaway home. Never read from the process `HOME`.
+fn fixture(rel: &str) -> &'static str {
+    match rel {
+        ".cursor/hooks.json" => {
+            r#"{"version":1,"hooks":{"beforeShellExecution":[{"command":"foreign"}]}}"#
+        }
+        ".cursor/mcp.json"
+        | ".copilot/mcp-config.json"
+        | ".codeium/windsurf/mcp_config.json"
+        | ".config/devin/mcp_config.json"
+        | ".omp/agent/mcp.json" => r#"{"mcpServers":{"foreign":{"command":"x"}}}"#,
+        ".claude/settings.json" => {
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"other-tool run"}]}]},"env":{"KEEP":"1"}}"#
+        }
+        ".codex/config.toml" | ".grok/config.toml" => "[mcp_servers.foreign]\ncommand = \"x\"\n",
+        ".config/opencode/opencode.json"
+        | ".config/kilo/kilo.json"
+        | ".config/mimocode/mimocode.json"
+        | ".gemini/settings.json" => r#"{"env":{"KEEP":"1"}}"#,
+        ".kimi-code/config.toml" => "[[hooks]]\nevent = \"Stop\"\ncommand = \"echo other\"\n",
+        ".aider.conf.yml" => "model: foreign\n",
+        ".config/zed/settings.json" => {
+            // KEEP is last and has no trailing comma: install inserts `,\n  context_servers`
+            // at the root brace (KEEP's line unchanged), and remove takes that comma with
+            // the key (excise prefers the preceding separator) so KEEP still matches.
+            "{\n  // foreign\n  \"theme\": \"One Dark\",\n  \"KEEP\": \"1\"\n}\n"
+        }
+        ".zcode/cli/config.json" => {
+            r#"{"hooks":{"events":{"Stop":[{"hooks":[{"type":"command","command":"echo other"}]}]}},"mcp":{"servers":{"foreign":{"command":"x"}}}}"#
+        }
+        "Library/Application Support/Code/User/settings.json" => {
+            r#"{"editor.tabSize": 2, "KEEP": "1"}"#
+        }
+        ".codewhale/config.toml" => "[other]\nname = \"foreign\"\n",
+        ".codewhale/mcp.json" => r#"{"mcpServers":{"foreign":{"command":"x"}}}"#,
+        ".config/devin/config.json" => r#"{"hooks":{"Stop":[{"command":"foreign"}]}}"#,
+        other => panic!("no fixture for {other}"),
+    }
+}
+
+/// Seed one host from [`fixture`], install, install again, remove — and hold every foreign
+/// entry to its seeded value at each stage.
 fn round_trip(host: &Host) {
     let home = tmp(&format!("real-{}", host.id));
     let cfg = write_cfg(&home);
     let seeded: Vec<_> = host
         .files
         .iter()
-        .filter_map(|rel| {
-            seed_real(&home, rel).map(|dest| (*rel, fs::read_to_string(&dest).unwrap(), dest))
+        .map(|rel| {
+            let dest = home.join(rel);
+            fs::create_dir_all(dest.parent().expect("rel has a parent")).unwrap();
+            let body = fixture(rel);
+            fs::write(&dest, body).unwrap();
+            (*rel, body.to_string(), dest)
         })
         .collect();
-    if seeded.is_empty() {
-        skip(&format!("{} against a real config", host.id));
-        let _ = fs::remove_dir_all(&home);
-        return;
-    }
 
     let install = ["agents", "install", host.id, "--yes"];
     let out = raw(&install, &cfg, &home);
@@ -232,29 +263,13 @@ fn round_trip(host: &Host) {
             after
         })
         .collect();
-    if compared == 0 {
-        // A machine whose real config carries nothing foreign has nothing this test can
-        // protect (T166): say so and skip instead of failing on machine state. Only our
-        // own entries present cannot be told apart from an old installer having dropped
-        // foreign ones (the Windsurf → Devin rename is that shape), so the reason names
-        // both cases rather than skipping silently.
-        let bare = seeded.iter().all(|(_, before, _)| !before.contains("rtok"));
-        let why = if bare {
-            "the real config is a bare default — nothing to protect"
-        } else {
-            "only rtok's own entries are here; if foreign ones once were, an old installer \
-             may have dropped them"
-        };
-        skip(&format!(
-            "{}: nothing foreign in the seeded configs — {why}",
-            host.id
-        ));
-        let _ = fs::remove_dir_all(&home);
-        return;
-    }
+    assert!(
+        compared > 0,
+        "{}: fixture had nothing foreign for the round trip to protect",
+        host.id
+    );
 
-    // Idempotent on a real file, not just on one we wrote: a second install leaves the exact
-    // bytes the first one produced.
+    // A second install leaves the exact bytes the first one produced.
     assert!(raw(&install, &cfg, &home).status.success());
     for ((rel, _, dest), once) in seeded.iter().zip(&after_install) {
         assert_eq!(
@@ -298,8 +313,6 @@ real_config_round_trip! {
     aider_keeps_the_real_conf_yml => "aider",
     windsurf_keeps_the_real_mcp_config_json => "windsurf",
     zcode_keeps_the_real_config_json => "zcode",
-    // VS Code's settings.json may be JSONC too; whether this machine's is decides whether this
-    // passes or reproduces T79, which is the honest answer for a test that reads a real file.
     vscode_keeps_the_real_settings_json => "vscode",
     gemini_keeps_the_real_settings_json => "gemini",
     codewhale_keeps_the_real_config_toml_and_mcp_json => "codewhale",
@@ -308,39 +321,27 @@ real_config_round_trip! {
     devin_keeps_the_real_config_and_mcp_json => "devin",
 }
 
-/// Zed writes **JSONC** — its `settings.json` carries `//` comments and trailing commas
-/// (T79). The installer edits the text surgically and validates a JSONC copy
-/// (`jsonc-parser`), so the file Zed itself wrote survives installs and removes with its
-/// comments and trailing commas intact — which is what the round trip asserts.
+/// Zed writes JSONC. The fixture carries a `//` comment; the installer edits the text
+/// surgically, and that comment plus the foreign keys survive install and remove.
 #[test]
 fn zed_keeps_the_real_settings_json() {
     round_trip(by_id("zed"));
 }
 
-/// The gate itself, both sides: `CI` hides every host config, including the ones that really
-/// are on this machine, and without `CI` the answer is exactly "does the file exist".
-///
-/// Without this the suite could not tell a working gate from one that had quietly stopped
-/// finding anything — the visible result is the same skip line either way.
+/// Every HOSTS path has a fixture arm, and every fixture is foreign-only: no `rtok`, and at
+/// least one of `foreign` / `KEEP` / `other`. Reads only the fixture strings — never HOME.
 #[test]
-fn ci_hides_what_this_machine_really_has() {
-    use common::agents::{real_config_from, real_home};
-    let home = real_home();
-    let mut found = 0;
+fn every_host_fixture_is_foreign_only() {
     for rel in HOSTS.iter().flat_map(|h| h.files) {
+        let body = fixture(rel);
         assert!(
-            real_config_from(true, home.as_deref(), rel).is_none(),
-            "CI must hide {rel}"
+            !body.to_ascii_lowercase().contains("rtok"),
+            "{rel}: fixture must not mention rtok"
         );
-        let off = real_config_from(false, home.as_deref(), rel);
-        assert_eq!(
-            off.is_some(),
-            home.as_deref().is_some_and(|h| h.join(rel).is_file()),
-            "off CI, {rel} must answer exactly whether the file exists"
+        let lower = body.to_ascii_lowercase();
+        assert!(
+            lower.contains("foreign") || body.contains("KEEP") || lower.contains("other"),
+            "{rel}: fixture must carry foreign/KEEP/other marker"
         );
-        found += usize::from(off.is_some());
-    }
-    if found == 0 {
-        skip("the whole real-config suite: this machine runs none of these hosts");
     }
 }

@@ -18,22 +18,22 @@ macOS on Apple silicon or Intel, and Linux x86-64. The script is POSIX `sh`, so 
 same whether your shell is bash or zsh; it puts `rtok` in `~/.cargo/bin`.
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/listepo/rtok/releases/latest/download/rtok-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/pyrlyn/rtok/releases/latest/download/rtok-installer.sh | sh
 ```
 
-Or with [ketch](https://github.com/listepo/ketch) — it installs straight from these
+Or with [ketch](https://github.com/pyrlyn/ketch) — it installs straight from these
 GitHub Release archives, no tap or formula:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
-ketch install listepo/rtok
+curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash
+ketch install pyrlyn/rtok
 ```
 
-Or Homebrew (once the formula PR in [listepo/homebrew-tap](https://github.com/listepo/homebrew-tap)
+Or Homebrew (once the formula PR in [pyrlyn/homebrew-tap](https://github.com/pyrlyn/homebrew-tap)
 has been merged for that release):
 
 ```bash
-brew install listepo/tap/rtok
+brew install pyrlyn/tap/rtok
 ```
 
 Or from npm or PyPI, which carry the same native binary (macOS arm64, Linux x86-64 glibc,
@@ -54,13 +54,13 @@ The dist installer also gives you `rtok-update`; run it to move to the newest re
 
 macOS release binaries are codesigned with the Developer ID (notarisation is still off). A
 browser download of a `.tar.xz` may still quarantine the file until Gatekeeper has checked it;
-the installer above and `ketch install listepo/rtok` do not set quarantine. Details:
+the installer above and `ketch install pyrlyn/rtok` do not set quarantine. Details:
 [docs/release.md](docs/release.md).
 
 Building from source works on any platform Rust supports:
 
 ```bash
-git clone https://github.com/listepo/rtok && cd rtok
+git clone https://github.com/pyrlyn/rtok && cd rtok
 mise install
 mise exec -- cargo install --path .
 rtok --version
@@ -307,6 +307,8 @@ usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
 ```
 
 What keeps that `hit=` high with rtok installed: [docs/prompt-cache.md](docs/prompt-cache.md).
+
+Batch, Flex, and model routing on the proxy (pass-through vs rewrite, what is planned): [docs/batch-flex.md](docs/batch-flex.md).
 
 ## Commands
 

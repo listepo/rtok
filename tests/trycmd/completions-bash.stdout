@@ -124,6 +124,9 @@ _rtok() {
             rtok__subcmd__agents,list)
                 cmd="rtok__subcmd__agents__subcmd__list"
                 ;;
+            rtok__subcmd__agents,outdated)
+                cmd="rtok__subcmd__agents__subcmd__outdated"
+                ;;
             rtok__subcmd__agents,remove)
                 cmd="rtok__subcmd__agents__subcmd__uninstall"
                 ;;
@@ -165,6 +168,9 @@ _rtok() {
                 ;;
             rtok__subcmd__agents__subcmd__help,list)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__list"
+                ;;
+            rtok__subcmd__agents__subcmd__help,outdated)
+                cmd="rtok__subcmd__agents__subcmd__help__subcmd__outdated"
                 ;;
             rtok__subcmd__agents__subcmd__help,send)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__send"
@@ -468,6 +474,9 @@ _rtok() {
                 ;;
             rtok__subcmd__help__subcmd__agents,list)
                 cmd="rtok__subcmd__help__subcmd__agents__subcmd__list"
+                ;;
+            rtok__subcmd__help__subcmd__agents,outdated)
+                cmd="rtok__subcmd__help__subcmd__agents__subcmd__outdated"
                 ;;
             rtok__subcmd__help__subcmd__agents,send)
                 cmd="rtok__subcmd__help__subcmd__agents__subcmd__send"
@@ -782,7 +791,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents)
-            opts="-h --config --help install uninstall remove update list info sessions junk whoami show status send inbox help"
+            opts="-h --config --help install uninstall remove update outdated list info sessions junk whoami show status send inbox help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -800,7 +809,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__help)
-            opts="install uninstall update list info sessions junk whoami show status send inbox help"
+            opts="install uninstall update outdated list info sessions junk whoami show status send inbox help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -898,6 +907,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__help__subcmd__list)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__agents__subcmd__help__subcmd__outdated)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1177,6 +1200,24 @@ _rtok() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtok__subcmd__agents__subcmd__outdated)
+            opts="-h --cli --desktop --all --json --exit-code --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtok__subcmd__agents__subcmd__send)
             opts="-h --all-live --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -1328,7 +1369,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__update)
-            opts="-h --dry-run --cli --desktop --all --no-restart --force --source --config --help"
+            opts="-h --dry-run --cli --desktop --all --no-restart --force --source --check --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2428,7 +2469,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__agents)
-            opts="install uninstall update list info sessions junk whoami show status send inbox"
+            opts="install uninstall update outdated list info sessions junk whoami show status send inbox"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2512,6 +2553,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__agents__subcmd__list)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__help__subcmd__agents__subcmd__outdated)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )

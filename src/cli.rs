@@ -620,6 +620,8 @@ enum AgentCmd {
     Uninstall(RemoveArgs),
     /// Bring what rtok installed up to date: in place where it can, reinstalled where not
     Update(UpdateArgs),
+    /// List hosts whose rtok plugin is older than this binary
+    Outdated(OutdatedArgs),
     /// Every known app: kind and name, path and version, config files, rtok modules
     List {
         /// JSON instead of the table
@@ -758,6 +760,9 @@ struct UpdateArgs {
     /// Compare against this install source instead of the one on record (T279)
     #[arg(long, value_enum)]
     source: Option<SourceArg>,
+    /// List outdated plugins only (same output as `agents outdated`)
+    #[arg(long)]
+    check: bool,
 }
 
 /// `--source` for `rtok agents update` (T279): mirrors `agents::plugin_version::Source`, kept
@@ -777,6 +782,28 @@ impl SourceArg {
             SourceArg::Marketplace => "marketplace",
         }
     }
+}
+
+/// `rtok agents outdated` (T279.1): plugin versions behind the running rtok.
+#[derive(clap::Args)]
+struct OutdatedArgs {
+    /// Host(s), comma-separated; omitted = every host in `agents list`
+    host: Option<String>,
+    /// Only the CLI app (default is all)
+    #[arg(long)]
+    cli: bool,
+    /// Only the desktop app (default is all)
+    #[arg(long, alias = "gui")]
+    desktop: bool,
+    /// All variants (the default when neither `--cli` nor `--desktop` is given)
+    #[arg(long)]
+    all: bool,
+    /// JSON instead of the table
+    #[arg(long)]
+    json: bool,
+    /// Exit with code 10 when at least one plugin is outdated
+    #[arg(long)]
+    exit_code: bool,
 }
 
 /// One definition behind `rtok agents install` and the deprecated `rtok setup`.
@@ -1273,7 +1300,14 @@ pub fn run() -> Result<()> {
             AgentCmd::Uninstall(args) => {
                 setup_host(config_file.as_deref(), SetupArgs::removing(args))?
             }
-            AgentCmd::Update(args) => update_hosts(config_file.as_deref(), args)?,
+            AgentCmd::Update(args) => {
+                if args.check {
+                    outdated_hosts(config_file.as_deref(), outdated_from_update(&args))?;
+                } else {
+                    update_hosts(config_file.as_deref(), args)?;
+                }
+            }
+            AgentCmd::Outdated(args) => outdated_hosts(config_file.as_deref(), args)?,
             AgentCmd::List { json } => {
                 let cfg = Config::load_with(config_file.as_deref(), None)?;
                 if json {
@@ -1949,6 +1983,41 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
 
 /// `rtok agents update [host,…]` (T242.2): the named hosts, or every host rtok is installed
 /// in, through the same backup/restart path as install.
+fn outdated_from_update(args: &UpdateArgs) -> OutdatedArgs {
+    OutdatedArgs {
+        host: args.host.clone(),
+        cli: args.cli,
+        desktop: args.desktop,
+        all: args.all,
+        json: false,
+        exit_code: false,
+    }
+}
+
+fn outdated_hosts(config_file: Option<&std::path::Path>, args: OutdatedArgs) -> Result<()> {
+    let cfg = Config::load_with(config_file, None)?;
+    let hosts = match &args.host {
+        Some(h) => parse_hosts(h)?,
+        None => Vec::new(),
+    };
+    let selection = crate::agents::OutdatedSelection {
+        hosts,
+        cli: args.cli,
+        desktop: args.desktop,
+        all: args.all,
+    };
+    let rep = crate::agents::report(&cfg, &selection)?;
+    if args.json {
+        println!("{}", serde_json::to_string(&rep)?);
+    } else {
+        print!("{}", crate::agents::print_human(&rep));
+    }
+    if args.exit_code && !rep.outdated.is_empty() {
+        std::process::exit(crate::agents::EXIT_OUTDATED);
+    }
+    Ok(())
+}
+
 fn update_hosts(config_file: Option<&std::path::Path>, args: UpdateArgs) -> Result<()> {
     let mut cfg = Config::load_with(
         config_file,

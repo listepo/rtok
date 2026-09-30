@@ -2045,7 +2045,7 @@ mod tests {
             response_bytes: 50,
             ms: 5.0,
         });
-        let mut cfg = Config::default();
+        let mut cfg = crate::testutil::config("web-live-calls").0;
         cfg.proxy.enabled = false;
         cfg.core.enabled = true;
         let rows = Model::new(&cfg, None).calls();

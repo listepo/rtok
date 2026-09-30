@@ -14,6 +14,7 @@ pub mod claude;
 pub mod cline;
 pub mod codewhale;
 pub mod codex;
+pub mod commandcode;
 pub mod copilot;
 pub mod cursor;
 pub mod devin;
@@ -27,8 +28,10 @@ pub(crate) mod mcp;
 pub mod mimo;
 pub mod omp;
 pub mod opencode;
+mod outdated;
 pub mod pi;
 pub mod plugin;
+pub(crate) mod plugin_install;
 pub(crate) mod plugin_version;
 pub mod restart;
 pub mod skill;
@@ -61,6 +64,7 @@ pub const HOSTS: &[&str] = &[
     "grok",
     "vscode",
     "copilot",
+    "commandcode",
     "aider",
     "windsurf",
     "zed",
@@ -90,6 +94,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "grok" => Some(&grok::Grok),
         "vscode" => Some(&vscode::Vscode),
         "copilot" => Some(&copilot::Copilot),
+        "commandcode" => Some(&commandcode::CommandCode),
         "windsurf" => Some(&windsurf::Windsurf),
         "aider" => Some(&aider::Aider),
         "zed" => Some(&zed::Zed),
@@ -901,6 +906,10 @@ fn carry_flags(cfg: &Config, have: &[&str]) -> Config {
     c.setup.yes |= have.contains(&"plugin");
     c
 }
+
+pub use outdated::{
+    EXIT_OUTDATED, Outdated, OutdatedReport, OutdatedSelection, outdated, print_human, report,
+};
 
 /// `rtok agents update` with no host named: every host with an rtok module in at least one
 /// variant on this machine, in [`HOSTS`] order.

@@ -1,8 +1,8 @@
-# Gated pipeline. Local ci.yml and the shared listepo/infra pipeline (CodeQL, Semgrep, Snyk;
+# Gated pipeline. Local ci.yml and the shared pyrlyn/infra pipeline (CodeQL, Semgrep, Snyk;
 # Rust CI stays local, `rust: false`) run in parallel; `gate` passes only when both succeeded.
 # Anything downstream (deploy, release, publish) must `needs: gate`. Draft pull requests skip
 # every job, the gate included, until marked ready. Secrets are passed explicitly.
-# Shared workflows: https://github.com/listepo/infra/blob/main/docs/reusable-workflows.md
+# Shared workflows: https://github.com/pyrlyn/infra/blob/main/docs/reusable-workflows.md
 name: pipeline
 
 on:
@@ -33,7 +33,7 @@ jobs:
 
   pipeline:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    uses: listepo/infra/.github/workflows/pipeline.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    uses: pyrlyn/infra/.github/workflows/pipeline.yml@189816ac5a375e18e0235044970efcbc40e3cabd
     permissions:
       contents: read
       security-events: write
@@ -53,6 +53,6 @@ jobs:
       && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     steps:
-      - uses: listepo/infra/.github/actions/gate@189816ac5a375e18e0235044970efcbc40e3cabd
+      - uses: pyrlyn/infra/.github/actions/gate@189816ac5a375e18e0235044970efcbc40e3cabd
         with:
           needs: ${{ toJSON(needs) }}

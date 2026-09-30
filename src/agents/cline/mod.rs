@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(lines.len(), EVENTS.len(), "{lines:?}");
         for line in &lines {
             assert!(line.contains("plugins/cline"), "{lines:?}");
-            assert!(line.contains("ketch install listepo/rtok"), "{lines:?}");
+            assert!(line.contains("ketch install pyrlyn/rtok"), "{lines:?}");
         }
         assert!(!c.setup.cline.hooks_path.exists());
         let _ = fs::remove_dir_all(dir);

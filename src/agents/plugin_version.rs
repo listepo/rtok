@@ -1,9 +1,10 @@
 //! One version scheme for a plugin across every install source — GitHub, local checkout and
 //! marketplace catalog (plan T279). The version-file format, the per-host install receipt,
-//! the installed/available version lookup and the update/skip/reinstall decision, plus (PR 3)
+//! the installed/available version lookup and the update/skip/reinstall decision, plus
 //! `git describe` for a local build and parsing `--source` off the CLI. `agents update` wires
 //! this in for Claude (the worked example the docs task names); other hosts still reinstall
-//! unconditionally until they grow the same plumbing.
+//! unconditionally until they grow the same plumbing. `agents outdated` and
+//! `agents update --check` share [`is_behind`] for the same version rule (T279.1).
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -355,6 +356,13 @@ pub enum Decision {
 /// base version "older"/"newer" instead of just differently built) — newer updates, older
 /// skips with a warning, equal precedence with equal build metadata skips, equal precedence
 /// with different build metadata updates (a local rebuild at the same base version).
+/// True when `installed` is strictly older than `target` by SemVer precedence (build
+/// metadata ignored). Same rule `agents outdated` uses; equal base with different build
+/// metadata is not behind.
+pub fn is_behind(installed: &Version, target: &Version) -> bool {
+    target.cmp_precedence(installed) == Ordering::Greater
+}
+
 pub fn decide(installed: Option<Installed>, available: &Available, force: bool) -> Decision {
     let Some(installed) = installed else {
         return Decision::Install;

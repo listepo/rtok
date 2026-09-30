@@ -339,6 +339,30 @@ impl HookInput {
         self.hook_event_name = cline_event(name).to_string();
     }
 
+    /// Command Code (https://commandcode.ai/docs/hooks, fetched 2026-09-23) sends
+    /// Claude's key shapes with its own tool names: stdin `tool_name` is
+    /// `shell_command` / `read_file` / `write_file` / `edit_file`, the shell input
+    /// key is `command`, a read carries `absolute_path`, writes and edits carry
+    /// `file_path`. The project root arrives as `COMMANDCODE_PROJECT_DIR` (same as
+    /// `cwd`). The reply needs no mapping — Command Code reads
+    /// `hookSpecificOutput` as Claude writes it.
+    pub fn adapt_commandcode(&mut self, event: &str, project_dir: Option<String>) {
+        if self.session_id.is_empty()
+            && let Some(id) = self.extra.remove("session_id").and_then(as_string)
+        {
+            self.session_id = id;
+        }
+        if let Some(name) = self.tool_name.take() {
+            self.tool_name = Some(canonical_tool_name(&name));
+        }
+        if self.cwd.is_none() {
+            self.cwd = project_dir.filter(|d| !d.is_empty());
+        }
+        if self.hook_event_name.is_empty() {
+            self.hook_event_name = event.to_string();
+        }
+    }
+
     pub fn pre_tool(&self) -> Option<PreToolUse<'_>> {
         (self.hook_event_name == "PreToolUse").then_some(PreToolUse {
             tool_name: self.tool_name.as_deref()?,
@@ -505,7 +529,7 @@ pub(crate) fn canonical_tool_name(name: &str) -> String {
         "Bash".into()
     } else if l.starts_with("read") || l.starts_with("view") {
         "Read".into()
-    } else if l == "edit" || l == "replace" {
+    } else if l == "edit" || l == "replace" || l == "edit_file" {
         "Edit".into()
     } else if l == "write" || l == "write_file" {
         "Write".into()
@@ -1183,5 +1207,82 @@ mod tests {
         bare.adapt_cline("PreToolUse");
         assert_eq!(bare.hook_event_name, "PreToolUse");
         assert_eq!(bare.session_id, "task-9");
+    }
+
+    /// Payloads as https://commandcode.ai/docs/hooks gives them: Claude's key shapes
+    /// with Command Code's tool names (`shell_command`, `read_file`, …).
+    #[test]
+    fn commandcode_maps_tool_names_session_and_project_dir() {
+        let mut pre: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "cc-1",
+            "transcript_path": "/tmp/t.jsonl",
+            "cwd": "/work/app",
+            "hook_event_name": "PreToolUse",
+            "permission_mode": "default",
+            "tool_name": "shell_command",
+            "tool_input": {"command": "git status"}
+        }))
+        .unwrap();
+        pre.adapt_commandcode("PreToolUse", Some("/env/proj".into()));
+        assert_eq!(pre.hook_event_name, "PreToolUse");
+        assert_eq!(pre.session_id, "cc-1");
+        assert_eq!(pre.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(pre.tool_input.as_ref().unwrap()["command"], "git status");
+        assert_eq!(pre.cwd.as_deref(), Some("/work/app"));
+        assert!(pre.pre_tool().is_some());
+
+        let mut read: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "cc-1",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "read_file",
+            "tool_input": {"absolute_path": "/work/app/.env"}
+        }))
+        .unwrap();
+        read.adapt_commandcode("PreToolUse", None);
+        assert_eq!(read.tool_name.as_deref(), Some("Read"));
+        assert!(read.pre_tool().is_some());
+
+        let mut write: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "cc-1",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "write_file",
+            "tool_input": {"file_path": "config.txt", "content": "x"}
+        }))
+        .unwrap();
+        write.adapt_commandcode("PreToolUse", None);
+        assert_eq!(write.tool_name.as_deref(), Some("Write"));
+
+        let mut edit: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "cc-1",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "edit_file",
+            "tool_input": {"file_path": "a.rs", "old_value": "x", "new_value": "y"}
+        }))
+        .unwrap();
+        edit.adapt_commandcode("PreToolUse", None);
+        assert_eq!(edit.tool_name.as_deref(), Some("Edit"));
+
+        // No cwd on stdin: the project dir env fills it in.
+        let mut bare: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "cc-2",
+            "tool_name": "shell_command",
+            "tool_input": {"command": "ls"}
+        }))
+        .unwrap();
+        bare.adapt_commandcode("PreToolUse", Some("/env/proj".into()));
+        assert_eq!(bare.cwd.as_deref(), Some("/env/proj"));
+        assert_eq!(bare.hook_event_name, "PreToolUse");
+
+        // Garbage still fails open downstream: unknown tools keep their name.
+        let mut other: HookInput = serde_json::from_value(serde_json::json!({
+            "tool_name": "mcp__github__execute_query",
+            "tool_input": {}
+        }))
+        .unwrap();
+        other.adapt_commandcode("PreToolUse", None);
+        assert_eq!(
+            other.tool_name.as_deref(),
+            Some("mcp__github__execute_query")
+        );
     }
 }

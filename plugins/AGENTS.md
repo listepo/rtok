@@ -36,7 +36,7 @@ Every `plugins/<host>/README.md` **MUST** have an `Official documentation` secti
 2. **Do not break host discovery paths.** Manifests, `hooks/hooks.json`, `.mcp.json`, `${ZCODE_PLUGIN_ROOT}`, Cursor `mcp.json`, etc. are host contracts.
 3. **Prefer calling the rtok binary** (`hook`, `mcp`, `guard check`, `filter`, …) over reimplementing policy in TS/shell.
 4. **D21:** one plugin unit owning hooks+MCP when both exist; one `rtok mcp` per store. Warn in README when host also imports Claude settings (see `grok/`).
-5. **Fail open** on missing `rtok` unless the host’s block semantics require otherwise; mention `ketch install listepo/rtok`.
+5. **Fail open** on missing `rtok` unless the host’s block semantics require otherwise; mention `ketch install pyrlyn/rtok`.
 6. **Keep installer and package in sync.** Manifest event lists must match `src/agents/<host>/` (follow existing parity tests).
 7. **Thin launchers.** Do not merge cursor/zcode scripts into one shared file unless both hosts expand paths identically — prefer documenting duplication in [`TODO-docs.md`](TODO-docs.md) over a risky shared script.
 8. **Tests:** update `tests/*_plugin.rs` / package Node tests when behaviour changes.

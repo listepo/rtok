@@ -17,7 +17,7 @@ Project programs and direct packages from the manifests.
 | go | mise | hugo resolves the hextra theme as a Go module (site/go.mod) | https://github.com/golang/go |
 | hugo | mise | Documentation site | https://github.com/gohugoio/hugo |
 | just | mise | Command recipes | https://github.com/casey/just |
-| ketch | see its README | Installs dunnage | https://github.com/listepo/ketch |
+| ketch | see its README | Installs dunnage | https://github.com/pyrlyn/ketch |
 | dunnage | ketch | `just test` / `just test-changed` end with a lossless cleanup of `target/` (T236) | https://github.com/listepo/dunnage |
 | tailspin | mise (`ubi:bensadeh/tailspin`) | `just logs` (T225): `tspin` highlights `~/.rtok/logs/rtok.log` and the `RUST_LOG` stderr stream; a viewer, not a logger | https://github.com/bensadeh/tailspin |
 | node | mise | jscpd, oxlint, oxfmt and vitest run on it; nothing in the binary does. Its `npm` packs and publishes the npm package (`just npm-build` / `just npm-publish`) | https://github.com/nodejs/node |
@@ -134,7 +134,6 @@ Project programs and direct packages from the manifests.
 | wasm-bindgen | local | https://crates.io/crates/wasm-bindgen | JS glue for the Slint web UI (T222) |
 | wasm-bindgen-futures | local | https://crates.io/crates/wasm-bindgen-futures | JS futures for the Slint web UI (T222) |
 | wasmi | local | https://crates.io/crates/wasmi | Rust dependency |
-| watchman_client | local | https://crates.io/crates/watchman_client | Rust dependency |
 | web-sys | local | https://crates.io/crates/web-sys | Web APIs for the Slint web UI (T222) |
 | webpki-roots | local | https://crates.io/crates/webpki-roots | Mozilla roots without the platform verifier (T53.3) |
 | windows-sys | local | https://crates.io/crates/windows-sys | Windows process + file-lock shims in rtok-sys (T222) |

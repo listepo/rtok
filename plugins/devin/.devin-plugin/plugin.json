@@ -5,7 +5,7 @@
   "author": {
     "name": "listepo"
   },
-  "homepage": "https://github.com/listepo/rtok",
-  "repository": "https://github.com/listepo/rtok",
+  "homepage": "https://github.com/pyrlyn/rtok",
+  "repository": "https://github.com/pyrlyn/rtok",
   "keywords": ["tokens", "hooks", "mcp"]
 }

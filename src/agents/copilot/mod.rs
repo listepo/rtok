@@ -162,7 +162,8 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
 }
 
 /// Copilot's flat `additionalContext` fallback note, shown once on `sessionStart` when `rtok` resolves nowhere.
-const MISSING_RTOK_NOTE: &str = r#"{"additionalContext":"rtok is not installed; run ketch install listepo/rtok to enable it."}"#;
+const MISSING_RTOK_NOTE: &str =
+    r#"{"additionalContext":"rtok is not installed; run ketch install pyrlyn/rtok to enable it."}"#;
 
 /// `{version: 1, hooks: {<event>: [{type: "command", bash, powershell, timeoutSec}]}}`.
 /// The plugin tree's `hooks/hooks.json` is this document with `bin = "rtok"`, pinned by
@@ -305,7 +306,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-copilot-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let mut c = Config::default();
+        let mut c = crate::testutil::config_in(&dir);
         c.setup.copilot.dir = dir.clone();
         c.setup.dry_run = dry;
         c.setup.backup = false;
@@ -384,7 +385,7 @@ mod tests {
         let s = plugin(&c, false).unwrap();
         assert!(s.contains("plugins/copilot"), "{s}");
         assert!(s.contains("copilot plugin install"), "{s}");
-        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(s.contains("ketch install pyrlyn/rtok"), "{s}");
         assert!(!plugin_installed(&c));
         let marker = fake_plugin(&c);
         assert!(plugin_installed(&c));
@@ -480,8 +481,6 @@ mod tests {
         let (c, dir) = cfg("precompact", false);
         let mut c = c;
         c.hook.host = "copilot".into();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
         let pre = serde_json::json!({
             "sessionId": "cop-compact",
             "trigger": "auto"

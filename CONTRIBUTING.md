@@ -40,7 +40,7 @@ and the site under `site/`.
   "Generated with …" line, or itself as author to a commit, merge, or PR.
 - Host plugins (D21): `rtok agents install <host>` offers `plugins/<host>/`
   (Cursor: `rtok agents install cursor`). If `rtok` is missing, fail open and
-  say to install with ketch (`ketch install listepo/rtok`). Every
+  say to install with ketch (`ketch install pyrlyn/rtok`). Every
   `plugins/<host>/README.md` and `src/agents/<host>/README.md` has a
   `## Docs` list linking the host's current config and plugin documentation;
   re-verify links on each change (`tests/host_docs.rs`). After adding or

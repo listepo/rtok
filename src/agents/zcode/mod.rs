@@ -133,7 +133,7 @@ pub static PLUGIN: HostPlugin = HostPlugin {
 /// push into; it loads inline plugin roots listed in `plugins.dirs` (enabled by default), so
 /// linking also lists the dest there and unlinking drops the entry.
 /// Dry-run and the unaccepted offer MUST contain the substrings `plugins/zcode`
-/// and `~/.zcode/cli/plugins/local` and `ketch install listepo/rtok`.
+/// and `~/.zcode/cli/plugins/local` and `ketch install pyrlyn/rtok`.
 pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
     let report = PLUGIN.offer(cfg, remove)?;
     let dirs = plugin_dirs(cfg, remove)?;
@@ -297,7 +297,7 @@ mod tests {
         let s = offer_plugin(&c, false).unwrap();
         assert!(s.contains("plugins/zcode"), "{s}");
         assert!(s.contains("~/.zcode/cli/plugins/local"), "{s}");
-        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(s.contains("ketch install pyrlyn/rtok"), "{s}");
         assert!(!plugin_dest(&c).symlink_metadata().is_ok());
         assert!(!path.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
