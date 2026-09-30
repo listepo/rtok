@@ -283,8 +283,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("big.md"), "y".repeat(1 << 20)).unwrap();
-        let mut cfg = crate::config::Config::default();
-        cfg.core.db_path = dir.join("rtok.db");
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.plugins.inject.modes_dir = dir.clone();
         cfg.plugins.inject.modes = vec!["big".into()];
         let budget = cfg.plugins.inject.budget_tokens;
@@ -337,8 +336,7 @@ mod tests {
         let dir = std::env::temp_dir().join("rtok-t531-nudges");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut cfg = crate::config::Config::default();
-        cfg.core.db_path = dir.join("rtok.db");
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.plugins.inject.modes = vec!["nudges".into()];
         let start = serde_json::json!({
             "hook_event_name": "SessionStart",
@@ -385,8 +383,7 @@ mod tests {
         let dir = std::env::temp_dir().join("rtok-t71-modes");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut cfg = crate::config::Config::default();
-        cfg.core.db_path = dir.join("rtok.db");
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.plugins.inject.modes = vec!["terse".into(), "yagni".into()];
         let start = serde_json::json!({
             "hook_event_name": "SessionStart",
