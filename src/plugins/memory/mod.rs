@@ -400,9 +400,33 @@ mod tests {
     }
 
     #[test]
-    fn prompt_recall_is_off_by_default() {
+    fn prompt_recall_is_on_by_default_and_skips_bodies() {
         use rtok_plugin_sdk::PromptSubmit;
-        let cx = crate::plugin::Runtime::in_memory("t695-recall-off").unwrap();
+        let cx = crate::plugin::Runtime::in_memory("t695-recall-on").unwrap();
+        assert_eq!(cx.config.plugins.memory.prompt_recall, 5);
+        mem_save(&cx, "note", "walrus", "the walrus journal lives here", None).unwrap();
+        let ctx = Ctx::new(&cx);
+        assert!(!mem_search(&cx, "walrus", 5).unwrap().is_empty());
+        let ev = PromptSubmit {
+            prompt: "walrus journal",
+        };
+        let inj = Memory
+            .prompt_submit(&ev, &ctx)
+            .expect("prompt_recall on by default");
+        assert!(inj.text.starts_with("notes\n"), "{}", inj.text);
+        assert!(inj.text.contains(" walrus"), "{}", inj.text);
+        assert!(
+            !inj.text.contains("journal lives"),
+            "titles only: {}",
+            inj.text
+        );
+    }
+
+    #[test]
+    fn prompt_recall_off_injects_nothing() {
+        use rtok_plugin_sdk::PromptSubmit;
+        let mut cx = crate::plugin::Runtime::in_memory("t695-recall-off").unwrap();
+        cx.config.plugins.memory.prompt_recall = 0;
         mem_save(&cx, "note", "alpha", "hooks fail open", None).unwrap();
         let ctx = Ctx::new(&cx);
         let ev = PromptSubmit {

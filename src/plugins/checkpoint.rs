@@ -512,7 +512,7 @@ mod tests {
     }
 
     /// T71.2 e2e: `SessionEnd` saves the transcript under `session:<id>` with the project
-    /// from the hook cwd; `startup_recall` off injects nothing at startup, on restores the
+    /// from the hook cwd; `startup_recall` off injects nothing, on (the default) restores the
     /// newest project note byte-stably within `checkpoint_tokens`, measured as `handoff`.
     #[test]
     fn session_end_note_and_startup_recall() {
@@ -549,6 +549,7 @@ mod tests {
             "source":"startup",
             "cwd":repo.display().to_string()
         });
+        cfg.plugins.memory.startup_recall = false;
         let mut off = Vec::new();
         crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut off, &cfg);
         // T283: SessionStart always offers this session's own rtok agent id; `startup_recall`

@@ -763,18 +763,17 @@ section! {
         enabled: bool = true,
         recall_titles: u32 = 5,
         recall_tokens: u32 = 200,
-        prompt_recall: u32 = 0,
+        prompt_recall: u32 = 5,
         checkpoint_tokens: u32 = 400,
         search_limit: u32 = 5,
         sync_tokens: u32 = 300,
-        /// SessionStart `source = startup` restores the newest `session:*` note (T71.2). Off
-        /// until a P7-style A/B shows cost per passed task does not rise.
-        startup_recall: bool = false,
-        /// Sub-agent handoff MCP tool (T59.6); off by default.
-        handoff: bool = false,
+        /// SessionStart `source = startup` restores the newest `session:*` note (T71.2).
+        startup_recall: bool = true,
+        /// Sub-agent handoff MCP tool (T59.6).
+        handoff: bool = true,
         /// `SubagentStart` pointer digest appended to a freshly spawned subagent's context
-        /// (T130); off until T131 measures a net saving.
-        spawn_brief: bool = false,
+        /// (T130).
+        spawn_brief: bool = true,
         /// Token budget for the spawn brief (T130).
         spawn_brief_tokens: u32 = 300,
         embed: MemoryEmbed = MemoryEmbed::default(),

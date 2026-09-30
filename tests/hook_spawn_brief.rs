@@ -44,6 +44,14 @@ fn hook_as(home: &Home, extra: &[&str], event: &str, body: &Value) -> Value {
         .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&out)))
 }
 
+fn disable_spawn_brief(home: &Home) {
+    std::fs::write(
+        home.0.join("config.toml"),
+        "[plugins.memory]\nspawn_brief = false\n",
+    )
+    .unwrap();
+}
+
 fn enable_spawn_brief(home: &Home) {
     std::fs::write(
         home.0.join("config.toml"),
@@ -105,10 +113,11 @@ fn brief_measurement(home: &Home) -> Option<rtok::store::MeasurementTotal> {
 #[test]
 fn flag_off_is_a_passthrough() {
     let home = tmp("off");
+    disable_spawn_brief(&home);
     let session = "s-off";
     let _ = hook(&home, "PreToolUse", &read_tool(session, "/repo/a.rs"));
     let out = hook(&home, "SubagentStart", &subagent_start(session));
-    assert_eq!(brief_body(&out), "", "spawn_brief defaults to off");
+    assert_eq!(out, json!({}), "spawn_brief off is a passthrough");
 }
 
 #[test]
