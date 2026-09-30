@@ -194,18 +194,19 @@ fn fixture(rel: &str) -> &'static str {
         ".cursor/hooks.json" => {
             r#"{"version":1,"hooks":{"beforeShellExecution":[{"command":"foreign"}]}}"#
         }
-        ".cursor/mcp.json" | ".copilot/mcp-config.json" | ".codeium/windsurf/mcp_config.json"
-        | ".config/devin/mcp_config.json" | ".omp/agent/mcp.json" => {
-            r#"{"mcpServers":{"foreign":{"command":"x"}}}"#
-        }
+        ".cursor/mcp.json"
+        | ".copilot/mcp-config.json"
+        | ".codeium/windsurf/mcp_config.json"
+        | ".config/devin/mcp_config.json"
+        | ".omp/agent/mcp.json" => r#"{"mcpServers":{"foreign":{"command":"x"}}}"#,
         ".claude/settings.json" => {
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"other-tool run"}]}]},"env":{"KEEP":"1"}}"#
         }
         ".codex/config.toml" | ".grok/config.toml" => "[mcp_servers.foreign]\ncommand = \"x\"\n",
-        ".config/opencode/opencode.json" | ".config/kilo/kilo.json"
-        | ".config/mimocode/mimocode.json" | ".gemini/settings.json" => {
-            r#"{"env":{"KEEP":"1"}}"#
-        }
+        ".config/opencode/opencode.json"
+        | ".config/kilo/kilo.json"
+        | ".config/mimocode/mimocode.json"
+        | ".gemini/settings.json" => r#"{"env":{"KEEP":"1"}}"#,
         ".kimi-code/config.toml" => "[[hooks]]\nevent = \"Stop\"\ncommand = \"echo other\"\n",
         ".aider.conf.yml" => "model: foreign\n",
         ".config/zed/settings.json" => {

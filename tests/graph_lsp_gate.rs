@@ -55,10 +55,7 @@ fn bin_on_path(name: &str) -> bool {
 fn open(tag: &str, backend: &str) -> (Runtime, PathBuf) {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "rtok-{tag}-{}-{n}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("rtok-{tag}-{}-{n}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let mut cfg = rtok::testutil::config_in(&dir);

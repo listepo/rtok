@@ -53,11 +53,7 @@ impl Row {
     }
     fn throughput_qps(&self) -> f64 {
         let m = self.mean_ms();
-        if m <= 0.0 {
-            0.0
-        } else {
-            1000.0 / m
-        }
+        if m <= 0.0 { 0.0 } else { 1000.0 / m }
     }
 }
 
@@ -82,10 +78,7 @@ fn rust_analyzer_on_path() -> bool {
 }
 
 fn open(tag: &str, backend: &str) -> (Runtime, PathBuf) {
-    let dir = std::env::temp_dir().join(format!(
-        "rtok-backend-bench-{tag}-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("rtok-backend-bench-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let mut cfg = Config::default();
@@ -159,7 +152,12 @@ pub fn user(_t: Vec<OnlyTyped>) {}
 
 fn repo_source_bytes(root: &Path) -> (usize, usize, u32) {
     let mut blob = String::new();
-    for rel in ["src/lib.rs", "src/sink.rs", "src/callers.rs", "src/typed.rs"] {
+    for rel in [
+        "src/lib.rs",
+        "src/sink.rs",
+        "src/callers.rs",
+        "src/typed.rs",
+    ] {
         let p = root.join(rel);
         let s = fs::read_to_string(&p).unwrap_or_default();
         blob.push_str(&format!("// ---- {rel} ----\n"));
@@ -427,7 +425,11 @@ fn tags_vs_lsp_tokens_and_latency() {
         "live_model": "not run in this file; set RTOK_BENCH_LIVE=1 and `rtok bench` suite=graph for billed Claude usage",
     });
     let path = out_dir.join("graph-tags-vs-lsp.json");
-    fs::write(&path, serde_json::to_string_pretty(&payload).unwrap() + "\n").unwrap();
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&payload).unwrap() + "\n",
+    )
+    .unwrap();
     eprintln!("wrote {}", path.display());
 
     let _ = fs::remove_dir_all(&tags_home);

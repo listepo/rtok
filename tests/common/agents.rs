@@ -331,8 +331,11 @@ esac
         for name in ["cursor", "cursor-agent", "agent"] {
             let bin = dir.join(name);
             if !bin.exists() {
-                fs::write(&bin, "#!/bin/sh\n[ \"$1\" = --version ] && echo 0.0.0\nexit 0\n")
-                    .unwrap();
+                fs::write(
+                    &bin,
+                    "#!/bin/sh\n[ \"$1\" = --version ] && echo 0.0.0\nexit 0\n",
+                )
+                .unwrap();
                 fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
             }
         }
@@ -392,8 +395,11 @@ if "%ALLARGS%"=="plugin update rtok@rtok" (
         for name in ["cursor.cmd", "cursor-agent.cmd", "agent.cmd"] {
             let bin = dir.join(name);
             if !bin.exists() {
-                fs::write(&bin, "@echo off\r\nif \"%~1\"==\"--version\" echo 0.0.0\r\nexit /b 0\r\n")
-                    .unwrap();
+                fs::write(
+                    &bin,
+                    "@echo off\r\nif \"%~1\"==\"--version\" echo 0.0.0\r\nexit /b 0\r\n",
+                )
+                .unwrap();
             }
         }
         let mut dirs = vec![dir];
