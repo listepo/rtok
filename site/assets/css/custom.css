@@ -192,3 +192,44 @@
 @media (dynamic-range: high) {
   /* intentional no-op — keep Bitset B near-black / cyan as designed */
 }
+
+/* "by Pyrlyn" credit: footer (custom/footer.html) and home hero byline. Muted, below rtok's own mark. */
+.rtok-pyrlyn-footer {
+  display: flex;
+  justify-content: center;
+  padding-block: 2rem;
+}
+
+.rtok-pyrlyn-credit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: inherit;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+
+.rtok-pyrlyn-credit:hover,
+.rtok-pyrlyn-credit:focus-visible {
+  opacity: 1;
+}
+
+.rtok-pyrlyn-credit img {
+  height: 22px;
+  width: auto;
+}
+
+.rtok-byline {
+  display: inline-flex;
+  align-self: center;
+  font-size: 0.8125rem;
+  min-height: 44px;
+  margin-inline-start: 0.5rem;
+  padding-inline-start: 1.25rem;
+  border-inline-start: 1px solid rgb(128 128 128 / 0.35);
+}
+
+.rtok-byline img {
+  height: 18px;
+}
