@@ -413,8 +413,9 @@ mod tests {
         let inj = Memory
             .prompt_submit(&ev, &ctx)
             .expect("prompt_recall on by default");
-        assert!(inj.text.starts_with("notes\n"), "{}", inj.text);
+        assert!(inj.text.starts_with(INDEX_GUIDE), "{}", inj.text);
         assert!(inj.text.contains(" walrus"), "{}", inj.text);
+        assert!(inj.text.contains("t body"), "{}", inj.text);
         assert!(
             !inj.text.contains("journal lives"),
             "titles only: {}",

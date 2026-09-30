@@ -96,6 +96,10 @@ const ALLOW_KEYS: &[&str] = &[
     // which rows one read shows; `agents` flags map onto `setup.*`, which they are not.
     "setup.all_live",
     "setup.unread",
+    // `agents update --check` / `agents outdated --exit-code` (T279.1): one-shot
+    // listing and a one-shot exit status, not stored settings.
+    "setup.check",
+    "setup.exit_code",
 ];
 
 #[test]

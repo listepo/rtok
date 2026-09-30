@@ -267,6 +267,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('update', 'update', [CompletionResultType]::ParameterValue, 'Bring what rtok installed up to date: in place where it can, reinstalled where not')
+            [CompletionResult]::new('outdated', 'outdated', [CompletionResultType]::ParameterValue, 'List hosts whose rtok plugin is older than this binary')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
@@ -287,6 +288,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('update', 'update', [CompletionResultType]::ParameterValue, 'Bring what rtok installed up to date: in place where it can, reinstalled where not')
+            [CompletionResult]::new('outdated', 'outdated', [CompletionResultType]::ParameterValue, 'List hosts whose rtok plugin is older than this binary')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
@@ -378,6 +380,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'All variants (the default when neither `--cli` nor `--desktop` is given)')
             [CompletionResult]::new('--no-restart', '--no-restart', [CompletionResultType]::ParameterName, 'Skip closing/reopening a running desktop app around the write (T141)')
             [CompletionResult]::new('--force', '--force', [CompletionResultType]::ParameterName, 'Reinstall the plugin even when it is already at the available version (T279)')
+            [CompletionResult]::new('--check', '--check', [CompletionResultType]::ParameterName, 'List outdated plugins only (same output as `agents outdated`)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
@@ -391,6 +394,29 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'All variants (the default when neither `--cli` nor `--desktop` is given)')
             [CompletionResult]::new('--no-restart', '--no-restart', [CompletionResultType]::ParameterName, 'Skip closing/reopening a running desktop app around the write (T141)')
             [CompletionResult]::new('--force', '--force', [CompletionResultType]::ParameterName, 'Reinstall the plugin even when it is already at the available version (T279)')
+            [CompletionResult]::new('--check', '--check', [CompletionResultType]::ParameterName, 'List outdated plugins only (same output as `agents outdated`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agents;outdated' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--cli', '--cli', [CompletionResultType]::ParameterName, 'Only the CLI app (default is all)')
+            [CompletionResult]::new('--desktop', '--desktop', [CompletionResultType]::ParameterName, 'Only the desktop app (default is all)')
+            [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'All variants (the default when neither `--cli` nor `--desktop` is given)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('--exit-code', '--exit-code', [CompletionResultType]::ParameterName, 'Exit with code 10 when at least one plugin is outdated')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;outdated' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--cli', '--cli', [CompletionResultType]::ParameterName, 'Only the CLI app (default is all)')
+            [CompletionResult]::new('--desktop', '--desktop', [CompletionResultType]::ParameterName, 'Only the desktop app (default is all)')
+            [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'All variants (the default when neither `--cli` nor `--desktop` is given)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('--exit-code', '--exit-code', [CompletionResultType]::ParameterName, 'Exit with code 10 when at least one plugin is outdated')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
@@ -607,6 +633,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
             [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('update', 'update', [CompletionResultType]::ParameterValue, 'Bring what rtok installed up to date: in place where it can, reinstalled where not')
+            [CompletionResult]::new('outdated', 'outdated', [CompletionResultType]::ParameterValue, 'List hosts whose rtok plugin is older than this binary')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
@@ -626,6 +653,9 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agents;help;update' {
+            break
+        }
+        'rtok;agents;help;outdated' {
             break
         }
         'rtok;agents;help;list' {
@@ -670,6 +700,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
             [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('update', 'update', [CompletionResultType]::ParameterValue, 'Bring what rtok installed up to date: in place where it can, reinstalled where not')
+            [CompletionResult]::new('outdated', 'outdated', [CompletionResultType]::ParameterValue, 'List hosts whose rtok plugin is older than this binary')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
@@ -689,6 +720,9 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agent;help;update' {
+            break
+        }
+        'rtok;agent;help;outdated' {
             break
         }
         'rtok;agent;help;list' {
@@ -756,7 +790,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;filter' {
             [CompletionResult]::new('--cmd', '--cmd', [CompletionResultType]::ParameterName, 'Command family hint (`git status`, `cargo test`, …)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
-            [CompletionResult]::new('--stdin', '--stdin', [CompletionResultType]::ParameterName, 'Read the payload from stdin (OpenCode `tool[..]cute.after`)')
+            [CompletionResult]::new('--stdin', '--stdin', [CompletionResultType]::ParameterName, 'Read the payload from stdin (OpenCode `tool.execute.after`)')
             [CompletionResult]::new('--archive', '--archive', [CompletionResultType]::ParameterName, 'Archive stdin and print the expand trailer (same path as `run`)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
@@ -1405,6 +1439,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
             [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('update', 'update', [CompletionResultType]::ParameterValue, 'Bring what rtok installed up to date: in place where it can, reinstalled where not')
+            [CompletionResult]::new('outdated', 'outdated', [CompletionResultType]::ParameterValue, 'List hosts whose rtok plugin is older than this binary')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
@@ -1423,6 +1458,9 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;help;agents;update' {
+            break
+        }
+        'rtok;help;agents;outdated' {
             break
         }
         'rtok;help;agents;list' {

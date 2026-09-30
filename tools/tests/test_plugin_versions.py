@@ -64,7 +64,9 @@ def test_check_fails_after_editing_one_version_file_and_names_it(tmp_path):
 def test_check_fails_after_editing_one_manifest_and_names_it(tmp_path):
     root = _copy_tree(tmp_path)
     target = root / "plugins" / "kimi" / "kimi.plugin.json"
-    target.write_text(target.read_text().replace('"version": "0.10.0"', '"version": "0.0.2"'))
+    target.write_text(
+        target.read_text().replace(f'"version": "{CURRENT_VERSION}"', '"version": "0.0.2"')
+    )
 
     result = _run(root, "--check", CURRENT_VERSION)
 

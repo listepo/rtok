@@ -133,6 +133,7 @@ Commands:
   uninstall  Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link [alias:
              remove]
   update     Bring what rtok installed up to date: in place where it can, reinstalled where not
+  outdated   List hosts whose rtok plugin is older than this binary
   list       Every known app: kind and name, path and version, config files, rtok modules
   info       One host: the same block `agents list` prints, just for that app
   sessions   What is running in this project: host, provider, model, tokens, start, run time
@@ -212,7 +213,25 @@ Options:
                          (T279)
       --source <SOURCE>  Compare against this install source instead of the one on record (T279)
                          [possible values: github, local, marketplace]
+      --check            List outdated plugins only (same output as `agents outdated`)
   -h, --help             Print help
+
+$ rtok agents outdated --help
+List hosts whose rtok plugin is older than this binary
+
+Usage: rtok agents outdated [OPTIONS] [HOST]
+
+Arguments:
+  [HOST]  Host(s), comma-separated; omitted = every host in `agents list`
+
+Options:
+      --cli            Only the CLI app (default is all)
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --desktop        Only the desktop app (default is all)
+      --all            All variants (the default when neither `--cli` nor `--desktop` is given)
+      --json           JSON instead of the table
+      --exit-code      Exit with code 10 when at least one plugin is outdated
+  -h, --help           Print help
 
 $ rtok agents list --help
 Every known app: kind and name, path and version, config files, rtok modules

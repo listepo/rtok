@@ -117,7 +117,7 @@ fn flag_off_is_a_passthrough() {
     let session = "s-off";
     let _ = hook(&home, "PreToolUse", &read_tool(session, "/repo/a.rs"));
     let out = hook(&home, "SubagentStart", &subagent_start(session));
-    assert_eq!(out, json!({}), "spawn_brief off is a passthrough");
+    assert_eq!(brief_body(&out), "", "spawn_brief off is a passthrough");
 }
 
 #[test]

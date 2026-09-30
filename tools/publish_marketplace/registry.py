@@ -56,6 +56,7 @@ SUPPORTED: dict[str, GitCatalogHost] = {
 UNSUPPORTED: dict[str, tuple[str, str, str]] = {
     "antigravity": ("no marketplace: bundled/local install only", "https://antigravity.google/docs/plugins/", "2026-09-23"),
     "cline": ("no marketplace: `cline plugin install <source>` installs straight from a git repo or local path (SDK/CLI/Kanban only, not the VS Code extension), no catalog file to publish", "https://docs.cline.bot/customization/plugins.md", "2026-09-24"),
+    "commandcode": ("no marketplace: Command Code documents no plugin-bundle format; hooks and MCP are written into settings.json and mcp.json (mods are the TypeScript extension surface, and rtok does not ship one)", "https://commandcode.ai/docs/mods", "2026-09-30"),
     "copilot": ("git-hosted catalog possible, not wired in this repo yet", "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference", "2026-09-23"),
     "cursor": ("manual review via cursor.com/marketplace/publish", "https://cursor.com/docs/plugins", "2026-09-23"),
     "devin": ("no public catalog to publish to: `devin plugins install <owner/repo>` installs straight from a git repo, and the Devin marketplace is an org/enterprise manifest in the web app", "https://docs.devin.ai/cli/extensibility/plugins/overview", "2026-09-26"),

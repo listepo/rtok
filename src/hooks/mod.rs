@@ -1917,6 +1917,23 @@ mod tests {
         )
     }
 
+    /// T293: an empty store still names the project on SessionStart. The fixture cwd
+    /// (`/repo`) is not a checkout, so recall falls back to this process's project.
+    fn expected_memory_line() -> String {
+        let project = std::env::current_dir()
+            .ok()
+            .as_deref()
+            .and_then(crate::project::project_name);
+        format!(
+            "memory project {}: no notes",
+            project.as_deref().unwrap_or("none")
+        )
+    }
+
+    fn expected_session_context(id: &str) -> String {
+        format!("{}\n{}", expected_agent_line(id), expected_memory_line())
+    }
+
     #[test]
     fn session_start_injects_the_fixed_wording_line_with_the_registered_id() {
         let (stdin, input, cx) = session_start_fixture("t283-sess-1");
@@ -1925,7 +1942,7 @@ mod tests {
             .store
             .register_agent(cx.host_id().unwrap(), &cx.session, None, None, None)
             .unwrap();
-        assert_eq!(additional_context(&out), expected_agent_line(&id));
+        assert_eq!(additional_context(&out), expected_session_context(&id));
 
         // Same session again: `register_agent` upserts the same row, so the id — and the
         // whole line — stays byte-identical.
@@ -1948,8 +1965,8 @@ mod tests {
             .store
             .register_agent(cx_b.host_id().unwrap(), &cx_b.session, None, None, None)
             .unwrap();
-        assert_eq!(ctx_a, expected_agent_line(&id_a));
-        assert_eq!(ctx_b, expected_agent_line(&id_b));
+        assert_eq!(ctx_a, expected_session_context(&id_a));
+        assert_eq!(ctx_b, expected_session_context(&id_b));
     }
 
     #[test]
@@ -1957,12 +1974,12 @@ mod tests {
         let (stdin, input, mut cx) = session_start_fixture("t283-sess-off");
         cx.config.agents.enabled = false;
         let out = dispatch(&stdin, &input, &cx);
-        assert_eq!(
-            out,
-            b"{}",
-            "no other offering configured: {}",
-            String::from_utf8_lossy(&out)
+        let ctx = additional_context(&out);
+        assert!(
+            !ctx.contains("rtok agent id"),
+            "agents off must not inject an id: {ctx}"
         );
+        assert_eq!(ctx, expected_memory_line());
     }
 
     /// `SubagentStart` gets the sub-agent's *own* id, not its parent's (`agent_parent_key`

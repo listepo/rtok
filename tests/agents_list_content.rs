@@ -37,6 +37,7 @@ const EXPECTED_VARIANTS: &[(&str, Kind, &str)] = &[
     ("vscode", Kind::Desktop, "VS Code - Insiders"),
     ("copilot", Kind::Cli, "Copilot CLI"),
     ("copilot", Kind::Desktop, "GitHub Copilot"),
+    ("commandcode", Kind::Cli, "Command Code CLI"),
     ("aider", Kind::Cli, "aider"),
     ("windsurf", Kind::Desktop, "Windsurf"),
     ("zed", Kind::Cli, "Zed CLI"),

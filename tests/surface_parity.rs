@@ -530,6 +530,11 @@ const EXEMPT: &[(&str, &str)] = &[
         "agents update",
         "refreshes or reinstalls what rtok installed in a host",
     ),
+    (
+        "agents outdated",
+        "lists installed plugins older than this binary (T279.1); a one-shot CLI check, \
+         not a shared model page",
+    ),
     ("setup", "deprecated spelling of `rtok agents install`"),
     (
         "agents status",

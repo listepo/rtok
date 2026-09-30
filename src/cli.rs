@@ -789,12 +789,16 @@ impl SourceArg {
 struct OutdatedArgs {
     /// Host(s), comma-separated; omitted = every host in `agents list`
     host: Option<String>,
+    /// Only the CLI app (default is all)
     #[arg(long)]
     cli: bool,
+    /// Only the desktop app (default is all)
     #[arg(long, alias = "gui")]
     desktop: bool,
+    /// All variants (the default when neither `--cli` nor `--desktop` is given)
     #[arg(long)]
     all: bool,
+    /// JSON instead of the table
     #[arg(long)]
     json: bool,
     /// Exit with code 10 when at least one plugin is outdated
