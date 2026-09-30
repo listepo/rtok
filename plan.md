@@ -32,7 +32,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
 | T310 | todo | P1 | 5 | 0% | |
-| T310.2 | todo | P1 | 3 | 0% | |
 | T310.3 | todo | P1 | 3 | 0% | |
 | T310.4 | todo | P1 | 3 | 0% | |
 | T310.5 | todo | P1 | 3 | 0% | |
@@ -581,12 +580,6 @@ Check: `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where host tables
 Done when: `rtok web` serves the SPA from the binary, every page of `model::pages()` renders on it, Playwright drives the real binary, and no Slint code is left.
 
 Check: `rtok web` from a release build shows every page of `model::pages()` from the embedded SPA; no `slint`/`rtok-webui` left in the tree; `just check` and the SPA CI job green.
-
-### T310.2. `/ws` contract: JSON Schema from Rust types, generated TS
-
-Derive `schemars::JsonSchema` on `web::model::Snapshot`, everything it holds (store rows, `doctor::Report`, skills page) and the client messages (`set`, `expand`) and server frames (`message`, `expand`). Commit the schema, generate `web/src/api/snapshot.gen.ts` from it (`json-schema-to-typescript`), and fail a test when the committed schema or TS is stale.
-
-Check: the stale-schema test fails after a field is added to `Snapshot` and passes after regenerating; regenerating leaves `git diff` empty; `just spa-typecheck`.
 
 ### T310.3. Data layer: WebSocket client + TanStack Query
 

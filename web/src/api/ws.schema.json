@@ -1,0 +1,1056 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WsProtocol",
+  "description": "Root of the schema: one property per direction, so every type lands in `$defs` once.",
+  "type": "object",
+  "properties": {
+    "client": {
+      "$ref": "#/$defs/ClientMessage"
+    },
+    "server": {
+      "$ref": "#/$defs/ServerFrame"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/Snapshot"
+    }
+  },
+  "required": [
+    "snapshot",
+    "server",
+    "client"
+  ],
+  "$defs": {
+    "AgentModules": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModuleRow"
+          }
+        }
+      },
+      "required": [
+        "host",
+        "kind",
+        "modules"
+      ]
+    },
+    "CallRow": {
+      "description": "One `calls` row as the Calls page serves it ([`Store::recent_calls`], T15.5): the\nledger's own columns plus the slugs its ids point at and — when the call is one\nthat recorded usage — the newest `usage` row linked to it. One query's output, so\nno renderer can re-derive a field differently (D27); `api` `None` means no usage\nrow is linked (a hook, MCP call or plugin run carries none).",
+      "type": "object",
+      "properties": {
+        "api": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cache_create": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "cache_read": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "input": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ok": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "output": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "parent_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "plugin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "type": "string"
+        },
+        "surface": {
+          "type": "string"
+        },
+        "ts": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "id",
+        "ts",
+        "session",
+        "surface",
+        "kind",
+        "plugin",
+        "name",
+        "parent_id",
+        "ms",
+        "ok",
+        "error",
+        "host",
+        "provider",
+        "model",
+        "api",
+        "input",
+        "cache_create",
+        "cache_read",
+        "output"
+      ]
+    },
+    "ClientMessage": {
+      "description": "A message a client sends over `/ws`.",
+      "anyOf": [
+        {
+          "description": "Ask for the archived payload behind an archive id.",
+          "type": "object",
+          "properties": {
+            "expand": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "expand"
+          ]
+        },
+        {
+          "description": "Flip an allowlisted boolean key (`plugins.<id>.enabled`).",
+          "type": "object",
+          "properties": {
+            "set": {
+              "$ref": "#/$defs/SetRequest"
+            }
+          },
+          "required": [
+            "set"
+          ]
+        }
+      ]
+    },
+    "InstructionRow": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "tokens": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "warn": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "tokens",
+        "path",
+        "warn"
+      ]
+    },
+    "Instructions": {
+      "type": "object",
+      "properties": {
+        "duplicates": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InstructionRow"
+          }
+        }
+      },
+      "required": [
+        "rows",
+        "duplicates"
+      ]
+    },
+    "ModuleRow": {
+      "description": "One [`MODULES`] row of a host variant: its state and the note printed after it — the flag\nthat would install it, or the reason it cannot be installed.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ModuleState"
+        }
+      },
+      "required": [
+        "name",
+        "state",
+        "note"
+      ]
+    },
+    "ModuleState": {
+      "type": "string",
+      "enum": [
+        "installed",
+        "not_installed",
+        "not_supported"
+      ]
+    },
+    "Overview": {
+      "description": "The Overview page (T15.3): the usage totals plus what the tab draws from them —\ncontext-token-turns and the per-turn series behind the sparkline. The totals stay\nflat under the `usage` key, so the `/ws` frame keeps the shape P19 pinned and the\nSlint UI reads on untouched.",
+      "type": "object",
+      "properties": {
+        "alerts": {
+          "description": "Persistent operator warnings for the whole disabled period (e.g. proxy plain\nmode). Empty when none; omitted from the wire when empty so the P19 shape stays.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cache_create": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache_read": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "ctt": {
+          "description": "Σ over sessions of Σ over turns `ctx × turns-after`, where `ctx` is the turn's\ninput-side tokens (`input + cache_create + cache_read`) and `turns-after` counts\nthe session's later turns — the usage-row mirror of `stats`' `tokens × remain`.\nOutput is left out on purpose: it re-enters as a later turn's input or cache,\nso counting it again would count it twice.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "est_after": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "est_before": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "input": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "output": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "rows": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "turns": {
+          "description": "Per-turn `ctx`, sessions oldest-first and request order within a session, kept\nto the last [`OVERVIEW_TURNS`]. A `usage` row carries no timestamp, so across\nsessions this is session order, not wall-clock order.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "cache_create",
+        "cache_read",
+        "est_before",
+        "est_after",
+        "rows",
+        "ctt",
+        "turns"
+      ]
+    },
+    "PluginPage": {
+      "description": "A plugin's page: its manifest, the static copy it contributes through\n`Plugin::dashboard_page`, and the stats widget when it saves tokens.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "id": {
+          "type": "string"
+        },
+        "saves_tokens": {
+          "type": "boolean"
+        },
+        "stats": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stats"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "enabled",
+        "surfaces",
+        "title",
+        "summary",
+        "saves_tokens",
+        "fields",
+        "stats"
+      ]
+    },
+    "ReadShare": {
+      "description": "Share of Read-class transcript tokens spent in native Grep/Glob (T50.4):\n`(grep + glob) / (read + grep + glob)` by estimated tokens. `None` when the\ntranscripts hold no Read-class results — the default stays off on no data.",
+      "type": "object",
+      "properties": {
+        "glob_tokens": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "grep_tokens": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "read_tokens": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "share": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "read_tokens",
+        "grep_tokens",
+        "glob_tokens",
+        "share"
+      ]
+    },
+    "Report": {
+      "description": "What `rtok doctor` found, as data.",
+      "type": "object",
+      "properties": {
+        "agents": {
+          "description": "Every host variant and the state of each rtok module in it, as `agent setup` prints.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentModules"
+          }
+        },
+        "auto_compact_window": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bash_max_output_length": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hooks_by_event": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        },
+        "hooks_total": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "instructions": {
+          "description": "The instruction audit (T7.2): `Some` only when `[doctor] instructions` ran — an audit\nthat found nothing still prints its section header, as it always did.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Instructions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mcp": {
+          "description": "One probed MCP server: name, command, tool count, description tokens.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ServerInfo"
+          }
+        },
+        "mcp_tool_search_disabled": {
+          "description": "`ANTHROPIC_BASE_URL` is set, so MCP tool search is likely disabled.",
+          "type": "boolean"
+        },
+        "overlaps": {
+          "description": "Host-native features that duplicate a running rtok surface (T59.7), each\nnaming the rtok config key that turns the duplicate side off. Advice: the\nlines say \"duplicate\", never \"saves N\".",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "proxy": {
+          "description": "The proxy chain behind `ANTHROPIC_BASE_URL`, hops joined with `→`.",
+          "type": "string"
+        },
+        "proxy_openai": {
+          "description": "The proxy chain behind the OpenAI seed (`OPENAI_BASE_URL` or a host config).",
+          "type": "string"
+        },
+        "read_share": {
+          "description": "Read-class token share from the transcripts (`None` = no data, fail open).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadShare"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skills": {
+          "description": "The skills audit (T61.3): `Some` when the probe ran; an empty tree prints no section.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkillsAudit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tools_rewrite_advice": {
+          "description": "Advice for enabling `[proxy.tools_rewrite]` when applicable (T59.5).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "hooks_total",
+        "hooks_by_event",
+        "mcp",
+        "proxy",
+        "proxy_openai",
+        "mcp_tool_search_disabled",
+        "bash_max_output_length",
+        "auto_compact_window",
+        "instructions",
+        "agents"
+      ]
+    },
+    "ServerFrame": {
+      "description": "A frame the server pushes besides the [`Snapshot`] itself.",
+      "oneOf": [
+        {
+          "description": "A one-line notice for the operator (refused key, failed `set`, unknown archive id).",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "message"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "description": "The archived payload a client asked for with [`ClientMessage::Expand`].",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "expand"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "text"
+          ]
+        }
+      ]
+    },
+    "ServerInfo": {
+      "type": "object",
+      "properties": {
+        "cmd": {
+          "type": "string"
+        },
+        "desc_tokens": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "tools": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "cmd",
+        "tools",
+        "desc_tokens"
+      ]
+    },
+    "SessionTotals": {
+      "description": "One session's totals ([`Store::session_totals`], T25.1) — the rendering input of the\nSessions page and `rtok agent sessions` (T25.2). Everything below is one query's\noutput, so no renderer can re-derive a number differently (D27): tokens are whole-\nsession sums of `usage`, `last_activity` is the MAX ts over the session's `usage`\nand `calls` rows (falling back to `started_at` when there are none), and `ended_at`\n`None` means live.",
+      "type": "object",
+      "properties": {
+        "api": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cache_create": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache_read": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "ended_at": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "input": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "last_activity": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "output": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "id",
+        "host",
+        "project",
+        "provider",
+        "api",
+        "model",
+        "input",
+        "cache_create",
+        "cache_read",
+        "output",
+        "started_at",
+        "last_activity",
+        "ended_at"
+      ]
+    },
+    "SetRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "default": ""
+        },
+        "value": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ]
+    },
+    "SkillPageRow": {
+      "type": "object",
+      "properties": {
+        "body_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "desc_chars": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "invocations": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "last_invoked": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "never": {
+          "type": "boolean"
+        },
+        "resident": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "desc_chars",
+        "body_bytes",
+        "invocations",
+        "resident",
+        "last_invoked",
+        "never"
+      ]
+    },
+    "SkillRow": {
+      "type": "object",
+      "properties": {
+        "body_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "desc_chars": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "invocations": {
+          "description": "Invocations in the last 30 d from the T61.1 fold; `None` = no data.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "description": "`user`, `project`, or `plugin:<id>@<marketplace>`.",
+          "type": "string"
+        },
+        "warn_body": {
+          "description": "Body over 8 KB — almost always a `references/` candidate.",
+          "type": "boolean"
+        },
+        "warn_desc": {
+          "description": "`description:` over the measured 200-char median.",
+          "type": "boolean"
+        },
+        "warn_never": {
+          "description": "Listed but never invoked in the window (only when data exists).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "desc_chars",
+        "body_bytes",
+        "warn_desc",
+        "warn_body",
+        "warn_never"
+      ]
+    },
+    "SkillsAudit": {
+      "description": "The skills audit (T61.3): what the host lists and what it costs the system\nprompt. Advice only — nothing here edits a file.",
+      "type": "object",
+      "properties": {
+        "desc_bytes": {
+          "description": "Description bytes the listing rides with every request (≈ tokens/4).",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SkillRow"
+          }
+        }
+      },
+      "required": [
+        "rows",
+        "desc_bytes"
+      ]
+    },
+    "SkillsPage": {
+      "description": "Skills page (T63.1, D23): one row per skill the host lists.",
+      "type": "object",
+      "properties": {
+        "header": {
+          "description": "Totals: listed, desc bytes ≈ tokens/req (chars/4, research.md §10.2), resident, input share.",
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SkillPageRow"
+          }
+        }
+      },
+      "required": [
+        "header",
+        "rows"
+      ]
+    },
+    "Snapshot": {
+      "description": "Everything a surface needs for one refresh. `Default` is the empty frame a surface\npaints while its first read is still running.",
+      "type": "object",
+      "properties": {
+        "calls": {
+          "description": "Calls page (T15.5): the last [`CALLS_ROWS`] ledger rows, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CallRow"
+          }
+        },
+        "config": {
+          "description": "Config page (T228): `rtok config show --sources`'s rows, through\n[`config_page_text`] (D27, no second layering). `None` on a failed tick.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "doctor": {
+          "description": "Doctor page (T15.6): what `rtok doctor` reports — hooks, MCP servers, proxy\nchains. `None` when this tick's probes failed; the page renders the failure\nrather than zeros, the way an unreadable store renders an empty page.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Report"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "description": "Set when the store will not open or this tick's doctor probe failed (T60.6). Both\nsurfaces render it as a banner instead of an empty page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "graph": {
+          "description": "Graph page (T230): `graph status`'s index health (rows, files, the T68.3\npending/staleness set, `indexed_at`) plus `graph dead`'s unreferenced-definition\nlist, folded into one page (D27) — [`graph_page_text`], read from the store on\nthis tick (no re-indexing). `None` when the `graph` feature is off or the store\nread failed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hosts": {
+          "description": "Hosts page (T231): `agents list`'s blocks — kind, detected version, installed\nsurfaces, config path — one per known host variant (D27), so `agents list` /\n`agents info` can join `COMMAND_PAGES`. [`hosts_page_text`] reuses the same\nprobe `agents_list`'s JSON form calls (T168's `--version` noise filter and all)\nbehind a cache: never blocks a 2 s tick on a cold or stale probe — the tick\nrenders the last known text, or \"probing hosts…\" before the first one lands.",
+          "type": "string"
+        },
+        "logs": {
+          "description": "Logs page (T15.7): the last `[log] lines` log lines, newest first — the same\nselection `rtok logs` screens ([`Model::log_lines`], T15.11). Riding the snapshot\nmakes the page both surfaces' (D23); `[log] lines` is the frame's bound too.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "plugins": {
+          "description": "Plugins page: one entry per catalogue plugin.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PluginPage"
+          }
+        },
+        "ref_ids": {
+          "description": "Archive ids keyed by `calls[].id` (T60.4). Both surfaces read this map; neither\nqueries the store for an expand handle (D23 / D27).",
+          "type": "object",
+          "additionalProperties": false,
+          "default": {},
+          "patternProperties": {
+            "^-?\\d+$": {
+              "type": "string"
+            }
+          }
+        },
+        "services": {
+          "description": "Services page (T229): `demon status`'s per-service rows plus `otel status`'s\nexporter health, through [`services_page_text`] (D27, no second reader —\n[`Model::demon`] and [`otel_status`] already build both). `None` on a failed\ntick.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessions": {
+          "description": "Sessions page (T25.1): one row per session, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionTotals"
+          }
+        },
+        "skills": {
+          "description": "Skills page (T63.1): T61.3 listing joined to T61.1 resident/invocations.",
+          "$ref": "#/$defs/SkillsPage"
+        },
+        "stats": {
+          "description": "Stats page (T227): `stats --price`'s table plus `stats --cache`'s table, folded\ninto one page (D27) — [`stats_page_text`], built from the same transcript scan\n[`stats_skills`] already runs for the Skills page (no second aggregation). `None`\nwhen this tick's transcripts read failed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "type": "string"
+        },
+        "usage": {
+          "description": "Overview page: provider usage totals, CTT and the per-turn series.",
+          "$ref": "#/$defs/Overview"
+        },
+        "worktrees": {
+          "description": "Worktrees page (T232): `worktree list`'s rows — path, branch, owner, age,\n`target/` size and state — through [`worktrees_page_text`], the same\n[`crate::worktree::list::rows`]/[`crate::worktree::list::to_table`] `worktree\nlist` already calls (D27, no second reader or directory walk); `gc`/`clean`\nstay CLI-only verdicts. `None` only when the current directory is unreadable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "usage",
+        "plugins",
+        "calls",
+        "sessions",
+        "doctor",
+        "logs",
+        "skills",
+        "ref_ids",
+        "stats",
+        "graph",
+        "hosts",
+        "config",
+        "services",
+        "worktrees"
+      ]
+    },
+    "Stats": {
+      "description": "The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.",
+      "type": "object",
+      "properties": {
+        "cache_create": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache_read": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "est_after": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "est_before": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "input": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "output": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "rows": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "cache_create",
+        "cache_read",
+        "est_before",
+        "est_after",
+        "rows"
+      ]
+    }
+  }
+}

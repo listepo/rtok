@@ -55,6 +55,7 @@ Project programs and direct packages from the manifests.
 | react-dom | local | https://github.com/facebook/react | T310.1: React DOM renderer |
 | vite | local | https://github.com/vitejs/vite | T310.1: SPA dev server + build (`just spa-dev` / `just spa-build`) |
 | @vitejs/plugin-react | local | https://github.com/vitejs/vite-plugin-react | T310.1: React fast refresh + JSX transform for Vite |
+| json-schema-to-typescript | local | https://github.com/bcherny/json-schema-to-typescript | T310.2: `web/src/api/snapshot.gen.ts` from the `/ws` JSON Schema (`npm run gen:api`) |
 | typescript | local | https://github.com/microsoft/TypeScript | T310.1: strict typecheck (`just spa-typecheck`) |
 | @types/react | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.1: React types |
 | @types/react-dom | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.1: React DOM types |
@@ -107,6 +108,7 @@ Project programs and direct packages from the manifests.
 | rustls-pemfile | local | https://crates.io/crates/rustls-pemfile | `SSL_CERT_FILE` bundle parsing (T53.3) |
 | semver | local | https://crates.io/crates/semver | T279: plugin version compare + `.rtok-plugin-version` (de)serialization |
 | serde | local | https://crates.io/crates/serde | Serialization |
+| schemars | local | https://github.com/GREsau/schemars | T310.2: JSON Schema of the `/ws` protocol, committed as `web/src/api/ws.schema.json` |
 | serde_json | local | https://crates.io/crates/serde_json | JSON |
 | sha2 | local | https://crates.io/crates/sha2 | Rust dependency |
 | similar | local | https://crates.io/crates/similar | Rust dependency |

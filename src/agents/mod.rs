@@ -434,7 +434,7 @@ pub fn present(agent: &dyn Agent, v: &Variant, cfg: &Config) -> bool {
         })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ModuleState {
     Installed,
@@ -444,7 +444,7 @@ pub enum ModuleState {
 
 /// One [`MODULES`] row of a host variant: its state and the note printed after it — the flag
 /// that would install it, or the reason it cannot be installed.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
 pub struct ModuleRow {
     pub name: &'static str,
     pub state: ModuleState,

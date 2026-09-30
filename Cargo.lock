@@ -3660,6 +3660,7 @@ dependencies = [
  "rtok-sys",
  "rustls",
  "rustls-pemfile",
+ "schemars",
  "semver",
  "serde",
  "serde_json",

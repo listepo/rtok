@@ -5,6 +5,7 @@
 //! Every value served comes from [`model`], the operator model `rtok tui` renders too (D23).
 
 pub mod model;
+pub mod protocol;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -19,6 +20,7 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::routing::get;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
@@ -26,6 +28,7 @@ use tower_http::services::ServeDir;
 
 use crate::config::{Config, validate};
 use crate::plugins::Registry;
+use protocol::{ClientMessage, ServerFrame};
 
 const INDEX: &str = include_str!("index.html");
 
@@ -458,22 +461,25 @@ async fn socket_loop(mut socket: WebSocket, state: Arc<DashState>) {
 
 fn inbound(state: &DashState, text: &str) -> Option<String> {
     let v: Value = serde_json::from_str(text).ok()?;
-    if let Some(id) = v.get("expand").and_then(Value::as_str) {
-        let cfg = state
-            .cfg
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        return Some(match model::expand_payload(&cfg, id, None) {
-            Some(body) => json!({ "type": "expand", "id": id, "text": body }).to_string(),
-            None => message_frame(&format!("unknown archive id: {id}")),
-        });
-    }
-    let set = v.get("set")?;
-    let key = set.get("key").and_then(Value::as_str).unwrap_or("");
-    let Some(value) = set.get("value").and_then(Value::as_bool) else {
-        return Some(message_frame("set.value must be a bool"));
+    let set = match ClientMessage::deserialize(&v) {
+        Ok(ClientMessage::Expand { expand: id }) => {
+            let cfg = state
+                .cfg
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            return Some(match model::expand_payload(&cfg, &id, None) {
+                Some(text) => ServerFrame::Expand { id, text }.to_json(),
+                None => message_frame(&format!("unknown archive id: {id}")),
+            });
+        }
+        Ok(ClientMessage::Set { set }) => set,
+        Err(_) if v.get("set").is_some() => {
+            return Some(message_frame("set needs a string key and a bool value"));
+        }
+        Err(_) => return None,
     };
+    let (key, value) = (set.key.as_str(), set.value);
     let mut cfg = state.cfg.lock().unwrap_or_else(PoisonError::into_inner);
     if !allowlisted_plugin_enabled(&cfg, key) {
         return Some(message_frame(&format!("refused key {key}")));
@@ -507,7 +513,7 @@ fn allowlisted_plugin_enabled(cfg: &Config, key: &str) -> bool {
 }
 
 fn message_frame(text: &str) -> String {
-    json!({ "type": "message", "text": text }).to_string()
+    ServerFrame::Message { text: text.into() }.to_json()
 }
 
 #[cfg(test)]
