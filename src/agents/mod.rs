@@ -1374,8 +1374,14 @@ fn bare_rtok_on_path(path: Option<&std::ffi::OsStr>) -> bool {
 /// copy cannot be shared; `formatters` re-exports this one (T55.10).
 pub(crate) fn cmd_stem(path: &str) -> &str {
     let base = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {
-        &base[..base.len() - 4]
+    // `get`, not `[..]`: the last 4 bytes of a non-ASCII name (`héllo`) can start mid-char.
+    let cut = base.len().saturating_sub(4);
+    if base.len() >= 4
+        && base
+            .get(cut..)
+            .is_some_and(|e| e.eq_ignore_ascii_case(".exe"))
+    {
+        &base[..cut]
     } else {
         base
     }
@@ -1687,6 +1693,15 @@ mod tests {
         assert_eq!(cmd_stem("/usr/bin/git"), "git");
         assert_eq!(cmd_stem("sudo"), "sudo");
         assert_eq!(cmd_stem("rtok.exe"), "rtok");
+    }
+
+    /// Found by `fuzz/` (cmd-filter): the `.exe` check sliced the last 4 bytes of the
+    /// basename, which panicked when they began inside a multi-byte char.
+    #[test]
+    fn cmd_stem_non_ascii_name_does_not_panic() {
+        assert_eq!(cmd_stem("héllo"), "héllo");
+        assert_eq!(cmd_stem("/opt/bin/ƞ\0\0)"), "ƞ\0\0)");
+        assert_eq!(cmd_stem("dé.exe"), "dé");
     }
 
     #[test]

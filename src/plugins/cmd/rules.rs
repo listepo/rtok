@@ -123,6 +123,15 @@ impl Settings {
         }
     }
 
+    /// Built-ins merged with already-parsed user rules, no disk (`crate::fuzzing`).
+    #[cfg(fuzzing)]
+    pub(crate) fn with_user_rules(user: Vec<Rule>, fail_tail_lines: u32) -> Self {
+        Self {
+            fail_tail_lines: fail_tail_lines.max(1) as usize,
+            rules: merge_rules(defaults(), user),
+        }
+    }
+
     fn load(
         rules_path: &std::path::Path,
         rules_dir: Option<&std::path::Path>,

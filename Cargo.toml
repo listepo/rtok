@@ -1,9 +1,9 @@
 # The binary crate is the workspace root (T23.1, D25). `rtok-plugin-sdk` is the published
 # plugin contract; `crates/rtok-webui` is excluded because it builds for wasm through its own
-# toolchain and must not join `cargo test` here.
+# toolchain and must not join `cargo test` here; `fuzz` is the nightly-only cargo-fuzz crate.
 [workspace]
 members = ["crates/rtok-agent-sdk", "crates/rtok-hook", "crates/rtok-log", "crates/rtok-mcp", "crates/rtok-plugin-sdk", "crates/rtok-sys", "crates/rtok-wasm-demo-guest"]
-exclude = ["crates/rtok-webui"]
+exclude = ["crates/rtok-webui", "fuzz"]
 
 [package]
 name = "rtok"
@@ -74,6 +74,8 @@ lang-php = ["dep:tree-sitter-php"]
 # Hand-written `unsafe` is forbidden. rustc only reports `UserProvided` blocks —
 # macro-expanded `unsafe` is not linted (generated code only).
 unsafe_code = "forbid"
+# `cargo fuzz` builds with `--cfg fuzzing`; `src/fuzzing.rs` exists only then.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
 missing_debug_implementations = "allow"
 
 [lints.clippy]

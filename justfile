@@ -191,6 +191,18 @@ webui-check:
     rustup target add wasm32-unknown-unknown
     {{cargo}} check --manifest-path crates/rtok-webui/Cargo.toml --target wasm32-unknown-unknown
 
+# cargo-fuzz targets in fuzz/ (fuzz/README.md). Nightly for this build only; not in `check`.
+# `just fuzz` lists them, `just fuzz <target> [secs]` runs one, `just fuzz all [secs]` each in turn.
+fuzz target="" secs="60":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "{{target}}" ]; then exec cargo +nightly fuzz list; fi
+    targets="{{target}}"
+    if [ "$targets" = all ]; then targets=$(cargo +nightly fuzz list); fi
+    for t in $targets; do
+        cargo +nightly fuzz run "$t" -- -max_total_time={{secs}} -max_len=16384
+    done
+
 # $CARGO_HOME sizes (no deletes) and ./target
 cache:
     {{cache}}
