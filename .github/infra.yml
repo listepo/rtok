@@ -13,3 +13,8 @@ sonarcloud:
   mise-install-args: "" # everything in mise.toml (just, cargo-llvm-cov, node, vitest, ...)
   coverage-command: just test-cov
   soft-fail: false
+
+# actionlint stays off for now: dist-generated release.yml (never hand-edited) has shellcheck
+# findings. Turn on once .github/actionlint.yaml ignores that file.
+lint:
+  enabled: false
