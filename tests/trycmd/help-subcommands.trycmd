@@ -457,12 +457,13 @@ Options:
   -h, --help           Print help
 
 $ rtok man --help
-Print the man page (roff) to stdout
+Print the man page (roff), or write every page with `--dir`
 
 Usage: rtok man [OPTIONS]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --dir <DIR>      Write `rtok.1` and a page for every subcommand into this directory
   -h, --help           Print help
 
 $ rtok plugins --help

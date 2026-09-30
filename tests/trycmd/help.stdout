@@ -19,7 +19,7 @@ Commands:
   expand       Print an archived payload
   archive      The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)
   completions  Print shell completions for `bash`, `zsh`, `fish` or `powershell`
-  man          Print the man page (roff) to stdout
+  man          Print the man page (roff), or write every page with `--dir`
   plugins      List plugins: id, enabled, surfaces
   config       The one config file
   memory       Notes (`mem_save` / import / export)

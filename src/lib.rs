@@ -29,6 +29,7 @@ pub mod fuzzing;
 pub mod hooks;
 pub mod info;
 pub mod log;
+pub mod man;
 pub mod mcp;
 pub mod measure;
 pub mod modes;

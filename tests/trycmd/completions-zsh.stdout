@@ -1126,6 +1126,7 @@ _arguments "${_arguments_options[@]}" : /
 ;;
 (man)
 _arguments "${_arguments_options[@]}" : /
+'--dir=[Write /`rtok.1/` and a page for every subcommand into this directory]:DIR:_files' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '-h[Print help]' /
 '--help[Print help]' /
@@ -2361,7 +2362,7 @@ _rtok_commands() {
 'expand:Print an archived payload' /
 'archive:The archive live zone (/`rtok archive rewrite/` — pi /`context/` carrier, T70.2)' /
 'completions:Print shell completions for /`bash/`, /`zsh/`, /`fish/` or /`powershell/`' /
-'man:Print the man page (roff) to stdout' /
+'man:Print the man page (roff), or write every page with /`--dir/`' /
 'plugins:List plugins/: id, enabled, surfaces' /
 'config:The one config file' /
 'memory:Notes (/`mem_save/` / import / export)' /
@@ -3003,7 +3004,7 @@ _rtok__subcmd__help_commands() {
 'expand:Print an archived payload' /
 'archive:The archive live zone (/`rtok archive rewrite/` — pi /`context/` carrier, T70.2)' /
 'completions:Print shell completions for /`bash/`, /`zsh/`, /`fish/` or /`powershell/`' /
-'man:Print the man page (roff) to stdout' /
+'man:Print the man page (roff), or write every page with /`--dir/`' /
 'plugins:List plugins/: id, enabled, surfaces' /
 'config:The one config file' /
 'memory:Notes (/`mem_save/` / import / export)' /

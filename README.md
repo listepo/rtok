@@ -72,6 +72,7 @@ Shell completions and the man page are generated from the same clap tree as
 ```bash
 rtok completions bash > ~/.bash_completion.d/rtok   # or zsh, fish, powershell
 rtok man | man -l -                                  # or save as manpath/rtok.1
+rtok man --dir ~/.local/share/man/man1               # rtok.1 plus rtok-<command>.1 for every subcommand
 ```
 
 A shorter path (install → doctor → hooks) is also in

@@ -45,7 +45,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.12 | todo | P2 | 3 | 0% | |
 | T314 | in progress | P2 | 3 | 60% | Grok Bot |
 | T315 | in progress | P2 | 3 | 60% | Grok Bot |
-| T316 | todo | P2 | 3 | 0% | |
 | T317 | todo | P2 | 3 | 0% | |
 | T318 | todo | P2 | 3 | 0% | |
 | T319 | todo | P2 | 3 | 0% | |
@@ -676,12 +675,6 @@ Plan:
 Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
 
 Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
-
-### T316. Man page per subcommand: `rtok man --dir`
-
-`rtok man` renders only the top-level page, so `man rtok-agents` or `man rtok-worktree` do not exist and subcommand flags are documented nowhere offline. Render one page per command with `clap_mangen` (already a dependency): `rtok.1`, `rtok-agents.1`, `rtok-agents-install.1`, … down the whole clap tree, each with a `SEE ALSO` back to its parent and children. `rtok man` with no flag keeps printing `rtok.1` to stdout; `rtok man --dir <path>` writes every page into `<path>` and prints the list. Pages come from the same `Cli::command()` as `--help`, so there is no second source.
-
-Check: a test walks `Cli::command()` and asserts one page per visible subcommand with the expected file names; `man -l` on a sample page renders (roff lint via `mandoc -Tlint` where available, skipped otherwise); the trycmd fence and `man.stdout` stay green; `just check`.
 
 ### T317. `cmd.exe` completion through Clink: `rtok completions clink`
 

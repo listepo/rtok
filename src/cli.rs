@@ -207,8 +207,12 @@ enum Cmd {
         /// Shell to complete for
         shell: clap_complete::Shell,
     },
-    /// Print the man page (roff) to stdout
-    Man,
+    /// Print the man page (roff), or write every page with `--dir`
+    Man {
+        /// Write `rtok.1` and a page for every subcommand into this directory
+        #[arg(long, value_name = "DIR")]
+        dir: Option<PathBuf>,
+    },
     /// List plugins: id, enabled, surfaces
     Plugins {
         /// JSON instead of the table
@@ -1566,9 +1570,14 @@ pub fn run() -> Result<()> {
             let mut cmd = Cli::command();
             clap_complete::generate(shell, &mut cmd, "rtok", &mut io::stdout());
         }
-        Cmd::Man => {
-            clap_mangen::Man::new(Cli::command()).render(&mut io::stdout())?;
-        }
+        Cmd::Man { dir } => match dir {
+            Some(dir) => {
+                for page in crate::man::write_all(Cli::command(), &dir)? {
+                    println!("{}", page.display());
+                }
+            }
+            None => crate::man::print(Cli::command(), &mut io::stdout())?,
+        },
         #[cfg(feature = "memory")]
         Cmd::Memory { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;

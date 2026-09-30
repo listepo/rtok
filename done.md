@@ -1811,6 +1811,15 @@ Evidence: isolation worktree at 7d1e2a1 + own files only — `cargo fmt --check`
 
 Deviation: ~100 hand-written LOC but 10 files (the D27 gate, both snapshots and the docs each demand their file); `completions-bash.stdout` is 2796 generated lines, not counted. Includes the 4-line rustfmt normalization of the `wrap` EXEMPT entry — HEAD was not fmt-clean there, and without it no commit can pass `fmt --check`.
 
+### T316. Man page per subcommand: `rtok man --dir`
+
+`rtok man` renders only the top-level page, so `man rtok-agents` or `man rtok-worktree` do not exist and subcommand flags are documented nowhere offline. Render one page per command with `clap_mangen` (already a dependency): `rtok.1`, `rtok-agents.1`, `rtok-agents-install.1`, … down the whole clap tree, each with a `SEE ALSO` back to its parent and children. `rtok man` with no flag keeps printing `rtok.1` to stdout; `rtok man --dir <path>` writes every page into `<path>` and prints the list. Pages come from the same `Cli::command()` as `--help`, so there is no second source.
+
+Check: a test walks `Cli::command()` and asserts one page per visible subcommand with the expected file names; `man -l` on a sample page renders (roff lint via `mandoc -Tlint` where available, skipped otherwise); the trycmd fence and `man.stdout` stay green; `just check`.
+
+Result: `src/man.rs` walks the clap tree (`disable_help_subcommand`, hidden commands skipped) and renders each page with `clap_mangen`, then a `SEE ALSO` naming the parent and children; every page shares the `.TH` source `rtok <version>` (a subcommand's footer used to be its bare name). `rtok man` prints `rtok.1` through the same renderer, so `man.stdout` gained `SEE ALSO` and lost the `help` row; `rtok man --dir <path>` writes 79 pages and prints their paths. Unit tests: one page per visible subcommand, `SEE ALSO` links, shared source. Checked: `mandoc -Tlint` reports no errors (only clap_mangen's own `.TH` date and `br`/`sp` warnings, present before this change), a sample page renders with `mandoc -Tascii`, the trycmd fence (`man.stdout` with `v[..]` restored, completions snapshots for the new flag) is green; `just check`.
+
+
 ## T48.5 — Windsurf host
 
 **T48.5 Windsurf host** · P2, 3/5 · `src/agents/windsurf/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `docs/agents.md` (blessed), `src/cli.rs`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
