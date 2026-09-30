@@ -443,7 +443,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.toml");
-        let mut c = Config::default();
+        let mut c = crate::testutil::config_in(&dir);
         c.setup.codex.config_path = path.clone();
         c.setup.dry_run = dry;
         c.setup.backup = false;
@@ -570,9 +570,7 @@ mod tests {
 
     #[test]
     fn compact_hooks_save_and_post_restores() {
-        let (mut c, path) = cfg("compact", false);
-        c.core.db_path = path.parent().unwrap().join("rtok.db");
-        c.core.archive_dir = path.parent().unwrap().join("archive");
+        let (c, path) = cfg("compact", false);
         let report = run_hooks(&c, false).unwrap();
         assert!(report.contains("PreCompact"), "{report}");
         assert!(report.contains("PostCompact"), "{report}");

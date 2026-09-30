@@ -461,10 +461,8 @@ mod tests {
     #[test]
     fn cursor_payload_wraps_command() {
         let dir = tmp("wrap");
-        let mut c = Config::default();
+        let mut c = crate::testutil::config_in(&dir);
         c.hook.host = "cursor".into();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
         let cx = Runtime::open(c, "cur").unwrap();
         let raw = json!({
             "hook_event_name": "beforeShellExecution",
@@ -487,10 +485,8 @@ mod tests {
     #[test]
     fn cursor_after_shell_reaches_post_tool_use() {
         let dir = tmp("after");
-        let mut c = Config::default();
+        let mut c = crate::testutil::config_in(&dir);
         c.hook.host = "cursor".into();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
         let cx = Runtime::open(c, "cur").unwrap();
         let raw = json!({
             "hook_event_name": "afterShellExecution",
@@ -549,10 +545,8 @@ mod tests {
     #[test]
     fn pre_compact_writes_a_checkpoint_note() {
         let dir = tmp("precompact");
-        let mut c = Config::default();
+        let mut c = crate::testutil::config_in(&dir);
         c.hook.host = "cursor".into();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
         let pre = serde_json::json!({
             "conversation_id": "cur-compact",
             "trigger": "auto"

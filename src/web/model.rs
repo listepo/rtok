@@ -1917,7 +1917,7 @@ mod tests {
             response_bytes: 50,
             ms: 5.0,
         });
-        let mut cfg = Config::default();
+        let mut cfg = crate::testutil::config("web-live-calls").0;
         cfg.proxy.enabled = false;
         cfg.core.enabled = true;
         let rows = Model::new(&cfg, None).calls();
@@ -1975,7 +1975,8 @@ mod tests {
 
     #[test]
     fn session_detail_filters_snapshot_calls_by_id() {
-        let mut snap = Model::new(&Config::default(), None).snapshot();
+        let mut snap =
+            Model::new(&crate::testutil::config("web-session-detail").0, None).snapshot();
         snap.sessions = vec![SessionTotals {
             id: "a".into(),
             host: None,

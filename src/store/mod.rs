@@ -3540,9 +3540,7 @@ mod tests {
     /// `archives_pending_retention_previews_without_deleting` (T182), which exercise the same
     /// `doomed_archives` set through the deleting and the previewing entry point.
     fn seed_one_spilled_call(dir: &Path) -> (Config, Store, PathBuf) {
-        let mut cfg = Config::default();
-        cfg.core.db_path = dir.join("rtok.db");
-        cfg.core.archive_dir = dir.join("archive");
+        let mut cfg = crate::testutil::config_in(dir);
         cfg.core.retain_calls_days = 1;
         let store = Store::open(&cfg.core.db_path).unwrap();
         store
@@ -3757,9 +3755,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-retain-plugin-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut cfg = Config::default();
-        cfg.core.db_path = dir.join("rtok.db");
-        cfg.core.archive_dir = dir.join("archive");
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.core.retain_calls_days = 1;
         let store = Store::open(&cfg.core.db_path).unwrap();
         store

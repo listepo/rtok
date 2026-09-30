@@ -770,9 +770,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-hooks-t454-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut cfg = Config::default();
-        cfg.core.db_path = dir.join("rtok.db");
-        cfg.core.archive_dir = dir.join("archive");
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.hook.fail_open = false;
         // Hermetic regardless of ambient env: the fixture carries its own
         // session id, and the fallback key is a probe nothing else sets.
@@ -821,9 +819,8 @@ mod tests {
     fn pi_host_resolves_to_pi_not_other() {
         let dir = std::env::temp_dir().join(format!("rtok-hooks-t25-pi-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let mut cfg = Config::default();
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.hook.host = "pi".into();
-        cfg.core.db_path = dir.join("rtok.db");
         let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
         let input: HookInput = serde_json::from_str(raw).unwrap();
         let cx = Runtime::open(cfg, input.session_id.clone()).unwrap();
@@ -909,10 +906,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-cursor-ss-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = crate::testutil::config_in(&dir);
         cfg.hook.host = "cursor".into();
-        cfg.core.db_path = dir.join("rtok.db");
-        cfg.core.archive_dir = dir.join("archive");
         cfg.plugins.inject.modes = vec!["nudges".into()];
         let raw = serde_json::json!({
             "hook_event_name": "sessionStart",
@@ -949,10 +944,8 @@ mod tests {
     }
 
     fn cursor_cfg(dir: &std::path::Path) -> Config {
-        let mut c = Config::default();
+        let mut c = crate::testutil::config_in(dir);
         c.hook.host = "cursor".into();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
         c
     }
 

@@ -301,7 +301,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-copilot-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let mut c = Config::default();
+        let mut c = crate::testutil::config_in(&dir);
         c.setup.copilot.dir = dir.clone();
         c.setup.dry_run = dry;
         c.setup.backup = false;
@@ -451,8 +451,6 @@ mod tests {
         let (c, dir) = cfg("precompact", false);
         let mut c = c;
         c.hook.host = "copilot".into();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
         let pre = serde_json::json!({
             "sessionId": "cop-compact",
             "trigger": "auto"
