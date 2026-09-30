@@ -18,6 +18,7 @@ use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
+use crate::ui::style;
 
 /// The only services a supervisor may run — rtok's own long-running surfaces. Clap validates the
 /// CLI side from this enum (D14 derive API: help, completions and the error message come free),
@@ -141,7 +142,7 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
     for service in targets(cfg, named, false)? {
         // The supervisor's own lock is the truth; the state file can lag it or name a reused pid.
         if claim(cfg, service)?.is_none() {
-            println!("{service} already running");
+            println!("{}", style::info(&format!("{service} already running")));
             continue;
         }
         if let Some(st) = read(cfg, service) {
@@ -176,7 +177,7 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
             let msg = format!(
                 "{service}: no stdin client under the demon — `rtok mcp` exits at EOF and is restarted"
             );
-            eprintln!("{msg}");
+            eprintln!("{}", style::warn(&msg));
             crate::log::append(cfg, "warn", "demon", service.as_str(), &msg);
         }
         let mut cmd = Command::new(&exe);
@@ -190,7 +191,8 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
             .stderr(Stdio::null())
             .spawn()
             .with_context(|| format!("spawn supervisor for {service}"))?;
-        println!("{service} started (supervisor {})", child.id());
+        let started = format!("{service} started (supervisor {})", child.id());
+        println!("{}", style::success(&started));
     }
     Ok(())
 }
@@ -200,7 +202,7 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
 pub fn stop(cfg: &Config, named: &[Service], force: bool) -> Result<()> {
     for service in targets(cfg, named, true)? {
         let Some(st) = read(cfg, service) else {
-            println!("{service} not running");
+            println!("{}", style::info(&format!("{service} not running")));
             continue;
         };
         fs::write(file(cfg, service, "stop"), b"")?;
@@ -223,7 +225,7 @@ pub fn stop(cfg: &Config, named: &[Service], force: bool) -> Result<()> {
             rtok_sys::process_kill(st.child);
         }
         let _ = fs::remove_file(file(cfg, service, "json"));
-        println!("{service} stopped");
+        println!("{}", style::success(&format!("{service} stopped")));
     }
     Ok(())
 }

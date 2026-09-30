@@ -497,6 +497,8 @@ pub fn load(home: &Path, config_file: Option<&Path>, flags: Option<Dict>) -> Res
     )
     .extract()?;
     cfg.finish(home);
+    // Every command reaches its config through here, so this is where `[ui]` takes effect.
+    crate::ui::style::configure(&cfg.ui);
     for w in &warnings {
         crate::log::append(&cfg, "warn", "config", "dotenv", w);
     }
