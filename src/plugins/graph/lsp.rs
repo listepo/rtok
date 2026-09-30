@@ -17,105 +17,55 @@ use super::cap;
 
 const READY: Duration = Duration::from_secs(40);
 
-/// True when `bin` is installed. A mise shim and rustup's component proxy do not count;
-/// `rust-analyzer` counts when `rustup which` names the toolchain binary. File presence
-/// only — `bin --version` can hang on a broken shim.
-pub fn on_path(bin: &str) -> bool {
-    if first_real_bin(bin).is_some() {
+pub(crate) fn on_path(bin: &str) -> bool {
+    // File presence only — `bin --version` can hang on a broken shim (tests and MCP share
+    // this probe). rust-analyzer may live only behind `rustup which`.
+    if path_has_bin(bin) {
         return true;
     }
-    bin == "rust-analyzer" && rustup_component_path().is_some()
-}
-
-/// `rustup which rust-analyzer` names the toolchain binary. It fails when the component
-/// is not installed, which is the case a rustup proxy or mise shim must not pass for.
-fn rustup_component_path() -> Option<PathBuf> {
-    let o = Command::new("rustup")
-        .args(["which", "rust-analyzer"])
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
-    if !o.status.success() {
-        return None;
-    }
-    let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
-    if p.is_empty() {
-        return None;
-    }
-    let path = PathBuf::from(p);
-    (path.is_file() && !is_mise_shim(&path)).then_some(path)
-}
-
-fn first_real_bin(name: &str) -> Option<PathBuf> {
-    let paths = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&paths) {
-        if let Some(cand) = real_candidate(&dir, name) {
-            return Some(cand);
-        }
-    }
-    None
-}
-
-fn real_candidate(dir: &Path, name: &str) -> Option<PathBuf> {
-    let bare = dir.join(name);
-    if is_real_bin(&bare) {
-        return Some(bare);
-    }
-    #[cfg(windows)]
+    if bin == "rust-analyzer"
+        && let Ok(o) = Command::new("rustup")
+            .args(["which", "rust-analyzer"])
+            .stderr(Stdio::null())
+            .output()
+        && o.status.success()
     {
-        let exe = dir.join(format!("{name}.exe"));
-        if is_real_bin(&exe) {
-            return Some(exe);
-        }
+        let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        return !p.is_empty() && Path::new(&p).is_file();
     }
-    None
+    false
 }
 
-fn is_real_bin(path: &Path) -> bool {
-    path.is_file() && !is_mise_shim(path) && !is_rustup_proxy(path)
-}
-
-/// mise puts a shim on PATH for every tool in `mise.toml`, including ones it did not
-/// install. rustup's proxy then falls back to that shim and the shim calls the proxy.
-fn is_mise_shim(path: &Path) -> bool {
-    let mut saw_mise = false;
-    let mut saw_shims = false;
-    for c in path.components() {
-        let name = c.as_os_str();
-        if name == "mise" {
-            saw_mise = true;
-        }
-        if name == "shims" {
-            saw_shims = true;
-        }
-    }
-    saw_mise && saw_shims
-}
-
-/// rustup's component proxies sit beside the `rustup` binary and are that binary.
-/// A real `rust-analyzer` next to it is a different size.
-fn is_rustup_proxy(path: &Path) -> bool {
-    let Some(dir) = path.parent() else {
+fn path_has_bin(name: &str) -> bool {
+    let Some(paths) = std::env::var_os("PATH") else {
         return false;
     };
-    let rustup = if cfg!(windows) {
-        dir.join("rustup.exe")
-    } else {
-        dir.join("rustup")
-    };
-    match (path.metadata(), rustup.metadata()) {
-        (Ok(bin), Ok(proxy)) => bin.len() == proxy.len(),
-        _ => false,
+    for dir in std::env::split_paths(&paths) {
+        if dir.join(name).is_file() {
+            return true;
+        }
+        #[cfg(windows)]
+        if dir.join(format!("{name}.exe")).is_file() {
+            return true;
+        }
     }
+    false
 }
 
 fn resolve_bin(name: &str) -> PathBuf {
     if name == "rust-analyzer"
-        && let Some(path) = rustup_component_path()
+        && let Ok(o) = Command::new("rustup")
+            .args(["which", "rust-analyzer"])
+            .stderr(Stdio::null())
+            .output()
+        && o.status.success()
     {
-        return path;
+        let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        if !p.is_empty() && Path::new(&p).is_file() {
+            return PathBuf::from(p);
+        }
     }
-    first_real_bin(name).unwrap_or_else(|| PathBuf::from(name))
+    PathBuf::from(name)
 }
 
 fn pick(root: &Path) -> Result<(&'static str, &'static [&'static str])> {
@@ -1116,44 +1066,5 @@ mod uri_tests {
         let round = path_from_file_uri(&format!("file:///{encoded}"));
         let s = round.to_string_lossy();
         assert!(s.contains("a#b?.rs") || s.contains("a"), "{round:?}");
-    }
-}
-
-#[cfg(test)]
-mod probe_tests {
-    use super::{is_mise_shim, is_rustup_proxy};
-    use std::fs;
-    use std::path::Path;
-
-    #[test]
-    fn mise_shim_is_not_an_installed_server() {
-        let shim = Path::new("/home/runner/.local/share/mise/shims/rust-analyzer");
-        assert!(is_mise_shim(shim));
-        assert!(!is_mise_shim(Path::new(
-            "/home/runner/.rustup/toolchains/stable/bin/rust-analyzer"
-        )));
-    }
-
-    #[test]
-    fn rustup_proxy_matches_the_rustup_binary_size() {
-        let dir = std::env::temp_dir().join(format!("rtok-ra-proxy-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let proxy = if cfg!(windows) {
-            dir.join("rustup.exe")
-        } else {
-            dir.join("rustup")
-        };
-        let analyzer = if cfg!(windows) {
-            dir.join("rust-analyzer.exe")
-        } else {
-            dir.join("rust-analyzer")
-        };
-        fs::write(&proxy, b"proxy").unwrap();
-        fs::write(&analyzer, b"proxy").unwrap();
-        assert!(is_rustup_proxy(&analyzer));
-        fs::write(&analyzer, b"a real rust-analyzer binary").unwrap();
-        assert!(!is_rustup_proxy(&analyzer));
-        let _ = fs::remove_dir_all(&dir);
     }
 }
