@@ -1,6 +1,6 @@
 # T18.5 (P18). release-plz keeps a "release: vX.Y.Z" pull request open on main with the next
 # version and the changelog; merging it runs verify (`just check` and `just example` on Linux
-# and macOS, as verify.yml) on the merge commit, then dispatches the dist Release workflow
+# and macOS, as bump.yml) on the merge commit, then dispatches the dist Release workflow
 # (release.yml, `tag=vX.Y.Z`). release-plz creates neither the tag nor the GitHub Release: dist
 # does both from release.yml, and release-plz reads that tag (release-plz.toml).
 #
@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   release-plz:
-    uses: pyrlyn/infra/.github/workflows/release-plz.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    uses: pyrlyn/infra/.github/workflows/release-plz.yml@863d8960601216eec62d4aa78924f84ce61d72b9
     permissions:
       contents: write # the release branch
       pull-requests: write # the release PR
