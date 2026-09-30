@@ -1024,18 +1024,18 @@ impl Store {
 
     /// Like [`Store::insert_note_if_absent`], but keeps portable JSONL metadata (T294):
     /// explicit `id`, `ts`, and lifecycle columns when the export row carried them.
-    pub fn insert_portable_note_if_absent(
-        &self,
-        project: Option<&str>,
-        kind: &str,
-        title: &str,
-        body: &str,
-        id: Option<i32>,
-        ts: Option<i64>,
-        retired: Option<i64>,
-        superseded_by: Option<i32>,
-        pinned: Option<i32>,
-    ) -> Result<Option<i32>> {
+    pub fn insert_portable_note_if_absent(&self, note: PortableNote<'_>) -> Result<Option<i32>> {
+        let PortableNote {
+            project,
+            kind,
+            title,
+            body,
+            id,
+            ts,
+            retired,
+            superseded_by,
+            pinned,
+        } = note;
         let portable = id.is_some()
             || ts.is_some()
             || retired.is_some()
@@ -2287,6 +2287,19 @@ fn insert_measurement_conn(
         .do_nothing()
         .execute(conn)?;
     Ok(())
+}
+
+/// Portable JSONL metadata for [`Store::insert_portable_note_if_absent`] (T294).
+pub struct PortableNote<'a> {
+    pub project: Option<&'a str>,
+    pub kind: &'a str,
+    pub title: &'a str,
+    pub body: &'a str,
+    pub id: Option<i32>,
+    pub ts: Option<i64>,
+    pub retired: Option<i64>,
+    pub superseded_by: Option<i32>,
+    pub pinned: Option<i32>,
 }
 
 /// One portable `memory export` row (T294). Field order matches [`Store::list_export_notes`].

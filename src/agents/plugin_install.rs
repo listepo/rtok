@@ -138,10 +138,10 @@ fn manifest_version(dir: &Path) -> Option<String> {
         if text.is_empty() {
             continue;
         }
-        if let Ok(v) = serde_json::from_str::<Value>(&text) {
-            if let Some(ver) = v.get("version").and_then(Value::as_str) {
-                return Some(ver.to_string());
-            }
+        if let Ok(v) = serde_json::from_str::<Value>(&text)
+            && let Some(ver) = v.get("version").and_then(Value::as_str)
+        {
+            return Some(ver.to_string());
         }
     }
     None

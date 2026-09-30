@@ -1991,7 +1991,7 @@ fn outdated_from_update(args: &UpdateArgs) -> OutdatedArgs {
 }
 
 fn outdated_hosts(config_file: Option<&std::path::Path>, args: OutdatedArgs) -> Result<()> {
-    let cfg = Config::load_with(config_file.as_deref(), None)?;
+    let cfg = Config::load_with(config_file, None)?;
     let hosts = match &args.host {
         Some(h) => parse_hosts(h)?,
         None => Vec::new(),

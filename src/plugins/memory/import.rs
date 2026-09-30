@@ -94,17 +94,19 @@ pub fn run(cfg: &Config, path: &Path, dry_run: bool) -> Result<Report> {
             r.inserted += 1;
             continue;
         }
-        match cx.store.insert_portable_note_if_absent(
-            row.project.as_deref(),
-            &row.kind,
-            &row.title,
-            &row.body,
-            row.id,
-            row.ts,
-            row.retired,
-            row.superseded_by,
-            row.pinned,
-        )? {
+        match cx
+            .store
+            .insert_portable_note_if_absent(crate::store::PortableNote {
+                project: row.project.as_deref(),
+                kind: &row.kind,
+                title: &row.title,
+                body: &row.body,
+                id: row.id,
+                ts: row.ts,
+                retired: row.retired,
+                superseded_by: row.superseded_by,
+                pinned: row.pinned,
+            })? {
             Some(_) => r.inserted += 1,
             // Lost a race to a concurrent local write between the pre-load above and
             // this statement — the local body stands, same as the in-memory check.

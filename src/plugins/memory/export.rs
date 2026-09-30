@@ -78,13 +78,11 @@ mod tests {
         assert_eq!(run(&a, None, &mut buf).unwrap(), 3);
         let text = String::from_utf8(buf).unwrap();
         assert_eq!(text.lines().count(), 3, "{text}");
-        for line in text.lines() {
-            let v: serde_json::Value = serde_json::from_str(line).unwrap();
-            assert!(v.get("id").is_some());
-            assert!(v.get("ts").is_some());
-            assert_eq!(v["kind"], "decision");
-            break;
-        }
+        let line = text.lines().next().expect("export has a line");
+        let v: serde_json::Value = serde_json::from_str(line).unwrap();
+        assert!(v.get("id").is_some());
+        assert!(v.get("ts").is_some());
+        assert_eq!(v["kind"], "decision");
         assert!(!text.contains("checkpoint"), "{text}");
         let mut only_q = Vec::new();
         assert_eq!(run(&a, Some("q"), &mut only_q).unwrap(), 0);
