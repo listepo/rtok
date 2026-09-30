@@ -45,6 +45,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.12 | todo | P2 | 3 | 0% | |
 | T314 | in progress | P2 | 3 | 60% | Grok Bot |
 | T315 | in progress | P2 | 3 | 60% | Grok Bot |
+| T316 | todo | P2 | 3 | 0% | |
+| T317 | todo | P2 | 3 | 0% | |
+| T318 | todo | P2 | 3 | 0% | |
+| T319 | todo | P2 | 3 | 0% | |
 
 
 
@@ -672,6 +676,30 @@ Plan:
 Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
 
 Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
+
+### T316. Man page per subcommand: `rtok man --dir`
+
+`rtok man` renders only the top-level page, so `man rtok-agents` or `man rtok-worktree` do not exist and subcommand flags are documented nowhere offline. Render one page per command with `clap_mangen` (already a dependency): `rtok.1`, `rtok-agents.1`, `rtok-agents-install.1`, … down the whole clap tree, each with a `SEE ALSO` back to its parent and children. `rtok man` with no flag keeps printing `rtok.1` to stdout; `rtok man --dir <path>` writes every page into `<path>` and prints the list. Pages come from the same `Cli::command()` as `--help`, so there is no second source.
+
+Check: a test walks `Cli::command()` and asserts one page per visible subcommand with the expected file names; `man -l` on a sample page renders (roff lint via `mandoc -Tlint` where available, skipped otherwise); the trycmd fence and `man.stdout` stay green; `just check`.
+
+### T317. `cmd.exe` completion through Clink: `rtok completions clink`
+
+`cmd.exe` has no completion system of its own; Clink is the standard way to add one (Lua scripts from its profile directory). Add `clink` to the shells `rtok completions` accepts, next to clap_complete's `bash`, `zsh`, `fish`, `powershell`, `elvish`. Before writing code, evaluate `clap_complete_clink` (1.0.0, 2025-10-18, 1 star, 465 downloads at planning time): take it only if it is maintained and covers nested subcommands and flag values; otherwise implement `clap_complete::Generator` in one small module and say why in the commit. POSIX `sh` gets nothing: it has no completion API, and ksh/dash users source the bash script.
+
+Check: the generated Lua is snapshot-tested (insta) against a small fixture command and against `Cli::command()` (every subcommand name appears); `luac -p` parses it where `luac` is available; `rtok completions --help` lists `clink`; docs in `README.md` show the Clink line; `just check`.
+
+### T318. `rtok completions --install`
+
+Printing a script and leaving the user to find the right directory is where most installs stop. `rtok completions <shell> --install` writes the script to that shell's standard per-user location and prints the path: bash `$XDG_DATA_HOME/bash-completion/completions/rtok` (bash-completion v2 lazy-loads it), zsh `${ZDOTDIR:-$HOME}/.zfunc/_rtok` plus a printed `fpath` hint when the directory is not on `fpath`, fish `~/.config/fish/completions/rtok.fish`, PowerShell a script beside `$PROFILE` plus one dot-source line in `$PROFILE` (only our line is added or checked; the rest of the profile stays byte-for-byte), Clink `%LOCALAPPDATA%\clink\rtok.lua`. With no shell argument, `--install` picks the running shell (`$SHELL`, `PSModulePath`/`ComSpec` on Windows) and fails with the list of shells when it cannot tell. `--uninstall` removes exactly what `--install` wrote. Idempotent: a second install reports `unchanged`. Depends on T317 for the Clink path.
+
+Check: Vfs/tempdir tests per shell — install writes the file at the expected path, a second run is `unchanged`, uninstall removes it and the PowerShell profile line, and a profile with other content keeps it byte-for-byte; no real user home is touched; the trycmd fence covers `--install --help`; `just check`.
+
+### T319. Ship man pages and completions in release archives
+
+Committed, generated, and checked like `web/src/api/ws.schema.json` (T310.2): `share/man/man1/*.1` from T316 and `share/completions/{rtok.bash,_rtok,rtok.fish,rtok.ps1,rtok.lua}` from `rtok completions`; a test fails when they are stale and `RTOK_BLESS=1` rewrites them. `dist-workspace.toml` `include`s `share/` so every archive carries them; the Homebrew formula installs the man pages and bash/zsh/fish completions to Homebrew's directories; the shell installer and ketch copy them under their prefix when it has a `share/`. `README.md` and `docs/` say where each file lands.
+
+Check: the stale test fails after a flag is added and passes after blessing; `dist plan`/the release dry-run lists `share/` in each archive; the generated Homebrew formula contains the `man1.install` and completion lines; `just check`.
 
 ## Reference
 
