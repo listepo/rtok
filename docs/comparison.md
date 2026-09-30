@@ -240,7 +240,7 @@ Stated plainly, because §4 is only worth reading if this section exists.
   the library itself is still the smallest of the three).
 - **Younger, and a single maintainer.** Several tools in §2 have five-figure star counts and
   years of edge cases baked in. rtok is at v0.0.1.
-- **`toon` and `graph-watchman` are opt-in** because they lost their gates on this machine.
+- **`toon` is opt-in** because it lost its gate on this machine.
   LadybugDB and Grafeo were measured then **removed** (P39, 2026-09-12): Ladybug won depth-4
   impact by 77× but missed the hook ≤10 ms bar; Grafeo abandoned after warm `impact(2)` ~22 000×
   slower than SQLite. The symbol index is SQLite only.

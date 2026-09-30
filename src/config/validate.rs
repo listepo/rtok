@@ -345,8 +345,8 @@ fn check_leaf(
                     "{at}: {dotted} must be full, lines, map, or signatures"
                 ));
             }
-            "plugins.graph.watch" if !matches!(s, "off" | "notify" | "watchman") => {
-                errors.push(format!("{at}: {dotted} must be off, notify, or watchman"));
+            "plugins.graph.watch" if !matches!(s, "off" | "notify") => {
+                errors.push(format!("{at}: {dotted} must be off or notify"));
             }
             // An unknown level ranks most severe (`log::rank`), so a typo silently
             // drops everything below error while `validate` says ok.

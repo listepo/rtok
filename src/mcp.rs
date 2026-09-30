@@ -53,7 +53,7 @@ pub fn run(cfg: &Config) -> Result<()> {
     }
     crate::otel::export::spawn_ticker(cfg);
     // P8d watcher (T8.16): a thread inside this process, never a second writer.
-    // Any value but `off` arms it; `watchman` gets its own backend in T8.17.
+    // Any value but `off` arms the notify backend.
     let watch_root: Option<std::path::PathBuf> =
         if server.cx.config.plugins.graph.watch.as_str() != "off" {
             std::env::current_dir().ok()

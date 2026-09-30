@@ -134,7 +134,6 @@ Project programs and direct packages from the manifests.
 | wasm-bindgen | local | https://crates.io/crates/wasm-bindgen | JS glue for the Slint web UI (T222) |
 | wasm-bindgen-futures | local | https://crates.io/crates/wasm-bindgen-futures | JS futures for the Slint web UI (T222) |
 | wasmi | local | https://crates.io/crates/wasmi | Rust dependency |
-| watchman_client | local | https://crates.io/crates/watchman_client | Rust dependency |
 | web-sys | local | https://crates.io/crates/web-sys | Web APIs for the Slint web UI (T222) |
 | webpki-roots | local | https://crates.io/crates/webpki-roots | Mozilla roots without the platform verifier (T53.3) |
 | windows-sys | local | https://crates.io/crates/windows-sys | Windows process + file-lock shims in rtok-sys (T222) |

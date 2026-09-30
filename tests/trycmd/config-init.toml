@@ -309,7 +309,7 @@ target/tmp/t60-2-config-init.toml
 +body_lines = 40                       # symbol(): source lines shown per definition
 +auto_index = true                     # every symbol/callers/impact call walks the tree; false = index once, then `rtok graph index` or the watcher
 +backend    = "tags"                   # tags | lsp: index backend; default tags; lsp spawns rust-analyzer/clangd/tsserver from PATH (P30)
-+watch      = "off"                    # off | notify | watchman (P8d): background re-index inside `rtok mcp`
++watch      = "off"                    # off | notify (P8d): background re-index inside `rtok mcp`
 +exclude    = []                       # gitignore-style paths dropped from the walk (T68.10)
 +include    = []                       # gitignore-style paths forced back in (T68.10)
 +extensions = {}                       # ext = "grammar" remap for custom suffixes (T68.10)
