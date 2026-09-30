@@ -43,11 +43,11 @@ jobs:
         with:
           extra: llvm-tools-preview
 
-      # Same pin and tool set as ci.yml's `check` (same cache key on ubuntu): Rust/just from
-      # mise.toml, nextest, and vitest on node for the suite's TS plugin tests.
+      # Rust/just from mise.toml, nextest, vitest, and cargo-llvm-cov. Auto-install is off,
+      # so the coverage tool has to be named here or `just test-cov` cannot see it.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: just rust cargo:cargo-nextest node npm:vitest npm:vite
+          install_args: just rust cargo:cargo-nextest cargo:cargo-llvm-cov node npm:vitest npm:vite
           cache_key_prefix: mise-v1-test
 
       - name: Install llvm-tools-preview
@@ -67,9 +67,6 @@ jobs:
       # Match Justfile recipes: fail the job on fmt or clippy issues before coverage/scan.
       - name: Format check
         run: just fmt-check
-
-      - name: Clippy
-        run: just lint
 
       - name: Clippy
         run: just lint
