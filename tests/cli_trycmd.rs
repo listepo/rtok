@@ -24,7 +24,13 @@ fn cli() {
     if cfg!(windows) {
         cases
             .skip("tests/trycmd/run.toml")
-            .skip("tests/trycmd/expand.trycmd");
+            .skip("tests/trycmd/expand.trycmd")
+            // snapbox redacts `EXE_SUFFIX` (`.exe`) to `[EXE]` on Windows, which rewrites
+            // `tool.execute.after` in `filter --stdin`'s help; the scripts are
+            // platform-independent and stay covered on Linux and macOS.
+            .skip("tests/trycmd/completions-fish.toml")
+            .skip("tests/trycmd/completions-powershell.toml")
+            .skip("tests/trycmd/completions-zsh.toml");
     }
 }
 

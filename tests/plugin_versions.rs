@@ -343,16 +343,19 @@ fn cfg_with_receipt(home: &Path) -> PathBuf {
     write_cfg(home)
 }
 
+/// `path` as the inside of a JSON string literal: a Windows path's `\` separators must be
+/// escaped, or the receipt/host JSON the binary reads is invalid and silently ignored.
+fn js(path: &Path) -> String {
+    let quoted = serde_json::to_string(&path.display().to_string()).unwrap();
+    quoted[1..quoted.len() - 1].to_string()
+}
+
 fn claude_plugin_installed(home: &Path, version: &str, install_path: Option<&Path>) {
     let dir = home.join(".claude/plugins");
     fs::create_dir_all(&dir).unwrap();
     let install = install_path
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| {
-            home.join(".claude/plugins/cache/rtok/rtok/0.0.1")
-                .display()
-                .to_string()
-        });
+        .map(js)
+        .unwrap_or_else(|| js(&home.join(".claude/plugins/cache/rtok/rtok/0.0.1")));
     fs::write(
         dir.join("installed_plugins.json"),
         format!(
@@ -429,7 +432,7 @@ fn outdated_all_current_summary_line() {
         &home,
         &format!(
             r#"{{"cursor":{{"source":"local","ref":"checkout","path":"{}","version":"{}","installed_at":"t"}}}}"#,
-            install.display(),
+            js(&install),
             target()
         ),
     );
@@ -468,8 +471,8 @@ fn outdated_lists_only_behind_rows() {
         &home,
         &format!(
             r#"{{"claude":{{"source":"github","ref":"v0.10.0","path":"{}","version":"0.0.1","installed_at":"t"}},"cursor":{{"source":"local","ref":"x","path":"{}","version":"{}","installed_at":"t"}}}}"#,
-            home.join(".claude/plugins/cache/rtok/rtok/0.0.1").display(),
-            cursor_install.display(),
+            js(&home.join(".claude/plugins/cache/rtok/rtok/0.0.1")),
+            js(&cursor_install),
             target()
         ),
     );
@@ -521,7 +524,7 @@ fn outdated_ignores_build_metadata_on_same_base() {
         &home,
         &format!(
             r#"{{"cursor":{{"source":"local","ref":"x","path":"{}","version":"{}","installed_at":"t"}}}}"#,
-            install.display(),
+            js(&install),
             local
         ),
     );
