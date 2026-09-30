@@ -212,6 +212,11 @@ mod tests {
         crate::cli::Cli::command()
     }
 
+    /// The path in a report line. Compared as a `Path`, so `/` and `\` match on Windows.
+    fn path(line: &str, verb: &str) -> PathBuf {
+        PathBuf::from(line.strip_prefix(verb).unwrap_or_else(|| panic!("{line}")))
+    }
+
     #[test]
     fn each_shell_lands_in_its_standard_place_and_reinstall_is_unchanged() {
         let mut p = places();
@@ -225,16 +230,12 @@ mod tests {
             (Shell::Clink, "AppData/Local/clink/rtok.lua"),
         ] {
             let first = install(shell, cmd(), &p).unwrap();
-            assert_eq!(
-                first[0],
-                format!("wrote {}", p.home.join(rel).display()),
-                "{shell:?}"
-            );
+            assert_eq!(path(&first[0], "wrote "), p.home.join(rel), "{shell:?}");
             let again = install(shell, cmd(), &p).unwrap();
             assert!(again[0].starts_with("unchanged "), "{shell:?}: {again:?}");
             assert_eq!(
-                uninstall(shell, &p).unwrap()[0],
-                format!("removed {}", p.home.join(rel).display())
+                path(&uninstall(shell, &p).unwrap()[0], "removed "),
+                p.home.join(rel)
             );
             assert!(!p.home.join(rel).exists());
         }
@@ -246,7 +247,7 @@ mod tests {
         p.xdg_data = Some(p.home.join("data"));
         let lines = install(Shell::Bash, cmd(), &p).unwrap();
         assert!(
-            lines[0].ends_with("data/bash-completion/completions/rtok"),
+            path(&lines[0], "wrote ").ends_with("data/bash-completion/completions/rtok"),
             "{lines:?}"
         );
     }
