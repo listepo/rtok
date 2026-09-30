@@ -1022,6 +1022,91 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Like [`Store::insert_note_if_absent`], but keeps portable JSONL metadata (T294):
+    /// explicit `id`, `ts`, and lifecycle columns when the export row carried them.
+    pub fn insert_portable_note_if_absent(
+        &self,
+        project: Option<&str>,
+        kind: &str,
+        title: &str,
+        body: &str,
+        id: Option<i32>,
+        ts: Option<i64>,
+        retired: Option<i64>,
+        superseded_by: Option<i32>,
+        pinned: Option<i32>,
+    ) -> Result<Option<i32>> {
+        let portable = id.is_some()
+            || ts.is_some()
+            || retired.is_some()
+            || superseded_by.is_some()
+            || pinned.is_some_and(|p| p != 0);
+        if !portable {
+            return self.insert_note_if_absent(project, kind, title, body);
+        }
+        let mut conn = self.lock()?;
+        let pinned = pinned.unwrap_or(0);
+        let inserted = match (id, ts) {
+            (Some(id), Some(ts)) => diesel::insert_or_ignore_into(notes::table)
+                .values((
+                    notes::id.eq(id),
+                    notes::ts.eq(ts),
+                    notes::project.eq(project),
+                    notes::kind.eq(kind),
+                    notes::title.eq(title),
+                    notes::body.eq(body),
+                    notes::retired.eq(retired),
+                    notes::superseded_by.eq(superseded_by),
+                    notes::pinned.eq(pinned),
+                ))
+                .returning(notes::id)
+                .get_result(&mut *conn)
+                .optional()?,
+            (Some(id), None) => diesel::insert_or_ignore_into(notes::table)
+                .values((
+                    notes::id.eq(id),
+                    notes::project.eq(project),
+                    notes::kind.eq(kind),
+                    notes::title.eq(title),
+                    notes::body.eq(body),
+                    notes::retired.eq(retired),
+                    notes::superseded_by.eq(superseded_by),
+                    notes::pinned.eq(pinned),
+                ))
+                .returning(notes::id)
+                .get_result(&mut *conn)
+                .optional()?,
+            (None, Some(ts)) => diesel::insert_or_ignore_into(notes::table)
+                .values((
+                    notes::ts.eq(ts),
+                    notes::project.eq(project),
+                    notes::kind.eq(kind),
+                    notes::title.eq(title),
+                    notes::body.eq(body),
+                    notes::retired.eq(retired),
+                    notes::superseded_by.eq(superseded_by),
+                    notes::pinned.eq(pinned),
+                ))
+                .returning(notes::id)
+                .get_result(&mut *conn)
+                .optional()?,
+            (None, None) => diesel::insert_or_ignore_into(notes::table)
+                .values((
+                    notes::project.eq(project),
+                    notes::kind.eq(kind),
+                    notes::title.eq(title),
+                    notes::body.eq(body),
+                    notes::retired.eq(retired),
+                    notes::superseded_by.eq(superseded_by),
+                    notes::pinned.eq(pinned),
+                ))
+                .returning(notes::id)
+                .get_result(&mut *conn)
+                .optional()?,
+        };
+        Ok(inserted)
+    }
+
     /// One row per `(project, kind, title)` — the title is the topic key (T66.1). An
     /// existing row gets the new body and a fresh `ts`; returns `(id, updated)`.
     ///
@@ -1070,12 +1155,13 @@ impl Store {
     }
 
     /// Every note but the session-local `checkpoint:*` / `session:*` rows, id order
-    /// (`memory export`, T66.2 / T71.2; `memory import`'s topic-key dedup, T6.3):
-    /// `(project, kind, title, body)`. `include_retired` decides whether tombstoned notes
-    /// are in the results: `memory import` passes `true` (T304) because the `notes_topic`
-    /// unique index still covers a retired row, so a local key must block an imported line
-    /// whether or not it is retired; `memory export` passes `false` so an export→import into
-    /// another store never resurrects a note the user retired here as a live note there.
+    /// (`memory import`'s topic-key dedup, T6.3): `(project, kind, title, body)`.
+    /// `include_retired` decides whether tombstoned notes are in the results. `memory import`
+    /// passes `true` (T304) because the `notes_topic` unique index still covers a retired row,
+    /// so a local key must block an imported line whether or not it is retired. `memory export`
+    /// does not use this query: it writes full rows, retired included, via
+    /// [`Store::list_export_notes`] so the tombstone round-trips (T294) instead of coming
+    /// back live.
     #[allow(clippy::type_complexity)]
     pub fn list_notes(
         &self,
@@ -1092,6 +1178,32 @@ impl Store {
         if !include_retired {
             q = q.filter(notes::retired.is_null());
         }
+        if let Some(p) = project {
+            q = q.filter(notes::project.eq(p));
+        }
+        q.load(&mut *conn).map_err(Into::into)
+    }
+
+    /// Full portable rows for `memory export` (T294): same filters as [`Store::list_notes`],
+    /// plus `id`, `ts`, and lifecycle columns.
+    pub fn list_export_notes(&self, project: Option<&str>) -> Result<Vec<ExportNote>> {
+        let mut conn = self.lock()?;
+        let mut q = notes::table
+            .filter(notes::kind.not_like("checkpoint:%"))
+            .filter(notes::kind.not_like("session:%"))
+            .order(notes::id.asc())
+            .select((
+                notes::id,
+                notes::ts,
+                notes::project,
+                notes::kind,
+                notes::title,
+                notes::body,
+                notes::retired,
+                notes::superseded_by,
+                notes::pinned,
+            ))
+            .into_boxed();
         if let Some(p) = project {
             q = q.filter(notes::project.eq(p));
         }
@@ -2175,6 +2287,20 @@ fn insert_measurement_conn(
         .do_nothing()
         .execute(conn)?;
     Ok(())
+}
+
+/// One portable `memory export` row (T294). Field order matches [`Store::list_export_notes`].
+#[derive(Debug, Clone, Queryable)]
+pub struct ExportNote {
+    pub id: i32,
+    pub ts: i64,
+    pub project: Option<String>,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub retired: Option<i64>,
+    pub superseded_by: Option<i32>,
+    pub pinned: i32,
 }
 
 /// One `notes` row's lifecycle-relevant fields (T69.1): revise needs `kind`/`project`,
