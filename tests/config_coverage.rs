@@ -45,6 +45,9 @@ const ALLOW: &[&str] = &[
 const ALLOW_KEYS: &[&str] = &[
     // `man --dir` (T316): where one call writes the pages, not a stored setting.
     "man.dir",
+    // `completions --install/--uninstall` (T318): one-shot actions, not settings.
+    "completions.install",
+    "completions.uninstall",
     "config.init.dry_run",
     "config.set.dry_run",
     "guard.check.host", // overlay `[hook] host` on the plugin CLI path (T70.5)

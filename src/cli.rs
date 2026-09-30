@@ -204,8 +204,15 @@ enum Cmd {
     },
     /// Print shell completions (bash, zsh, fish, powershell, elvish; clink for cmd.exe)
     Completions {
-        /// Shell to complete for
-        shell: crate::completions::Shell,
+        /// Shell to complete for (with `--install`/`--uninstall`: default `$SHELL`)
+        #[arg(required_unless_present_any = ["install", "uninstall"])]
+        shell: Option<crate::completions::Shell>,
+        /// Write the script to the shell's per-user completions directory
+        #[arg(long, conflicts_with = "uninstall")]
+        install: bool,
+        /// Remove what `--install` wrote
+        #[arg(long)]
+        uninstall: bool,
     },
     /// Print the man page (roff), or write every page with `--dir`
     Man {
@@ -1566,8 +1573,29 @@ pub fn run() -> Result<()> {
                 }
             }
         }
-        Cmd::Completions { shell } => {
-            crate::completions::generate(shell, Cli::command(), &mut io::stdout());
+        Cmd::Completions {
+            shell,
+            install,
+            uninstall,
+        } => {
+            use crate::completions::install::{self as inst, Places};
+            let lines = if install || uninstall {
+                let places = Places::from_env()?;
+                let shell = places.pick(shell)?;
+                if install {
+                    inst::install(shell, Cli::command(), &places)?
+                } else {
+                    inst::uninstall(shell, &places)?
+                }
+            } else if let Some(shell) = shell {
+                crate::completions::generate(shell, Cli::command(), &mut io::stdout());
+                Vec::new()
+            } else {
+                unreachable!("clap requires a shell without --install/--uninstall")
+            };
+            for line in lines {
+                println!("{line}");
+            }
         }
         Cmd::Man { dir } => match dir {
             Some(dir) => {

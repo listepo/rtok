@@ -45,7 +45,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.12 | todo | P2 | 3 | 0% | |
 | T314 | in progress | P2 | 3 | 60% | Grok Bot |
 | T315 | in progress | P2 | 3 | 60% | Grok Bot |
-| T318 | todo | P2 | 3 | 0% | |
 | T319 | todo | P2 | 3 | 0% | |
 
 
@@ -674,12 +673,6 @@ Plan:
 Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
 
 Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
-
-### T318. `rtok completions --install`
-
-Printing a script and leaving the user to find the right directory is where most installs stop. `rtok completions <shell> --install` writes the script to that shell's standard per-user location and prints the path: bash `$XDG_DATA_HOME/bash-completion/completions/rtok` (bash-completion v2 lazy-loads it), zsh `${ZDOTDIR:-$HOME}/.zfunc/_rtok` plus a printed `fpath` hint when the directory is not on `fpath`, fish `~/.config/fish/completions/rtok.fish`, PowerShell a script beside `$PROFILE` plus one dot-source line in `$PROFILE` (only our line is added or checked; the rest of the profile stays byte-for-byte), Clink `%LOCALAPPDATA%\clink\rtok.lua`. With no shell argument, `--install` picks the running shell (`$SHELL`, `PSModulePath`/`ComSpec` on Windows) and fails with the list of shells when it cannot tell. `--uninstall` removes exactly what `--install` wrote. Idempotent: a second install reports `unchanged`. Depends on T317 for the Clink path.
-
-Check: Vfs/tempdir tests per shell — install writes the file at the expected path, a second run is `unchanged`, uninstall removes it and the PowerShell profile line, and a profile with other content keeps it byte-for-byte; no real user home is touched; the trycmd fence covers `--install --help`; `just check`.
 
 ### T319. Ship man pages and completions in release archives
 

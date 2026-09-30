@@ -320,8 +320,8 @@ clink.argmatcher("rtok")
       :adddescriptions({ ["rewrite"] = "Rewrite old tool results to archive pointers; message array JSON on stdin, rewritten array on stdout (input bytes echoed when nothing is eligible)", ["help"] = "Print this message or the help of the given subcommand(s)", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
     "completions" .. clink.argmatcher()
       :addarg({ "bash", "zsh", "fish", "powershell", "elvish", "clink" })
-      :addflags({ "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
-      :adddescriptions({ ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+      :addflags({ "--install", "--uninstall", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
+      :adddescriptions({ ["--install"] = "Write the script to the shell's per-user completions directory", ["--uninstall"] = "Remove what `--install` wrote", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
     "man" .. clink.argmatcher()
       :addflags({ "--dir" .. clink.argmatcher():addarg(clink.filematches), "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
       :adddescriptions({ ["--dir"] = "Write `rtok.1` and a page for every subcommand into this directory", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),

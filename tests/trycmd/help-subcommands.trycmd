@@ -447,13 +447,16 @@ Options:
 $ rtok completions --help
 Print shell completions (bash, zsh, fish, powershell, elvish; clink for cmd.exe)
 
-Usage: rtok completions [OPTIONS] <SHELL>
+Usage: rtok completions [OPTIONS] [SHELL]
 
 Arguments:
-  <SHELL>  Shell to complete for [possible values: bash, zsh, fish, powershell, elvish, clink]
+  [SHELL]  Shell to complete for (with `--install`/`--uninstall`: default `$SHELL`) [possible
+           values: bash, zsh, fish, powershell, elvish, clink]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --install        Write the script to the shell's per-user completions directory
+      --uninstall      Remove what `--install` wrote
   -h, --help           Print help
 
 $ rtok man --help

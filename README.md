@@ -72,6 +72,7 @@ Shell completions and the man page are generated from the same clap tree as
 ```bash
 rtok completions bash > ~/.bash_completion.d/rtok   # or zsh, fish, powershell, elvish
 rtok completions clink > %LOCALAPPDATA%\clink\rtok.lua  # cmd.exe through Clink
+rtok completions --install                           # to $SHELL's own directory; --uninstall undoes it
 rtok man | man -l -                                  # or save as manpath/rtok.1
 rtok man --dir ~/.local/share/man/man1               # rtok.1 plus rtok-<command>.1 for every subcommand
 ```

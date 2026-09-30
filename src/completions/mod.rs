@@ -8,6 +8,8 @@ use clap::builder::PossibleValue;
 use clap::{Arg, Command, ValueEnum, ValueHint};
 use clap_complete::Generator;
 
+pub mod install;
+
 /// Shells `rtok completions` writes for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Shell {

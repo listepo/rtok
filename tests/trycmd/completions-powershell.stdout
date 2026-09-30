@@ -833,6 +833,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         }
         'rtok;completions' {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--install', '--install', [CompletionResultType]::ParameterName, 'Write the script to the shell''s per-user completions directory')
+            [CompletionResult]::new('--uninstall', '--uninstall', [CompletionResultType]::ParameterName, 'Remove what `--install` wrote')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break

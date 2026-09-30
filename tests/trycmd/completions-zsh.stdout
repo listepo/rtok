@@ -1119,9 +1119,11 @@ esac
 (completions)
 _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'(--uninstall)--install[Write the script to the shell'/''s per-user completions directory]' /
+'--uninstall[Remove what /`--install/` wrote]' /
 '-h[Print help]' /
 '--help[Print help]' /
-':shell -- Shell to complete for:(bash zsh fish powershell elvish clink)' /
+'::shell -- Shell to complete for (with `--install`/`--uninstall`/: default `$SHELL`):(bash zsh fish powershell elvish clink)' /
 && ret=0
 ;;
 (man)
