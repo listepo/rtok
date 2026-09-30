@@ -39,9 +39,10 @@ jobs:
         uses: ./.github/actions/rustup-toolchain-cache
       # Installs the Rust version pinned in mise.toml — same toolchain as local and as ci.yml — and
       # the rest `just check` runs (ci.yml's lint + check tool sets together).
+      # `uv` too: mise installs `pipx:pytest` through it and refuses when it is not installed.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: just rust cargo:cargo-nextest node npm:vitest npm:vite npm:jscpd npm:oxlint npm:oxfmt python pipx:pytest
+          install_args: just rust cargo:cargo-nextest node npm:vitest npm:vite npm:jscpd npm:oxlint npm:oxfmt python uv pipx:pytest
           cache_key_prefix: mise-v1-verify
       - if: steps.rustup.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
