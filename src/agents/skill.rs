@@ -27,6 +27,7 @@ pub fn root(host: &str, cfg: &Config) -> Option<PathBuf> {
             .parent()
             .map(|p| p.join("skills")),
         "copilot" => Some(cfg.setup.copilot.dir.join("skills")),
+        "commandcode" => Some(cfg.setup.commandcode.dir.join("skills")),
         // T234: pi reads user skills beside its extensions tree (`~/.pi/agent/skills`).
         "pi" => cfg
             .setup
@@ -65,6 +66,7 @@ fn label(host: &str) -> Option<&'static str> {
         "codex" => Some("~/.codex/skills"),
         "opencode" => Some("~/.config/opencode/skills"),
         "copilot" => Some("~/.copilot/skills"),
+        "commandcode" => Some("~/.commandcode/skills"),
         "pi" => Some("~/.pi/agent/skills"),
         "antigravity" => Some("~/.gemini/config/skills"),
         "antigravity-cli" => Some("~/.gemini/antigravity-cli/skills"),
@@ -182,7 +184,14 @@ mod tests {
         let cfg = Config::default();
         for id in HOSTS {
             match *id {
-                "claude" | "cursor" | "codex" | "opencode" | "copilot" | "pi" | "antigravity" => {
+                "claude"
+                | "cursor"
+                | "codex"
+                | "opencode"
+                | "copilot"
+                | "commandcode"
+                | "pi"
+                | "antigravity" => {
                     assert!(root(id, &cfg).is_some(), "{id} has a §10.1 skill root");
                     assert!(label(id).is_some(), "{id} root has a label");
                 }
@@ -196,6 +205,7 @@ mod tests {
             ("codex", ".codex/skills"),
             ("opencode", "opencode/skills"),
             ("copilot", ".copilot/skills"),
+            ("commandcode", ".commandcode/skills"),
             ("pi", ".pi/agent/skills"),
             ("antigravity", ".gemini/config/skills"),
             ("antigravity-cli", ".gemini/antigravity-cli/skills"),

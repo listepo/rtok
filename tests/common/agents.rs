@@ -48,6 +48,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         "Library/Application Support/Code/User",
         "Library/Application Support/Code - Insiders/User",
         ".copilot/hooks",
+        ".commandcode",
         ".codeium/windsurf",
         ".config/zed",
         "Documents/Cline/Hooks",
@@ -80,7 +81,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.grok]\nconfig_path = \"{h}/.grok/config.toml\"\n\
              [setup.vscode]\ncode_user_dir = \"{h}/Library/Application Support/Code/User\"\n\
              insiders_user_dir = \"{h}/Library/Application Support/Code - Insiders/User\"\n\
-             [setup.copilot]\ndir = \"{h}/.copilot\"\n\
+              [setup.copilot]\ndir = \"{h}/.copilot\"\n\
+              [setup.commandcode]\ndir = \"{h}/.commandcode\"\n\
              [setup.aider]\nconfig_path = \"{h}/.aider.conf.yml\"\n\
               [setup.windsurf]\nconfig_path = \"{h}/.codeium/windsurf/mcp_config.json\"\n\
               [setup.zed]\nconfig_path = \"{h}/.config/zed/settings.json\"\n\

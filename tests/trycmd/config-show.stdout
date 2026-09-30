@@ -163,6 +163,7 @@ setup.cline.hooks_path = ~/Documents/Cline/Hooks
 setup.cline.mcp_path = ~/.cline/data/settings/cline_mcp_settings.json
 setup.codewhale.dir = ~/.codewhale
 setup.codex.config_path = ~/.codex/config.toml
+setup.commandcode.dir = ~/.commandcode
 setup.copilot.dir = ~/.copilot
 setup.cursor.hooks_path = ~/.cursor/hooks.json
 setup.devin.config_path = ~/.config/devin/config.json

@@ -121,6 +121,7 @@ const SKILL_HOSTS: &[(&str, &str)] = &[
     ("opencode", "opencode.ai/docs/skills"),
     ("copilot", "copilot/concepts/agents/about-agent-skills"),
     ("pi", "pi.dev/docs/latest/skills"),
+    ("commandcode", "CommandCodeAI/agent-skills"),
 ];
 
 #[test]

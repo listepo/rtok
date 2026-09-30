@@ -14,6 +14,7 @@ pub mod claude;
 pub mod cline;
 pub mod codewhale;
 pub mod codex;
+pub mod commandcode;
 pub mod copilot;
 pub mod cursor;
 pub mod devin;
@@ -63,6 +64,7 @@ pub const HOSTS: &[&str] = &[
     "grok",
     "vscode",
     "copilot",
+    "commandcode",
     "aider",
     "windsurf",
     "zed",
@@ -92,6 +94,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "grok" => Some(&grok::Grok),
         "vscode" => Some(&vscode::Vscode),
         "copilot" => Some(&copilot::Copilot),
+        "commandcode" => Some(&commandcode::CommandCode),
         "windsurf" => Some(&windsurf::Windsurf),
         "aider" => Some(&aider::Aider),
         "zed" => Some(&zed::Zed),

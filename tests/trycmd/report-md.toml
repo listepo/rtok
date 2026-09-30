@@ -210,6 +210,7 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.cline.mcp_path | ~/.cline/data/settings/cline_mcp_settings.json | default |
 | setup.codewhale.dir | ~/.codewhale | default |
 | setup.codex.config_path | ~/.codex/config.toml | default |
+| setup.commandcode.dir | ~/.commandcode | default |
 | setup.copilot.dir | ~/.copilot | default |
 | setup.cursor.hooks_path | ~/.cursor/hooks.json | default |
 | setup.devin.config_path | ~/.config/devin/config.json | default |
@@ -266,7 +267,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-220 keys.
+221 keys.
 
 ## Doctor
 
@@ -377,6 +378,16 @@ agents
     mcp     not installed
     proxy   not supported: Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy
     plugin  not supported: the GitHub Copilot app does not document plugin installs; `copilot plugin` serves the CLI
+  commandcode (cli)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: Command Code has no documented base-URL override for the proxy
+    plugin  not installed
+  commandcode (desktop)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: Command Code has no documented base-URL override for the proxy
+    plugin  not installed
   aider (cli)
     hooks   not supported: aider has no hook events; it reads .aider.conf.yml and .env
     mcp     not supported: aider has no MCP support

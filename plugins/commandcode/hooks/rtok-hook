@@ -1,0 +1,18 @@
+#!/bin/sh
+# rtok hook launcher for Command Code (D21: fail open with the ketch hint).
+# The event comes from the link name (`PreToolUse`, `PostToolUse`, …), like the
+# Cline tree's script takes its event from its own file name. The desktop app may
+# start without a shell PATH, so the binary is resolved by hand and the fallback
+# uses only shell builtins (no `cat`: PATH may be empty here).
+event="${0##*/}"
+for bin in "$(command -v rtok 2>/dev/null)" "$HOME/.ketch/bin/rtok" \
+  /usr/local/bin/rtok /opt/homebrew/bin/rtok; do
+  if [ -n "$bin" ] && [ -x "$bin" ]; then
+    exec "$bin" hook "$event" --host commandcode
+  fi
+done
+if [ "$event" = "SessionStart" ]; then
+  printf '{}'
+fi
+printf '%s\n' "rtok is not installed; this hook passes the input through unchanged." "" "Install with ketch:" "  ketch install listepo/rtok" "" "If ketch is not installed:" "  curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash" "  ketch install listepo/rtok" >&2
+exit 0
