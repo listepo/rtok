@@ -99,3 +99,53 @@ fn a_built_bundle_lands_where_build_rs_embeds_it() {
         );
     }
 }
+
+/// T319: every archive carries share/ — dist `include`s it and the release job generates it
+/// with tools/share-files.sh before `dist build` (it is not committed).
+#[test]
+fn the_release_job_generates_the_share_dir_dist_includes() {
+    assert!(
+        read("Cargo.toml").contains(r#""share/"]"#),
+        "[package.metadata.dist] include no longer lists share/"
+    );
+    for rel in [".github/build-setup.yml", ".github/workflows/release.yml"] {
+        assert!(
+            read(rel).contains("tools/share-files.sh"),
+            "{rel} no longer generates share/ before dist build"
+        );
+    }
+    assert!(
+        read(".gitignore").contains("\n/share/\n"),
+        "share/ must stay out of git"
+    );
+}
+
+/// T319: the script writes every man page and one completion script per shell.
+#[cfg(unix)]
+#[test]
+fn share_files_writes_man_pages_and_every_completion_script() {
+    let out = std::env::temp_dir().join(format!("rtok-share-{}", std::process::id()));
+    let status = std::process::Command::new("bash")
+        .arg(repo("tools/share-files.sh"))
+        .arg(env!("CARGO_BIN_EXE_rtok"))
+        .arg(&out)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    for name in [
+        "rtok.bash",
+        "_rtok",
+        "rtok.fish",
+        "rtok.ps1",
+        "rtok.elv",
+        "rtok.lua",
+    ] {
+        let body = std::fs::read_to_string(out.join("completions").join(name)).unwrap();
+        assert!(body.contains("rtok"), "{name} is empty or unrelated");
+    }
+    let man = out.join("man/man1");
+    for page in ["rtok.1", "rtok-agents.1", "rtok-completions.1"] {
+        assert!(man.join(page).is_file(), "missing {page}");
+    }
+    let _ = std::fs::remove_dir_all(&out);
+}

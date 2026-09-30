@@ -45,7 +45,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.12 | todo | P2 | 3 | 0% | |
 | T314 | in progress | P2 | 3 | 60% | Grok Bot |
 | T315 | in progress | P2 | 3 | 60% | Grok Bot |
-| T319 | todo | P2 | 3 | 0% | |
 
 
 
@@ -673,12 +672,6 @@ Plan:
 Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
 
 Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
-
-### T319. Ship man pages and completions in release archives
-
-Committed, generated, and checked like `web/src/api/ws.schema.json` (T310.2): `share/man/man1/*.1` from T316 and `share/completions/{rtok.bash,_rtok,rtok.fish,rtok.ps1,rtok.lua}` from `rtok completions`; a test fails when they are stale and `RTOK_BLESS=1` rewrites them. `dist-workspace.toml` `include`s `share/` so every archive carries them; the Homebrew formula installs the man pages and bash/zsh/fish completions to Homebrew's directories; the shell installer and ketch copy them under their prefix when it has a `share/`. `README.md` and `docs/` say where each file lands.
-
-Check: the stale test fails after a flag is added and passes after blessing; `dist plan`/the release dry-run lists `share/` in each archive; the generated Homebrew formula contains the `man1.install` and completion lines; `just check`.
 
 ## Reference
 

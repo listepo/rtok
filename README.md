@@ -77,6 +77,9 @@ rtok man | man -l -                                  # or save as manpath/rtok.1
 rtok man --dir ~/.local/share/man/man1               # rtok.1 plus rtok-<command>.1 for every subcommand
 ```
 
+Release archives also carry them pre-built in `share/`: `share/man/man1/*.1` and
+`share/completions/` (`rtok.bash`, `_rtok`, `rtok.fish`, `rtok.ps1`, `rtok.elv`, `rtok.lua`).
+
 A shorter path (install → doctor → hooks) is also in
 [`docs/getting-started.md`](docs/getting-started.md).
 
