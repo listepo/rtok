@@ -1,0 +1,57 @@
+name: rustup toolchain cache
+description: >-
+  Restores the rustup toolchain pinned in mise.toml (~/.rustup/toolchains/<version>-<host>, only
+  that directory) before jdx/mise-action. With the toolchain and its components already there,
+  mise's rust backend finds the install satisfied and runs no `rustup toolchain install`, so
+  rustup does not sync the channel or download components. On a miss mise installs it as usual;
+  the job then saves it with actions/cache/save and this action's `key`/`path` outputs.
+
+inputs:
+  extra:
+    description: >-
+      Components or targets the job adds to the toolchain itself (comma-separated), e.g. the
+      wasm32 target of `just webui-check`. Part of the key, so the saved toolchain has them.
+    required: false
+    default: ""
+
+outputs:
+  cache-hit:
+    description: "'true' when the exact key was restored"
+    value: ${{ steps.restore.outputs.cache-hit }}
+  key:
+    description: Cache key (OS, arch, Rust version, components, extras)
+    value: ${{ steps.key.outputs.key }}
+  path:
+    description: The toolchain directory glob to save
+    value: ${{ steps.key.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        EXTRA: ${{ inputs.extra }}
+      run: |
+        # mise.toml: rust = { version = "1.97.1", components = "rustfmt,clippy" }
+        line=$(grep -E '^rust *= *' mise.toml || true)
+        version=$(sed -nE 's/.*version *= *"([^"]+)".*/\1/p' <<<"$line")
+        components=$(sed -nE 's/.*components *= *"([^"]+)".*/\1/p' <<<"$line")
+        if [ -z "$version" ]; then
+          echo "::error file=mise.toml::no rust version found in mise.toml"
+          exit 1
+        fi
+        key="rustup-toolchains-v1-${RUNNER_OS}-${RUNNER_ARCH}-${version}-${components//,/+}"
+        if [ -n "$EXTRA" ]; then key="${key}+${EXTRA//,/+}"; fi
+        # RUSTUP_HOME is ~/.rustup on every GitHub-hosted runner (/home/runner/.rustup,
+        # /Users/runner/.rustup, C:\Users\runneradmin\.rustup); actions/cache expands `~`.
+        {
+          echo "key=$key"
+          echo "path=~/.rustup/toolchains/${version}-*"
+        } >>"$GITHUB_OUTPUT"
+        echo "rustup toolchain cache key: $key"
+    - id: restore
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.key.outputs.path }}
+        key: ${{ steps.key.outputs.key }}

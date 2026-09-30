@@ -37,12 +37,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Rust toolchain from the last run; mise then skips `rustup toolchain install`.
+      - id: rustup
+        uses: ./.github/actions/rustup-toolchain-cache
+        with:
+          extra: llvm-tools-preview
+
       # Same pin and tool set as ci.yml's `check` (same cache key on ubuntu): Rust/just from
       # mise.toml, nextest, and vitest on node for the suite's TS plugin tests.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install_args: just rust cargo:cargo-nextest node npm:vitest npm:vite
           cache_key_prefix: mise-v1-test
+
+      - name: Install llvm-tools-preview
+        run: rustup component add llvm-tools-preview
+
+      - name: Save the rustup toolchain
+        if: steps.rustup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.rustup.outputs.path }}
+          key: ${{ steps.rustup.outputs.key }}
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -51,6 +67,9 @@ jobs:
       # Match Justfile recipes: fail the job on fmt or clippy issues before coverage/scan.
       - name: Format check
         run: just fmt-check
+
+      - name: Clippy
+        run: just lint
 
       - name: Clippy
         run: just lint
