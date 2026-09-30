@@ -37,3 +37,5 @@
 - T310.10. Playwright e2e against the real binary
 - T310.11. CI job for the SPA
 - T310.12. Delete Slint, the WASM build and the HTML design
+- T314. Fuzz testing with cargo-fuzz / libFuzzer
+- T315. Emoji and colour on by default for human-facing output
