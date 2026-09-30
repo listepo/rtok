@@ -172,7 +172,6 @@ fn hook_commands_exec_rtok_from_path_and_fall_back_to_hook_sh() {
 /// install — and still prefers a `~/.ketch/bin/rtok` that does exist over that note.
 #[test]
 fn hook_sh_fails_open_silently_except_one_session_start_note() {
-    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     use std::process::{Command, Stdio};
 
@@ -190,7 +189,7 @@ fn hook_sh_fails_open_silently_except_one_session_start_note() {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(b"{}").unwrap();
+        common::feed_stdin(&mut child, b"{}");
         let out = child.wait_with_output().unwrap();
         assert!(out.status.success(), "{event}: {out:?}");
         String::from_utf8(out.stdout).unwrap()

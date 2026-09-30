@@ -6,8 +6,9 @@ pub mod agents;
 #[cfg(unix)]
 pub mod fake_lsp;
 
+use std::io::{ErrorKind, Write};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command};
 use std::time::Duration;
 
 /// T111: run one TS host plugin test file under vitest (the mise tool; `vitest.config.mjs` at the
@@ -59,6 +60,15 @@ fn mise_npm_node_modules(pkg: &str) -> Option<std::path::PathBuf> {
         Some(root)
     } else {
         None
+    }
+}
+
+/// T251: write `bytes` to the child's piped stdin and close it. A fail-open hook may exit
+/// without reading stdin, so a write that loses that race gets `BrokenPipe`: tolerated, since
+/// the test judges the hook by its exit status and stdout. Any other write error panics.
+pub fn feed_stdin(child: &mut Child, bytes: &[u8]) {
+    if let Err(e) = child.stdin.take().unwrap().write_all(bytes) {
+        assert_eq!(e.kind(), ErrorKind::BrokenPipe, "{e}");
     }
 }
 

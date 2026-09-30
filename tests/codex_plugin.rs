@@ -1,5 +1,7 @@
 //! T121 + D21: the Codex plugin tree is one unit — a manifest, rtok's hooks and one MCP server.
 
+mod common;
+
 use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
@@ -86,7 +88,6 @@ fn hooks_are_the_installer_compaction_pair() {
 #[test]
 #[cfg(unix)]
 fn hook_commands_resolve_path_then_ketch_then_exit_open() {
-    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     use std::process::{Command, Stdio};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -121,9 +122,7 @@ fn hook_commands_resolve_path_then_ketch_then_exit_open() {
                 .stderr(Stdio::null())
                 .spawn()
                 .unwrap();
-            let mut stdin = child.stdin.take().unwrap();
-            stdin.write_all(b"{}").unwrap();
-            drop(stdin);
+            common::feed_stdin(&mut child, b"{}");
             let out = child.wait_with_output().unwrap();
             assert!(out.status.success(), "{event}: {command}");
             String::from_utf8(out.stdout).unwrap()

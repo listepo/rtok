@@ -5976,3 +5976,12 @@ Result: `plugins/gemini/` ships `gemini-extension.json` (`mcpServers.rtok`) and 
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T251. Plugin hook tests tolerate a fail-open hook closing stdin
+
+`tests/codex_plugin.rs` `hook_commands_resolve_path_then_ketch_then_exit_open` (T250.1) panicked on ubuntu CI with `BrokenPipe` on `stdin.write_all(b"{}").unwrap()`: with no `rtok` on PATH or in `~/.ketch/bin`, the hook command exits 0 at once without reading stdin, so the test's write can land after the pipe's reader is gone. A test race, not a product bug; `tests/claude_plugin.rs` `hook_sh_fails_open_silently_except_one_session_start_note` (T174) had the same race. Main auto-reverts merges whose `check` fails, so the flake could throw out unrelated merges.
+
+Result: `tests/common/mod.rs` `feed_stdin(child, bytes)` writes and closes stdin, tolerating only `BrokenPipe` (the tests judge the hook by exit status and stdout). Both racy sites use it; the T250.2–T250.4 card tells the Copilot, Cursor and Grok hook tests to do the same (open PR #308 still has the bare write). `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
