@@ -1,6 +1,6 @@
 {
   "name": "rtok",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "rtok hooks and MCP server for Devin CLI and Devin Desktop",
   "author": {
     "name": "listepo"
