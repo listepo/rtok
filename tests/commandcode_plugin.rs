@@ -2,6 +2,10 @@
 //! links from: one `rtok-hook` script (event from its own link name) plus `mcp.sh`.
 //! Every event the installer writes must be one `adapt_commandcode` knows, and the
 //! script must fail open with an empty PATH and no binary.
+//!
+//! POSIX scripts (`arg0`, executable bits). Windows CI does not run them.
+
+#![cfg(unix)]
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

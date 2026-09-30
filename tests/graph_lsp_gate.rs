@@ -1,7 +1,7 @@
 //! T30.2 / Gate P30: same MCP names; tags miss the type-position fixture; LSP hits it.
 //!
-//! Skips the rust-analyzer / dart path when the binary is absent from PATH (file probe
-//! only — never `… --version`, which can hang on a broken shim). Language-server state
+//! Skips the rust-analyzer / dart path when `lsp::on_path` is false (a real binary, not a
+//! mise shim or rustup proxy — never `… --version`, which can hang). Language-server state
 //! is confined under the temp crate by `lsp::Session::spawn` (`target/rtok-lsp-xdg` or
 //! `.dart_tool/rtok-lsp-xdg`); this file asserts that after each LSP run.
 
@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rtok::plugin::{Ctx, Plugin, Runtime};
+use rtok::plugins::graph::lsp::on_path;
 use rtok::plugins::graph::{Graph, callers, outline, symbol};
 
 const CHAIN: &str = "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nfn c() {}\n";
@@ -18,39 +19,6 @@ const FIXTURE: &str = "\
 pub struct OnlyTyped;
 pub fn user(_t: Vec<OnlyTyped>) {}
 ";
-
-/// True when `name` resolves to an existing file on PATH (no process spawn).
-fn bin_on_path(name: &str) -> bool {
-    let Some(paths) = std::env::var_os("PATH") else {
-        return false;
-    };
-    for dir in std::env::split_paths(&paths) {
-        let cand = dir.join(name);
-        if cand.is_file() {
-            return true;
-        }
-        #[cfg(windows)]
-        {
-            let exe = dir.join(format!("{name}.exe"));
-            if exe.is_file() {
-                return true;
-            }
-        }
-    }
-    // rust-analyzer is often only reachable through rustup's proxy layout.
-    if name == "rust-analyzer"
-        && let Ok(o) = std::process::Command::new("rustup")
-            .args(["which", "rust-analyzer"])
-            .output()
-        && o.status.success()
-    {
-        let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
-        if !p.is_empty() && Path::new(&p).is_file() {
-            return true;
-        }
-    }
-    false
-}
 
 fn open(tag: &str, backend: &str) -> (Runtime, PathBuf) {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -140,7 +108,7 @@ fn tags_backend_misses_onlytyped_type_position() {
 /// Gate P30: rust-analyzer `textDocument/references` hits `user`'s `Vec<OnlyTyped>`.
 #[test]
 fn lsp_backend_hits_onlytyped_type_position() {
-    if !bin_on_path("rust-analyzer") {
+    if !on_path("rust-analyzer") {
         eprintln!("skip: rust-analyzer not on PATH");
         return;
     }
@@ -176,7 +144,7 @@ fn lsp_backend_hits_onlytyped_type_position() {
 /// `dart language-server`. Skips when `dart` is not on PATH.
 #[test]
 fn lsp_backend_outlines_dart_main() {
-    if !bin_on_path("dart") {
+    if !on_path("dart") {
         eprintln!("skip: dart not on PATH");
         return;
     }
