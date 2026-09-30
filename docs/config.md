@@ -223,6 +223,8 @@ config_path   = "~/.zcode/cli/config.json"
 config_path   = "~/.kimi-code/config.toml"  # mcp.json is read beside it
 [setup.copilot]
 dir           = "~/.copilot"                # mcp-config.json, hooks/rtok.json
+[setup.commandcode]
+dir           = "~/.commandcode"            # settings.json (hooks key), mcp.json
 [setup.aider]
 config_path   = "~/.aider.conf.yml"         # openai-api-base → rtok proxy (--proxy)
 [setup.windsurf]

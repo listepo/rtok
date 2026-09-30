@@ -30,6 +30,7 @@ Check what is installed on this machine with `rtok agents list`; `rtok doctor` r
 | [`vscode`](https://github.com/listepo/rtok/blob/main/src/agents/vscode/README.md) | VS Code - Insiders | Desktop | — | yes | — | — | read, archive, memory, graph, toon |
 | [`copilot`](https://github.com/listepo/rtok/blob/main/src/agents/copilot/README.md) | Copilot CLI | CLI | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon |
 | [`copilot`](https://github.com/listepo/rtok/blob/main/src/agents/copilot/README.md) | GitHub Copilot | Desktop | — | yes | — | — | read, archive, memory, graph, toon |
+| [`commandcode`](https://github.com/listepo/rtok/blob/main/src/agents/commandcode/README.md) | Command Code CLI | CLI | yes | yes | — | yes | measure, cmd, read, archive, inject, guard, memory, graph, toon |
 | [`aider`](https://github.com/listepo/rtok/blob/main/src/agents/aider/README.md) | aider | CLI | — | — | `--proxy` | — | measure, archive, proxy, toon, compress |
 | [`windsurf`](https://github.com/listepo/rtok/blob/main/src/agents/windsurf/README.md) | Windsurf | Desktop | — | yes | — | — | read, archive, memory, graph, toon |
 | [`zed`](https://github.com/listepo/rtok/blob/main/src/agents/zed/README.md) | Zed CLI | CLI | — | yes | — | — | read, archive, memory, graph, toon |

@@ -152,6 +152,7 @@ setup.aider.config_path = ~/.aider.conf.yml
 setup.backup = true
 setup.claude.settings_path = ~/.claude/settings.json
 setup.codex.config_path = ~/.codex/config.toml
+setup.commandcode.dir = ~/.commandcode
 setup.copilot.dir = ~/.copilot
 setup.cursor.hooks_path = ~/.cursor/hooks.json
 setup.dry_run = false

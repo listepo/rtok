@@ -40,7 +40,7 @@ fn stdin_case(kind: &str) -> Vec<u8> {
 /// know × the bad-stdin kinds. Every cell: exit 0, exactly `{}`, no rewrite.
 #[rstest]
 fn every_host_and_event_fails_open_on_bad_stdin(
-    #[values("claude", "cursor", "copilot", "devin", "grok")] host: &str,
+    #[values("claude", "cursor", "copilot", "devin", "grok", "commandcode")] host: &str,
     #[values(
         "SessionStart",
         "UserPromptSubmit",

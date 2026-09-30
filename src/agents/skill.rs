@@ -27,6 +27,7 @@ pub fn root(host: &str, cfg: &Config) -> Option<PathBuf> {
             .parent()
             .map(|p| p.join("skills")),
         "copilot" => Some(cfg.setup.copilot.dir.join("skills")),
+        "commandcode" => Some(cfg.setup.commandcode.dir.join("skills")),
         _ => None,
     }
 }
@@ -43,6 +44,7 @@ fn label(host: &str) -> Option<&'static str> {
         "codex" => Some("~/.codex/skills"),
         "opencode" => Some("~/.config/opencode/skills"),
         "copilot" => Some("~/.copilot/skills"),
+        "commandcode" => Some("~/.commandcode/skills"),
         _ => None,
     }
 }
@@ -157,7 +159,7 @@ mod tests {
         let cfg = Config::default();
         for id in HOSTS {
             match *id {
-                "claude" | "cursor" | "codex" | "opencode" | "copilot" => {
+                "claude" | "cursor" | "codex" | "opencode" | "copilot" | "commandcode" => {
                     assert!(root(id, &cfg).is_some(), "{id} has a §10.1 skill root");
                     assert!(label(id).is_some(), "{id} root has a label");
                 }
@@ -171,6 +173,7 @@ mod tests {
             ("codex", ".codex/skills"),
             ("opencode", "opencode/skills"),
             ("copilot", ".copilot/skills"),
+            ("commandcode", ".commandcode/skills"),
         ] {
             assert!(root(host, &cfg).unwrap().ends_with(tail), "{host} root");
             for name in SKILLS {

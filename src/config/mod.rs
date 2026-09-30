@@ -363,6 +363,7 @@ section! {
         grok: SetupGrok = SetupGrok::default(),
         vscode: SetupVscode = SetupVscode::default(),
         copilot: SetupCopilot = SetupCopilot::default(),
+        commandcode: SetupCommandCode = SetupCommandCode::default(),
         aider: SetupAider = SetupAider::default(),
         windsurf: SetupWindsurf = SetupWindsurf::default(),
         zed: SetupZed = SetupZed::default(),
@@ -432,6 +433,11 @@ section! {
 section! {
     /// `[setup.copilot]` — `mcp-config.json` and `hooks/rtok.json` live under `dir`.
     SetupCopilot { dir: PathBuf = p("~/.copilot") }
+}
+
+section! {
+    /// `[setup.commandcode]` — hooks merge into `settings.json`, MCP into `mcp.json`.
+    SetupCommandCode { dir: PathBuf = p("~/.commandcode") }
 }
 
 section! {
@@ -945,6 +951,7 @@ impl Config {
             &mut self.setup.kimi.config_path,
             &mut self.setup.grok.config_path,
             &mut self.setup.copilot.dir,
+            &mut self.setup.commandcode.dir,
             &mut self.setup.vscode.code_user_dir,
             &mut self.setup.vscode.insiders_user_dir,
             &mut self.setup.aider.config_path,

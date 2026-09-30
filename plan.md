@@ -71,6 +71,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T184 | todo | P1 | 2 | 0% | |
 | T185 | todo | P1 | 3 | 0% | |
 | T186 | todo | P1 | 3 | 0% | |
+| T187 | in progress | P1 | 3 | 80% | Command Code / muse-spark |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -733,4 +734,38 @@ Plan:
 4. Do not claim Termux/mobile as a separate variant unless install detection is distinct and stable.
 
 Check: `rtok agents list` shows `mimo`; install adds rtok under `mcp` in mimocode.json; `just check`.
+
+### T187. `rtok agents install commandcode` — Command Code CLI + Desktop, hooks + MCP
+
+Creator request 2026-09-23. Command Code (`command-code`, alias `cmd`) keeps user state in
+`~/.commandcode`: hooks merge into the `hooks` key of `settings.json`, MCP goes to the user
+scope `mcp.json` (`mcpServers.<name>`). Its hook protocol is Claude-shaped on the way out
+(`hookSpecificOutput` with `permissionDecision` / `permissionDecisionReason` /
+`additionalContext`, exit 2 blocks PreToolUse) but carries its own tool names in:
+`shell_command` (`command`), `read_file` (`absolute_path`), `write_file` / `edit_file`
+(`file_path`); the project root arrives as `COMMANDCODE_PROJECT_DIR`. Matchers test
+`tool_display_name` (`SHELL`, `READ`, `WRITE`, `EDIT`); lifecycle events (`SessionStart`,
+`Stop`) carry no tool, so they omit `matcher`. Evidence: https://commandcode.ai/docs/hooks,
+https://commandcode.ai/docs/mcp (fetched 2026-09-23); `settings.json`/`mcp.json` shapes
+verified live on this machine (v1.64.0).
+
+Plan:
+1. `src/hooks/types.rs` — `adapt_commandcode(event, project_dir)`: tool names →
+   `Bash`/`Read`/`Write`/`Edit` via `canonical_tool_name` (+ `edit_file` arm), `cwd` from
+   `COMMANDCODE_PROJECT_DIR` when stdin has none; output passes through unchanged.
+2. `src/agents/commandcode/` — `Agent` impl: hooks merge per event/matcher in
+   `settings.json`, `mcpServers.rtok` in user `mcp.json`, plugin offer
+   (`plugins/commandcode` → `~/.commandcode/plugins/rtok`, D21 singleton), skill sync
+   into `~/.commandcode/skills`. `[setup.commandcode] dir` in config + docs.
+3. `plugins/commandcode/` — install tree (no documented local-bundle format):
+   `hooks/rtok-hook` (event from link name, ketch fallback, fail open) + `scripts/mcp.sh`.
+4. Tests: adapter verbatim payloads, host install/remove/idempotence/foreign-survival,
+   plugin fail-open without rtok, `agents_install` + `hook_fail_open` matrix rows;
+   `docs/agents.md`, trycmd snapshots re-blessed.
+Open: live install check on a real Command Code session (`rtok agents install
+commandcode --yes`, one shell call through `rtok run`) — needs the creator (this host is
+the session's own harness).
+
+Check: `rtok agents list` shows `commandcode`; `agents_doc`, `host_docs`,
+`config_coverage` green; `just check`.
 

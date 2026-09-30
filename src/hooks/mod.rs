@@ -103,6 +103,8 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
         input.adapt_gemini(event);
     } else if cfg.hook.host == "devin" {
         input.adapt_devin(event, std::env::var("DEVIN_PROJECT_DIR").ok());
+    } else if cfg.hook.host == "commandcode" {
+        input.adapt_commandcode(event, std::env::var("COMMANDCODE_PROJECT_DIR").ok());
     } else if input.hook_event_name.is_empty() {
         input.hook_event_name = event.to_string();
     }
