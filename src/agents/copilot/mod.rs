@@ -162,7 +162,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
 }
 
 /// Copilot's flat `additionalContext` fallback note, shown once on `sessionStart` when `rtok` resolves nowhere.
-const MISSING_RTOK_NOTE: &str = r#"{"additionalContext":"rtok is not installed; run ketch install listepo/rtok to enable it."}"#;
+const MISSING_RTOK_NOTE: &str = r#"{"additionalContext":"rtok is not installed; run ketch install pyrlyn/rtok to enable it."}"#;
 
 /// `{version: 1, hooks: {<event>: [{type: "command", bash, powershell, timeoutSec}]}}`.
 /// The plugin tree's `hooks/hooks.json` is this document with `bin = "rtok"`, pinned by
@@ -384,7 +384,7 @@ mod tests {
         let s = plugin(&c, false).unwrap();
         assert!(s.contains("plugins/copilot"), "{s}");
         assert!(s.contains("copilot plugin install"), "{s}");
-        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(s.contains("ketch install pyrlyn/rtok"), "{s}");
         assert!(!plugin_installed(&c));
         let marker = fake_plugin(&c);
         assert!(plugin_installed(&c));

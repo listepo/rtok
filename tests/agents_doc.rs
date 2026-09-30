@@ -53,7 +53,7 @@ fn table() -> String {
                 reached.join(", ")
             };
             out.push_str(&format!(
-                "| [`{id}`](https://github.com/listepo/rtok/blob/main/src/agents/{id}/README.md) | {} | {} | {} | {reached} |\n",
+                "| [`{id}`](https://github.com/pyrlyn/rtok/blob/main/src/agents/{id}/README.md) | {} | {} | {} | {reached} |\n",
                 v.name,
                 v.kind.label(),
                 modules.join(" | "),

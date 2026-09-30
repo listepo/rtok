@@ -18,7 +18,7 @@ Files:
 
 Each hook line finds `rtok` on `PATH`, then at `~/.ketch/bin/rtok` (a Cursor started from
 the Dock has no shell `PATH`), and otherwise exits 0 without output; only `sessionStart`
-then prints one `additional_context` note: `ketch install listepo/rtok`. The line is a
+then prints one `additional_context` note: `ketch install pyrlyn/rtok`. The line is a
 `{ …; }` group because Cursor appends the payload as a heredoc to the command. On Windows
 the plugin is a copy and its hooks keep the bare `rtok hook … --host cursor` line
 (PowerShell runs them).

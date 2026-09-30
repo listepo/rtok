@@ -11,6 +11,6 @@ done
 # blob on every tool call was 380 "command not found"-shaped hook errors/week in the field
 # — and name the install command exactly once, on SessionStart, in Claude's own hook shape.
 if [ "$1" = "SessionStart" ]; then
-  printf '%s' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok is not installed; run ketch install listepo/rtok to enable it."}}'
+  printf '%s' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok is not installed; run ketch install pyrlyn/rtok to enable it."}}'
 fi
 exit 0

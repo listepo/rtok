@@ -4,7 +4,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# One Pages deploy at a time; never cancel one half-done (same as listepo/ketch).
+# One Pages deploy at a time; never cancel one half-done (same as pyrlyn/ketch).
 # PR / push builds share the group so they queue instead of racing the deploy.
 concurrency:
   group: pages

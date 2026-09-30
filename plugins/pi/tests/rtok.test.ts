@@ -94,7 +94,7 @@ test("a spawn failure on read returns the original", async () => {
     }),
   ).toBeUndefined();
   expect(messages, "the hint reaches the model via sendMessage").toHaveLength(1);
-  expect(String(messages[0]?.content ?? "")).toMatch(/ketch install listepo\/rtok/);
+  expect(String(messages[0]?.content ?? "")).toMatch(/ketch install pyrlyn\/rtok/);
   expect(entries, "TUI-only appendEntry stays unused when sendMessage exists").toHaveLength(0);
 });
 
@@ -104,7 +104,7 @@ test("missing rtok fails open and names ketch", async () => {
   await on.tool_call(event);
   expect(event.input.command, "the command runs unchanged").toBe("ls");
   expect(messages, "the hint reaches the model via sendMessage").toHaveLength(1);
-  expect(String(messages[0]?.content ?? "")).toMatch(/ketch install listepo\/rtok/);
+  expect(String(messages[0]?.content ?? "")).toMatch(/ketch install pyrlyn\/rtok/);
   expect(entries, "TUI-only appendEntry stays unused when sendMessage exists").toHaveLength(0);
   await on.tool_call({ toolName: "bash", input: { command: "pwd" } });
   expect(messages, "once per session").toHaveLength(1);
@@ -118,7 +118,7 @@ test("without sendMessage the hint falls back to appendEntry once", async () => 
   await on.tool_call({ toolName: "bash", input: { command: "pwd" } });
   expect(messages).toHaveLength(0);
   expect(entries).toHaveLength(1);
-  expect(entries[0][1]).toMatch(/ketch install listepo\/rtok/);
+  expect(entries[0][1]).toMatch(/ketch install pyrlyn\/rtok/);
 });
 
 test("a shorter filter result replaces the bash output", async () => {
@@ -442,5 +442,5 @@ test("registered tool execute fails open when rtok is missing", async () => {
   expect(tools).toHaveLength(8);
   fakeRtok(null);
   const out = await tools[0].execute("id1", { path: "a.rs" });
-  expect(out.content[0].text).toMatch(/ketch install listepo\/rtok/);
+  expect(out.content[0].text).toMatch(/ketch install pyrlyn\/rtok/);
 });

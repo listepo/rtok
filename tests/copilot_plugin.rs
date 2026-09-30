@@ -119,7 +119,7 @@ fn assert_hooks_fail_open(doc: &Value, field: &str, run: &dyn Fn(&str) -> (bool,
         assert!(ok, "{event}: not fail-open");
         if event == "sessionStart" {
             assert!(stdout.contains("additionalContext"), "{stdout}");
-            assert!(stdout.contains("ketch install listepo/rtok"), "{stdout}");
+            assert!(stdout.contains("ketch install pyrlyn/rtok"), "{stdout}");
         } else {
             assert_eq!(stdout.trim(), "", "{event}");
         }

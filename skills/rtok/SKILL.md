@@ -32,5 +32,5 @@ of your own: one call path per host (D21).
 
 ## missing rtok
 
-Fail open and install with ketch: `ketch install listepo/rtok`. No ketch yet: run
-`curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash` first.
+Fail open and install with ketch: `ketch install pyrlyn/rtok`. No ketch yet: run
+`curl -fsSL https://raw.githubusercontent.com/pyrlyn/ketch/main/install.sh | bash` first.

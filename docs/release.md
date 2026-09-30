@@ -90,17 +90,17 @@ by [`tools/dist-generate.sh`](../tools/dist-generate.sh) — **never hand-edit i
 ### Homebrew
 
 dist builds `rtok.rb` as a Release asset (`installers` includes `homebrew`, `tap =
-"listepo/homebrew-tap"`). It does **not** push to the tap: `publish-jobs` must stay without
+"pyrlyn/homebrew-tap"`). It does **not** push to the tap: `publish-jobs` must stay without
 `"homebrew"`, so there is no `HOMEBREW_TAP_TOKEN` on this repository and no
 `publish-homebrew-formula` job in `release.yml`.
 
-[`listepo/homebrew-tap`](https://github.com/listepo/homebrew-tap) pulls that asset itself.
+[`pyrlyn/homebrew-tap`](https://github.com/pyrlyn/homebrew-tap) pulls that asset itself.
 `.github/workflows/sync-rtok.yml` there (schedule + `workflow_dispatch`) downloads the latest
 `rtok.rb` from this repo's Releases and opens a pull request with the tap's own `GITHUB_TOKEN`.
 Merge the PR to publish:
 
 ```bash
-brew install listepo/tap/rtok
+brew install pyrlyn/tap/rtok
 ```
 
 ketch's cask lives under `Casks/` in the same tap and is unrelated; Formula and Casks do not
@@ -206,7 +206,7 @@ names every release asset after the package, so a rename (tried locally, with `[
 "rtok"` so the code still builds, then `dist plan`) turns `rtok-<target>.tar.xz`,
 `rtok-installer.sh`, `rtok.rb` and `rtok-<target>-update` into `rtok-cli-…`, and the app in
 `dist-manifest.json` into `rtok-cli`. That breaks the installer URL in the README, the
-`rtok.rb` that `listepo/homebrew-tap`'s `sync-rtok.yml` downloads, the `rtok-update` that
+`rtok.rb` that `pyrlyn/homebrew-tap`'s `sync-rtok.yml` downloads, the `rtok-update` that
 `rtok update` runs (`src/demon.rs`) and that existing installs use to find new releases, and
 release-plz's package entry. If the crate is ever published as `rtok-cli`, that needs a
 decision on those names first.
@@ -230,7 +230,7 @@ AirDrop, Messages. `curl` does not, and neither does ketch.
 | How someone gets rtok | Quarantined? | Unsigned binary works? |
 |---|---|---|
 | `curl … rtok-installer.sh \| sh` | no | yes |
-| `ketch install listepo/rtok` | no | yes |
+| `ketch install pyrlyn/rtok` | no | yes |
 | Downloads the `.tar.xz` from the Releases page in a browser | yes | **no** — "cannot be opened because the developer cannot be verified" |
 | CI on a macOS runner (`curl`/`ketch`) | no | yes |
 
@@ -356,7 +356,7 @@ just dist-generate
 ```
 
 That runs `dist generate` and then [`tools/dist-generate.sh`](../tools/dist-generate.sh) patches
-the generated job so it reads this repository's secrets (same names as `listepo/ketch`), not the
+the generated job so it reads this repository's secrets (same names as `pyrlyn/ketch`), not the
 `CODESIGN_*` names dist hard-codes:
 
 | Repository secret | Mapped to (for dist) | What goes in it |
@@ -432,7 +432,7 @@ non-hardened-runtime binary is rejected.
 ## Verifying a published release
 
 ```bash
-curl -LsSf https://github.com/listepo/rtok/releases/latest/download/rtok-aarch64-apple-darwin.tar.xz | tar -xJ
+curl -LsSf https://github.com/pyrlyn/rtok/releases/latest/download/rtok-aarch64-apple-darwin.tar.xz | tar -xJ
 ```
 
 ```bash
@@ -455,13 +455,13 @@ changes.
 Install paths:
 
 - shell installer / `rtok-update` from the GitHub Release (dist)
-- `ketch install listepo/rtok` — in-repo [`ketch.toml`](../ketch.toml) prefers the
+- `ketch install pyrlyn/rtok` — in-repo [`ketch.toml`](../ketch.toml) prefers the
   `*-apple-darwin.tar.xz` / `*-linux-gnu.tar.xz` archives over `*-update` and `source.tar.gz`
 - `npm i -g rtok-cli` and `uv tool install rtok-cli` — published by hand, see
   [npm, PyPI and crates.io](#npm-pypi-and-cratesio)
-- `brew install listepo/tap/rtok` — after `listepo/homebrew-tap`'s `sync-rtok.yml` PR merges
+- `brew install pyrlyn/tap/rtok` — after `pyrlyn/homebrew-tap`'s `sync-rtok.yml` PR merges
   the `rtok.rb` Release asset (no `HOMEBREW_TAP_TOKEN` on this repo)
-- docs site: https://listepo.github.io/rtok/ (`.github/workflows/docs.yml`, Pages
+- docs site: https://pyrlyn.github.io/rtok/ (`.github/workflows/docs.yml`, Pages
   `build_type: workflow`; deploy concurrency `group: pages`, `cancel-in-progress: false`)
 
 Regenerate the Release workflow after dist config changes:

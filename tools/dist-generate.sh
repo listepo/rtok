@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regenerate .github/workflows/release.yml from dist-workspace.toml, then map
 # dist's CODESIGN_* secret names to the MACOS_* secrets this repository uses
-# (same names as listepo/ketch). CODESIGN_IDENTITY is not a secret: the
+# (same names as pyrlyn/ketch). CODESIGN_IDENTITY is not a secret: the
 # github-build-setup step discovers it on macOS runners.
 #
 # Invoked by `just dist-generate`. Do not hand-edit release.yml; change

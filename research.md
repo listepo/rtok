@@ -1519,7 +1519,7 @@ Scratch repositories only. `git config worktree.useRelativePaths true` followed 
 | --- | --- | --- | --- |
 | git CLI | 2.54.0 | yes | `git status`, `git worktree list` |
 | cargo (VCS dirty check) | 1.97.1 | yes | `cargo package --list` inside the worktree reports the one uncommitted file |
-| gh | 2.101.0 | yes | `gh repo view --json name` inside the worktree resolves `listepo/rtok` |
+| gh | 2.101.0 | yes | `gh repo view --json name` inside the worktree resolves `pyrlyn/rtok` |
 | lazygit, delta, editors (VS Code, Zed, Cursor) | — | not tested | interactive; lazygit shells out to the git CLI, delta never opens a repository |
 
 Move test: the parent directory holding `repo/` and `wt/` was moved with `mv a b`. With relative links, `git -C b/wt status` and `git -C b/repo worktree list` work unchanged, and `git worktree repair` is not needed. The absolute-link control breaks on the same move: `fatal: not a git repository: (null)`, and the worktree is listed as `prunable`. Renaming only one side (the repository or the worktree) breaks the relative link too, as expected.

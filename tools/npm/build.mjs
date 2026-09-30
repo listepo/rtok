@@ -28,7 +28,7 @@ import {
     tarballName,
 } from "./common.mjs";
 
-const REPO = "listepo/rtok";
+const REPO = "pyrlyn/rtok";
 const DATA_DIRS = ["plugins", "skills"];
 const HOOK_BIN = "rtok-hook";
 

@@ -25,7 +25,7 @@ whose `updatedInput` fails the tool's schema, so the `read_file` → `Read` mapp
 after a live payload confirms the shape (plan T100).
 
 The plugin is macOS/Linux only: each hook resolves `rtok` from `PATH`, then
-`~/.ketch/bin/rtok`, else exits 0 silently (fail open; `ketch install listepo/rtok` fixes a
+`~/.ketch/bin/rtok`, else exits 0 silently (fail open; `ketch install pyrlyn/rtok` fixes a
 missing binary). Grok runs the same command through PowerShell on Windows, where that shell
 one-liner does not work — Windows users should run `rtok agents install claude` instead (Grok
 imports Claude's hooks, see above).

@@ -34,7 +34,7 @@ See [`src/agents/claude/README.md`](../src/agents/claude/README.md) and [`docs/a
    - MCP-only (hooks cannot rewrite) → `antigravity/`
 2. **Keep D21**: one unit that owns hooks and MCP together when the host supports both; one `rtok mcp` process per store.
 3. **Prefer `rtok hook` / `rtok mcp` / `rtok guard check` / `rtok filter`** over reimplementing logic in the package.
-4. **Fail open** when `rtok` is missing (unless the host only blocks on a specific exit code); print `ketch install listepo/rtok`.
+4. **Fail open** when `rtok` is missing (unless the host only blocks on a specific exit code); print `ketch install pyrlyn/rtok`.
 5. **Wire install** in `src/agents/<host>/` and document surfaces in that agent’s README table.
 6. **Add tests** the way peers do (`*_plugin.rs`, manifest parity tests, or Node tests under the package).
 7. **Ship docs** — every package **must** have `README.md` (humans) and `AGENTS.md` (agents). See [`AGENTS.md`](AGENTS.md).

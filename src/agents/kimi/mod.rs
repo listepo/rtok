@@ -551,7 +551,7 @@ mod tests {
         let line = offer_plugin(&c, false).unwrap();
         assert!(line.contains("plugins/kimi"), "{line}");
         assert!(line.contains("/plugins install"), "{line}");
-        assert!(line.contains("ketch install listepo/rtok"), "{line}");
+        assert!(line.contains("ketch install pyrlyn/rtok"), "{line}");
         assert!(!dir.join("plugins").exists(), "dry-run writes nothing");
         c.setup.dry_run = false;
         let line = offer_plugin(&c, false).unwrap();

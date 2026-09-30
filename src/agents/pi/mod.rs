@@ -84,7 +84,7 @@ const PLUGIN_DIR_NAME: &str = "rtok";
 
 /// Offer / link / unlink `plugins/pi` (D21, T10.6).
 /// Dry-run and the unaccepted offer MUST contain the substrings `plugins/pi`
-/// and `ketch install listepo/rtok`.
+/// and `ketch install pyrlyn/rtok`.
 pub static PLUGIN: HostPlugin = HostPlugin {
     src_rel: "plugins/pi",
     host: "pi",
@@ -127,7 +127,7 @@ mod tests {
         let c = cfg(dir.join("extensions"), true);
         let s = PLUGIN.offer(&c, false).unwrap();
         assert!(s.contains("plugins/pi"), "{s}");
-        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(s.contains("ketch install pyrlyn/rtok"), "{s}");
         assert!(!plugin_dest(&c).exists());
         let _ = fs::remove_dir_all(dir);
     }

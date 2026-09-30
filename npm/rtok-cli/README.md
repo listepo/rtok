@@ -13,4 +13,4 @@ The binary comes from a platform package (`rtok-cli-darwin-arm64`, `rtok-cli-lin
 macOS and Linux the install step puts the native binary itself on `PATH`; on Windows, or with
 `--ignore-scripts`, a small Node launcher runs it. Do not install with `--omit=optional`.
 
-Docs, other install paths and the license terms: https://github.com/listepo/rtok
+Docs, other install paths and the license terms: https://github.com/pyrlyn/rtok

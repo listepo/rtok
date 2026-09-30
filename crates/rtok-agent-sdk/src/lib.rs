@@ -42,7 +42,7 @@ pub const NO_CHANGES: &str = "no changes";
 
 /// How to install rtok when rtok itself is missing (D21 (5)). Named in every plugin offer,
 /// because the offer is the one place a host's user reads before rtok exists for them.
-pub const KETCH_INSTALL: &str = "ketch install listepo/rtok";
+pub const KETCH_INSTALL: &str = "ketch install pyrlyn/rtok";
 
 /// Marker file written into a Windows (non-unix) plugin *copy* so remove can
 /// `remove_dir_all` only trees rtok created — never a foreign directory.

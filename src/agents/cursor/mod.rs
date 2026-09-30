@@ -194,7 +194,7 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
 }
 
 /// The linked Cursor plugin (D21, T10.5). Dry-run and the unaccepted offer MUST contain the
-/// substrings `plugins/cursor` and `~/.cursor/plugins/local` and `ketch install listepo/rtok`.
+/// substrings `plugins/cursor` and `~/.cursor/plugins/local` and `ketch install pyrlyn/rtok`.
 pub static PLUGIN: HostPlugin = HostPlugin {
     src_rel: "plugins/cursor",
     host: "Cursor",
@@ -353,7 +353,7 @@ mod tests {
         let s = offer_plugin(&c, false).unwrap();
         assert!(s.contains("plugins/cursor"), "{s}");
         assert!(s.contains("~/.cursor/plugins/local"), "{s}");
-        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(s.contains("ketch install pyrlyn/rtok"), "{s}");
         assert!(!plugin_dest(&c).exists());
         let _ = fs::remove_dir_all(dir);
     }
@@ -622,7 +622,7 @@ mod tests {
 
     /// Cursor's flat sessionStart output, printed only when no rtok is found (T250.3).
     #[cfg(unix)]
-    const MISSING_RTOK_NOTE: &str = r#"{"additional_context":"rtok is not installed; run ketch install listepo/rtok to enable it."}"#;
+    const MISSING_RTOK_NOTE: &str = r#"{"additional_context":"rtok is not installed; run ketch install pyrlyn/rtok to enable it."}"#;
 
     fn plugin_hooks() -> Vec<u8> {
         include_bytes!("../../../plugins/cursor/hooks/hooks.json").to_vec()

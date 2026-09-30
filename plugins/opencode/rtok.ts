@@ -22,7 +22,7 @@ export type GuardFn = (
 
 const KETCH_HINT =
   "rtok is not installed; tool output is passed through unfiltered.\n" +
-  "Install with ketch:  ketch install listepo/rtok";
+  "Install with ketch:  ketch install pyrlyn/rtok";
 let hinted = false;
 
 type Spawn = { missing: boolean; failed: boolean; stdout: string };

@@ -1,13 +1,13 @@
 # rtok as a ketch package.
 #
-# Inference from github:listepo/rtok already works; this file is what
+# Inference from github:pyrlyn/rtok already works; this file is what
 # `ketch push` sends to the registry and what docs / `ketch info` show.
-# Schema: listepo/ketch docs/MANIFESTS.md.
+# Schema: pyrlyn/ketch docs/MANIFESTS.md.
 
 name = "rtok"
-source = "github:listepo/rtok"
+source = "github:pyrlyn/rtok"
 description = "Reduce the context AI coding agents must carry"
-homepage = "https://github.com/listepo/rtok"
+homepage = "https://github.com/pyrlyn/rtok"
 
 # Only the CLI. The release archives also ship `plugins/` for
 # `rtok agents install`; without an explicit `bin`, Windows auto-discovery

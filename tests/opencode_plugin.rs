@@ -24,7 +24,7 @@ fn d21_plugin_is_one_bash_filter_without_tools() {
     assert!(ts.contains("\"tool.execute.after\""), "filters tool output");
     assert!(ts.contains("\"bash\""), "scoped to bash");
     assert!(ts.contains("\"filter\""), "through `rtok filter`");
-    assert!(ts.contains("ketch install listepo/rtok"), "ketch hint");
+    assert!(ts.contains("ketch install pyrlyn/rtok"), "ketch hint");
     assert!(ts.contains("tool.execute.before"), "T70.5 guard check");
     assert!(ts.contains("guard"), "through rtok guard check");
     for dup in [
@@ -59,7 +59,7 @@ fn dry_run_offers_the_plugin_and_writes_nothing() {
         slash(&out).contains(&slash(dest.display().to_string())),
         "{out}"
     );
-    assert!(out.contains("ketch install listepo/rtok"), "{out}");
+    assert!(out.contains("ketch install pyrlyn/rtok"), "{out}");
     assert!(dest.symlink_metadata().is_err(), "dry-run must not link");
     assert!(!home.join(".config/opencode/opencode.json").exists());
 }

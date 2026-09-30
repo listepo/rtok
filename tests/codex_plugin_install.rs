@@ -27,7 +27,7 @@ fn dry_run_offers_the_codex_commands_and_touches_nothing() {
         "{out}"
     );
     assert!(out.contains("codex plugin add rtok@rtok"), "{out}");
-    assert!(out.contains("ketch install listepo/rtok"), "{out}");
+    assert!(out.contains("ketch install pyrlyn/rtok"), "{out}");
     assert!(
         !home.join(".codex/config.toml").exists(),
         "a dry run writes nothing"

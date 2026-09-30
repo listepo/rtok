@@ -319,7 +319,7 @@ mod tests {
         assert!(s.contains("plugins/grok"), "{s}");
         assert!(s.contains("grok plugin install"), "{s}");
         assert!(s.contains("--trust"), "{s}");
-        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(s.contains("ketch install pyrlyn/rtok"), "{s}");
         assert!(!plugin_marker(&c).exists());
         assert_eq!(
             offer_plugin(&cfg(&dir, true, false), false).unwrap(),

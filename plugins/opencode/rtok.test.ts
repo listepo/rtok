@@ -120,7 +120,7 @@ test("missing rtok fails open and names ketch once", () => {
   expect(filterStdin("ls", "original")).toBe("original");
   expect(filterStdin("ls", "again")).toBe("again");
   expect(errors, "the hint is said once per process").toHaveLength(1);
-  expect(errors[0]).toMatch(/ketch install listepo\/rtok/);
+  expect(errors[0]).toMatch(/ketch install pyrlyn\/rtok/);
 });
 
 const CKPT = "checkpoint\n- edit the three files\n";

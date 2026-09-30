@@ -327,7 +327,7 @@ fn replace_binary() -> Result<()> {
         Ok(st) if st.success() => Ok(()),
         Ok(st) => anyhow::bail!("rtok-update failed ({st})"),
         Err(_) => anyhow::bail!(
-            "no ketch or rtok-update — install with ketch (`ketch install listepo/rtok`)"
+            "no ketch or rtok-update — install with ketch (`ketch install pyrlyn/rtok`)"
         ),
     }
 }

@@ -38,7 +38,7 @@ Files:
   shell and runs `scripts/hook.sh` only when PATH has none: the second shell cost ~6 ms per call
   (`research.md` §19). A unit test in `src/agents/claude/mod.rs` keeps them equal.
 - `scripts/hook.sh` — resolves `rtok` from PATH or the ketch store; a missing `rtok` fails the
-  hook open (exit 0), printing `ketch install listepo/rtok`.
+  hook open (exit 0), printing `ketch install pyrlyn/rtok`.
 - `agents/rtok-scout.md` — a `model: haiku` sub-agent (T132) scoped to the rtok MCP's `read`,
   `search`, `outline`, `explore`, `expand` tools (named `mcp__rtok__<tool>`, the plain form for
   the `mcpServers.rtok` config entry — T275, this plugin ships no `.mcp.json` of its own), so

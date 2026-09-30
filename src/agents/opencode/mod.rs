@@ -149,7 +149,7 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
 }
 
 /// Offer / link / unlink `plugins/opencode/rtok.ts` (D21, T44.5). Dry-run and the unaccepted
-/// offer name `plugins/opencode` and `ketch install listepo/rtok`.
+/// offer name `plugins/opencode` and `ketch install pyrlyn/rtok`.
 pub static PLUGIN: HostPlugin = HostPlugin {
     src_rel: "plugins/opencode/rtok.ts",
     host: "OpenCode",
@@ -274,7 +274,7 @@ mod tests {
         let (mut c, path) = cfg("plugin", true);
         let dry = PLUGIN.offer(&c, false).unwrap();
         assert!(dry.contains("plugins/opencode"), "{dry}");
-        assert!(dry.contains("ketch install listepo/rtok"), "{dry}");
+        assert!(dry.contains("ketch install pyrlyn/rtok"), "{dry}");
         assert!(!plugin_dest(&c).exists());
         c.setup.dry_run = false;
         c.setup.yes = true;

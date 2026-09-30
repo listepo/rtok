@@ -122,7 +122,7 @@ fn d21_no_launcher_scripts_rtok_must_be_on_path() {
     );
     let readme = fs::read_to_string(root().join("README.md")).unwrap();
     assert!(
-        readme.contains("ketch install listepo/rtok"),
+        readme.contains("ketch install pyrlyn/rtok"),
         "README must name the ketch install: {readme}"
     );
 }
@@ -139,7 +139,7 @@ fn setup_cursor_dry_run_offers_plugin() {
         "stdout={stdout}"
     );
     assert!(
-        stdout.contains("ketch install listepo/rtok"),
+        stdout.contains("ketch install pyrlyn/rtok"),
         "stdout={stdout}"
     );
     assert!(
@@ -283,7 +283,7 @@ fn hooks_resolve_rtok_from_path_then_ketch_else_exit_0() {
             "{command} <<'CURSOR_HOOK_EOF'\n{{\"n\":1}}\nCURSOR_HOOK_EOF"
         ))
     };
-    let note = r#"{"additional_context":"rtok is not installed; run ketch install listepo/rtok to enable it."}"#;
+    let note = r#"{"additional_context":"rtok is not installed; run ketch install pyrlyn/rtok to enable it."}"#;
     for (event, entries) in &hooks {
         let (ok, stdout) = run(entries[0]["command"].as_str().unwrap());
         assert!(ok, "{event}");

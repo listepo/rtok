@@ -19,7 +19,7 @@ Files:
   replacement summary). After `session_compact`, the next `context` call injects
   `PostCompact` restore bytes. When `[setup.pi] tools = true`, `session_start`
   registers the measured MCP set through `pi.registerTool` as `rtok mcp --call` (T70.3).
-  Missing `rtok` fails open and names ketch (`ketch install listepo/rtok`). Hook hosts
+  Missing `rtok` fails open and names ketch (`ketch install pyrlyn/rtok`). Hook hosts
   (Claude/Cursor/Codex/Copilot) are T58.2.
 - `tests/load.test.ts` — loads the linked directory with pi's own `discoverAndLoadExtensions` and expects
   one extension with `tool_call` and `tool_result`; skipped when pi is not installed.

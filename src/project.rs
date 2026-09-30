@@ -145,9 +145,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case("https://github.com/listepo/rtok", "rtok")]
-    #[case("https://github.com/listepo/rtok.git/", "rtok")]
-    #[case("ssh://git@github.com/listepo/rtok.git", "rtok")]
+    #[case("https://github.com/pyrlyn/rtok", "rtok")]
+    #[case("https://github.com/pyrlyn/rtok.git/", "rtok")]
+    #[case("ssh://git@github.com/pyrlyn/rtok.git", "rtok")]
     #[case("file:///srv/git/rtok.git", "rtok")]
     fn origin_url_shapes_give_the_repo_name(#[case] url: &str, #[case] name: &str) {
         let vfs = fixture(url);
@@ -161,7 +161,7 @@ mod tests {
     /// directory stays its own project, as before T133.
     #[test]
     fn submodule_keeps_its_own_name() {
-        let mut vfs = fixture("https://github.com/listepo/rtok");
+        let mut vfs = fixture("https://github.com/pyrlyn/rtok");
         vfs.write(
             "/home/me/rtok/vendor/dep/.git",
             "gitdir: ../../.git/modules/dep\n",
