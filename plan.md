@@ -44,6 +44,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.12 | todo | P2 | 3 | 0% | |
 | T314 | in progress | P2 | 3 | 60% | Grok Bot |
 | T315 | in progress | P2 | 3 | 60% | Grok Bot |
+| T316 | todo | P2 | 4 | 0% | |
 
 
 
@@ -665,6 +666,28 @@ Plan:
 Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
 
 Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
+
+### T316. Graph page: project selector, auto-added projects and linked projects
+
+Ivan, 2026-10-01: in the web UI's graph tab, the graph is built for a project the user picks. The page always shows which project is selected, projects can be added automatically, and other projects can be linked to the selected one so the graph traverses into them as if they were one project.
+
+Today the graph plugin indexes a single root (the page shows `root .`), so the graph tab only ever shows the project rtok was started in.
+
+Plan:
+1. Project registry: a list of known projects, each with an id, display name and root path, stored in the rtok store next to the graph index. Each project keeps its own index (rows, files, pending, `indexed_at`, watch state), so switching projects does not re-index the others.
+2. Project selector on the graph page: a dropdown (or list) of known projects. Picking one rebuilds the graph view for that project. The selection persists across page reloads and `rtok web` restarts.
+3. Current-project indicator: the selected project's name and root path are always visible in the graph page header, together with its index status (rows, files, pending, last indexed). An empty or unindexed project shows a clear empty state with an "Index now" action.
+4. Automatic project adding: a project is added to the registry automatically when rtok sees it in use: the working directory of a hooked agent session, a worktree created through `rtok worktree`, or a repo the graph plugin is asked about over MCP. The user can also add a project by path from the page and remove one from the registry (removing only drops rtok's index, never the project's files). Auto-adding can be turned off in config (`[plugins.graph] auto_add_projects = true` by default), documented in `docs/config.md` and `docs/plugins.md`.
+5. Linked projects: from the selected project, the user can link other known projects (for example a library and the app that uses it). Links are stored per project and shown on the page as a list with an unlink action.
+6. Cross-project traversal: when projects are linked, symbol lookup, callers, callees, impact and dead-symbol queries treat the selected project and its linked projects as one graph. An edge from a call site in one project to a definition in a linked project is resolved and followed. Results show which project each node belongs to (a project badge or colour). Links are directional by default (the selected project sees into its links); cycles between linked projects are allowed and must not loop.
+7. The same project selection and links are available outside the web UI: `rtok graph` commands and the graph MCP tools accept a project (defaulting to the current one), so agents get the same cross-project answers.
+8. Lands in the React SPA graph page (T310.8). If T310.8 has not landed yet, ship the backend (registry, links, traversal, `/ws` messages) first and the page with T310.8.
+9. Docs: `docs/plugins.md` (graph section) and `docs/config.md`, with `docs/ru/` and `docs/uk/` updated in the same change.
+10. Deliver as PRs; do not merge them.
+
+Dependencies: T310.8 for the page; the graph plugin's index.
+
+Check: with two fixture repos A and B where A calls a function defined in B: selecting A shows A in the header and builds A's graph; linking B makes callers/impact of B's function include A's call site and the reverse lookup cross into B, with each node labelled by project; unlinking B removes those edges; switching to B shows B alone; a new agent session in a third directory adds it to the selector automatically, and it does not when auto-adding is off; the selection survives an `rtok web` restart; Playwright covers the selector, the indicator and link/unlink; `just check`.
 
 ## Reference
 
