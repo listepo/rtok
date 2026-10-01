@@ -7351,3 +7351,49 @@ Check: `cargo clippy --workspace --all-targets --all-features --exclude rtok-was
 
 Status: done 2026-09-26
 Model: ZCode / glm-5.3
+
+### T314. Fuzz testing with cargo-fuzz / libFuzzer
+
+Ivan, 2026-09-30: the same fuzz setup as ketch (ketch plan R4). PR: https://github.com/pyrlyn/rtok/pull/535.
+
+Plan:
+1. `fuzz/`: a standalone cargo-fuzz workspace excluded from the root one (`cargo-fuzz = true`, `libfuzzer-sys` 0.4, `arbitrary`, `rtok = { path = ".." }`), so `cargo build`, `just check` and CI never compile it.
+2. Entry points in `src/fuzzing.rs`, compiled only under `--cfg fuzzing` (set by `cargo fuzz`), reach crate-private parsers without disk, env or log side effects.
+3. Targets: `cli-argv` (`rtok::cli::Cli::try_parse_from` plus the help/error rendering), and the crash-prone parsers: `config-toml` (`config validate` + the file-free config stack), `cmd-filter` (user `rules` TOML + the stdout compactor), `hook-io` (the `HookInput` JSON and each host adapter), `jsonc-edit` (the JSONC editor that writes host settings), `proxy-wire` (Anthropic / OpenAI / Gemini request, response and SSE parsing), `transcript-jsonl` (`measure::jsonl`), `outline` (`read` outlines, tree-sitter queries) and `text-ops` (terse compression, `rtok expand` ranges, cuts). Seed corpora come from `tests/fixtures`.
+4. Verify: `cargo +nightly fuzz build` for every target, then a short run of each (`cargo +nightly fuzz run <target> -- -max_total_time=60`). Every crash becomes a minimized regression test with its fix in its own PR.
+5. Optional: a non-required nightly CI job (build plus a short run) on Linux. Do not touch `dependabot.yml` or `sync-docs.yml`.
+6. Deliver as a PR; do not merge it.
+
+Dependencies: nightly toolchain (`rustup toolchain install nightly`); `mise.toml` keeps stable 1.98.1 as the build toolchain. `cargo-fuzz` via `cargo install cargo-fuzz` or `"cargo:cargo-fuzz"` in `mise.toml`, recorded in `toolchain.md`. libFuzzer runs on macOS and Linux only. Independent of T315.
+
+Check: `cargo +nightly fuzz build` succeeds for every target; each target runs 60 s with no crash (or the crash is filed with a repro test); `just check` on stable does not compile `fuzz/`.
+
+Result: merged in #535 (`3c2bfdfd`). `fuzz/` is a standalone cargo-fuzz crate with its own `[workspace]`, listed in the root workspace's `exclude`, so `cargo build`, `just check` and CI do not compile it; `src/fuzzing.rs` is compiled only under `--cfg fuzzing` (declared for check-cfg). Nine targets: `cli-argv`, `config-toml`, `cmd-filter`, `jsonc-edit`, `hook-io`, `proxy-wire`, `transcript-jsonl`, `text-ops`, `outline` (all in-process: no network, spawns or file writes). One crash found and fixed in its own commit with a unit test: `cmd_stem` sliced the last 4 bytes of a basename for its `.exe` check and panicked inside a multi-byte char (`héllo`); it now uses `get`. Docs: `fuzz/README.md`, a CONTRIBUTING paragraph, `toolchain.md` rows (cargo-fuzz, `arbitrary`, `libfuzzer-sys`) covered by `tests/toolchain_rows.rs`; `just fuzz [target|all] [secs]` is not part of `check`.
+
+Check result: on macOS arm64 with ASan every target built and ran 90 s, then 120 s more on the same corpus (`cmd-filter` 120 s more after the fix): 0 crashes apart from the fixed one (13k-311k execs per target, table in #535). `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features -D warnings`, the fuzz crate's clippy under `--cfg fuzzing`, `cargo test --test toolchain_rows` and the `cmd_stem` unit tests pass; PR CI green.
+Deviations: no nightly CI job (plan step 5 was optional).
+
+Status: done 2026-09-30 (#535)
+Model: Grok Bot
+
+### T315. Emoji and colour on by default for human-facing output
+
+Ivan, 2026-09-30: emoji and colour on by default, with a config toggle, for human-facing output only. Agent-facing and JSON output stay clean. Colour is off outside a TTY and with `NO_COLOR`. PR: https://github.com/pyrlyn/rtok/pull/532.
+
+Plan:
+1. One style table (`src/ui/style.rs`): each line kind (success, info, warning, error) picks its emoji and colour together, and clap's `--help` / error styles live in the same place.
+2. Config: `[ui] emoji = true` and `[ui] color = true` in `config/default.toml` and `docs/config.md`. `color = false` turns colour off process-wide (owo-colors override), so `render.rs` diffs, state words and log levels follow the same key. Re-bless the trycmd config snapshots.
+3. Where it applies: human-facing lines only (status, summaries, `doctor`, `agents` output, `--help`). It never applies to what agents read: `rtok hook` stdout, MCP responses, the proxy, filtered command output from `rtok run` / `rtok filter`, `--json`, or anything written to a pipe or a file.
+4. Gates: an emoji needs `[ui] emoji` and a terminal on that stream. Colour needs `[ui] color` and owo-colors' `if_supports_color` answer for that stream: a TTY, `NO_COLOR` unset, `TERM` not `dumb`, or `CLICOLOR_FORCE` / `FORCE_COLOR` set.
+5. Deliver as a PR; do not merge it.
+
+Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
+
+Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
+
+Result: merged in #532 (`7c09b8d3`). `src/ui/style.rs` owns one table: success (✅ green), status (💡 cyan), warning (⚠️ yellow), error (❌ red), plus clap `Styles` for `--help` and clap errors. Config `[ui] emoji = true` and `[ui] color = true` (env `RTOK_UI_EMOJI` / `RTOK_UI_COLOR` through the existing layer); `color = false` sets the owo-colors override, so `render.rs` diffs, state words and log levels follow it. Emoji need the key and a terminal on that stream; colour needs the key and owo-colors' per-stream check (`NO_COLOR`, `TERM=dumb`, `CLICOLOR_FORCE` / `FORCE_COLOR`). Hook and MCP JSON, filtered command output, `--json`, agent messages and piped output are byte-identical; the `Error: {e:?}` line keeps std's bytes. No new dependency. `--help` colour is clap's own decision, since argv is parsed before config loads.
+
+Check result: `src/ui/style.rs` unit tests (emoji key × tty matrix, prefix shape, bare text off a terminal, `color = false` beating a forced terminal); `tests/ui_style.rs` on the real binary through pipes (plain `ok` line, `NO_COLOR` no-op, std's error bytes, `CLICOLOR_FORCE` paints without emoji, `RTOK_UI_COLOR=false` and `[ui] color = false` beat `CLICOLOR_FORCE`); trycmd `config init` / `config show` / `report` gain the two `ui.*` keys; `just check` green locally (2064 tests) and PR CI green.
+
+Status: done 2026-09-30 (#532)
+Model: Grok Bot

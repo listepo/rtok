@@ -42,8 +42,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.10 | todo | P1 | 3 | 0% | |
 | T310.11 | todo | P2 | 3 | 0% | |
 | T310.12 | todo | P2 | 3 | 0% | |
-| T314 | in progress | P2 | 3 | 60% | Grok Bot |
-| T315 | in progress | P2 | 3 | 60% | Grok Bot |
 
 
 
@@ -634,37 +632,6 @@ Check: the job is green on a PR and goes red when a Vitest, Storybook or Playwri
 Remove `crates/rtok-webui`, `tools/webui-bundle.sh`, `just web-bundle`/`webui-check`, the wasm steps in CI/release, `tests/web_wasm.rs`, `design/html/` and the rest of the prototype; update D20, `architecture.md`, `toolchain.md` and `rust.md`.
 
 Check: `just check` green; `git grep -i slint` finds only history docs; the release workflow dry-run builds.
-
-### T314. Fuzz testing with cargo-fuzz / libFuzzer
-
-Ivan, 2026-09-30: the same fuzz setup as ketch (ketch plan R4). Already in progress. Branch `test/cargo-fuzz` (worktree `_worktrees/rtok-cargo-fuzz`) has uncommitted work and is not yet pushed to `pyrlyn/rtok`; no PR exists yet. Link the PR here when it opens.
-
-Plan:
-1. `fuzz/`: a standalone cargo-fuzz workspace excluded from the root one (`cargo-fuzz = true`, `libfuzzer-sys` 0.4, `arbitrary`, `rtok = { path = ".." }`), so `cargo build`, `just check` and CI never compile it.
-2. Entry points in `src/fuzzing.rs`, compiled only under `--cfg fuzzing` (set by `cargo fuzz`), reach crate-private parsers without disk, env or log side effects.
-3. Targets: `cli-argv` (`rtok::cli::Cli::try_parse_from` plus the help/error rendering), and the crash-prone parsers: `config-toml` (`config validate` + the file-free config stack), `cmd-filter` (user `rules` TOML + the stdout compactor), `hook-io` (the `HookInput` JSON and each host adapter), `jsonc-edit` (the JSONC editor that writes host settings), `proxy-wire` (Anthropic / OpenAI / Gemini request, response and SSE parsing), `transcript-jsonl` (`measure::jsonl`), `outline` (`read` outlines, tree-sitter queries) and `text-ops` (terse compression, `rtok expand` ranges, cuts). Seed corpora come from `tests/fixtures`.
-4. Verify: `cargo +nightly fuzz build` for every target, then a short run of each (`cargo +nightly fuzz run <target> -- -max_total_time=60`). Every crash becomes a minimized regression test with its fix in its own PR.
-5. Optional: a non-required nightly CI job (build plus a short run) on Linux. Do not touch `dependabot.yml` or `sync-docs.yml`.
-6. Deliver as a PR; do not merge it.
-
-Dependencies: nightly toolchain (`rustup toolchain install nightly`); `mise.toml` keeps stable 1.98.1 as the build toolchain. `cargo-fuzz` via `cargo install cargo-fuzz` or `"cargo:cargo-fuzz"` in `mise.toml`, recorded in `toolchain.md`. libFuzzer runs on macOS and Linux only. Independent of T315.
-
-Check: `cargo +nightly fuzz build` succeeds for every target; each target runs 60 s with no crash (or the crash is filed with a repro test); `just check` on stable does not compile `fuzz/`.
-
-### T315. Emoji and colour on by default for human-facing output
-
-Ivan, 2026-09-30: emoji and colour on by default, with a config toggle, for human-facing output only. Agent-facing and JSON output stay clean. Colour is off outside a TTY and with `NO_COLOR`. Already in progress. Branch `feat/emoji-color-output` (worktree `_worktrees/rtok-emoji-color`) has uncommitted work and is not yet pushed to `pyrlyn/rtok`; no PR exists yet. Link the PR here when it opens.
-
-Plan:
-1. One style table (`src/ui/style.rs`): each line kind (success, info, warning, error) picks its emoji and colour together, and clap's `--help` / error styles live in the same place.
-2. Config: `[ui] emoji = true` and `[ui] color = true` in `config/default.toml` and `docs/config.md`. `color = false` turns colour off process-wide (owo-colors override), so `render.rs` diffs, state words and log levels follow the same key. Re-bless the trycmd config snapshots.
-3. Where it applies: human-facing lines only (status, summaries, `doctor`, `agents` output, `--help`). It never applies to what agents read: `rtok hook` stdout, MCP responses, the proxy, filtered command output from `rtok run` / `rtok filter`, `--json`, or anything written to a pipe or a file.
-4. Gates: an emoji needs `[ui] emoji` and a terminal on that stream. Colour needs `[ui] color` and owo-colors' `if_supports_color` answer for that stream: a TTY, `NO_COLOR` unset, `TERM` not `dumb`, or `CLICOLOR_FORCE` / `FORCE_COLOR` set.
-5. Deliver as a PR; do not merge it.
-
-Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
-
-Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
 
 ## Reference
 
