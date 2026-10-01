@@ -111,6 +111,7 @@ fn title_line(id: i32, title: &str, body_tokens: u32) -> String {
 }
 
 /// Build capped index text from `(id, title, body_token_estimate)` rows, dropping newest last.
+/// A lone entry that still overflows has its title halved, then is dropped: the cap holds.
 fn render_title_index(cx: &Ctx, entries: &mut Vec<(i32, String, u32)>, cap: u32) -> String {
     loop {
         let mut lines = vec![INDEX_GUIDE.to_string()];
@@ -118,10 +119,18 @@ fn render_title_index(cx: &Ctx, entries: &mut Vec<(i32, String, u32)>, cap: u32)
             lines.push(title_line(*id, title, *tok));
         }
         let text = lines.join("\n");
-        if cx.estimate(&text, Class::Prose) <= cap || entries.len() <= 1 {
+        if cx.estimate(&text, Class::Prose) <= cap {
             return text;
         }
-        entries.pop();
+        if entries.len() > 1 {
+            entries.pop();
+        } else if let Some(entry) = entries.first_mut().filter(|e| !e.1.is_empty()) {
+            let keep = entry.1.chars().count() / 2;
+            entry.1 = entry.1.chars().take(keep).collect();
+        } else {
+            entries.clear();
+            return INDEX_GUIDE.to_string();
+        }
     }
 }
 
@@ -381,6 +390,23 @@ pub fn mem_revise(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One over-long title used to be returned whole, past `cap`.
+    #[test]
+    fn a_single_long_title_cannot_break_the_index_cap() {
+        let cx = crate::plugin::Runtime::in_memory("t327-title-cap").unwrap();
+        let ctx = Ctx::new(&cx);
+        let cap = 30;
+        let mut entries = vec![(1, "x".repeat(2000), 5)];
+        let text = render_title_index(&ctx, &mut entries, cap);
+        assert!(ctx.estimate(&text, Class::Prose) <= cap, "{text}");
+        assert!(text.starts_with(INDEX_GUIDE), "{text}");
+        assert!(
+            text.contains("1 x"),
+            "the entry is shortened, not lost: {text}"
+        );
+    }
+
     #[test]
     fn remember_prefix_saves_a_note_and_repeats_same_id() {
         use rtok_plugin_sdk::PromptSubmit;

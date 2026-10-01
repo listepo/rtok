@@ -1925,6 +1925,14 @@ Evidence: isolated worktrees with this task's hunks only. At 77af448: `cargo fmt
 
 Deviation: 6 files / 228 insertions (over the 200 LOC / 3-file guideline) — D25 forces the SDK trait seam (`Symbols::symbol_dead_candidates` with an empty default so out-of-tree hosts keep compiling, plus the `Runtime` delegation) beside the store query, the filter, the CLI and the parity row; no way to add a store-backed capability in fewer files without breaking the plugin contract. No new dependency (tree-sitter + tree-sitter-rust already behind the `read` feature `graph` requires).
 
+## T327 — Graph, archive and memory bugs: LSP kind map, rstest dead code, non-ASCII slice, title index cap
+
+Found by the 2026-10-01 bug hunt. `graph::lsp::kind_name` mapped LSP SymbolKind 11 to "enum" and left 10 unmapped (LSP 3.17: 10 = Enum, 11 = Interface); `graph::dead_candidates` scanned only the 3 lines above a fn for `#[test]`/`#[cfg(test)]`, so `#[rstest]` with `#[case]` rows, `#[test]` under further attributes and `#[tokio::test]` read as dead; `archive::rewrite_skill` cut the wire `tool_use_id` at byte 12 and panicked inside a multi-byte char; `memory::render_title_index` returned a lone over-long title past its cap.
+
+Fix: `kind_name` follows the spec; a `has_test_attr` helper walks the whole attribute/comment block above a definition (`#[test`, `#[cfg(test`, `#[rstest`, `#[case`, any `::test`); the skill id is cut on chars; a lone overflowing title is halved until the index fits, and dropped only if an empty title still does not.
+
+Check: `kind_name_follows_the_lsp_symbol_kind_numbers`, `dead_lists_only_the_private_orphan` (new `param.rs` fixture), `a_non_ascii_skill_id_is_shortened_on_a_char_boundary`, `a_single_long_title_cannot_break_the_index_cap`; `just check`.
+
 ## T48.7 — aider host
 
 **T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`

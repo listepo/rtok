@@ -107,7 +107,8 @@ fn rewrite_skill(
         Ok(None) => {
             let archive_id = cx.put_archive(text.as_bytes()).ok()?;
             let n = text.lines().count();
-            let short = &id[..id.len().min(12)];
+            // `id` is a wire `tool_use_id`: not necessarily ASCII, so cut on chars.
+            let short: String = id.chars().take(12).collect();
             let live =
                 format!("[archived {short}: skill {name} · {n} lines · expand({archive_id})]");
             cx.put_archive_decision(&key, &archive_id, &live).ok()?;
@@ -1012,6 +1013,31 @@ mod tests {
             .unwrap()
             .expect("archived");
         assert_eq!(String::from_utf8(back).unwrap(), body);
+    }
+
+    /// A non-ASCII `tool_use_id` used to panic on a byte slice inside a UTF-8 char.
+    #[test]
+    fn a_non_ascii_skill_id_is_shortened_on_a_char_boundary() {
+        let mut cx = cx("skills-utf8-id");
+        cx.config.plugins.archive.skills = true;
+        cx.config.plugins.archive.keep_turns = 0;
+        let mut values = [Value::String(skill_text("slint"))];
+        let skills = vec![SkillRef {
+            id: "tu-ключи-1".into(),
+            name: "slint".into(),
+            content: &mut values[0],
+            turn: 1,
+        }];
+        let ms = rewrite_skills(skills, &Ctx::new(&cx));
+        assert_eq!(ms.len(), 1);
+        assert!(
+            values[0]
+                .as_str()
+                .unwrap()
+                .starts_with("[archived tu-ключи-1: skill slint"),
+            "{}",
+            values[0]
+        );
     }
 
     #[test]

@@ -560,15 +560,7 @@ pub fn dead_candidates(cx: &Ctx, root: &Path) -> Result<Vec<DeadRow>> {
         if trimmed.starts_with("pub ") || trimmed.starts_with("pub(") || trimmed == "pub" {
             continue;
         }
-        if src[..(line.max(1) as usize - 1).min(src.len())]
-            .iter()
-            .rev()
-            .take(3)
-            .any(|l| {
-                let t = l.trim_start();
-                t.starts_with("#[test") || t.starts_with("#[cfg(test")
-            })
-        {
+        if has_test_attr(&src[..(line.max(1) as usize - 1).min(src.len())]) {
             continue;
         }
         #[cfg(feature = "lang-rust")]
@@ -594,6 +586,24 @@ pub fn dead_candidates(cx: &Ctx, root: &Path) -> Result<Vec<DeadRow>> {
         });
     }
     Ok(rows)
+}
+
+/// Whether the attribute/comment block right above a definition marks a test: `#[test]`,
+/// `#[rstest]`, `#[tokio::test]`, `#[cfg(test)]`, `#[case(..)]`, wherever it sits in the stack.
+fn has_test_attr(above: &[String]) -> bool {
+    above
+        .iter()
+        .rev()
+        .map(|l| l.trim_start())
+        .take_while(|t| t.starts_with("#[") || t.starts_with("//"))
+        .any(|t| {
+            ["#[test", "#[cfg(test", "#[rstest", "#[case"]
+                .iter()
+                .any(|p| t.starts_with(p))
+                || t.split(['(', ']'])
+                    .next()
+                    .is_some_and(|a| a.ends_with("::test"))
+        })
 }
 
 /// `dead()`: [`dead_rows`] as `path:line kind name` lines (T52.4), capped for hook /
@@ -1627,12 +1637,31 @@ mod tests {
         .unwrap();
         fs::write(dir.join("mac.rs"), "macro_rules! gen {\n    () => {};\n}\n").unwrap();
         fs::write(dir.join("tested.rs"), "#[test]\nfn my_test() {}\n").unwrap();
+        // Stacked attributes: the test marker is not the line right above the fn.
+        fs::write(
+            dir.join("param.rs"),
+            "#[rstest]\n#[case(1)]\n#[case(2)]\n#[case(3)]\n#[case(4)]\nfn param_test(#[case] n: u8) {}\n\
+             #[test]\n#[ignore]\n#[should_panic]\n#[cfg(unix)]\nfn stacked_test() {}\n\
+             #[tokio::test]\nasync fn async_test() {}\n",
+        )
+        .unwrap();
         fs::create_dir_all(dir.join("tests")).unwrap();
         fs::write(dir.join("tests/helper.rs"), "fn help_me() {}\n").unwrap();
         let out = dead(&Ctx::new(&cx), &dir).unwrap();
         assert!(out.contains("orphan"), "{out}");
         for kept in [
-            "used", "caller", "exported", "m", "gen", "my_test", "help_me", "T", "S",
+            "used",
+            "caller",
+            "exported",
+            "m",
+            "gen",
+            "my_test",
+            "param_test",
+            "stacked_test",
+            "async_test",
+            "help_me",
+            "T",
+            "S",
         ] {
             assert!(
                 !out.lines().any(|l| l.ends_with(&format!(" {kept}"))),
