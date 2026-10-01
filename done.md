@@ -7330,6 +7330,17 @@ Check: the file matches the live registry entry (`git -C ../packages/ketch-regis
 
 Result: ketch.toml now carries the pin and the note verbatim; no code changed. The machine that hit the hang was repaired by copying the store's real `rtok.exe` over `~/.ketch/bin/rtok.exe`; until ketch's B62 lands, fresh Windows `ketch install rtok` of the v0.9.0 archive still links the stub — ketch B62 is the fix to watch.
 
+### T328. Config and host-config path bugs: empty `RTOK_HOME`, `.env` directory, ketch store order, `.exe.exe`, JSONC literal comment, strict-JSON overwrite
+
+Found by a bug-hunt pass over config and host-config code. (A) `home_dir_from` treated `RTOK_HOME=""` as set, so the home became the relative path `""` and state landed under the cwd; an empty value now falls back to `<user home>/.rtok`. (B) the `.env` search used `exists()`, so a directory named `.env` stopped the upward walk and hid the real file above; `find_up` now takes a predicate (`is_file` for `.env`, `exists` for `.git`, which can be a file or a directory). (C) `ketch_store_plugin` picked the newest store folder by name (`v0.1.9` beat `v0.1.10`); it now sorts by semver, with unparsable names first. (D) the Windows image name was built as `<name>.exe`, so a resolved `Code.exe` became `Code.exe.exe` in `taskkill`; the name building is the pure `image_name`, shared with `tasklist_running`. (E) `skip_value` scanned a literal up to the next `,`/`}`/`]`, so replacing a literal entry value (`"rtok": true // note\n,`) overwrote the comment after it; a literal now ends at whitespace, a delimiter or `/`. (F) strict-JSON `write_json`/`set_json_at` replaced a non-object root or table (`"mcpServers": []`, `null`) with `{}`, discarding the user's value; it now returns an error and writes nothing, like the JSONC and TOML writers.
+
+Dropped: the object-valued variant of E (`{"rtok":{...} /* keep */ , "x":1}`) already keeps the comment (test passes before the fix), so no change for it.
+
+Check: `an_empty_rtok_home_falls_back_to_the_user_home`, `a_dotenv_directory_does_not_hide_the_file_above`, `ketch_store_takes_the_newest_version_not_the_lexicographic_last`, `windows_image_name_adds_exe_once`, `replacing_a_literal_entry_keeps_the_trailing_comment`, `replacing_an_object_entry_keeps_the_trailing_comment`, `strict_json_refuses_a_non_object_root_or_table_and_keeps_the_file` (all but the object-variant test failed before the fix); nextest filtered run over config/agents/jsonc/restart, `-p rtok-hook -p rtok-mcp`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all`.
+
+Status: done 2026-10-01
+Model: Claude Code / sonnet (reviewed by Claude Code / claude-opus-5-5)
+
 ### T273. Windows clippy: `permissions_set_readonly_false` in the cfg(windows) `clear_readonly`
 
 Found 2026-09-26 running `just check` locally on Windows (rust 1.97.1, the mise pin): the new clippy lint `permissions_set_readonly_false` fires on `rtok-agent-sdk`'s `clear_readonly` and, under `-D warnings`, fails the whole `lint` recipe. CI never sees it — the function is `#[cfg(windows)]`, compiled out on the Linux/macOS runners.

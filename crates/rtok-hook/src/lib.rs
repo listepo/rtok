@@ -168,7 +168,7 @@ pub fn user_home_from(home: Option<OsString>, userprofile: Option<OsString>) -> 
     nonempty(home).or_else(|| nonempty(userprofile))
 }
 
-/// `$RTOK_HOME`, else `<user home>/.rtok`. A `~` in `RTOK_HOME` (set from a JSON `env` block,
+/// `$RTOK_HOME` (when non-empty), else `<user home>/.rtok`. A `~` in `RTOK_HOME` (set from a JSON `env` block,
 /// where no shell expands it) is expanded: left literal, every store path hung off it resolved
 /// against the cwd as `./~/.rtok/…` (T169).
 ///
@@ -179,7 +179,7 @@ pub fn user_home_from(home: Option<OsString>, userprofile: Option<OsString>) -> 
 /// changing what this function returns.
 pub fn home_dir_from(rtok_home: Option<OsString>, user_home: Option<PathBuf>) -> PathBuf {
     let default = user_home.clone().unwrap_or_default().join(".rtok");
-    match rtok_home {
+    match rtok_home.filter(|h| !h.is_empty()) {
         Some(h) => expand_with(Path::new(&h), &default, user_home.as_deref()),
         None => default,
     }
@@ -272,6 +272,24 @@ mod tests {
 
     fn vars(pairs: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
         pairs.iter().map(|(k, v)| (k.into(), v.into())).collect()
+    }
+
+    /// T328: an empty `RTOK_HOME` (`export RTOK_HOME=`) is unset, not the relative path `""`.
+    #[test]
+    fn an_empty_rtok_home_falls_back_to_the_user_home() {
+        let user = Some(PathBuf::from("/Users/me"));
+        assert_eq!(
+            home_dir_from(Some(OsString::new()), user.clone()),
+            PathBuf::from("/Users/me/.rtok")
+        );
+        assert_eq!(
+            home(|k| match k {
+                "RTOK_HOME" => Some(OsString::new()),
+                "HOME" => Some("/Users/me".into()),
+                _ => None,
+            }),
+            Some(PathBuf::from("/Users/me/.rtok"))
+        );
     }
 
     #[test]

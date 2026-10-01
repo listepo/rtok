@@ -113,10 +113,13 @@ fn write_json(fs: &mut impl Fs, spec: &McpSpec, entry: Option<&Value>) -> Result
         Some(bytes) => parse_json(&bytes, &spec.config_path)?,
         None => Value::Object(Default::default()),
     };
-    if !root.is_object() {
-        root = Value::Object(Default::default());
-    }
-    set_json_at(&mut root, &spec.key_path, spec.server.name, entry);
+    set_json_at(&mut root, &spec.key_path, spec.server.name, entry).with_context(|| {
+        format!(
+            "{}: the root or {} is not an object",
+            spec.config_path.display(),
+            spec.key_path.join(".")
+        )
+    })?;
     let mut body = serde_json::to_string_pretty(&root)?;
     body.push('\n');
     fs.backup(&spec.config_path)?;
@@ -126,10 +129,18 @@ fn write_json(fs: &mut impl Fs, spec: &McpSpec, entry: Option<&Value>) -> Result
 
 /// Insert or remove `name` under the dotted `key_path` inside `node`: creates intermediate
 /// objects for a write, and drops them again once they empty out for a remove, so a removed
-/// host entry leaves the file exactly as it read before rtok ever touched it.
-fn set_json_at(node: &mut Value, key_path: &[String], name: &str, entry: Option<&Value>) {
+/// host entry leaves the file exactly as it read before rtok ever touched it. A node that is not
+/// an object (root or table) is an error, never replaced: the user's value stays as it was.
+fn set_json_at(
+    node: &mut Value,
+    key_path: &[String],
+    name: &str,
+    entry: Option<&Value>,
+) -> Result<()> {
+    let Some(obj) = node.as_object_mut() else {
+        anyhow::bail!("not an object");
+    };
     let Some((head, rest)) = key_path.split_first() else {
-        let obj = node.as_object_mut().expect("caller keeps this an object");
         match entry {
             Some(v) => {
                 obj.insert(name.to_string(), v.clone());
@@ -138,22 +149,19 @@ fn set_json_at(node: &mut Value, key_path: &[String], name: &str, entry: Option<
                 obj.remove(name);
             }
         }
-        return;
+        return Ok(());
     };
-    let obj = node.as_object_mut().expect("caller keeps this an object");
     if entry.is_none() && !obj.contains_key(head) {
-        return; // nothing to remove
+        return Ok(()); // nothing to remove
     }
     let child = obj
         .entry(head.clone())
         .or_insert_with(|| Value::Object(Default::default()));
-    if !child.is_object() {
-        *child = Value::Object(Default::default());
-    }
-    set_json_at(child, rest, name, entry);
+    set_json_at(child, rest, name, entry)?;
     if entry.is_none() && child.as_object().is_some_and(serde_json::Map::is_empty) {
         obj.remove(head);
     }
+    Ok(())
 }
 
 // ---- JSONC (comments and formatting kept via jsonc-parser's lossless CST) ----
@@ -377,6 +385,68 @@ fn json_to_toml_value(v: &Value) -> toml_edit::Value {
                 t.insert(k.as_str(), json_to_toml_value(x));
             }
             toml_edit::Value::InlineTable(t)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    use serde_json::json;
+
+    use super::*;
+    use crate::registry::RTOK;
+    use crate::spec::{Client, DuplicateName, EntryShape};
+
+    #[derive(Default)]
+    struct MemFs(HashMap<PathBuf, Vec<u8>>);
+
+    impl Fs for MemFs {
+        fn read(&self, path: &Path) -> Option<Vec<u8>> {
+            self.0.get(path).cloned()
+        }
+        fn write(&mut self, path: &Path, bytes: Vec<u8>) -> Result<()> {
+            self.0.insert(path.to_path_buf(), bytes);
+            Ok(())
+        }
+    }
+
+    fn spec(format: Format) -> McpSpec {
+        McpSpec {
+            host: "test",
+            client: Client::Cli,
+            config_path: PathBuf::from("/cfg"),
+            format,
+            key_path: McpSpec::key_path("mcpServers"),
+            server: RTOK,
+            entry_shape: EntryShape::Command,
+            duplicate_name: DuplicateName::ShowsBoth,
+            plugin_serves: None,
+        }
+    }
+
+    /// T328: a root or servers table of the wrong type is an error that leaves the file
+    /// untouched (as JSONC and TOML do), not silently replaced by `{}`.
+    #[test]
+    fn strict_json_refuses_a_non_object_root_or_table_and_keeps_the_file() {
+        let entry = json!({"command": "rtok", "args": ["mcp"]});
+        for raw in [
+            "[1, 2]",
+            "null",
+            "\"text\"",
+            r#"{"mcpServers": []}"#,
+            r#"{"mcpServers": null}"#,
+            r#"{"mcpServers": "x"}"#,
+        ] {
+            let mut fs = MemFs::default();
+            fs.0.insert(PathBuf::from("/cfg"), raw.as_bytes().to_vec());
+            let spec = spec(Format::Json);
+            assert!(write_entry(&mut fs, &spec, &entry).is_err(), "write {raw}");
+            // Nothing of ours to remove: a no-op, still the user's bytes.
+            let _ = remove_entry(&mut fs, &spec);
+            assert_eq!(fs.0[&PathBuf::from("/cfg")], raw.as_bytes(), "{raw}");
         }
     }
 }
