@@ -38,3 +38,4 @@
 - T310.12. Delete Slint, the WASM build and the HTML design
 - T314. Fuzz testing with cargo-fuzz / libFuzzer
 - T315. Emoji and colour on by default for human-facing output
+- T320. Fix the proxy usage/tokens test race

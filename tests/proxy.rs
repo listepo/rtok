@@ -197,16 +197,35 @@ async fn t51_post(addr: &str, body: Vec<u8>) -> reqwest::Response {
         .expect("request through the proxy")
 }
 
-/// The recorder task writes rows after the body was forwarded; poll briefly for `n` of them.
-async fn t51_usage_n(state: &Store, session: &str, n: usize) -> Vec<UsageRow> {
-    for _ in 0..400 {
-        let rows = state.usage_rows(session).expect("usage read");
-        if rows.len() >= n {
-            return rows;
+/// The recorder writes rows after the body was forwarded, one insert at a time; poll
+/// `probe` until it yields, failing after a deadline generous enough for slow CI runners.
+async fn eventually<T>(what: &str, mut probe: impl FnMut() -> Option<T>) -> T {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(v) = probe() {
+            return v;
         }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "{what} never appeared"
+        );
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    panic!("usage row for {session} never appeared");
+}
+
+async fn t51_usage_n(state: &Store, session: &str, n: usize) -> Vec<UsageRow> {
+    eventually(&format!("usage row for {session}"), || {
+        Some(state.usage_rows(session).expect("usage read")).filter(|rows| rows.len() >= n)
+    })
+    .await
+}
+
+/// `finish` writes the provider `tokens` row after `usage`: wait for it, don't race it.
+async fn t51_tokens(state: &Store, n: i64) {
+    eventually(&format!("{n} tokens rows"), || {
+        (state.count_tokens().expect("tokens") >= n).then_some(())
+    })
+    .await
 }
 
 async fn t51_usage(state: &Store, session: &str) -> Vec<UsageRow> {
@@ -244,6 +263,7 @@ async fn proxy_passthrough_body_records_usage_rows() {
     );
     assert_eq!(state.store.count_kind("api_request").expect("calls"), 1);
     assert_eq!(state.store.count_call_io().expect("call_io"), 1);
+    t51_tokens(&state.store, 1).await;
     assert_eq!(state.store.count_tokens().expect("tokens"), 1);
     task.abort();
 }
@@ -790,6 +810,7 @@ async fn proxy_gemini_body_records_usage_with_cached_tokens_and_path_model() {
     assert_eq!(u.api, "gemini");
     assert_eq!(state.store.count_kind("api_request").expect("calls"), 1);
     assert_eq!(state.store.count_call_io().expect("call_io"), 1);
+    t51_tokens(&state.store, 1).await;
     assert_eq!(state.store.count_tokens().expect("tokens"), 1);
     task.abort();
 }
@@ -1463,6 +1484,7 @@ async fn proxy_cache_hit_records_usage_and_request_bytes() {
         .expect("call_io")
         .expect("request");
     assert_eq!(hit_req, body, "hit call_io keeps the request bytes");
+    t51_tokens(&state.store, 2).await;
     assert_eq!(state.store.count_tokens().expect("tokens"), 2);
     assert_eq!(
         state

@@ -44,6 +44,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.12 | todo | P2 | 3 | 0% | |
 | T314 | in progress | P2 | 3 | 60% | Grok Bot |
 | T315 | in progress | P2 | 3 | 60% | Grok Bot |
+| T320 | in progress | P1 | 2 | 10% | Claude Code / opus-5.5 |
 
 
 
@@ -821,3 +822,17 @@ Already covered: `assert_cmd`, `divan`, `httpmock`, `insta`, `rstest`,
 `trycmd`, `similar`. Skip `test-case` / `expect-test` / `mockito` duplicates;
 `testcontainers` / `bolero`/`honggfuzz` only if a measured e2e/fuzz gap appears.
 
+
+### T320. Fix the proxy usage/tokens test race
+
+`proxy_passthrough_body_records_usage_rows` failed on Windows CI (run 36793800254,
+`count_tokens` 0 ≠ 1 at `tests/proxy.rs:247`). The proxy's `finish` writes `usage`,
+then the provider `tokens` row, then fills the semantic cache — after the body was
+streamed. The tests wait only for the `usage` row, then read `tokens` (and, in the
+cache-hit test, re-post expecting a cache hit) too early.
+
+Plan: tests wait with a bounded deadline (no fixed sleeps) for the last row they
+assert (`tokens`), via one shared poll helper in `tests/proxy.rs`; `finish` fills the
+in-memory semantic cache before the `usage`/`tokens` rows, so "usage row present"
+implies "cache filled". Fail-open unchanged. Verify: `just check`, the proxy tests.
+Done: no read-after-`usage` race left in `tests/proxy.rs`.
