@@ -83,27 +83,20 @@ pub trait Wire: ToolResults {
         false
     }
 
-    /// The billable total the `tokens` ledger records. Anthropic's four counters are
-    /// disjoint, so they add up; OpenAI's `prompt_tokens` **already contains** the cached
-    /// slice (`openai_chat::parse_usage`), so adding `cache_read` again would charge the
-    /// same tokens twice — a 30 000-prompt/27 000-cached turn would record 57 200.
+    /// The billable total the `tokens` ledger records. The four counters are disjoint on
+    /// every wire (`find_usage` strips the cached slice out of `input` for OpenAI and
+    /// Gemini), so they add up.
     fn provider_total(&self, usage: Usage) -> i64 {
-        let sum = || {
-            usage
-                .input
-                .saturating_add(usage.cache_create)
-                .saturating_add(usage.cache_read)
-                .saturating_add(usage.output)
-        };
-        if self.provider() == "openai" {
-            usage.input.saturating_add(usage.output)
-        } else {
-            sum()
-        }
+        usage
+            .input
+            .saturating_add(usage.cache_create)
+            .saturating_add(usage.cache_read)
+            .saturating_add(usage.output)
     }
 }
 
-/// Provider usage counters, with absent provider fields represented as zero.
+/// Provider usage counters, with absent provider fields represented as zero. The four
+/// counters are disjoint: `input` is the uncached prompt only, whatever the wire.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Usage {
     pub input: i64,
@@ -311,6 +304,12 @@ pub(super) struct UsageFields {
     pub cache_create: Option<&'static str>,
     pub cache_read: &'static str,
     pub cache_read_details: Option<&'static str>,
+    /// The wire's input counter already contains the cached slice (OpenAI, Gemini; not
+    /// Anthropic), so `find_usage` subtracts it to keep `Usage::input` uncached-only —
+    /// otherwise cost and hit-rate math would count cached tokens twice.
+    pub input_includes_cache: bool,
+    /// A second output counter billed as output (Gemini's `thoughtsTokenCount`).
+    pub output_extra: Option<&'static str>,
 }
 
 /// Find `value`'s usage object (optionally nested under `fields.alt_parent`) and read it
@@ -332,14 +331,19 @@ pub(super) fn find_usage(value: &Value, fields: &UsageFields) -> Option<Usage> {
             .unwrap_or_default(),
         None => int_field(usage, fields.cache_read),
     };
+    let mut input = int_field(usage, fields.input);
+    if fields.input_includes_cache {
+        input = input.saturating_sub(cache_read).max(0);
+    }
+    let extra = fields.output_extra.map_or(0, |f| int_field(usage, f));
     Some(Usage {
-        input: int_field(usage, fields.input),
+        input,
         cache_create: fields
             .cache_create
             .map(|f| int_field(usage, f))
             .unwrap_or(0),
         cache_read,
-        output: int_field(usage, fields.output),
+        output: int_field(usage, fields.output).saturating_add(extra),
     })
 }
 

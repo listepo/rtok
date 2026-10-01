@@ -492,7 +492,7 @@ async fn proxy_openai_chat_body_records_usage_with_cached_tokens() {
     let u = &rows[0];
     assert_eq!(
         (u.input, u.cache_create, u.cache_read, u.output),
-        (10, 0, 7, 2),
+        (3, 0, 7, 2),
         "cache_read comes from prompt_tokens_details.cached_tokens; no cache_create on this wire"
     );
     assert_eq!(u.model.as_deref(), Some(T112_MODEL));
@@ -516,7 +516,7 @@ async fn proxy_openai_chat_stream_is_byte_identical_and_adds_include_usage() {
     let u = &rows[0];
     assert_eq!(
         (u.input, u.cache_create, u.cache_read, u.output),
-        (10, 0, 7, 2),
+        (3, 0, 7, 2),
         "usage decoded from the final SSE chunk"
     );
     // The one byte-level change passthrough makes: the request now opts into stream usage.
@@ -595,7 +595,7 @@ async fn proxy_openai_responses_body_records_usage_without_rewriting_previous_re
     let u = &rows[0];
     assert_eq!(
         (u.input, u.cache_create, u.cache_read, u.output),
-        (10, 0, 7, 2),
+        (3, 0, 7, 2),
         "cache_read comes from input_tokens_details.cached_tokens; no cache_create on this wire"
     );
     assert_eq!(u.model.as_deref(), Some(T113_MODEL));
@@ -707,7 +707,7 @@ async fn proxy_openai_responses_stream_is_byte_identical_and_records_usage() {
     let u = &rows[0];
     assert_eq!(
         (u.input, u.cache_create, u.cache_read, u.output),
-        (10, 0, 7, 2),
+        (3, 0, 7, 2),
         "usage decoded from response.completed, cache_read from cached_tokens"
     );
     let sent = state
@@ -787,7 +787,7 @@ async fn proxy_gemini_body_records_usage_with_cached_tokens_and_path_model() {
     let u = &rows[0];
     assert_eq!(
         (u.input, u.cache_create, u.cache_read, u.output),
-        (12, 0, 7, 3),
+        (5, 0, 7, 3),
         "cache_read comes from cachedContentTokenCount; no cache_create on this wire"
     );
     assert_eq!(u.model.as_deref(), Some(T513_MODEL));
@@ -825,7 +825,7 @@ async fn proxy_gemini_stream_is_byte_identical_and_records_usage() {
     let u = &rows[0];
     assert_eq!(
         (u.input, u.cache_create, u.cache_read, u.output),
-        (12, 0, 7, 3),
+        (5, 0, 7, 3),
         "usage decoded from the final SSE chunk"
     );
     assert_eq!(u.model.as_deref(), Some(T513_MODEL));
