@@ -844,49 +844,63 @@ The graph page draws two levels of graph, both interactive (pan, zoom, drag, cli
 
 **Accessibility and themes.** Both levels work in dark and light themes at 375 and 1280 px; every graph has a keyboard-navigable list view with the same data (nodes, edges, counts) for screen readers and small screens; colours are not the only signal (shapes and labels carry the same meaning).
 
-#### 8b. Live mode: graph queries shown on the graph as they happen
+#### 8b. Two-part graph UI: interactive explorer and read-only live graph
 
-Live mode shows, on the same graph, what agents and users are asking the graph right now: every `symbol`, `callers`, `impact`, `explore`, `outline`, `affected` and `dead` call (MCP, CLI or the page itself) lights up the nodes it touches as it runs, with its numbers updating live.
+The graph page is split into two parts that show the same graph data side by side (stacked on narrow screens).
 
-**Two ways to offer it (both described; the first PR ships option A, option B reuses the same data and components):**
+**Part 1: interactive explorer.** Everything described in 8a: the user clicks, selects, drills down, expands, searches, links and unlinks, and moves the camera. Nothing happening in the background moves this view; it changes only when the user acts (or when indexed data changes under `watch`).
 
-- **Option A: a "Live" toggle on the existing graph.** One button in the graph toolbar switches the current view (either level, 3D or 2D) into live mode in place. The layout, camera and selection stay as they are; only the live overlay and the activity panel appear. Turning it off removes the overlay and keeps everything else. Best for "what is happening around what I am looking at".
-- **Option B: a separate "Live graph" view.** A second tab next to the graph (`/graph/live`, deep-linkable) shows the same graph data in its own view with live mode always on, auto-framing the camera on whatever is being queried. It can be opened in a second window or screen while the main graph stays static. Best for leaving it open as a monitor.
-- In both, the toggle state or the open tab is remembered across reloads.
+**Part 2: live graph (read-only).** The same graph, rendered with the same layout, colours and shapes, but purely for watching:
 
-**What lights up.**
+- No interaction at all: no click, hover menus, selection, drag, expand, search or link actions; no tooltips that need hovering. Pointer and keyboard events on the canvas are ignored, and the cursor stays the default arrow so it never looks clickable.
+- The camera is driven automatically: it frames whatever is being queried right now and eases back to an overview when activity stops. The user cannot move it.
+- It follows the level shown in part 1 (projects overview, or the project the user drilled into) so both parts show the same part of the graph; the live graph does not drill down by itself. Queries on symbols outside what part 1 shows light up the nearest visible ancestor with a counter.
+- It shows only what the graph is being asked right now and how the data changes: every `symbol`, `callers`, `impact`, `explore`, `outline`, `affected` and `dead` call from MCP, the CLI or part 1 itself.
 
-- When a query starts, the queried symbol's node (and its project node at level 1) pulses in an "in progress" colour; when it finishes, the nodes in the answer (callers, callees, impact chain, explore hits) flash briefly and the traversed edges animate along the path the query took, including edges crossing into linked projects.
-- A node that is queried often builds up a heat level (glow intensity) that decays over a configurable window (default 5 minutes), so hot spots are visible at a glance. A "heat" toggle can hide it.
-- A query on a symbol that is not currently visible (collapsed group, other project, not expanded) lights up the nearest visible ancestor (its file, group or project) with a counter, and clicking it expands to the symbol.
-- At level 1 (projects overview), project nodes light up for queries that touch them, and link edges animate when a query crosses from one project to another.
+**Layout controls (outside the canvases).** A splitter between the parts (drag to resize, double-click to reset to 50/50), buttons to maximise either part, and a "Hide live graph" toggle; the choice is remembered. On screens narrower than 900 px the parts stack, live graph below, collapsed to its metrics strip until expanded. These controls are the only things the user operates for part 2; the live canvas itself stays read-only.
 
-**Live numbers per query (activity panel and node tooltip).**
+**What the live graph shows on the canvas.**
 
-- Tool or command (`callers`, `impact`, ...), the symbol or text queried, the caller (agent id and host from T283/T284 when known, "web" or "cli" otherwise), project and backend that answered (LSP / tree-sitter / text, see 6a).
-- Symbols requested (the query's target set, for example the `impact` depth expansion) and symbols returned; files touched; projects crossed.
-- Tokens: the size of the answer sent, the size of the unreduced answer (what a plain read or grep of the same data would have returned), and the saving (absolute and percent), taken from the same `Measurement` rows `rtok stats` uses, so the numbers match `rtok stats` exactly.
-- Latency (start to end), and whether the answer came from the cache, was truncated by a cap, or fell back to another backend.
-- Running totals for the session window at the top of the panel: queries, symbols returned, tokens saved, average latency, and per-tool counts, all updating live.
-- The activity panel is a live list, newest first, with a pause button (freezes the list and the overlay without dropping events; resuming catches up), a filter by agent, tool and project, and a click on an entry replays its highlight and opens the node.
+- When a call starts, the queried symbol's node (and its project node on the overview) pulses in an "in progress" colour; when it ends, the nodes in the answer (callers, callees, impact chain, explore hits) flash and the traversed edges animate along the path the query took, including edges crossing into linked projects.
+- Each running call gets a small floating label next to its node with its tool name and a live counter of symbols returned so far; the label fades a few seconds after the call ends.
+- Nodes queried often build up a heat glow that decays over a window (default 5 minutes), so hot spots are visible at a glance.
+- Several concurrent calls are shown at once, each in its own accent so their paths can be told apart; more than 8 concurrent calls are merged into one "busy" pulse with a count.
+
+**Live metric displays (read-only, updating in real time).** Arranged as a strip above the live canvas and a feed beside it; every number updates as events arrive, with a short count-up animation (disabled under `prefers-reduced-motion`).
+
+- **Now running:** count of calls in progress, and for each: tool, symbol or query, caller (agent id and host from T283/T284, or "web" / "cli"), project, backend answering (LSP / tree-sitter / text), elapsed time ticking up.
+- **Symbols requested:** for the current call, the size of its target set (for example the symbols an `impact` at depth 3 expands to); for the window, the running total. Shown as a number with a sparkline of the last 60 s.
+- **Symbols returned:** same layout; the per-call value counts up while the answer streams; the ratio returned/requested is shown as a small bar.
+- **Tokens sent / tokens without rtok / saved:** for the last call and for the window: answer size, the size of the unreduced answer (what a plain read or grep of the same data would have returned), and the saving in tokens and percent, shown as a large number with a sparkline. Values come from the same `Measurement` rows `rtok stats` uses, so they match `rtok stats` exactly.
+- **Latency:** last call, p50 and p95 for the window, as numbers with a sparkline.
+- **Files touched and projects crossed:** per call and window totals.
+- **Per-tool breakdown:** a live bar per tool (`callers`, `impact`, ...) with call counts and tokens saved in the window.
+- **Backend use:** live shares of LSP / tree-sitter / text answers and the number of fallbacks in the window.
+- **Cache and caps:** how many answers were cut by a cap and how many fell back, as live counters.
+- **Call feed:** newest first, one row per finished call with tool, symbol, caller, project, backend, requested, returned, tokens saved and latency; failed calls in red with the error; interrupted calls marked as such. The feed scrolls by itself and keeps the last 200 rows; it is read-only like the canvas (no click to replay), but it can be filtered by agent, tool and project with controls above it.
+- **Window selector:** totals cover the last 1, 5 or 15 minutes, or "since `rtok web` started"; changing it recomputes from the store, not from what the browser happened to receive.
+- **Freeze button:** stops the live canvas and the displays updating so a moment can be read; events keep arriving in the background and the view catches up on unfreeze. Totals never drop events.
 
 **Data path.**
 
-- The graph plugin emits one event when a query starts and one when it ends (with the numbers above) to the existing `/ws` stream; the page subscribes only while live mode is on (option A) or the live tab is open (option B), so there is no cost when nobody is watching.
-- Events from the MCP server process, CLI runs and `rtok web` all reach the page: they go through the store (or the daemon channel the web UI already uses) so a query made by an agent in another process shows up in the browser within one second.
-- Event payloads carry ids and numbers, not source text; symbol names and paths are included because the graph already shows them.
-- The overlay batches updates per animation frame; a burst (for example 200 queries per second from a busy agent) is coalesced so the page stays at its frame-rate target, and the panel shows "+N more" instead of rendering every row.
+- The graph plugin emits a start event and an end event per call (with the numbers above, and a progress event while a long answer streams) on the existing `/ws` stream. The page subscribes only while part 2 is visible, so a hidden or collapsed live graph costs nothing.
+- Events from the MCP server process, CLI runs and `rtok web` all reach the page through the store (or the daemon channel the web UI already uses), so an agent's call in another process shows up within one second.
+- Payloads carry ids, symbol names, paths and numbers, never source text.
+- Rendering is batched per animation frame; a burst (for example 200 calls per second) is coalesced for display, while counters and totals still count every call.
 
 **Edge cases.**
 
-- No activity: the panel says "No graph queries yet" and shows how to trigger one (an MCP call or `rtok graph callers ...`).
-- A query that fails (no backend, timeout) shows in red with its error; a query still running when its process exits is marked "interrupted" after a timeout.
-- Queries for a project not in the current scope still appear in the panel (marked "outside scope") but do not light up the graph unless the user switches to that project.
-- Reconnect after `/ws` drops: the page shows "reconnecting", then resumes; events missed while disconnected are summarised as a count, not replayed one by one.
-- Multiple browser tabs in live mode each receive the stream; closing them stops the subscription.
-- Privacy: live mode is local to `rtok web` like the rest of the UI (bound to localhost by default); no events leave the machine.
+- No activity yet: the live graph shows the static graph dimmed and "Waiting for graph calls"; the displays show zeros, not blanks.
+- A failing call (no backend, timeout) pulses red on its node and appears red in the feed with the error.
+- A call still running when its process exits is marked "interrupted" after a timeout and stops counting as running.
+- Calls on a project outside the current scope are counted in the totals and listed in the feed (marked "outside scope") but do not light up the canvas.
+- `/ws` drops: the live part shows "reconnecting", then resumes; missed events are shown as a count and the totals are refreshed from the store.
+- Part 1 drills into a project while calls are running: the live graph switches level with it and re-attaches running calls to the new view.
+- Several browser tabs: each live graph receives the stream; closing or hiding them stops the subscription.
+- WebGL unavailable: the live graph uses the same 2D fallback as part 1; the metric displays do not depend on WebGL.
+- Live events stay local to `rtok web` (localhost by default); nothing leaves the machine.
 
-**Config.** `[plugins.graph] live_heat_window_s = 300`, `live_max_events_per_s = 50` (rendering cap; everything beyond is coalesced, never dropped from totals), documented in `docs/config.md`.
+**Config.** `[plugins.graph] live_heat_window_s = 300`, `live_max_events_per_s = 50` (rendering cap only), `live_feed_rows = 200`, documented in `docs/config.md`.
 
 #### 9. Docs
 
@@ -920,8 +934,8 @@ Check (fixture repos under `tests/fixtures`, no network):
 - Visual graph, level 1: with A, B, C, D the page shows 4 projects, 3 in A's scope and 3 linked pairs (A to B, B to C, A to D); the A-to-B edge is dashed with the Cargo reason on hover, A-to-D is solid; clicking B selects it; a missing project is drawn hollow and cannot be opened.
 - Visual graph, level 2: opening A shows its files with aggregated edges; expanding a file shows its functions; focusing the function that calls into C shows the edge ending at a C node, and clicking it opens the target symbol inside C; the breadcrumb and browser back return to the overview; a text-mode project shows the "call edges not available" banner; editing a file with `watch` on updates the node without resetting zoom; a fixture with more than 500 nodes shows "+N more" groups and the page stays responsive.
 - 3D: both levels render in Three.js (Playwright with SwiftShader sees a non-empty canvas and can select a node by click); disabling WebGL shows the 2D fallback with a notice; the 2D/3D toggle is remembered across reloads; orbiting the 500-node fixture stays smooth and the layout stops when settled; leaving the page releases the WebGL context.
-- Live mode: with the toggle on (option A), an MCP `callers` call from a separate process lights up the target node within one second, animates the path into a linked project, and adds a panel row whose symbols requested/returned, tokens and saving equal the matching `Measurement` row and `rtok stats`; turning the toggle off removes the overlay and keeps the camera; the `/graph/live` tab (option B) shows the same event; pause then resume catches up without losing totals; a burst of 500 queries in 5 s keeps the page responsive and the totals exact; a failing query shows red with its error; dropping and restoring `/ws` shows "reconnecting" and a missed-events count; with no viewer subscribed, no live events are serialised.
-- Playwright covers the selector, the indicator and its states, link/unlink, project badges, backend tags, both graph levels, 3D and 2D modes, live mode (toggle and separate view) and the list-view fallback; `just check`.
+- Two-part UI: an MCP `callers` call from a separate process lights up the target node in the live graph within one second, animates the path into a linked project and adds a feed row whose symbols requested/returned, tokens and saving equal the matching `Measurement` row and `rtok stats`; part 1's camera and selection do not move; clicking, dragging, hovering and keyboard input on the live canvas change nothing (Playwright asserts no selection or camera change); drilling into a project in part 1 switches the live graph to it; freeze then unfreeze catches up without losing totals; a burst of 500 calls in 5 s keeps both parts responsive and the totals exact; a failing call shows red with its error; dropping and restoring `/ws` shows "reconnecting" and refreshes totals from the store; with the live part hidden, no live events are serialised; on a 375 px screen the live part stacks below as a metrics strip.
+- Playwright covers the selector, the indicator and its states, link/unlink, project badges, backend tags, both graph levels, 3D and 2D modes, the two-part layout with the read-only live graph and its metric displays, and the list-view fallback; `just check`.
 
 ## Reference
 
