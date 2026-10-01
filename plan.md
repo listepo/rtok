@@ -737,31 +737,46 @@ Docs: `docs/agents.md` (doctor section) and the doctor help text, with `docs/ru/
 
 Dependencies: host adapters and config maps (`research.md`), JSONC/TOML editors, `_backup` generations (T249), T275/T278 (rtok MCP rules and per-surface state); relates to T271.
 
-#### Tests (many, all on fixture homes and fixture projects; no real agent config is touched)
+#### Tests: heavily mocked, many, and isolated from the real machine
 
-Unit tests on the pure classifiers (no files, no processes):
+**Rule: no test reads or writes a real file, a real agent directory or a real agent.** Every test runs against mocked data only. Concretely:
 
-- Command parsing: plain path, `~/`, `$HOME`, `${VAR}`, quoted paths with spaces, interpreter + script for each listed interpreter, `npx`/`uv run` forms, Windows `cmd /c` and PowerShell forms; `$(…)`, backticks and pipes classify as "cannot verify".
-- Broken: missing file, dangling symlink, program not on a fixture `PATH`, unknown variable (cannot verify), existing non-executable direct target (suspect, not broken), builtin (fine).
-- Duplicate hooks: same event + matcher + command in two sources (duplicate); differing only by whitespace/quoting (duplicate); different matcher (not); different event (not); matcher lists in different order (duplicate); differing timeout (duplicate, timeout shown); `bash x.sh` vs `./x.sh` with and without a bash shebang.
-- Duplicate MCP: same name in two loaded sources; different names with identical launch; same command different args (not); `npx pkg@1` vs `npx pkg@2` (conflict, not duplicate); URL normalization; env values compared but never printed; host that de-duplicates by name reports "shadowed".
-- Keep-choice: plugin over project over user over local over first; rtok's own entries follow T275; never removes the last copy.
+- **No real paths.** Tests never touch `~`, `~/.claude*`, `~/.cursor`, `~/.codex`, `~/.gemini`, `~/.kimi`, the real `PATH`, real plugin directories, or the repository's own `.claude/`/`.mcp.json`. The doctor code reaches the filesystem, environment and process lookup only through injected traits (`Fs`, `Env`, `Which`, `Clock`), so tests pass mocks and production passes the real implementations. A guard test fails the suite if any doctor module calls `std::fs`, `std::env` or `which` directly instead of the traits.
+- **No real agents.** No host binary is launched, no MCP server is started, no hook is executed. Hosts are described by mocked host profiles (which config sources exist, their scope, load order, merge rules, whether the host de-duplicates MCP by name or hooks by command).
+- **A belt on top:** integration tests that need real files on disk (golden-file edits, permissions, mtime races) use a fresh `tempfile::TempDir` as a fake `HOME` and fake project, with `HOME`, `USERPROFILE`, `XDG_*`, `APPDATA` and `PATH` overridden for the process, and assert at the end that nothing outside the temp dir was created or changed.
 
-Integration tests per host (Claude Code, Cursor, Codex, Gemini, Kimi at least), each with a fixture home and project:
+**What is mocked:**
 
-- Effective set: user + project + local + plugin sources merge as the host does; a source from another project is not included.
-- `rtok doctor` lists exactly the seeded broken hooks, duplicate hooks and duplicate MCP entries with source paths, and nothing else; `--json` matches.
-- `rtok doctor` without `--fix` changes no file (hash of every fixture file before equals after).
-- `--fix --dry-run` prints the expected diffs and changes nothing.
-- `--fix --yes` removes only the selected entries: broken hooks gone; one copy of each duplicate kept (the expected one); every other key, comment and formatting byte-identical (golden files); empty groups and events removed; backups created.
-- `--only duplicate-mcp` touches only MCP entries.
-- Managed file and plugin files are never edited; a duplicate resolvable only there is reported, not fixed.
-- File changed between scan and write is skipped with the message; unparsable file reported and untouched; read-only file reported, others fixed, exit code 1.
-- Re-running `rtok doctor` after `--fix --yes` reports zero problems.
-- Interactive checklist driven through a pseudo-terminal: toggling an item and changing the kept copy changes the written result accordingly.
-- Windows CI: `PATHEXT` resolution and case-insensitive duplicate detection.
+- **File system** (`MockFs`, in memory): files with contents, permissions (executable bit, read-only), mtimes and hashes; directories; symlinks, including dangling ones and symlink loops; unmounted volumes (a path prefix that reports "not mounted"); case-insensitive mode for Windows cases; injected failures (permission denied on read or write, disk full, file changed between read and write).
+- **Environment and PATH** (`MockEnv`, `MockWhich`): `HOME`, host variables (`CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, ...), a fake `PATH` with chosen programs present or absent, `PATHEXT` for Windows, shell builtins list.
+- **Agent configs:** mocked settings and MCP files per host and scope (user, project, local, managed/enterprise, plugin), in JSON, JSONC (with comments and trailing commas) and TOML, including deliberately unparsable files.
+- **Hook definitions:** built with a small builder (`hook(event).matcher(..).command(..).timeout(..)`) and rendered into each host's real config shape, so the same logical hook can be placed in several sources.
+- **MCP server entries:** builder (`mcp(name).command(..).args(..).env(..)` / `.url(..)`) rendered into `mcpServers` JSON or `[mcp_servers.<name>]` TOML.
+- **Plugins:** mocked installed and disabled plugins with their own `hooks.json` and `.mcp.json`.
+- **Doctor output:** the result model (`problems[]`) is asserted structurally; the human table and `--json` output are checked with snapshot tests (`insta`) over the mocked world, with temp paths normalized.
+- **User interaction:** the `--fix` checklist reads from an injected `Prompt` trait; tests script the answers (toggle item 2, keep copy B, confirm, or cancel). One pseudo-terminal test drives the real terminal UI against a mocked world.
 
-Check: all of the above pass; `just check`.
+**How fixtures are structured:**
+
+- `tests/fixtures/doctor/<scenario>/` holds a declarative `world.toml`: host profiles, files (path, contents or a pointer to a file beside it, mode, symlink target), env, PATH programs, plugins; plus `expected.json` (the problems doctor must report) and, for fix scenarios, `after/` golden files and `selection.toml` (what the user picks).
+- A `World` builder loads a scenario into `MockFs`/`MockEnv` (unit level) or materializes it in a temp dir (integration level), so the same scenario runs at both levels.
+- Shared building blocks: one "clean" baseline world per host with valid hooks and MCP entries; scenarios add or remove a small delta so each test reads as "baseline plus this problem".
+- Property tests (`proptest`) generate random hook and MCP sets across sources and check invariants: fix never removes the last copy of anything, never removes a valid non-duplicate entry, and running doctor after fix reports no fixable problems.
+
+**Scenarios that must be covered (each with its expected result):**
+
+- **Broken hook references:** missing script; deleted script that a symlink still points to; program not on PATH; interpreter + missing script for each listed interpreter; `${CLAUDE_PLUGIN_ROOT}` of an uninstalled plugin; relative path resolved against the host's hook directory, not the test's working directory; unmounted volume; quoted paths with spaces; Windows `PATHEXT` and `cmd /c`. Expected: each listed as broken with the right reason and marked fixable.
+- **Hooks that must not be called broken:** valid script; builtin; program on PATH; existing but non-executable script (suspect, `chmod +x` hint, not fixable); command with `$(…)`, backticks, pipes or unknown variables (cannot verify, not fixable). Expected: not in the broken list, never offered for deletion.
+- **Duplicate hooks across configs:** user + project; `settings.json` + `settings.local.json`; plugin + hand-written copy; repeat inside one file; three copies; copies differing only in whitespace, quoting, matcher-list order or timeout. Expected: one group per duplicate with every copy, the recommended keep matching the keep rules.
+- **Not duplicates:** different event; different matcher; sources never loaded together (another project, disabled plugin); host that de-duplicates by command. Expected: no duplicate reported (or "harmless on <host>").
+- **Duplicate MCP entries:** same name in two loaded sources; different names with the same launch; plugin MCP plus hand-written entry (the T271 case on every host); URL servers differing only by case or trailing slash. Expected: one group per server, process count, keep recommendation; env values never appear in output.
+- **MCP that must not be called duplicate:** same command with behaviour-changing args; `npx pkg@1` vs `pkg@2` (conflict instead); disabled server; host that resolves by name (reported "shadowed").
+- **User selecting cleanup:** default selection with `--yes`; toggling items off; choosing a different copy to keep; `--only` per kind; `--dry-run`; cancel at the confirmation. Expected: only the selected entries disappear, golden files match byte for byte (comments, ordering and formatting kept), empty groups and events removed, backups created, cancel and dry run change nothing.
+- **Refusing to delete valid hooks and entries:** a selection file or JSON input that names a valid hook, a suspect hook, a "cannot verify" hook, the last copy of a duplicate, an entry in a managed file or in a plugin's own files. Expected: doctor refuses each with a clear message, writes nothing for it, and exits with code 1 if it was explicitly requested.
+- **Failure and race cases:** unparsable config (reported, untouched); read-only file (reported, others fixed, exit 1); file changed between scan and write (skipped with "changed since check"); write failure midway (the file is left as it was, the backup is intact).
+- **Combined case:** a world with broken hooks, duplicate hooks and duplicate MCP entries across several hosts at once; after `--fix --yes`, re-running doctor reports zero fixable problems and every valid entry is still present.
+
+Check: all of the above pass on Linux, macOS and Windows CI; the "no real paths" guard test passes; `just check`.
 
 ## Reference
 
