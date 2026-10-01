@@ -267,23 +267,32 @@ fn drop_registry_host(s: &str) -> String {
         .join(" ")
 }
 
+/// `2 hours` → `2h`. Only a number followed by a unit shortens: docker's prose forms
+/// (`About an hour`, `Less than a second`) have no number and stay whole words.
 fn shorten_ago(s: &str) -> String {
-    let mut out = s.to_string();
-    for (from, to) in [
-        (" days", "d"),
-        (" day", "d"),
-        (" hours", "h"),
-        (" hour", "h"),
-        (" minutes", "m"),
-        (" minute", "m"),
-        (" seconds", "s"),
-        (" second", "s"),
-        (" weeks", "w"),
-        (" week", "w"),
-    ] {
-        out = out.replace(from, to);
+    let unit = |w: &str| match w {
+        "day" | "days" => Some('d'),
+        "hour" | "hours" => Some('h'),
+        "minute" | "minutes" => Some('m'),
+        "second" | "seconds" => Some('s'),
+        "week" | "weeks" => Some('w'),
+        _ => None,
+    };
+    let words: Vec<&str> = s.split(' ').collect();
+    let mut out: Vec<String> = Vec::with_capacity(words.len());
+    let mut i = 0;
+    while i < words.len() {
+        let w = words[i];
+        let number = !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit());
+        if let Some(u) = words.get(i + 1).copied().and_then(unit).filter(|_| number) {
+            out.push(format!("{w}{u}"));
+            i += 2;
+        } else {
+            out.push(w.to_string());
+            i += 1;
+        }
     }
-    out
+    out.join(" ")
 }
 
 /// `kubectl get`: one row per object, dropping wide columns (AGE, NODE, RESTARTS)
@@ -311,13 +320,39 @@ fn kubectl_get(output: &str) -> Option<String> {
     if idx.is_empty() {
         return None;
     }
+    // kubectl aligns columns, and a cell can hold spaces (RESTARTS `1 (3m ago)` since
+    // 1.22), so a cell is the text under its header, not the n-th whitespace token.
+    let starts: Vec<usize> = header
+        .char_indices()
+        .filter(|&(i, c)| c != ' ' && (i == 0 || header.as_bytes()[i - 1] == b' '))
+        .map(|(i, _)| i)
+        .collect();
+    let cell = |line: &str, col: usize| -> Option<String> {
+        let from = starts.get(col).copied()?;
+        let to = starts.get(col + 1).copied().unwrap_or(usize::MAX);
+        let bytes = line.get(from..)?;
+        let text = bytes.get(..to - from).unwrap_or(bytes).trim();
+        (!text.is_empty()).then(|| text.to_string())
+    };
     let mut out = vec![idx.iter().map(|&i| cols[i]).collect::<Vec<_>>().join(" ")];
     for line in lines {
         let fields: Vec<&str> = line.split_whitespace().collect();
         if fields.len() < 2 {
             continue;
         }
-        let picked: Vec<&str> = idx.iter().filter_map(|&i| fields.get(i).copied()).collect();
+        // A row that does not line up with the header (proportional output, a cell
+        // wider than its column) falls back to token order.
+        let aligned = starts.len() == cols.len()
+            && starts.iter().skip(1).all(|&at| {
+                at <= line.len() && line.is_char_boundary(at) && line[..at].ends_with(' ')
+            });
+        let picked: Vec<String> = if aligned {
+            idx.iter().filter_map(|&i| cell(line, i)).collect()
+        } else {
+            idx.iter()
+                .filter_map(|&i| fields.get(i).map(|f| f.to_string()))
+                .collect()
+        };
         if !picked.is_empty() {
             out.push(picked.join(" "));
         }
@@ -401,6 +436,36 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
+
+    /// Only `<number> <unit>` shortens; docker's prose forms stay readable words.
+    #[test]
+    fn shorten_ago_leaves_docker_prose_durations_whole() {
+        assert_eq!(shorten_ago("Up 2 hours"), "Up 2h");
+        assert_eq!(shorten_ago("Exited (0) 3 days ago"), "Exited (0) 3d ago");
+        assert_eq!(shorten_ago("Up 1 week (healthy)"), "Up 1w (healthy)");
+        assert_eq!(shorten_ago("Up About an hour"), "Up About an hour");
+        assert_eq!(shorten_ago("Up About a minute"), "Up About a minute");
+        assert_eq!(
+            shorten_ago("Up Less than a second"),
+            "Up Less than a second"
+        );
+    }
+
+    /// kubectl ≥1.22 prints RESTARTS as `1 (3m ago)`: three tokens in one column, so
+    /// later columns are found by the header's offsets, not by token index.
+    #[test]
+    fn kubectl_get_wide_keeps_ip_after_a_restart_with_age() {
+        let out = kubectl_get(
+            "NAME    READY   STATUS    RESTARTS     AGE   IP         NODE\n\
+             p       1/1     Running   1 (3m ago)   10d   10.0.0.5   n1\n\
+             q       0/1     Pending   0            1m    <none>     <none>\n",
+        )
+        .expect("table");
+        assert_eq!(
+            out,
+            "NAME READY STATUS IP\np 1/1 Running 10.0.0.5\nq 0/1 Pending <none>"
+        );
+    }
 
     /// T176 audit repro: `cargo nextest run … | tail -300` came back as 4.7 KB of 20 KB and
     /// lost the failing test's panic. Bounded, the failure block survives whole; the same
