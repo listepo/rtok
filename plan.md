@@ -1559,5 +1559,7 @@ cache-hit test, re-post expecting a cache hit) too early.
 Plan: tests wait with a bounded deadline (no fixed sleeps) for the last row they
 assert (`tokens`), via one shared poll helper in `tests/proxy.rs`; `finish` fills the
 in-memory semantic cache before the `usage`/`tokens` rows, so "usage row present"
-implies "cache filled". Fail-open unchanged. Verify: `just check`, the proxy tests.
-Done: no read-after-`usage` race left in `tests/proxy.rs`.
+implies "cache filled". Fail-open unchanged.
+
+Check: `just check` and `cargo nextest run --test proxy` green on all CI runners; no
+read-after-`usage` race left in `tests/proxy.rs`.
