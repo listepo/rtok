@@ -747,6 +747,52 @@ Rules for 4b:
 - Output caps and token budgets apply to the whole scoped answer, not per project, so linking projects does not multiply the size of an MCP reply.
 - Watching: when `watch` is on, file changes in any project in the scope update its index and refresh the page over `/ws`.
 
+#### 6a. Backends: LSP by default, then tree-sitter, then plain text search
+
+Today `[plugins.graph] backend` defaults to `tags` (tree-sitter tags index), and `backend = "lsp"` errors out when the server is missing (`docs/lsp.md`, "Without the server"). T316 changes the default to an ordered fallback chain, `backend = "auto"`: LSP first, tree-sitter second, plain text search last. Setting `backend = "lsp"`, `"tags"` or `"text"` pins one mode with no fallback (today's strict behaviour, kept for tests and for users who want it).
+
+Backends are chosen per project and per language, not once per process: in a scope where A is Rust with rust-analyzer installed and B is Go with no server, A's rows come from LSP and B's from tree-sitter, in the same answer.
+
+**Mode 1: LSP (default).**
+
+- Used when a server for the project's language is configured and works: the marker file is found (`Cargo.toml`, `compile_commands.json`, `tsconfig.json`, `pubspec.yaml`, plus any added later) and the server binary is on `PATH` (or resolved through `rustup which rust-analyzer`, as today), spawns over stdio, and answers `initialize`.
+- Gives the most precise answers: type-position references, trait/interface implementations, re-exports and macro-expanded calls that tags miss.
+- Cross-project traversal uses each project's own server; a definition location the server returns inside a linked project's root is mapped to that project and labelled with it.
+- A server that starts but crashes or times out mid-session (default per-request timeout 10 s) marks that project's LSP as failed, answers the current request from the next mode and says so in the result (see "Which mode answered" below). It is not respawned on every request (see 6b).
+- Indexing on large projects: while the server is still indexing (`$/progress` not finished), requests wait up to the timeout; on timeout they fall back to tree-sitter for that request only and keep LSP as the working mode.
+
+**Mode 2: tree-sitter (fallback).**
+
+- Used when LSP is not configured or not working for that project, and a tree-sitter grammar for the project's languages is compiled into rtok (the existing tags index in SQLite).
+- Answers from the existing per-project tags index: definitions, call sites by name, outlines. It indexes the project on first use if needed, with the usual stale banner for pending files.
+- Known limits, stated in the result when they matter: name-based resolution (several definitions with the same name are reported as ambiguous), no type-position references, no macro expansion.
+- Cross-project traversal joins the tags indexes of every project in the scope by symbol name, preferring a definition in the selected project, then in directly linked projects, then transitively linked ones.
+
+**Mode 3: plain text search (last resort).**
+
+- Used when neither LSP nor a tree-sitter grammar is available for the project (for example a language rtok has no grammar for).
+- Runs plain text search through the shell: `rg` (ripgrep) when present, `grep -rn` otherwise, with word-boundary patterns built from the symbol name and simple per-language definition patterns (`fn name`, `def name`, `function name`, `class name`, `func name`). For a project whose root is on another machine (registered as `ssh://host/path`), the same commands run over `ssh host` with the same arguments; the SSH host must already be reachable without a prompt (key or agent), otherwise the mode is reported as not working.
+- Answers are best effort: `symbol` returns matching definition lines, `callers` returns lines that mention the name outside its definition, `outline` returns definition-pattern matches in the file, `impact` is limited to one level, and `dead` is not offered (the page and the tool say "not available in text mode" instead of guessing).
+- Every text-mode result says it came from text search and may include false positives (comments, strings, same-named symbols). Output is capped the same way as other modes.
+- Respects `.gitignore` and the project's ignore settings; never searches outside the project roots in the scope.
+
+**When no mode works.** If all three fail for a project (no server, no grammar, no `rg`/`grep`, or SSH unreachable), that project is dropped from the answer with one clear line ("project B: no graph backend available: ...") and the other projects still answer. If it is the only project, the tool returns that error.
+
+**Which mode answered.** Every result says which mode answered for each project (page: a small LSP / tree-sitter / text tag next to the project badge; JSON: `backend` per project; text output: one header line). `Measurement` rows keep `kind = "lsp.*"` for LSP and gain `tags.*` and `text.*` kinds, so `rtok stats` shows how often each mode is used.
+
+**Config.** `[plugins.graph] backend = "auto" | "lsp" | "tags" | "text"` (default `auto`), `lsp_timeout_ms = 10000`, and per-language overrides (`[plugins.graph.backend_by_language] go = "tags"`), documented in `docs/config.md` and `docs/lsp.md` (whose "Without the server" section changes to describe the fallback).
+
+#### 6b. Capability cache: check once, reuse until the MCP server restarts
+
+- The first graph request for a project (and language) runs the capability check: find the LSP marker and server binary and try to start it; check for a tree-sitter grammar; check for `rg`/`grep` (and SSH reachability for remote roots). The result is a per-project record such as "LSP works", or "LSP: rust-analyzer not on PATH; tree-sitter works", or "LSP and tree-sitter unavailable; text works".
+- Later requests use that record directly: they go straight to the working mode and do not re-probe the modes that failed. No `PATH` lookup, no server spawn attempt and no grammar check runs again on each request.
+- The cache lives in memory in the rtok MCP server process (and in the `rtok web` process for the page). It is kept until that process restarts; restarting the MCP server is the way to re-check after installing a language server. It is not written to disk, so a new process always checks fresh.
+- A working mode that later breaks (server crash, repeated timeouts) is downgraded in the cache once, and the next mode becomes the cached choice for that project for the rest of the process; it is not re-probed per request.
+- Changing `[plugins.graph] backend` or the per-language overrides in config clears the cached record for the affected projects (the config watcher already reloads settings); nothing else invalidates it.
+- Adding a new project (manually, by session or by reference) runs the check once for that project only; existing records are untouched.
+- `rtok graph projects --json` and the page show each project's cached capability record and when it was checked, so the user can see why a mode was chosen.
+- Concurrent first requests for the same project share one check (single-flight); they do not spawn several servers.
+
 #### 7. CLI and MCP
 
 - `rtok graph projects` lists projects, `rtok graph projects add <path>`, `remove <id|path>`, `select <id|path>`, `link <id|path>`, `unlink <id|path>`; all support `--json`.
@@ -761,7 +807,7 @@ Rules for 4b:
 
 #### 9. Docs
 
-`docs/plugins.md` (graph section: projects, links, references, scope) and `docs/config.md` (the new `[plugins.graph]` keys), with `docs/ru/` and `docs/uk/` updated in the same change.
+`docs/plugins.md` (graph section: projects, links, references, scope, backends), `docs/lsp.md` (fallback chain and capability cache) and `docs/config.md` (the new `[plugins.graph]` keys), with `docs/ru/` and `docs/uk/` updated in the same change.
 
 #### 10. Delivery
 
@@ -783,7 +829,12 @@ Check (fixture repos under `tests/fixtures`, no network):
 - A new agent session in a new directory registers it when `auto_add_projects` is on and not when it is off; `auto_link_references = false` adds no reference projects.
 - The selection survives an `rtok web` restart and syncs between two browser tabs.
 - MCP `callers` without `project` from A's directory crosses into B and C; with `project` set to D it does not.
-- Playwright covers the selector, the indicator and its states, link/unlink and project badges; `just check`.
+- Backends, with `backend = "auto"`: with rust-analyzer on `PATH`, A answers from LSP (result tagged LSP) and finds a type-position reference tags would miss; with it removed from `PATH` and the MCP server restarted, A answers from tree-sitter (tagged tree-sitter); a fixture project in a language with no grammar answers from text search (tagged text, `dead` reported as not available); a scope mixing all three labels each project with its own mode.
+- `backend = "lsp"` with no server still errors as today (no fallback when pinned).
+- A server that crashes mid-session: the current request is answered from tree-sitter with a notice, and later requests go straight to tree-sitter without respawning the server.
+- Capability cache: a test counts probes; 100 requests to the same project after the first run zero further `PATH` lookups or spawn attempts; installing the server without restarting changes nothing; restarting the MCP server picks it up; changing `backend` in config re-checks only the affected projects; two concurrent first requests run one check.
+- Remote text mode: a project registered as `ssh://localhost/<path>` (test runs only when passwordless SSH to localhost works, otherwise skipped) answers `symbol` over SSH; an unreachable host is reported as no backend available without hanging past the timeout.
+- Playwright covers the selector, the indicator and its states, link/unlink, project badges and backend tags; `just check`.
 
 ## Reference
 
