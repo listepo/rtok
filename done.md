@@ -7264,6 +7264,20 @@ Check: `config_page_exists_on_both_surfaces`; a `tests/web.rs` case on a temp co
 
 Result: New Config page ("config","config") on both surfaces: model::config_page_text renders config_entries rows as key = value (source) each tick; TUI tab with a / filter, Slint page with a filter box; read-only. config get gained --json {key,value,source}; config show/get moved from EXEMPT to COMMAND_PAGES/JSON_READERS. Tests: config_page_exists_on_both_surfaces, config_page_source_reflects_an_env_override (RTOK_PROXY_PORT → source env), webui snapshot parse.
 
+### T324. Store: atomic archive file writes; a resumed agent is live again
+
+Found by a bug-hunt pass over `src/store/**`.
+
+1. `write_archive_file` wrote the content-addressed archive with `fs::write`, which truncates in place: a concurrent writer of the same body or a crash let `rtok expand` read an empty or short file, breaking the lossless rule. It now writes a sibling temp file and renames it over the target.
+2. `register_agent` kept `ended_at` on conflict, so a resumed session (same id after `SessionEnd`) never showed in `live_agents` again. The upsert now clears it.
+
+A third audit claim (`symbols::replace_one` keeps stale rows for an emptied file) was a false positive: the delete runs before the empty-rows return.
+
+Check: new `archive_file_write_replaces_the_target_atomically` and `registering_an_ended_agent_again_makes_it_live` (both failed before the fix); `just check` green.
+
+Status: done 2026-10-01
+Model: Claude Code / sonnet (reviewed by Claude Code / claude-opus-5-5)
+
 ### T178. Hook wall-clock time as Claude Code sees it
 
 Found in the 2026-09-22 audit: in-process hook time is p50 0.3 ms, but Claude Code records p50 18–19 ms and p95 206–255 ms for PreToolUse/PostToolUse — process start of a 27 MB binary dominates and the ≤ 10 ms rule is broken on every call without rtok noticing. Ten hooks were cancelled at Claude Code's 5 s timeout (5 PreToolUse, 5 UserPromptSubmit with p50 5.6 s — no UserPromptSubmit rows exist in the store, so the owner is unconfirmed). SessionEnd (p50 18.9 ms) and PreCompact (p50 15.0 ms) are over budget in-process.
