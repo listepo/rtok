@@ -219,10 +219,11 @@ mod tests {
     fn leading_cd_hops_stay_outside_the_wrap() {
         let d = decide("cd crates/rtok && cargo test").unwrap();
         assert_eq!(wrapped(&d), "cd crates/rtok && rtok run -- 'cargo test'");
-        let d = decide("cd 'a && b' && cd c && git status | head").unwrap();
+        // Double quotes: on Windows any apostrophe keeps the command unwrapped (T55.12).
+        let d = decide(r#"cd "a && b" && cd c && git status | head"#).unwrap();
         assert_eq!(
             wrapped(&d),
-            "cd 'a && b' && cd c && rtok run -- 'git status | head'"
+            r#"cd "a && b" && cd c && rtok run -- 'git status | head'"#
         );
         let d = decide_as(Some("sub_1"), "cd x && ls").unwrap();
         assert_eq!(wrapped(&d), "cd x && rtok run --agent sub_1 -- 'ls'");
