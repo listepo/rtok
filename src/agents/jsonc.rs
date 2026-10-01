@@ -121,11 +121,16 @@ fn skip_value(text: &str, i: usize) -> Option<usize> {
         b'"' => scan_string(bytes, i),
         _ => {
             let mut j = i;
-            while j < bytes.len() && !matches!(bytes[j], b',' | b'}' | b']') {
+            // A literal holds no whitespace or `/`, so it stops before a trailing comment and
+            // that comment stays outside the span a replace overwrites.
+            while j < bytes.len()
+                && !bytes[j].is_ascii_whitespace()
+                && !matches!(bytes[j], b',' | b'}' | b']' | b'/')
+            {
                 j += 1;
             }
             // A literal must end before a delimiter, not at end of input.
-            (j > i && j < bytes.len()).then_some(j)
+            (j > i && skip_trivia(text, j) < bytes.len()).then_some(j)
         }
     }
 }
@@ -441,6 +446,38 @@ mod tests {
             remove_member(&body, Path::new("t"), "context_servers", "rtok").unwrap();
         assert!(removed, "{back}");
         assert_eq!(strip_comments(raw), "{\n  \n  \"theme\": \"dark\"\n}\n");
+    }
+
+    /// T328: replacing a literal entry value must keep the comment that follows it, even when a
+    /// comma or newline sits between the literal and the next member.
+    #[test]
+    fn replacing_a_literal_entry_keeps_the_trailing_comment() {
+        let entry = entry();
+        let want_value = render_entry(&entry, 4);
+        for (before, after) in [
+            ("true // note\n,", "// note\n,"),
+            ("true // a, b\n,", "// a, b\n,"),
+            ("true /* keep */ ,", "/* keep */ ,"),
+        ] {
+            let raw = format!("{{\"s\": {{\"rtok\": {before}\"x\": 1}}}}");
+            let (body, edit) = upsert_member(&raw, Path::new("t"), "s", "rtok", &entry).unwrap();
+            assert_eq!(edit, Upsert::Replaced, "{body}");
+            let want = format!("{{\"s\": {{\"rtok\": {want_value} {after}\"x\": 1}}}}");
+            assert_eq!(body, want);
+        }
+    }
+
+    /// T328: a trailing comment after an object-valued entry is untouched by a replace.
+    #[test]
+    fn replacing_an_object_entry_keeps_the_trailing_comment() {
+        let raw = "{\"s\": {\"rtok\": {\"command\": \"old\"} /* keep */ , \"x\": 1}}";
+        let (body, edit) = upsert_member(raw, Path::new("t"), "s", "rtok", &entry()).unwrap();
+        assert_eq!(edit, Upsert::Replaced, "{body}");
+        let want = format!(
+            "{{\"s\": {{\"rtok\": {} /* keep */ , \"x\": 1}}}}",
+            render_entry(&entry(), 4)
+        );
+        assert_eq!(body, want);
     }
 
     /// White-box: the scanner finds keys through strings, comments and nesting, and an

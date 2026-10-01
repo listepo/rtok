@@ -1567,12 +1567,14 @@ fn ketch_store_plugin(
         .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
         .map(|e| e.path())
         .collect();
-    // Lexicographic order is enough for `v0.1.5`-style tags; newest last.
-    entries.sort_by(|a, b| {
-        a.file_name()
-            .unwrap_or_default()
-            .cmp(b.file_name().unwrap_or_default())
-    });
+    // Newest last: by semver (`v0.1.10` > `v0.1.9`); a name that does not parse sorts before
+    // every version and falls back to name order among its kind.
+    let key = |p: &std::path::PathBuf| {
+        let name = p.file_name().unwrap_or_default().to_string_lossy();
+        let ver = semver::Version::parse(name.strip_prefix('v').unwrap_or(&name)).ok();
+        (ver, name.into_owned())
+    };
+    entries.sort_by_cached_key(key);
     for dir in entries.into_iter().rev() {
         let candidate = join_rel(&dir, rel);
         if candidate.exists() {
@@ -1970,6 +1972,24 @@ mod tests {
             "0.1.4",
         );
         assert_eq!(got, newer);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// T328: the newest store folder is chosen by semver, not by name (`v0.1.10` > `v0.1.9`).
+    #[test]
+    fn ketch_store_takes_the_newest_version_not_the_lexicographic_last() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("rtok-ketch-semver-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let store = root.join("store").join("rtok");
+        for v in ["v0.1.9", "v0.1.10"] {
+            write_plugin(&store.join(v).join("plugins").join("cursor"));
+        }
+        let got = ketch_store_plugin(&root, "plugins/cursor", "9.9.9");
+        assert_eq!(
+            got,
+            Some(store.join("v0.1.10").join("plugins").join("cursor"))
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
