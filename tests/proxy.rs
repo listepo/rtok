@@ -102,6 +102,10 @@ impl MockUpstream {
     pub fn assert_upstream_called_once(&self) {
         self.mock.assert();
     }
+
+    pub fn assert_upstream_hits(&self, n: usize) {
+        self.mock.assert_calls(n);
+    }
 }
 
 fn post(up: &MockUpstream, path: &str) -> Vec<u8> {
@@ -1471,6 +1475,126 @@ async fn proxy_cache_hit_records_usage_and_request_bytes() {
             .expect("measurements"),
         1
     );
+    task.abort();
+}
+
+/// A proxy with the semantic cache on, pointed at `upstream`.
+async fn t323_server(label: &str, upstream: String) -> Server {
+    proxy_server(&format!("t323-{label}"), |cfg| {
+        cfg.proxy.upstream = upstream;
+        cfg.plugins.proxy.semantic_cache.enabled = true;
+    })
+    .await
+}
+
+/// T323: an upstream that promises a long JSON body, sends a prefix and hangs up. Binds
+/// an ephemeral port; the counter is how many requests reached it.
+fn t323_truncating_upstream() -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind fake upstream");
+    let url = format!("http://{}", listener.local_addr().expect("local addr"));
+    let hits = Arc::new(AtomicUsize::new(0));
+    let seen = hits.clone();
+    std::thread::spawn(move || {
+        for conn in listener.incoming() {
+            let Ok(mut s) = conn else { break };
+            s.set_read_timeout(Some(Duration::from_secs(5))).ok();
+            let mut req = Vec::new();
+            let mut chunk = [0u8; 4096];
+            // Request head, then as many body bytes as its content-length announces.
+            while let Ok(n @ 1..) = s.read(&mut chunk) {
+                req.extend_from_slice(&chunk[..n]);
+                let Some(at) = req.windows(4).position(|w| w == b"\r\n\r\n") else {
+                    continue;
+                };
+                let head = String::from_utf8_lossy(&req[..at]).to_lowercase();
+                let want = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length:"))
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                if req.len() >= at + 4 + want {
+                    break;
+                }
+            }
+            seen.fetch_add(1, Ordering::SeqCst);
+            let prefix = &ANTHROPIC_MESSAGES_BODY[..40];
+            let head = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                ANTHROPIC_MESSAGES_BODY.len()
+            );
+            let _ = s.write_all(head.as_bytes());
+            let _ = s.write_all(prefix);
+        }
+    });
+    (url, hits)
+}
+
+/// T323: a body cut off mid-stream (upstream hang-up) is not a response — the next
+/// identical request must reach upstream again, not be served the cut-off JSON.
+#[tokio::test]
+async fn proxy_cache_never_stores_a_truncated_body() {
+    let (url, hits) = t323_truncating_upstream();
+    let (addr, state, task) = t323_server("trunc", url).await;
+    let first = t51_post(&addr, t51_request()).await;
+    assert_eq!(first.status(), reqwest::StatusCode::OK);
+    assert!(first.bytes().await.is_err(), "the client sees the cut");
+    t51_usage(&state.store, T51_SESSION).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let second = t51_post(&addr, t51_request()).await;
+    let _ = second.bytes().await;
+    assert_eq!(
+        hits.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "the second request must reach upstream, not the cache"
+    );
+    task.abort();
+}
+
+/// T323: the cache key carries the caller (`x-api-key`, `authorization`) and the headers
+/// that change the response (`anthropic-version`, `anthropic-beta`): the same body from
+/// another identity is a miss, from the same identity a hit.
+#[tokio::test]
+async fn proxy_cache_is_keyed_by_caller_identity() {
+    let up = MockUpstream::anthropic_messages_body();
+    let (addr, state, task) = t323_server("caller", up.base_url()).await;
+    let post = |headers: &'static [(&'static str, &'static str)]| {
+        let addr = addr.clone();
+        async move {
+            let mut rb = reqwest::Client::new()
+                .post(format!("http://{addr}/v1/messages"))
+                .header("content-type", "application/json")
+                .body(t51_request());
+            for (k, v) in headers {
+                rb = rb.header(*k, *v);
+            }
+            rb.send()
+                .await
+                .expect("request")
+                .bytes()
+                .await
+                .expect("body");
+        }
+    };
+    let cases: [&'static [(&'static str, &'static str)]; 5] = [
+        &[("x-api-key", "key-a")],
+        &[("x-api-key", "key-b")],
+        &[("authorization", "Bearer tok-c")],
+        &[
+            ("x-api-key", "key-a"),
+            ("anthropic-beta", "files-api-2025-04-14"),
+        ],
+        &[("x-api-key", "key-a"), ("anthropic-version", "2023-06-01")],
+    ];
+    for (i, headers) in cases.iter().enumerate() {
+        post(headers).await;
+        t51_usage_n(&state.store, T51_SESSION, i + 1).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    up.assert_upstream_hits(cases.len());
+    // The same identity again is served from the cache.
+    post(cases[0]).await;
+    up.assert_upstream_hits(cases.len());
     task.abort();
 }
 

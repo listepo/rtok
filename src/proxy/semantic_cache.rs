@@ -28,6 +28,11 @@ pub struct CachePrompt {
     /// already covered by its own field above. Canonicalized (see `canonical_json`) so
     /// key order alone never splits the cache.
     pub params: Value,
+    /// Who is asking (T323): [`caller_identity`] of the request headers that carry the
+    /// credential or change the response. Empty only for a prompt built outside the proxy
+    /// (the corpus audit), so two API keys never share an entry.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub caller: String,
 }
 
 pub struct CacheHit {
@@ -169,7 +174,42 @@ pub fn build_prompt(wire: &dyn Wire, body: &Value, cfg: &SemanticCache) -> Optio
         messages: messages_text(body),
         tools_fingerprint: tools_fingerprint(body),
         params: extra_params(body),
+        caller: String::new(),
     })
+}
+
+impl CachePrompt {
+    /// The same prompt asked by `caller` (see [`caller_identity`]).
+    pub fn with_caller(mut self, caller: &str) -> Self {
+        self.caller = caller.to_string();
+        self
+    }
+}
+
+/// Request headers that identify the caller or change the response for the same body.
+const CALLER_HEADERS: [&str; 6] = [
+    "x-api-key",
+    "authorization",
+    "x-goog-api-key",
+    "anthropic-version",
+    "anthropic-beta",
+    "openai-organization",
+];
+
+/// sha256 over the [`CALLER_HEADERS`] values (T323): the raw secret never reaches the
+/// cache key. Lookup and store both call this on the client's own headers, so they agree.
+pub fn caller_identity(headers: &axum::http::HeaderMap) -> String {
+    let mut h = Sha256::new();
+    for name in CALLER_HEADERS {
+        h.update(name.as_bytes());
+        for value in headers.get_all(name) {
+            h.update([0]);
+            h.update(value.as_bytes());
+        }
+        h.update([1]);
+    }
+    let digest: [u8; 32] = h.finalize().into();
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub fn eligible(body: &Value, cfg: &SemanticCache) -> bool {
@@ -367,7 +407,7 @@ fn content_text(v: &Value) -> String {
 /// One content block's contribution to the cache key (T55.14, T303): text as-is; a
 /// `tool_result`'s id plus nested content; a `tool_use`'s id, name and canonicalized
 /// `input` (so two calls to the same tool with different arguments no longer collide);
-/// binary-bearing blocks (image/document source data, OpenAI `image_url`) contribute
+/// binary-bearing blocks (the whole image/document `source`, OpenAI `image_url`) contribute
 /// their sha256, so payloads never rendered as text still tell two requests apart; any
 /// other block kind (`thinking`, `redacted_thinking`, `server_tool_use`,
 /// `web_search_tool_result`, …) contributes the whole block canonicalized, so unknown
@@ -396,11 +436,12 @@ fn block_text(b: &Value) -> String {
                 .unwrap_or_default()
         ),
         "image" | "document" => {
-            let data = b
-                .pointer("/source/data")
-                .and_then(Value::as_str)
-                .unwrap_or("");
-            format!("{kind} {}", crate::store::hex_sha256(data.as_bytes()))
+            // The whole `source`, canonicalized (T323): base64 `data`, but also a `url`, a
+            // Files API `file_id` or inline `text`/`content`, none of which has `data`.
+            let source =
+                serde_json::to_string(&canonical_json(b.get("source").unwrap_or(&Value::Null)))
+                    .unwrap_or_default();
+            format!("{kind} {}", crate::store::hex_sha256(source.as_bytes()))
         }
         "image_url" => {
             let url = b
@@ -692,6 +733,52 @@ mod tests {
         let pa = build_prompt(wire, &body(&"aB3dE5g7".repeat(600)), &cfg).unwrap();
         let pb = build_prompt(wire, &body(&"7g5E3dBa".repeat(600)), &cfg).unwrap();
         assert_ne!(canonical_hash(&pa), canonical_hash(&pb));
+    }
+
+    /// T323: an image/document source that is not base64 `data` (a URL, a Files API id,
+    /// inline text) hashed as the empty string, so two requests differing only there
+    /// shared a key and the second got the first one's answer.
+    #[test]
+    fn non_base64_image_and_document_sources_join_the_cache_key() {
+        let wire = crate::proxy::wire::for_path("/v1/messages").unwrap();
+        let cfg = SemanticCache::default();
+        let body = |kind: &str, source: Value| {
+            serde_json::json!({
+                "model": "m",
+                "messages": [{"role": "user", "content": [
+                    {"type": kind, "source": source},
+                    {"type": "text", "text": "describe it"}
+                ]}]
+            })
+        };
+        let key = |kind: &str, source: Value| {
+            canonical_hash(&build_prompt(wire, &body(kind, source), &cfg).unwrap())
+        };
+        let url = |u: &str| serde_json::json!({"type": "url", "url": u});
+        assert_ne!(
+            key("image", url("https://a.test/1.png")),
+            key("image", url("https://a.test/2.png"))
+        );
+        let file = |id: &str| serde_json::json!({"type": "file", "file_id": id});
+        assert_ne!(
+            key("document", file("file_1")),
+            key("document", file("file_2"))
+        );
+        let text =
+            |t: &str| serde_json::json!({"type": "text", "media_type": "text/plain", "data": t});
+        assert_ne!(
+            key("document", text("alpha")),
+            key("document", text("beta"))
+        );
+        let inline = |t: &str| serde_json::json!({"type": "content", "content": t});
+        assert_ne!(
+            key("document", inline("alpha")),
+            key("document", inline("beta"))
+        );
+        // The same source is still the same key, whatever its key order.
+        let a = serde_json::json!({"type": "url", "url": "https://a.test/1.png"});
+        let b = serde_json::json!({"url": "https://a.test/1.png", "type": "url"});
+        assert_eq!(key("image", a), key("image", b));
     }
 
     /// T212: `max_tokens`/`temperature`/`top_p`/`tool_choice`/`thinking`/`stop_sequences`

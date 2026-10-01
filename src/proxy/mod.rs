@@ -256,11 +256,14 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
     };
 
     let sc = &state.cfg.plugins.proxy.semantic_cache;
+    // Who asked (T323): part of the cache key on lookup and, below, on store.
+    let caller = semantic_cache::caller_identity(&headers);
     if sc.enabled
         && !plain
         && let (Some(wire), Ok(body)) = (wire, serde_json::from_slice::<Value>(&request_body))
         && semantic_cache::eligible(&body, sc)
-        && let Some(prompt) = semantic_cache::build_prompt(wire, &body, sc)
+        && let Some(prompt) =
+            semantic_cache::build_prompt(wire, &body, sc).map(|p| p.with_caller(&caller))
     {
         let cache_hit = state
             .cache
@@ -372,6 +375,9 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
         // via `tx` once `buf` stops growing, so this is the only accurate byte count past
         // the cap (an upstream streaming gigabytes must not grow `buf` without bound).
         let mut total_bytes: usize = 0;
+        // False once the stream was cut short — client gone or upstream error — so a
+        // partial body is never taken for a response worth caching (T323).
+        let mut complete = true;
         let mut stream = body_stream;
         while let Some(chunk) = stream.next().await {
             match chunk {
@@ -382,16 +388,20 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
                         buf.extend_from_slice(&bytes[..bytes.len().min(room)]);
                     }
                     if tx.send(Ok(bytes)).await.is_err() {
+                        complete = false;
                         break; // client went away; record what we have
                     }
                 }
                 Err(e) => {
+                    complete = false;
                     let _ = tx.send(Err(io::Error::other(e))).await;
                     break;
                 }
             }
         }
         drop(tx);
+        // A body past the `buf` cap is incomplete as recorded too.
+        let complete = complete && total_bytes == buf.len();
         if plain {
             live::push(live::LiveCall {
                 ts: crate::log::now() as i64,
@@ -420,6 +430,8 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
                     &request_body,
                     &buf,
                     total_bytes,
+                    complete,
+                    &caller,
                 );
             })
             .await;
@@ -766,6 +778,9 @@ fn record_usage(
 /// `response_total_bytes` is the true response size; `response_body` may be a shorter,
 /// capped buffer (see `handle`'s tee task and `MAX_BODY_BYTES`) — a truncated buffer means
 /// `call_io` and usage parsing only see the retained prefix, never that they panic on it.
+///
+/// `complete` is whether the body arrived whole (T323): a cut or capped body is recorded but
+/// never cached. `caller` is the [`semantic_cache::caller_identity`] the lookup used.
 #[allow(clippy::too_many_arguments)]
 fn finish(
     state: &ProxyState,
@@ -777,6 +792,8 @@ fn finish(
     request_body: &[u8],
     response_body: &[u8],
     response_total_bytes: usize,
+    complete: bool,
+    caller: &str,
 ) {
     let Some(r) = recorded else { return };
     let session = r.session.clone();
@@ -842,7 +859,9 @@ fn finish(
     if sc.enabled
         && let (Some(wire), Ok(body)) = (wire, serde_json::from_slice::<Value>(request_body))
         && semantic_cache::eligible(&body, sc)
-        && let Some(prompt) = semantic_cache::build_prompt(wire, &body, sc)
+        && complete
+        && let Some(prompt) =
+            semantic_cache::build_prompt(wire, &body, sc).map(|p| p.with_caller(caller))
         && let Ok(mut guard) = state.cache.lock()
     {
         guard.store(&prompt, sc, response_body, content_type, status_code);
