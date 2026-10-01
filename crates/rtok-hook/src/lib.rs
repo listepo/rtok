@@ -277,18 +277,24 @@ mod tests {
     /// T328: an empty `RTOK_HOME` (`export RTOK_HOME=`) is unset, not the relative path `""`.
     #[test]
     fn an_empty_rtok_home_falls_back_to_the_user_home() {
-        let user = Some(PathBuf::from("/Users/me"));
+        // `home` keeps only absolute homes, and `/Users/me` is not one on Windows.
+        let user = if cfg!(windows) {
+            r"C:\Users\me"
+        } else {
+            "/Users/me"
+        };
+        let rtok = Path::new(user).join(".rtok");
         assert_eq!(
-            home_dir_from(Some(OsString::new()), user.clone()),
-            PathBuf::from("/Users/me/.rtok")
+            home_dir_from(Some(OsString::new()), Some(PathBuf::from(user))),
+            rtok
         );
         assert_eq!(
             home(|k| match k {
                 "RTOK_HOME" => Some(OsString::new()),
-                "HOME" => Some("/Users/me".into()),
+                "HOME" => Some(user.into()),
                 _ => None,
             }),
-            Some(PathBuf::from("/Users/me/.rtok"))
+            Some(rtok)
         );
     }
 
