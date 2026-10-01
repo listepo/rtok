@@ -72,7 +72,7 @@ jobs:
       # T279: every plugin manifest and .rtok-plugin-version file must match Cargo.toml,
       # so a host that caches a plugin by its manifest version sees a new build.
       - run: tools/plugin-versions.sh --check "$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)"
-      - if: failure()
+      - if: failure() && github.event_name == 'pull_request'
         uses: ./.github/actions/cancel-run
 
   check:
@@ -114,7 +114,7 @@ jobs:
           restore-keys: vitest-${{ runner.os }}-
       - run: just test
       - run: just example
-      - if: failure()
+      - if: failure() && github.event_name == 'pull_request'
         uses: ./.github/actions/cancel-run
 
   # T44.4: the agent installers write Windows paths and `%APPDATA%` files; run the suite there.
@@ -154,7 +154,7 @@ jobs:
       - run: >-
           mise exec -- cargo nextest run --workspace
           --partition count:${{ matrix.partition }}/${{ matrix.partitions }}
-      - if: failure()
+      - if: failure() && github.event_name == 'pull_request'
         uses: ./.github/actions/cancel-run
 
   revert-on-failure:

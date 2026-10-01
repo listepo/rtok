@@ -1815,8 +1815,8 @@ impl Store {
 
     /// Provider counters for an api_request (plan T5.1): one `tokens` row,
     /// `phase = 'after'`, `source = 'provider'`, carrying the four counters. `total` comes
-    /// from the wire ([`rtok_plugin_sdk`-side `Wire::provider_total`]): Anthropic's counters
-    /// are disjoint and sum, OpenAI's `input` already contains the cached slice.
+    /// from the wire ([`rtok_plugin_sdk`-side `Wire::provider_total`]); the counters are
+    /// disjoint on every wire (OpenAI/Gemini `input` has the cached slice subtracted).
     pub fn insert_provider_tokens(
         &self,
         call_id: i32,
@@ -2211,7 +2211,16 @@ fn write_archive_file(dir: &Path, sha: &str, body: &[u8]) -> Result<(PathBuf, bo
     std::fs::create_dir_all(dir)?;
     let path = dir.join(sha);
     let created = !path.exists();
-    std::fs::write(&path, body)?;
+    // T324: `expand` reads this file lock-free, and another hook process may write the same
+    // body at once, so write a sibling temp file and rename it over the target (atomic on one
+    // filesystem). `fs::write` truncates in place and let a reader see an empty or short file.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dir.join(format!(".{sha}.tmp-{}-{n}", std::process::id()));
+    if let Err(e) = std::fs::write(&tmp, body).and_then(|()| std::fs::rename(&tmp, &path)) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
     Ok((path, created))
 }
 
@@ -4357,5 +4366,36 @@ mod tests {
             "CREATE TABLE otel_export (stream TEXT PRIMARY KEY)",
         ]);
         assert!(m.iter().any(|s| s.starts_with("otel_export:")), "{m:?}");
+    }
+
+    /// T324: the archive file is content-addressed and read lock-free by `expand`, so a write
+    /// must never expose a truncated file: it goes to a temp file and is renamed over the
+    /// target (a new inode), which a hard link to the old file proves.
+    #[test]
+    fn archive_file_write_replaces_the_target_atomically() {
+        let dir = crate::testutil::tmp_dir("t324-atomic");
+        let sha = hex_sha256(b"complete body");
+        std::fs::write(dir.join(&sha), b"trunc").unwrap();
+        let reader = dir.join("reader-view");
+        std::fs::hard_link(dir.join(&sha), &reader).unwrap();
+        let (path, created) = write_archive_file(&dir, &sha, b"complete body").unwrap();
+        assert!(!created);
+        assert_eq!(std::fs::read(&path).unwrap(), b"complete body");
+        assert_eq!(
+            std::fs::read(&reader).unwrap(),
+            b"trunc",
+            "written in place, not renamed"
+        );
+        let mut names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [sha, "reader-view".to_string()],
+            "temp file left behind"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

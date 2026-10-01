@@ -219,6 +219,8 @@ fn usage_block(value: &Value) -> Option<Usage> {
             cache_create: Some("cache_creation_input_tokens"),
             cache_read: "cache_read_input_tokens",
             cache_read_details: None,
+            input_includes_cache: false,
+            output_extra: None,
         },
     )
 }

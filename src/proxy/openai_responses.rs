@@ -62,15 +62,19 @@ impl Wire for OpenAiResponses {
     }
 
     fn usage_from_sse(&self, event: &Value) -> Option<Usage> {
-        (event.get("type").and_then(Value::as_str) == Some("response.completed"))
-            .then(|| usage_block(event))
-            .flatten()
+        matches!(
+            event.get("type").and_then(Value::as_str),
+            Some("response.completed" | "response.incomplete" | "response.failed")
+        )
+        .then(|| usage_block(event))
+        .flatten()
     }
 }
 
-/// `input_tokens` counts cached tokens too, so `cache_read` is the cached slice of it.
-/// A streamed response reports usage once, on the final `response.completed` event, which
-/// nests it under `response`. There is no cache-creation signal on this wire.
+/// `input_tokens` counts cached tokens too, so `cache_read` is the cached slice of it and
+/// `input` is the rest. A streamed response reports usage once, on its terminal event
+/// (`response.completed`, `.incomplete` or `.failed`), which nests it under `response`.
+/// There is no cache-creation signal on this wire.
 fn usage_block(value: &Value) -> Option<Usage> {
     find_usage(
         value,
@@ -82,6 +86,8 @@ fn usage_block(value: &Value) -> Option<Usage> {
             cache_create: None,
             cache_read: "cached_tokens",
             cache_read_details: Some("input_tokens_details"),
+            input_includes_cache: true,
+            output_extra: None,
         },
     )
 }
@@ -116,8 +122,9 @@ mod tests {
 
     #[test]
     fn reads_usage_from_body_and_from_response_completed() {
+        // `input_tokens` (10) contains the 7 cached tokens: uncached input is 3.
         let expected = Usage {
-            input: 10,
+            input: 3,
             cache_create: 0,
             cache_read: 7,
             output: 2,
@@ -140,6 +147,31 @@ mod tests {
         assert_eq!(
             OPENAI_RESPONSES
                 .usage_from_sse(&json!({"type":"response.created","response":{"usage": usage}})),
+            None
+        );
+    }
+
+    #[test]
+    fn terminal_events_incomplete_and_failed_carry_usage_too() {
+        let usage = json!({"input_tokens":10,"output_tokens":2});
+        let expected = Usage {
+            input: 10,
+            cache_create: 0,
+            cache_read: 0,
+            output: 2,
+        };
+        for kind in ["response.incomplete", "response.failed"] {
+            assert_eq!(
+                OPENAI_RESPONSES
+                    .usage_from_sse(&json!({"type": kind, "response":{"usage": usage}})),
+                Some(expected),
+                "{kind}"
+            );
+        }
+        // A failed response may report `usage: null`.
+        assert_eq!(
+            OPENAI_RESPONSES
+                .usage_from_sse(&json!({"type":"response.failed","response":{"usage":null}})),
             None
         );
     }

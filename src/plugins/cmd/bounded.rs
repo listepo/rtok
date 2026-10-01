@@ -56,6 +56,11 @@ pub(crate) fn mixed_chain(snippet: &str) -> bool {
     programs.len() >= 2
 }
 
+/// Every stage of every pipeline in `snippet`, as words with quotes removed.
+pub(crate) fn stages(snippet: &str) -> Vec<Vec<String>> {
+    lex(snippet).into_iter().flatten().collect()
+}
+
 /// Pipelines of stages of words, quotes removed.
 fn lex(s: &str) -> Vec<Vec<Vec<String>>> {
     let mut lists = vec![vec![Vec::new()]];

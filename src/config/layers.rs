@@ -125,14 +125,14 @@ fn leaf_value(root: &Dict, dotted: &str) -> Option<Value> {
 
 /// Walk up from `start` looking for a `.git` entry (no subprocess). `None` outside a repo.
 pub(crate) fn git_root(start: &Path) -> Option<PathBuf> {
-    find_up(start, ".git")
+    find_up(start, ".git", Path::exists)
 }
 
-/// The nearest directory at or above `start` that contains `name`.
-fn find_up(start: &Path, name: &str) -> Option<PathBuf> {
+/// The nearest directory at or above `start` whose `name` entry satisfies `is_match`.
+fn find_up(start: &Path, name: &str, is_match: fn(&Path) -> bool) -> Option<PathBuf> {
     let mut dir = start.to_path_buf();
     loop {
-        if dir.join(name).exists() {
+        if is_match(&dir.join(name)) {
             return Some(dir);
         }
         if !dir.pop() {
@@ -153,7 +153,7 @@ struct DotenvFile {
 
 fn read_dotenv(home: &Path, cwd: Option<&Path>) -> DotenvFile {
     let mut files: Vec<PathBuf> = cwd
-        .and_then(|c| find_up(c, ".env"))
+        .and_then(|c| find_up(c, ".env", Path::is_file))
         .map(|d| d.join(".env"))
         .into_iter()
         .collect();
@@ -796,6 +796,20 @@ mod tests {
         );
         assert!(std::env::var_os("RTOK_T125_LEAK").is_none(), "parse only");
         assert_eq!(dotenv_pairs(&home, None)[0].1, "8801");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&proj);
+    }
+
+    /// T328: a directory named `.env` is not a dotenv file and must not hide the real one above.
+    #[test]
+    fn a_dotenv_directory_does_not_hide_the_file_above() {
+        let home = tmp("dotenv-dir-home");
+        let proj = tmp("dotenv-dir-proj");
+        let sub = proj.join("a");
+        std::fs::create_dir_all(sub.join(".env")).unwrap();
+        std::fs::write(proj.join(".env"), "RTOK_PROXY_PORT=8799\n").unwrap();
+        let pairs = dotenv_pairs(&home, Some(&sub));
+        assert_eq!(pairs, vec![("PROXY_PORT".to_string(), "8799".to_string())]);
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&proj);
     }

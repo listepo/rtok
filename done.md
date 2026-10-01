@@ -1805,6 +1805,14 @@ Evidence: `cargo test --test proxy` 26 passed incl. 2 new; `cargo test --lib gem
 
 Deviation: 10 files (wire + shared helper + config/docs + 2 fixtures + tests + snapshot); no new dependency.
 
+## T326 — Proxy usage accounting: Gemini thinking tokens, Responses incomplete/failed usage, OpenAI cached tokens
+
+Found by the 2026-10-01 bug hunt. Gemini ignored `usageMetadata.thoughtsTokenCount`, so thinking tokens (billed as output) were never counted; OpenAI Responses took usage only from `response.completed`, so an `incomplete` or `failed` stream recorded none; OpenAI Chat/Responses and Gemini report a prompt total that already contains the cached slice, yet `input` and `cache_read` were stored side by side, so `row_cost`, the hit rate and context sums counted cached tokens twice (the `tokens` ledger total had its own OpenAI/Gemini special case and was right).
+
+Fix: `UsageFields` gains `output_extra` (Gemini adds `thoughtsTokenCount` to output) and `input_includes_cache` (OpenAI and Gemini subtract the cached slice, Anthropic unchanged), so `Usage` counters are disjoint on every wire — the same convention `measure/codex.rs` already uses — and `provider_total` is a plain sum again (ledger totals unchanged); `usage_from_sse` accepts all three terminal Responses events. Rows stored before the fix keep their inflated `input`.
+
+Check: `thinking_tokens_count_as_output`, `terminal_events_incomplete_and_failed_carry_usage_too`, the updated wire usage tests and six `tests/proxy.rs` assertions; `just check`.
+
 ## T53.2 — Shell completions and man page
 
 **T53.2 Shell completions and man page** · P3, 1/5 · `Cargo.toml`, `Cargo.lock`, `src/cli.rs`, `tests/completions.rs`, `tests/surface_parity.rs`, `tests/trycmd/completions-bash.toml`, `tests/trycmd/completions-bash.stdout`, `tests/trycmd/help.stdout`, `README.md`, `toolchain.md`
@@ -1916,6 +1924,14 @@ Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
 Evidence: isolated worktrees with this task's hunks only. At 77af448: `cargo fmt --check` clean; `cargo clippy --all-targets -- -D warnings` clean; 43/43 `plugins::graph` lib tests; `graph_contract` + `graph_truth` 6/6; `surface_parity` 4/4; full nextest 694 passed / 2 failed / 2 skipped (both failures pre-existing on clean HEAD: `agents_install remove_twice…` opencode backup, plus the `surface_parity` row this commit adds); `cargo build --no-default-features --features measure` green. Re-verified at 0dfcad1: fmt/clippy clean, 43/43 graph, contract+truth green, `graph dead` classified; the one `surface_parity` failure there names HEAD's `wrap` (T51.4 landed without its EXEMPT row — not this task's command).
 
 Deviation: 6 files / 228 insertions (over the 200 LOC / 3-file guideline) — D25 forces the SDK trait seam (`Symbols::symbol_dead_candidates` with an empty default so out-of-tree hosts keep compiling, plus the `Runtime` delegation) beside the store query, the filter, the CLI and the parity row; no way to add a store-backed capability in fewer files without breaking the plugin contract. No new dependency (tree-sitter + tree-sitter-rust already behind the `read` feature `graph` requires).
+
+## T327 — Graph, archive and memory bugs: LSP kind map, rstest dead code, non-ASCII slice, title index cap
+
+Found by the 2026-10-01 bug hunt. `graph::lsp::kind_name` mapped LSP SymbolKind 11 to "enum" and left 10 unmapped (LSP 3.17: 10 = Enum, 11 = Interface); `graph::dead_candidates` scanned only the 3 lines above a fn for `#[test]`/`#[cfg(test)]`, so `#[rstest]` with `#[case]` rows, `#[test]` under further attributes and `#[tokio::test]` read as dead; `archive::rewrite_skill` cut the wire `tool_use_id` at byte 12 and panicked inside a multi-byte char; `memory::render_title_index` returned a lone over-long title past its cap.
+
+Fix: `kind_name` follows the spec; a `has_test_attr` helper walks the whole attribute/comment block above a definition (`#[test`, `#[cfg(test`, `#[rstest`, `#[case`, any `::test`); the skill id is cut on chars; a lone overflowing title is halved until the index fits, and dropped only if an empty title still does not.
+
+Check: `kind_name_follows_the_lsp_symbol_kind_numbers`, `dead_lists_only_the_private_orphan` (new `param.rs` fixture), `a_non_ascii_skill_id_is_shortened_on_a_char_boundary`, `a_single_long_title_cannot_break_the_index_cap`; `just check`.
 
 ## T48.7 — aider host
 
@@ -7241,6 +7257,20 @@ Plan: one funnel helper for the four loops matching the `Err`, extracting the pa
 Check: `a_panicking_plugin_is_logged_and_the_rest_survives` — a registry with one panicking and one returning plugin: stdout keeps the good plugin's context and the store holds one `level = "error"` log row naming the plugin; `just test` green.
 
 Result: The four per-plugin `catch_unwind` loops in `src/hooks/mod.rs` (PreCompact, PreToolUse, PostToolUse, the inject events) route an `Err` through one `log_panic` helper: it takes the `&str`/`String` payload (else "non-string panic payload") and writes one `cx.log("error", "plugin", <id>, "<event> panicked: …")` before dropping that plugin's output. The non-panic path is unchanged. There is no `catch_unwind` outside hooks. Test: `a_panicking_plugin_is_logged_and_the_rest_survives`.
+### T322. Guard: no false "duplicate" deny for compound writers, `git branch -D`, awk writers, Read slices
+
+Found by a bug-hunt pass over `src/plugins/guard/**`. The guard denies a repeat of a keyed (read-only) call as `duplicate; rtok expand <id>`. Four ways a mutating or different call was keyed, so its repeat was denied and never ran:
+
+1. `read_only` split only on `|`: `ls && rm -rf build`, `cat a; rm a`, `ls || rm x`, `ls & rm x`, `ls` newline `rm x`, `cat $(rm x)` were keyed as read-only. Segments now split at every unquoted `|`, `;`, `&` (newlines become `;`), and a `$(` or backtick is never read-only.
+2. `git branch` was read-only with any arguments, so `git branch -D x` was keyed. Only the listing forms are now (`-a`, `-r`, `-v`, `-vv`, `--all`, `--remotes`, `--verbose`, `--list`, `--show-current`).
+3. `awk` programs that write (`system(`, `print >`, `| "cmd"`) were keyed; such a segment is no longer read-only.
+4. The Read key ignored `offset`/`limit`/`pages`, so a second slice of a file was denied with the first slice's archive. A slice is now a key suffix after the path, so the `read\t{path}` prefix clear still reaches it.
+
+Check: new `compound_commands_with_a_writer_are_not_keyed`, `git_branch_is_read_only_only_when_listing`, `awk_writers_are_not_read_only`, `read_slices_get_distinct_keys` (all failed before the fix); `just check` green.
+
+Status: done 2026-10-01
+Model: Claude Code / sonnet (reviewed by Claude Code / claude-opus-5-5)
+
 ### T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
 
 Found 2026-09-22 in the surfaces pass: `initialize` (`src/mcp.rs:208-231`) discards `params.protocolVersion` and returns whatever `ServerInfo` serializes — no negotiation, and no test pins `result.protocolVersion`, so a dependency bump can silently change the advertised dialect (`src/doctor.rs:862` probes `2024-11-05` while tests send `2025-06-18`). `-32601` carries the raw method name as `message` instead of "Method not found". And `tools/call` coerces instead of validating: `mem_save` without `body` stores an empty note (`unwrap_or("")`, :332-339), a missing `expand` `id` becomes "unknown archive id: ", `handoff` truncates `budget_tokens` u64→u32 (:438-444) — schema-vs-handler drift turning client bugs into corrupt data.
@@ -7254,6 +7284,19 @@ Result: initialize negotiates protocolVersion (echo a supported client version, 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
+### T323. Semantic cache: never store a truncated body; key image/document sources and caller identity
+
+Found by a bug-hunt pass over `src/proxy/**`. Three ways the opt-in response cache could answer a request with a response that was not its own:
+
+1. The tee task stopped on a client disconnect or an upstream error (and capped `buf` at `MAX_BODY_BYTES`), then `finish` cached that partial body under a 2xx status. A body is now cached only when it arrived whole; `call_io`/usage rows are written as before.
+2. `block_text` hashed only `/source/data` of image/document blocks, so `url`, `file_id` and `content` sources all hashed the empty string. The whole canonicalized `source` is hashed now.
+3. The key ignored who asked: two API keys (or different `anthropic-beta`/`anthropic-version`) shared an entry. A sha256 of `x-api-key`, `authorization`, `x-goog-api-key`, `anthropic-version`, `anthropic-beta`, `openai-organization` now joins the key on lookup and store; the raw secret is never stored.
+
+Check: new `non_base64_image_and_document_sources_join_the_cache_key`, `tests/proxy.rs` `proxy_cache_never_stores_a_truncated_body` and `proxy_cache_is_keyed_by_caller_identity` (all failed before the fix); `just check` green.
+
+Status: done 2026-10-01
+Model: Claude Code / sonnet (reviewed by Claude Code / claude-opus-5-5)
+
 ### T228. Config page: `config show` / `config get` on `tui` and `web`
 
 Found 2026-09-23 in the D27 audit: `config show` and `config get` are exempt (`tests/surface_parity.rs:401-408`) although `model::config_entries` (`src/web/model.rs:1055`) already lists every key with its value and D12 source.
@@ -7263,6 +7306,20 @@ Plan: page `("config", "config")` — key, effective value, source (default / us
 Check: `config_page_exists_on_both_surfaces`; a `tests/web.rs` case on a temp config with one env override shows the env source; `just check` green.
 
 Result: New Config page ("config","config") on both surfaces: model::config_page_text renders config_entries rows as key = value (source) each tick; TUI tab with a / filter, Slint page with a filter box; read-only. config get gained --json {key,value,source}; config show/get moved from EXEMPT to COMMAND_PAGES/JSON_READERS. Tests: config_page_exists_on_both_surfaces, config_page_source_reflects_an_env_override (RTOK_PROXY_PORT → source env), webui snapshot parse.
+
+### T324. Store: atomic archive file writes; a resumed agent is live again
+
+Found by a bug-hunt pass over `src/store/**`.
+
+1. `write_archive_file` wrote the content-addressed archive with `fs::write`, which truncates in place: a concurrent writer of the same body or a crash let `rtok expand` read an empty or short file, breaking the lossless rule. It now writes a sibling temp file and renames it over the target.
+2. `register_agent` kept `ended_at` on conflict, so a resumed session (same id after `SessionEnd`) never showed in `live_agents` again. The upsert now clears it.
+
+A third audit claim (`symbols::replace_one` keeps stale rows for an emptied file) was a false positive: the delete runs before the empty-rows return.
+
+Check: new `archive_file_write_replaces_the_target_atomically` and `registering_an_ended_agent_again_makes_it_live` (both failed before the fix); `just check` green.
+
+Status: done 2026-10-01
+Model: Claude Code / sonnet (reviewed by Claude Code / claude-opus-5-5)
 
 ### T178. Hook wall-clock time as Claude Code sees it
 
@@ -7301,6 +7358,20 @@ Check: new `report::ai::tests::non_finite_rate_never_leaks_into_the_document` (N
 Status: done 2026-09-28
 Model: Claude Code / sonnet-5
 
+### T321. cmd output: docker prose durations, kubectl RESTARTS column, double-counted omissions, empty expand id
+
+Found by a bug-hunt pass over `src/plugins/cmd/**`. Four verified bugs, each pinned by a test that failed before the fix:
+
+1. `formatters::shorten_ago` replaced ` hour`/` minute`/` second` anywhere, so `docker ps` statuses `Up About an hour`, `Up About a minute` and `Up Less than a second` became `About anh`, `About am`, `Less than as`. Now only a number followed by a unit shortens (`2 hours` → `2h`).
+2. `formatters::kubectl_get` picked cells by whitespace-token index. kubectl 1.22+ prints RESTARTS as `1 (3m ago)` (three tokens), so `-o wide` printed `ago)` as the pod IP. Cells now come from the header's column offsets; a row that does not line up falls back to token order.
+3. `rules::apply` folded every remaining line into the trailer count when the budget ran out with a trace block still ahead, then counted those lines again as they came: shown lines plus trailer counts exceeded the input (18 vs 13). The fold now happens only when it also stops.
+4. With no archive (store unavailable, `filter::compress_only`), the marker read `… N lines omitted (expand )`. It now names no id.
+
+Check: new `shorten_ago_leaves_docker_prose_durations_whole`, `kubectl_get_wide_keeps_ip_after_a_restart_with_age`, `omitted_counts_add_up_with_a_trace_past_the_budget` (4 cases), `omitted_marker_without_an_archive_id_has_no_empty_expand`; `just check` green.
+
+Status: done 2026-10-01
+Model: Claude Code / claude-opus-5-5
+
 ### T282. Agent registry: an rtok agent id for every host session
 
 Depends on nothing; blocks T283–T290. Today a session is keyed by the host's own `session_id` (`src/store/schema.rs:151`, `sessions.id`), which collides across hosts, is missing on several (`research.md` §26), and has no status. `agent_id` in `HookInput` (`src/hooks/types.rs:18`) means a sub-agent's context inside one host session, a different thing. D34 defines the rtok agent id.
@@ -7320,6 +7391,17 @@ Check: store unit tests (register is idempotent, sub-agent row, resolve prefix /
 Status: done 2026-09-27 (#439; hook bench p95 9.10 ms PreToolUse, 9.51 ms PostToolUse)
 Model: Claude Code / claude-opus-5-5
 
+### T325. Bash rewrite keeps `cd` in the host shell; shell-state builtins stay unwrapped
+
+Found by a bug-hunt pass over `src/plugins/cmd/hook.rs`. The PreToolUse rewrite turned `cd crates/x && cargo test` into `rtok run -- 'cd crates/x && cargo test'`, so the `cd` ran in `rtok run`'s child shell. Hosts that keep the shell's cwd between Bash calls (Claude Code) lost it: the next call ran in the old directory. `export`, `source`, `unset`, `alias`, `pushd`/`popd` had the same problem.
+
+Fix (creator's choice: hoist the `cd`): leading `cd <dir> &&` hops stay outside the wrap (`cd crates/x && rtok run -- 'cargo test'`, reusing `guard::strip_cd_hop`, quote-aware). A command with any other `cd`, `pushd`, `popd`, `export`, `source`, `.`, `unset`, `alias` or `unalias` stage (found with `bounded::stages`, the existing lexer) is not wrapped at all.
+
+Check: new `hook::tests::leading_cd_hops_stay_outside_the_wrap` and `shell_state_builtins_are_not_wrapped`; `just check` green.
+
+Status: done 2026-10-01
+Model: Claude Code / claude-opus-5-5
+
 ### T272. ketch.toml syncs with the live registry entry, plus the rtok-hook hazard note
 
 Found 2026-09-26, from `rtok agents install claude` hanging on Windows: `ketch install pyrlyn/rtok` had linked `rtok-hook.exe` (the 390 KB std-only hook client dist ships beside the 34 MB `rtok.exe`) into `~/.ketch/bin/rtok.exe`, so every `rtok` invocation — `--version` included — hung reading stdin for a hook payload that never came. Chain: the registry entry pins `bin = [{ path = "rtok*", name = "rtok" }];` ketch resolves a glob to the first payload match; NTFS lists `rtok-hook.exe` before `rtok.exe`, so Windows takes the stub (Unix readdir order keeps `rtok` first, which is why only Windows hung). No `*`/`?` pattern matches `rtok`+`rtok.exe` while excluding `rtok-hook.exe`, so the entry's spelling is the best ketch's matcher allows; the durable fix — prefer the candidate whose stem is the link name — belongs to ketch (its B62). Meanwhile this repo's `ketch.toml`, the file `ketch push` sends, still predated registry commit 9b73cae: no `bin` pin and no Windows zip in `[asset] include`. A push from it would have dropped the pin and returned Windows installs to linking `plugins/cursor/scripts/mcp.cmd` — the exact regression 9b73cae fixed.
@@ -7329,6 +7411,17 @@ Plan: sync `ketch.toml` with the live registry entry (bin pin, `*-pc-windows-msv
 Check: the file matches the live registry entry (`git -C ../packages/ketch-registry show origin/main:rtok/ketch.toml`) apart from the extended comment, verified by diff. No code changed. On this Windows machine fmt and clippy passed (after T273/T274, separate branches) and one clean nextest run put 1295/1296 green with the single failure the local-only dart LSP gate (`docs/windows.md`, roadmap W1); the remaining suite runs in CI on the branch (the creator's call, 2026-09-26).
 
 Result: ketch.toml now carries the pin and the note verbatim; no code changed. The machine that hit the hang was repaired by copying the store's real `rtok.exe` over `~/.ketch/bin/rtok.exe`; until ketch's B62 lands, fresh Windows `ketch install rtok` of the v0.9.0 archive still links the stub — ketch B62 is the fix to watch.
+
+### T328. Config and host-config path bugs: empty `RTOK_HOME`, `.env` directory, ketch store order, `.exe.exe`, JSONC literal comment, strict-JSON overwrite
+
+Found by a bug-hunt pass over config and host-config code. (A) `home_dir_from` treated `RTOK_HOME=""` as set, so the home became the relative path `""` and state landed under the cwd; an empty value now falls back to `<user home>/.rtok`. (B) the `.env` search used `exists()`, so a directory named `.env` stopped the upward walk and hid the real file above; `find_up` now takes a predicate (`is_file` for `.env`, `exists` for `.git`, which can be a file or a directory). (C) `ketch_store_plugin` picked the newest store folder by name (`v0.1.9` beat `v0.1.10`); it now sorts by semver, with unparsable names first. (D) the Windows image name was built as `<name>.exe`, so a resolved `Code.exe` became `Code.exe.exe` in `taskkill`; the name building is the pure `image_name`, shared with `tasklist_running`. (E) `skip_value` scanned a literal up to the next `,`/`}`/`]`, so replacing a literal entry value (`"rtok": true // note\n,`) overwrote the comment after it; a literal now ends at whitespace, a delimiter or `/`. (F) strict-JSON `write_json`/`set_json_at` replaced a non-object root or table (`"mcpServers": []`, `null`) with `{}`, discarding the user's value; it now returns an error and writes nothing, like the JSONC and TOML writers.
+
+Dropped: the object-valued variant of E (`{"rtok":{...} /* keep */ , "x":1}`) already keeps the comment (test passes before the fix), so no change for it.
+
+Check: `an_empty_rtok_home_falls_back_to_the_user_home`, `a_dotenv_directory_does_not_hide_the_file_above`, `ketch_store_takes_the_newest_version_not_the_lexicographic_last`, `windows_image_name_adds_exe_once`, `replacing_a_literal_entry_keeps_the_trailing_comment`, `replacing_an_object_entry_keeps_the_trailing_comment`, `strict_json_refuses_a_non_object_root_or_table_and_keeps_the_file` (all but the object-variant test failed before the fix); nextest filtered run over config/agents/jsonc/restart, `-p rtok-hook -p rtok-mcp`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all`.
+
+Status: done 2026-10-01
+Model: Claude Code / sonnet (reviewed by Claude Code / claude-opus-5-5)
 
 ### T273. Windows clippy: `permissions_set_readonly_false` in the cfg(windows) `clear_readonly`
 
@@ -7351,3 +7444,49 @@ Check: `cargo clippy --workspace --all-targets --all-features --exclude rtok-was
 
 Status: done 2026-09-26
 Model: ZCode / glm-5.3
+
+### T314. Fuzz testing with cargo-fuzz / libFuzzer
+
+Ivan, 2026-09-30: the same fuzz setup as ketch (ketch plan R4). PR: https://github.com/pyrlyn/rtok/pull/535.
+
+Plan:
+1. `fuzz/`: a standalone cargo-fuzz workspace excluded from the root one (`cargo-fuzz = true`, `libfuzzer-sys` 0.4, `arbitrary`, `rtok = { path = ".." }`), so `cargo build`, `just check` and CI never compile it.
+2. Entry points in `src/fuzzing.rs`, compiled only under `--cfg fuzzing` (set by `cargo fuzz`), reach crate-private parsers without disk, env or log side effects.
+3. Targets: `cli-argv` (`rtok::cli::Cli::try_parse_from` plus the help/error rendering), and the crash-prone parsers: `config-toml` (`config validate` + the file-free config stack), `cmd-filter` (user `rules` TOML + the stdout compactor), `hook-io` (the `HookInput` JSON and each host adapter), `jsonc-edit` (the JSONC editor that writes host settings), `proxy-wire` (Anthropic / OpenAI / Gemini request, response and SSE parsing), `transcript-jsonl` (`measure::jsonl`), `outline` (`read` outlines, tree-sitter queries) and `text-ops` (terse compression, `rtok expand` ranges, cuts). Seed corpora come from `tests/fixtures`.
+4. Verify: `cargo +nightly fuzz build` for every target, then a short run of each (`cargo +nightly fuzz run <target> -- -max_total_time=60`). Every crash becomes a minimized regression test with its fix in its own PR.
+5. Optional: a non-required nightly CI job (build plus a short run) on Linux. Do not touch `dependabot.yml` or `sync-docs.yml`.
+6. Deliver as a PR; do not merge it.
+
+Dependencies: nightly toolchain (`rustup toolchain install nightly`); `mise.toml` keeps stable 1.98.1 as the build toolchain. `cargo-fuzz` via `cargo install cargo-fuzz` or `"cargo:cargo-fuzz"` in `mise.toml`, recorded in `toolchain.md`. libFuzzer runs on macOS and Linux only. Independent of T315.
+
+Check: `cargo +nightly fuzz build` succeeds for every target; each target runs 60 s with no crash (or the crash is filed with a repro test); `just check` on stable does not compile `fuzz/`.
+
+Result: merged in #535 (`3c2bfdfd`). `fuzz/` is a standalone cargo-fuzz crate with its own `[workspace]`, listed in the root workspace's `exclude`, so `cargo build`, `just check` and CI do not compile it; `src/fuzzing.rs` is compiled only under `--cfg fuzzing` (declared for check-cfg). Nine targets: `cli-argv`, `config-toml`, `cmd-filter`, `jsonc-edit`, `hook-io`, `proxy-wire`, `transcript-jsonl`, `text-ops`, `outline` (all in-process: no network, spawns or file writes). One crash found and fixed in its own commit with a unit test: `cmd_stem` sliced the last 4 bytes of a basename for its `.exe` check and panicked inside a multi-byte char (`héllo`); it now uses `get`. Docs: `fuzz/README.md`, a CONTRIBUTING paragraph, `toolchain.md` rows (cargo-fuzz, `arbitrary`, `libfuzzer-sys`) covered by `tests/toolchain_rows.rs`; `just fuzz [target|all] [secs]` is not part of `check`.
+
+Check result: on macOS arm64 with ASan every target built and ran 90 s, then 120 s more on the same corpus (`cmd-filter` 120 s more after the fix): 0 crashes apart from the fixed one (13k-311k execs per target, table in #535). `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features -D warnings`, the fuzz crate's clippy under `--cfg fuzzing`, `cargo test --test toolchain_rows` and the `cmd_stem` unit tests pass; PR CI green.
+Deviations: no nightly CI job (plan step 5 was optional).
+
+Status: done 2026-09-30 (#535)
+Model: Grok Bot
+
+### T315. Emoji and colour on by default for human-facing output
+
+Ivan, 2026-09-30: emoji and colour on by default, with a config toggle, for human-facing output only. Agent-facing and JSON output stay clean. Colour is off outside a TTY and with `NO_COLOR`. PR: https://github.com/pyrlyn/rtok/pull/532.
+
+Plan:
+1. One style table (`src/ui/style.rs`): each line kind (success, info, warning, error) picks its emoji and colour together, and clap's `--help` / error styles live in the same place.
+2. Config: `[ui] emoji = true` and `[ui] color = true` in `config/default.toml` and `docs/config.md`. `color = false` turns colour off process-wide (owo-colors override), so `render.rs` diffs, state words and log levels follow the same key. Re-bless the trycmd config snapshots.
+3. Where it applies: human-facing lines only (status, summaries, `doctor`, `agents` output, `--help`). It never applies to what agents read: `rtok hook` stdout, MCP responses, the proxy, filtered command output from `rtok run` / `rtok filter`, `--json`, or anything written to a pipe or a file.
+4. Gates: an emoji needs `[ui] emoji` and a terminal on that stream. Colour needs `[ui] color` and owo-colors' `if_supports_color` answer for that stream: a TTY, `NO_COLOR` unset, `TERM` not `dumb`, or `CLICOLOR_FORCE` / `FORCE_COLOR` set.
+5. Deliver as a PR; do not merge it.
+
+Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
+
+Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
+
+Result: merged in #532 (`7c09b8d3`). `src/ui/style.rs` owns one table: success (✅ green), status (💡 cyan), warning (⚠️ yellow), error (❌ red), plus clap `Styles` for `--help` and clap errors. Config `[ui] emoji = true` and `[ui] color = true` (env `RTOK_UI_EMOJI` / `RTOK_UI_COLOR` through the existing layer); `color = false` sets the owo-colors override, so `render.rs` diffs, state words and log levels follow it. Emoji need the key and a terminal on that stream; colour needs the key and owo-colors' per-stream check (`NO_COLOR`, `TERM=dumb`, `CLICOLOR_FORCE` / `FORCE_COLOR`). Hook and MCP JSON, filtered command output, `--json`, agent messages and piped output are byte-identical; the `Error: {e:?}` line keeps std's bytes. No new dependency. `--help` colour is clap's own decision, since argv is parsed before config loads.
+
+Check result: `src/ui/style.rs` unit tests (emoji key × tty matrix, prefix shape, bare text off a terminal, `color = false` beating a forced terminal); `tests/ui_style.rs` on the real binary through pipes (plain `ok` line, `NO_COLOR` no-op, std's error bytes, `CLICOLOR_FORCE` paints without emoji, `RTOK_UI_COLOR=false` and `[ui] color = false` beat `CLICOLOR_FORCE`); trycmd `config init` / `config show` / `report` gain the two `ui.*` keys; `just check` green locally (2064 tests) and PR CI green.
+
+Status: done 2026-09-30 (#532)
+Model: Grok Bot

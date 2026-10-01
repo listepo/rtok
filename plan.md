@@ -42,8 +42,26 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.10 | todo | P1 | 3 | 0% | |
 | T310.11 | todo | P2 | 3 | 0% | |
 | T310.12 | todo | P2 | 3 | 0% | |
-| T314 | in progress | P2 | 3 | 60% | Grok Bot |
-| T315 | in progress | P2 | 3 | 60% | Grok Bot |
+| T329 | todo | P2 | 5 | 0% | |
+| T330 | todo | P2 | 4 | 0% | |
+| T331 | todo | P1 | 4 | 0% | |
+| T332 | todo | research | 1 | 0% | |
+| T333 | todo | research | 1 | 0% | |
+| T334 | todo | research | 1 | 0% | |
+| T335 | todo | research | 1 | 0% | |
+| T336 | todo | research | 1 | 0% | |
+| T337 | todo | research | 1 | 0% | |
+| T338 | todo | research | 1 | 0% | |
+| T339 | todo | research | 1 | 0% | |
+| T340 | todo | research | 1 | 0% | |
+| T341 | todo | research | 1 | 0% | |
+| T342 | todo | research | 1 | 0% | |
+| T343 | todo | research | 1 | 0% | |
+| T344 | todo | research | 1 | 0% | |
+| T345 | todo | research | 1 | 0% | |
+| T346 | todo | research | 1 | 0% | |
+| T347 | todo | research | 1 | 0% | |
+| T348 | todo | research | 1 | 0% | |
 | T320 | in progress | P1 | 2 | 10% | Claude Code / opus-5.5 |
 
 
@@ -636,36 +654,743 @@ Remove `crates/rtok-webui`, `tools/webui-bundle.sh`, `just web-bundle`/`webui-ch
 
 Check: `just check` green; `git grep -i slint` finds only history docs; the release workflow dry-run builds.
 
-### T314. Fuzz testing with cargo-fuzz / libFuzzer
+### T329. Graph page: project selector, auto-added projects and linked projects
 
-Ivan, 2026-09-30: the same fuzz setup as ketch (ketch plan R4). Already in progress. Branch `test/cargo-fuzz` (worktree `_worktrees/rtok-cargo-fuzz`) has uncommitted work and is not yet pushed to `pyrlyn/rtok`; no PR exists yet. Link the PR here when it opens.
+Ivan, 2026-10-01: in the web UI's graph tab, the graph is built for a project the user picks. The page always shows which project is selected. Projects the user needs are added automatically. Other projects can be linked to the selected one, and the graph then traverses into them as if everything were one project. If the selected project references other projects, those are added, indexed and linked automatically, so an agent working in the current project can follow the graph across them right away.
 
-Plan:
-1. `fuzz/`: a standalone cargo-fuzz workspace excluded from the root one (`cargo-fuzz = true`, `libfuzzer-sys` 0.4, `arbitrary`, `rtok = { path = ".." }`), so `cargo build`, `just check` and CI never compile it.
-2. Entry points in `src/fuzzing.rs`, compiled only under `--cfg fuzzing` (set by `cargo fuzz`), reach crate-private parsers without disk, env or log side effects.
-3. Targets: `cli-argv` (`rtok::cli::Cli::try_parse_from` plus the help/error rendering), and the crash-prone parsers: `config-toml` (`config validate` + the file-free config stack), `cmd-filter` (user `rules` TOML + the stdout compactor), `hook-io` (the `HookInput` JSON and each host adapter), `jsonc-edit` (the JSONC editor that writes host settings), `proxy-wire` (Anthropic / OpenAI / Gemini request, response and SSE parsing), `transcript-jsonl` (`measure::jsonl`), `outline` (`read` outlines, tree-sitter queries) and `text-ops` (terse compression, `rtok expand` ranges, cuts). Seed corpora come from `tests/fixtures`.
-4. Verify: `cargo +nightly fuzz build` for every target, then a short run of each (`cargo +nightly fuzz run <target> -- -max_total_time=60`). Every crash becomes a minimized regression test with its fix in its own PR.
-5. Optional: a non-required nightly CI job (build plus a short run) on Linux. Do not touch `dependabot.yml` or `sync-docs.yml`.
-6. Deliver as a PR; do not merge it.
+Today the graph plugin (`src/plugins/graph/`) always works on one root: the process's current directory. The index is keyed by that root (`index::canon(root)` in `src/store/symbols.rs`), and the MCP tools `symbol`, `callers`, `impact`, `outline` and `explore`, plus `dead` and `affected`, only see that root. The graph page shows the same single root (`root .`). There is no way to pick another project and no way to follow a call into a dependency's source.
 
-Dependencies: nightly toolchain (`rustup toolchain install nightly`); `mise.toml` keeps stable 1.98.1 as the build toolchain. `cargo-fuzz` via `cargo install cargo-fuzz` or `"cargo:cargo-fuzz"` in `mise.toml`, recorded in `toolchain.md`. libFuzzer runs on macOS and Linux only. Independent of T315.
+#### Terms
 
-Check: `cargo +nightly fuzz build` succeeds for every target; each target runs 60 s with no crash (or the crash is filed with a repro test); `just check` on stable does not compile `fuzz/`.
+- **Project**: a directory rtok indexes as one unit, identified by its canonical root path. Display name defaults to the directory name (or the package name from the manifest when there is one); the user can rename it.
+- **Selected project**: the project the graph page (and, by default, the CLI and MCP tools) answers for.
+- **Link**: a directed edge "project A sees into project B". A link is either **manual** (the user made it) or **auto** (rtok made it from a reference, see 4).
+- **Graph scope**: the selected project plus every project reachable through its links (transitively). All graph queries run over the scope.
 
-### T315. Emoji and colour on by default for human-facing output
+#### 1. Project registry
 
-Ivan, 2026-09-30: emoji and colour on by default, with a config toggle, for human-facing output only. Agent-facing and JSON output stay clean. Colour is off outside a TTY and with `NO_COLOR`. Already in progress. Branch `feat/emoji-color-output` (worktree `_worktrees/rtok-emoji-color`) has uncommitted work and is not yet pushed to `pyrlyn/rtok`; no PR exists yet. Link the PR here when it opens.
+- A `projects` table in the rtok store holds id, canonical root, display name, origin (`manual`, `session`, `worktree`, `mcp`, `reference`), created and last-used times, and per-project index status (rows, files, pending, `indexed_at`, watch state, last error).
+- Each project keeps its own symbol index, keyed by its canonical root as today, so switching projects never re-indexes the others and never mixes their rows.
+- Two paths that canonicalize to the same directory (symlinks, `..`, case on macOS) are the same project; registering one twice is a no-op that only updates last-used.
+- A project whose root no longer exists stays in the registry marked **missing**: it is greyed out in the selector, excluded from the scope, and its links are kept so they come back if the directory returns. The user can remove it.
+- Removing a project drops rtok's index rows, its links in both directions and its registry row. It never touches the project's files.
+- The registry and links migrate forward with the store schema; an existing store starts with one project, the root it already indexed, selected.
 
-Plan:
-1. One style table (`src/ui/style.rs`): each line kind (success, info, warning, error) picks its emoji and colour together, and clap's `--help` / error styles live in the same place.
-2. Config: `[ui] emoji = true` and `[ui] color = true` in `config/default.toml` and `docs/config.md`. `color = false` turns colour off process-wide (owo-colors override), so `render.rs` diffs, state words and log levels follow the same key. Re-bless the trycmd config snapshots.
-3. Where it applies: human-facing lines only (status, summaries, `doctor`, `agents` output, `--help`). It never applies to what agents read: `rtok hook` stdout, MCP responses, the proxy, filtered command output from `rtok run` / `rtok filter`, `--json`, or anything written to a pipe or a file.
-4. Gates: an emoji needs `[ui] emoji` and a terminal on that stream. Colour needs `[ui] color` and owo-colors' `if_supports_color` answer for that stream: a TTY, `NO_COLOR` unset, `TERM` not `dumb`, or `CLICOLOR_FORCE` / `FORCE_COLOR` set.
-5. Deliver as a PR; do not merge it.
+#### 2. Project selector on the graph page
 
-Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
+- The page header has a project selector listing every known project: name, root path, index status and a link count. It is searchable when there are more than about ten projects.
+- Picking a project switches the whole page to that project's scope: summary counts, dead symbols, the symbol/callers/impact views and the graph drawing.
+- The selection is stored in the rtok store, so it survives page reloads, other browser tabs (they update over `/ws`) and `rtok web` restarts.
+- When `rtok web` starts in a directory that is a known project and nothing is selected yet, that project is selected. A stored selection that is now missing falls back to the current directory's project, with a notice.
 
-Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
+#### 3. Current-project indicator
+
+- The selected project's name and root path are always visible in the page header, together with its index status: rows, files, pending files, last indexed time and watch state.
+- When the scope includes linked projects, the header says so ("+ 3 linked") and expands to list them, each with its own status.
+- States the page must show clearly: **not indexed yet** (empty state with an "Index now" action), **indexing** (progress, the page stays usable on the old data), **stale** (pending files, same banner the tools already use), **failed** (the error and a retry action), **missing** (root gone).
+
+#### 4. Automatic adding
+
+Projects are added to the registry, without the user asking, in two ways.
+
+**4a. Projects rtok sees in use.** The working directory of a hooked agent session, a worktree created or adopted through `rtok worktree` (T285, T289), and the root of any graph MCP call are registered when first seen. A worktree is registered as its own project (its files differ from the main checkout) with its display name showing the branch.
+
+**4b. Projects the selected project references.** When a project is indexed, rtok reads its manifests and collects references to code that lives outside its root but on this machine. Each referenced directory is registered as a project (origin `reference`), indexed, and auto-linked from the referencing project. Reference sources, in this order:
+
+- Cargo: `path = "..."` dependencies and `[patch]` entries, and workspace members outside the root.
+- npm/pnpm/yarn: `file:`, `link:` and `workspace:` dependencies that resolve outside the root.
+- Go: `replace` directives with a local path in `go.mod`, and `go.work` `use` entries.
+- Python: path dependencies in `pyproject.toml` (`{ path = "..." }`, editable installs).
+- Git submodules (`.gitmodules`) whose checkout is present.
+- Anything else the indexer finds while resolving imports: an import that resolves to a file outside the root (through an LSP server or the language's resolver) adds that file's project root (nearest directory with a manifest or `.git`).
+
+Rules for 4b:
+
+- References are followed transitively: if B (referenced by A) references C, C is added, indexed and linked from B, so A's scope includes C. A depth limit (`[plugins.graph] reference_depth`, default 3) and a project cap (`max_auto_projects`, default 20) stop runaway chains; hitting either is shown on the page and logged, never silent.
+- Registry dependencies that are not local source (crates.io, npm registry, PyPI, Go module cache) are not followed by default, so the scope stays the user's own code. An opt-in setting (`include_registry_deps = false`) can add them later; it is out of scope for the first PR.
+- A reference to a path that does not exist is recorded on the referencing project as a warning ("references ../foo, not found") and nothing is added.
+- Auto-indexing runs in the background with the existing index code; the selected project is usable while its references are still indexing, and results from a reference that is not indexed yet are marked incomplete rather than missing.
+- Re-indexing a project re-reads its manifests: a new reference adds and links a project; a removed reference removes the auto link (the project stays in the registry until the user removes it). Manual links are never removed automatically.
+- If the user unlinks an auto link, rtok remembers that and does not re-create it on the next index.
+
+**Turning it off.** `[plugins.graph] auto_add_projects = true` controls 4a and `auto_link_references = true` controls 4b, both on by default, documented in `docs/config.md`. With both off, the registry changes only through the page and the CLI.
+
+#### 5. Manual links
+
+- From the selected project the user can link any known project and unlink any linked one; the page lists links with their kind (manual or auto) and the reason for auto links (for example "Cargo path dependency `../ketch-core`").
+- Linking a project that is not indexed yet starts indexing it.
+- Links are directional: linking B into A puts B in A's scope, not A in B's. The page offers "link both ways" as a shortcut that creates two links.
+- Cycles are allowed (A to B to A). Scope building visits each project once, so cycles never loop or duplicate rows.
+- A project cannot link to itself, and linking an already-linked project is a no-op.
+
+#### 6. Cross-project traversal
+
+- Every graph query runs over the scope as one graph: `symbol`, `callers`, `impact` (with `depth` and `to`), `explore`, `affected` and `dead`.
+- A reference from a call site in one project to a definition in a linked project resolves and is followed, in both directions: `callers` of a function in B include call sites in A when A links B, and `impact` from a change in B walks up into A.
+- Each result row shows which project it belongs to (project name badge on the page, a `project` field in JSON, a `[name]` prefix in text output).
+- Ambiguity: when the same symbol name is defined in several projects in the scope, results are grouped by project and marked ambiguous, using the same banner the single-project path already uses. A definition in the selected project ranks first.
+- `dead` is computed over the scope: a symbol in B used only from A is not dead while A links B. Dead symbols are still reported per project.
+- `affected` with git changes reads `git diff` in every project in the scope that is a git repo, and maps test commands per project.
+- Output caps and token budgets apply to the whole scoped answer, not per project, so linking projects does not multiply the size of an MCP reply.
+- Watching: when `watch` is on, file changes in any project in the scope update its index and refresh the page over `/ws`.
+
+#### 6a. Backends: LSP by default, then tree-sitter, then plain text search
+
+Today `[plugins.graph] backend` defaults to `tags` (tree-sitter tags index), and `backend = "lsp"` errors out when the server is missing (`docs/lsp.md`, "Without the server"). T329 changes the default to an ordered fallback chain, `backend = "auto"`: LSP first, tree-sitter second, plain text search last. Setting `backend = "lsp"`, `"tags"` or `"text"` pins one mode with no fallback (today's strict behaviour, kept for tests and for users who want it).
+
+Backends are chosen per project and per language, not once per process: in a scope where A is Rust with rust-analyzer installed and B is Go with no server, A's rows come from LSP and B's from tree-sitter, in the same answer.
+
+**Mode 1: LSP (default).**
+
+- Used when a server for the project's language is configured and works: the marker file is found (`Cargo.toml`, `compile_commands.json`, `tsconfig.json`, `pubspec.yaml`, plus any added later) and the server binary is on `PATH` (or resolved through `rustup which rust-analyzer`, as today), spawns over stdio, and answers `initialize`.
+- Gives the most precise answers: type-position references, trait/interface implementations, re-exports and macro-expanded calls that tags miss.
+- Cross-project traversal uses each project's own server; a definition location the server returns inside a linked project's root is mapped to that project and labelled with it.
+- A server that starts but crashes or times out mid-session (default per-request timeout 10 s) marks that project's LSP as failed, answers the current request from the next mode and says so in the result (see "Which mode answered" below). It is not respawned on every request (see 6b).
+- Indexing on large projects: while the server is still indexing (`$/progress` not finished), requests wait up to the timeout; on timeout they fall back to tree-sitter for that request only and keep LSP as the working mode.
+
+**Mode 2: tree-sitter (fallback).**
+
+- Used when LSP is not configured or not working for that project, and a tree-sitter grammar for the project's languages is compiled into rtok (the existing tags index in SQLite).
+- Answers from the existing per-project tags index: definitions, call sites by name, outlines. It indexes the project on first use if needed, with the usual stale banner for pending files.
+- Known limits, stated in the result when they matter: name-based resolution (several definitions with the same name are reported as ambiguous), no type-position references, no macro expansion.
+- Cross-project traversal joins the tags indexes of every project in the scope by symbol name, preferring a definition in the selected project, then in directly linked projects, then transitively linked ones.
+
+**Mode 3: plain text search (last resort).**
+
+- Used when neither LSP nor a tree-sitter grammar is available for the project (for example a language rtok has no grammar for).
+- Runs plain text search through the shell: `rg` (ripgrep) when present, `grep -rn` otherwise, with word-boundary patterns built from the symbol name and simple per-language definition patterns (`fn name`, `def name`, `function name`, `class name`, `func name`). For a project whose root is on another machine (registered as `ssh://host/path`), the same commands run over `ssh host` with the same arguments; the SSH host must already be reachable without a prompt (key or agent), otherwise the mode is reported as not working.
+- Answers are best effort: `symbol` returns matching definition lines, `callers` returns lines that mention the name outside its definition, `outline` returns definition-pattern matches in the file, `impact` is limited to one level, and `dead` is not offered (the page and the tool say "not available in text mode" instead of guessing).
+- Every text-mode result says it came from text search and may include false positives (comments, strings, same-named symbols). Output is capped the same way as other modes.
+- Respects `.gitignore` and the project's ignore settings; never searches outside the project roots in the scope.
+
+**When no mode works.** If all three fail for a project (no server, no grammar, no `rg`/`grep`, or SSH unreachable), that project is dropped from the answer with one clear line ("project B: no graph backend available: ...") and the other projects still answer. If it is the only project, the tool returns that error.
+
+**Which mode answered.** Every result says which mode answered for each project (page: a small LSP / tree-sitter / text tag next to the project badge; JSON: `backend` per project; text output: one header line). `Measurement` rows keep `kind = "lsp.*"` for LSP and gain `tags.*` and `text.*` kinds, so `rtok stats` shows how often each mode is used.
+
+**Config.** `[plugins.graph] backend = "auto" | "lsp" | "tags" | "text"` (default `auto`), `lsp_timeout_ms = 10000`, and per-language overrides (`[plugins.graph.backend_by_language] go = "tags"`), documented in `docs/config.md` and `docs/lsp.md` (whose "Without the server" section changes to describe the fallback).
+
+#### 6b. Capability cache: check once, reuse until the MCP server restarts
+
+- The first graph request for a project (and language) runs the capability check: find the LSP marker and server binary and try to start it; check for a tree-sitter grammar; check for `rg`/`grep` (and SSH reachability for remote roots). The result is a per-project record such as "LSP works", or "LSP: rust-analyzer not on PATH; tree-sitter works", or "LSP and tree-sitter unavailable; text works".
+- Later requests use that record directly: they go straight to the working mode and do not re-probe the modes that failed. No `PATH` lookup, no server spawn attempt and no grammar check runs again on each request.
+- The cache lives in memory in the rtok MCP server process (and in the `rtok web` process for the page). It is kept until that process restarts; restarting the MCP server is the way to re-check after installing a language server. It is not written to disk, so a new process always checks fresh.
+- A working mode that later breaks (server crash, repeated timeouts) is downgraded in the cache once, and the next mode becomes the cached choice for that project for the rest of the process; it is not re-probed per request.
+- Changing `[plugins.graph] backend` or the per-language overrides in config clears the cached record for the affected projects (the config watcher already reloads settings); nothing else invalidates it.
+- Adding a new project (manually, by session or by reference) runs the check once for that project only; existing records are untouched.
+- `rtok graph projects --json` and the page show each project's cached capability record and when it was checked, so the user can see why a mode was chosen.
+- Concurrent first requests for the same project share one check (single-flight); they do not spawn several servers.
+
+#### 7. CLI and MCP
+
+- `rtok graph projects` lists projects, `rtok graph projects add <path>`, `remove <id|path>`, `select <id|path>`, `link <id|path>`, `unlink <id|path>`; all support `--json`.
+- Every graph command and every graph MCP tool takes an optional `project` (id or path). Without it, the project is the caller's current directory (agents keep today's behaviour) and the scope includes that project's links, so an agent working in A automatically sees into the projects A references.
+- MCP results carry the same `project` field per row as the CLI's JSON.
+
+#### 8. Web UI
+
+- Lands on the React SPA graph page (T310.8): selector, indicator, links panel, project badges in every list and in the graph drawing (one colour per project, with a legend).
+- New `/ws` messages: project list, selection changed, links changed, per-project index progress.
+- If T310.8 has not landed when the backend is ready, ship the registry, links, references, traversal, CLI, MCP and `/ws` first, and the page with T310.8.
+
+#### 8a. Visual graph: projects overview and drill-down into one project
+
+The graph page draws two levels of graph, both interactive (pan, zoom, drag, click), rendered from data sent over `/ws`.
+
+**Level 1: projects overview (the page's landing view).**
+
+- Header counters: total known projects, projects in the current scope, linked pairs, and projects with problems (missing, failed, no backend).
+- A node per project, labelled with its name, sized by indexed symbol count, coloured per project (the same colour used for project badges everywhere), with a small backend tag (LSP / tree-sitter / text) and a state marker (indexing, stale, failed, missing).
+- An edge per link, drawn as an arrow from the linking project to the linked one. Manual and auto links look different (solid vs dashed); hovering an auto link shows its reason (for example "Cargo path dependency `../ketch-core`"). Edge thickness reflects the number of cross-project references actually found between the two projects; a link with zero references found is drawn thin and grey with a tooltip saying so.
+- The selected project is highlighted and its scope (everything reachable through links) is emphasised; projects outside the scope are dimmed but still shown.
+- Interactions: click a node to select it as the current project; double-click (or an "Open" button) to drill into it; right-click or a node menu to link, unlink, re-index or remove; a filter box hides projects by name; a toggle shows only the current scope.
+- Edge cases: one project only shows a single node and a hint about linking; cycles are drawn normally (no infinite layout); more than about 50 projects switches to a clustered layout grouped by origin, with a list view fallback; missing projects are drawn hollow and cannot be opened.
+
+**Level 2: inside one project (drill-down).**
+
+- Opening a project shows the relationships inside it as a graph: files, modules, types and functions/methods as nodes; "contains", "calls", "implements" and "imports" as edges. A breadcrumb (`All projects / rtok / src/plugins/graph`) leads back up, and the browser back button works (the drill-down state is in the URL).
+- It starts at file/module level (files grouped by directory, edges are aggregated call/import counts between files) so a large project stays readable. Clicking a file expands it into its functions, methods and types; clicking a function focuses on it and shows its callers and callees (depth 1 by default, adjustable up to the same limit `impact` uses).
+- Calls that leave the project into a linked project end at a node for that project (in its colour); clicking that node opens the target symbol inside the linked project, so the user can follow a call chain across projects visually, matching what cross-project traversal (6) returns.
+- A side panel shows the selected node's details: path and line, signature, callers and callees lists, and "open in editor" (the `vscode://` / `file://` link rtok already uses where available).
+- Search: typing a symbol name finds it in the project (and the scope) and focuses it on the graph.
+- What the graph shows depends on the backend answering for that project (6a): LSP and tree-sitter give full call and containment edges; text mode shows files and definition-pattern matches only, with a banner saying call edges are not available in text mode.
+- Large graphs: nodes beyond a cap (default 500 visible) are collapsed into "+N more" groups that expand on click; layout runs in a web worker so the page never freezes; the page shows a spinner while the graph data streams in.
+- Live updates: when `watch` is on and files change, the affected nodes and edges update in place over `/ws` without resetting the layout or the user's zoom.
+- Edge cases: an unindexed project shows the "Index now" empty state instead of an empty canvas; a project still indexing shows what is indexed so far, marked partial; dead symbols (when available) can be highlighted with a toggle; a file with parse errors is shown with a warning marker and its known nodes.
+
+**Rendering: 3D with Three.js.**
+
+- Both levels are drawn as a 3D graph in WebGL with Three.js. The preferred stack is `3d-force-graph` / `react-force-graph-3d` (Three.js plus a d3-force-3d layout) or `@react-three/fiber` with `@react-three/drei` if more control is needed; pick one in the first PR and record the choice and bundle size in `toolchain.md`. Library versions are pinned like other SPA dependencies.
+- Camera: orbit (rotate, pan, zoom) with mouse, trackpad and touch; double-click a node flies the camera to it; a "reset view" button and a "fit all" button; the camera position is kept when data updates live.
+- Nodes are spheres (projects) or smaller shapes per kind inside a project (file: cube, type: octahedron, function/method: sphere), coloured per project, with text labels as sprites that face the camera and hide past a zoom distance so the scene stays readable. Edges are lines with arrowheads (or directional particles for calls) and the same solid/dashed and thickness rules as above.
+- Layout runs as a 3D force simulation in a web worker; it settles and then stops (no constant CPU use when idle). Expanding a file or project adds nodes near their parent instead of re-laying out the whole scene.
+- Selection, hover tooltips, the side panel, search-to-focus and the right-click menu work the same as described above, using Three.js raycasting for picking.
+- A 2D toggle shows the same graph flat (same library in 2D mode, or a 2D canvas renderer) for users who prefer it; the choice is remembered.
+- Performance targets: 60 fps orbiting with 500 visible nodes and 2,000 edges on a 2020 laptop's integrated GPU; above the visible cap nodes are grouped (as above). Instanced meshes are used for nodes when counts are high.
+- Fallbacks and edge cases: no WebGL (blocked, old browser, headless without GPU) switches to the 2D renderer with a notice; a lost WebGL context is restored automatically or falls back to 2D; `prefers-reduced-motion` disables camera fly-to and particle animation; the keyboard list view stays available in 3D mode; the 3D scene is disposed (geometries, materials, renderer) when leaving the page so memory does not grow when switching tabs.
+- Tests: Vitest for the data-to-scene mapping (nodes, edges, colours, grouping) without WebGL; Playwright with software WebGL (SwiftShader) checks the canvas renders, a node click selects it, and the no-WebGL path shows the 2D fallback; Storybook stories for both levels with fixture data.
+
+**Accessibility and themes.** Both levels work in dark and light themes at 375 and 1280 px; every graph has a keyboard-navigable list view with the same data (nodes, edges, counts) for screen readers and small screens; colours are not the only signal (shapes and labels carry the same meaning).
+
+#### 8b. Two-part graph UI: interactive explorer and read-only live graph
+
+The graph page is split into two parts that show the same graph data side by side (stacked on narrow screens).
+
+**Part 1: interactive explorer.** Everything described in 8a: the user clicks, selects, drills down, expands, searches, links and unlinks, and moves the camera. Nothing happening in the background moves this view; it changes only when the user acts (or when indexed data changes under `watch`).
+
+**Part 2: live graph (read-only).** The same graph, rendered with the same layout, colours and shapes, but purely for watching:
+
+- No interaction at all: no click, hover menus, selection, drag, expand, search or link actions; no tooltips that need hovering. Pointer and keyboard events on the canvas are ignored, and the cursor stays the default arrow so it never looks clickable.
+- The camera is driven automatically: it frames whatever is being queried right now and eases back to an overview when activity stops. The user cannot move it.
+- It follows the level shown in part 1 (projects overview, or the project the user drilled into) so both parts show the same part of the graph; the live graph does not drill down by itself. Queries on symbols outside what part 1 shows light up the nearest visible ancestor with a counter.
+- It shows only what the graph is being asked right now and how the data changes: every `symbol`, `callers`, `impact`, `explore`, `outline`, `affected` and `dead` call from MCP, the CLI or part 1 itself.
+
+**Layout controls (outside the canvases).** A splitter between the parts (drag to resize, double-click to reset to 50/50), buttons to maximise either part, and a "Hide live graph" toggle; the choice is remembered. On screens narrower than 900 px the parts stack, live graph below, collapsed to its metrics strip until expanded. These controls are the only things the user operates for part 2; the live canvas itself stays read-only.
+
+**What the live graph shows on the canvas.**
+
+- When a call starts, the queried symbol's node (and its project node on the overview) pulses in an "in progress" colour; when it ends, the nodes in the answer (callers, callees, impact chain, explore hits) flash and the traversed edges animate along the path the query took, including edges crossing into linked projects.
+- Each running call gets a small floating label next to its node with its tool name and a live counter of symbols returned so far; the label fades a few seconds after the call ends.
+- Nodes queried often build up a heat glow that decays over a window (default 5 minutes), so hot spots are visible at a glance.
+- Several concurrent calls are shown at once, each in its own accent so their paths can be told apart; more than 8 concurrent calls are merged into one "busy" pulse with a count.
+
+**Live metric displays (read-only, updating in real time).** Arranged as a strip above the live canvas and a feed beside it; every number updates as events arrive, with a short count-up animation (disabled under `prefers-reduced-motion`).
+
+- **Now running:** count of calls in progress, and for each: tool, symbol or query, caller (agent id and host from T283/T284, or "web" / "cli"), project, backend answering (LSP / tree-sitter / text), elapsed time ticking up.
+- **Symbols requested:** for the current call, the size of its target set (for example the symbols an `impact` at depth 3 expands to); for the window, the running total. Shown as a number with a sparkline of the last 60 s.
+- **Symbols returned:** same layout; the per-call value counts up while the answer streams; the ratio returned/requested is shown as a small bar.
+- **Tokens sent / tokens without rtok / saved:** for the last call and for the window: answer size, the size of the unreduced answer (what a plain read or grep of the same data would have returned), and the saving in tokens and percent, shown as a large number with a sparkline. Values come from the same `Measurement` rows `rtok stats` uses, so they match `rtok stats` exactly.
+- **Latency:** last call, p50 and p95 for the window, as numbers with a sparkline.
+- **Files touched and projects crossed:** per call and window totals.
+- **Per-tool breakdown:** a live bar per tool (`callers`, `impact`, ...) with call counts and tokens saved in the window.
+- **Backend use:** live shares of LSP / tree-sitter / text answers and the number of fallbacks in the window.
+- **Cache and caps:** how many answers were cut by a cap and how many fell back, as live counters.
+- **Call feed:** newest first, one row per finished call with tool, symbol, caller, project, backend, requested, returned, tokens saved and latency; failed calls in red with the error; interrupted calls marked as such. The feed scrolls by itself and keeps the last 200 rows; it is read-only like the canvas (no click to replay), but it can be filtered by agent, tool and project with controls above it.
+- **Window selector:** totals cover the last 1, 5 or 15 minutes, or "since `rtok web` started"; changing it recomputes from the store, not from what the browser happened to receive.
+- **Freeze button:** stops the live canvas and the displays updating so a moment can be read; events keep arriving in the background and the view catches up on unfreeze. Totals never drop events.
+
+**Data path.**
+
+- The graph plugin emits a start event and an end event per call (with the numbers above, and a progress event while a long answer streams) on the existing `/ws` stream. The page subscribes only while part 2 is visible, so a hidden or collapsed live graph costs nothing.
+- Events from the MCP server process, CLI runs and `rtok web` all reach the page through the store (or the daemon channel the web UI already uses), so an agent's call in another process shows up within one second.
+- Payloads carry ids, symbol names, paths and numbers, never source text.
+- Rendering is batched per animation frame; a burst (for example 200 calls per second) is coalesced for display, while counters and totals still count every call.
+
+**Edge cases.**
+
+- No activity yet: the live graph shows the static graph dimmed and "Waiting for graph calls"; the displays show zeros, not blanks.
+- A failing call (no backend, timeout) pulses red on its node and appears red in the feed with the error.
+- A call still running when its process exits is marked "interrupted" after a timeout and stops counting as running.
+- Calls on a project outside the current scope are counted in the totals and listed in the feed (marked "outside scope") but do not light up the canvas.
+- `/ws` drops: the live part shows "reconnecting", then resumes; missed events are shown as a count and the totals are refreshed from the store.
+- Part 1 drills into a project while calls are running: the live graph switches level with it and re-attaches running calls to the new view.
+- Several browser tabs: each live graph receives the stream; closing or hiding them stops the subscription.
+- WebGL unavailable: the live graph uses the same 2D fallback as part 1; the metric displays do not depend on WebGL.
+- Live events stay local to `rtok web` (localhost by default); nothing leaves the machine.
+
+**Config.** `[plugins.graph] live_heat_window_s = 300`, `live_max_events_per_s = 50` (rendering cap only), `live_feed_rows = 200`, documented in `docs/config.md`.
+
+#### 8c. Export: graph as an image or JSON
+
+- **What can be exported:** the projects overview, the current drill-down view, or a focused subgraph (a symbol with its callers/callees/impact at the chosen depth), from part 1. The live graph (part 2) can export a snapshot of its current frame as an image only.
+- **Formats:**
+  - PNG at 1x/2x/4x, transparent or theme background, with a legend (project colours, node shapes, edge styles) and a footer (project names, scope, backend per project, `indexed_at`, rtok version, export time).
+  - SVG for the 2D rendering (vector, editable); in 3D mode SVG exports the current camera projection flattened to 2D.
+  - JSON, versioned schema (`"schema": "rtok.graph.v1"`): `projects` (id, name, root as a path relative to the user's home or redacted, origin, backend, health), `links` (from, to, kind, reason, reference count), `nodes` (id, project, kind, name, path, line), `edges` (from, to, kind), and `meta` (scope, level, focus, depth, filters, export time, rtok version). The schema is documented in `docs/plugins.md` and checked by a JSON Schema file in the repo.
+- **Where:** an "Export" menu on the page; `rtok graph export --format png|svg|json [--project ID] [--focus SYMBOL --depth N] [-o FILE]`; and an MCP tool `graph_export` (JSON only) so an agent can hand a graph to another agent or attach it to a PR.
+- **Sharing safety:** absolute paths, the home directory and the user name are redacted by default (`--no-redact` to keep them); source text is never included; file names and symbol names are, and the export dialog says so.
+- **Edge cases:** an export larger than the visible cap includes every node in JSON but only the visible ones in images, and the image footer says "N nodes hidden"; exporting while indexing marks the export partial in `meta` and the footer; text-mode projects export without call edges and say so; images render offscreen at the requested size, not a screenshot of the window, so the result does not depend on window size; no WebGL means PNG comes from the 2D renderer.
+- **Import (read-only):** the page can open an exported JSON to view it (no live data, banner "viewing export from ..."), which is also how diffs against a saved export work (8e).
+
+#### 8d. Alerts: linked project down or unreachable
+
+- **What raises an alert:** a project in the current scope (including auto-linked references) becomes **missing** (root deleted or moved), **unreachable** (a network or SSH root stops answering, an external disk is unmounted), **backend down** (its working backend from 6b fails and no fallback works), **index failing** (re-index errors three times in a row), or **link broken** (a manifest reference now points to a path that does not exist).
+- **Detection:** the `watch` loop and every graph query update project state; a light background check runs every 60 s (`[plugins.graph] health_check_interval_s`) only for projects in an open scope, using the cached capability record (6b) rather than re-probing everything. A state must persist for two checks before it alerts, to avoid flapping on a brief unmount.
+- **Where alerts show:** a red badge on the project node and link edges in both parts, a toast and an alerts list on the graph page, a line in `rtok doctor`, `rtok graph projects` output (`state` and `alert` fields in `--json`), and a short notice in graph MCP answers that touch an affected project ("project B unreachable since 14:02; results exclude B"). Agents therefore learn about it in the answer they are already reading.
+- **Optional push:** if T288 (push unread messages to hooked agents) is available, an alert is delivered once to agents whose current scope includes the project; repeated failures do not repeat the message.
+- **Recovery:** when the project comes back, the alert clears automatically, a "recovered" entry is logged, and the project is re-indexed if files changed while it was away.
+- **Edge cases:** a project removed on purpose from the registry never alerts; unlinking a broken project clears its alert for that scope; an alert on a project that is only transitively linked names the chain ("A to B to C: C missing"); many simultaneous alerts (for example a whole disk unmounted) collapse into one grouped alert.
+- **Config:** `[plugins.graph] alerts = true`, `health_check_interval_s = 60`, documented in `docs/config.md`.
+
+#### 8e. Diff: compare the graph before and after a change
+
+- **What can be compared:** the current graph against (a) a git ref (`HEAD~1`, a branch, a commit, the merge base of a PR branch), (b) the working tree versus `HEAD` (uncommitted changes), or (c) a saved export (8c). Diffs work over the whole scope, so a change in B that affects A's call sites shows up in A.
+- **How the "before" side is built:** for git refs, rtok indexes the files at that ref from the object database into a temporary index (no checkout, no change to the user's working tree), using the same backend chain (LSP is skipped for the old side when it would need a separate checkout; tree-sitter is used instead and the diff says so).
+- **What the diff reports:** symbols added, removed, renamed (same body hash, different name or path), moved between files or projects, and changed (signature or body); call edges added and removed; links added and removed; and, for each changed symbol, its callers that are affected (the `impact` set), which is the part agents need for review.
+- **Where:**
+  - Page: a "Compare" mode in part 1 colours nodes and edges (added green, removed red, changed amber, moved blue) and lists changes in a side panel; the live graph is unaffected.
+  - CLI: `rtok graph diff [--from REF|--from-export FILE] [--to REF|working] [--project ID] [--json]`.
+  - MCP: `graph_diff` returning a capped summary (counts, top changed symbols with affected callers) and an id to page through details, so an agent reviewing a PR gets a short answer by default.
+- **Edge cases:** a ref that does not exist returns a clear error; a diff spanning projects at different git states diffs each project against its own ref (a `--from` per project is allowed); generated or vendored files follow the project's ignore rules; very large diffs are capped like other answers with a "more" id; renames are detected only when unambiguous, otherwise shown as remove plus add; binary or unparsed files are listed as "changed, not analysed".
+
+#### 8f. Health score per project
+
+- **Score:** 0 to 100 per project, shown as a coloured ring on the project node (green 80+, amber 50 to 79, red below 50) with the breakdown on hover in part 1 and in the project list, and as `health` in `rtok graph projects --json` and MCP answers.
+- **Components (weights in brackets, each 0 to 1):**
+  - **Index freshness [40%]:** 1 when no files are pending and the last index is newer than the last file change; drops with the share of pending files and with age (0 when more than 20% of files are pending or the index is older than 24 hours with changes since).
+  - **Backend alive [30%]:** 1 when the preferred backend (LSP under `auto`) works; 0.6 when running on tree-sitter fallback; 0.3 on text fallback; 0 when no backend works. Reads the cached capability record (6b) plus recent query failures.
+  - **Links not broken [30%]:** the share of the project's links whose target is present, reachable and indexed; a project with no links scores 1 here.
+- **Explained, not just a number:** each score comes with the reasons that lowered it ("12 files pending", "rust-analyzer not on PATH, using tree-sitter", "link to ../foo broken"), and a suggested fix for each (re-index, install the server and restart the MCP server, fix or remove the link).
+- **Scope score:** the selected project's scope shows its lowest project score (the weakest link decides), not an average.
+- **Agents:** graph MCP answers include a one-line health note when the scope's score is below 80, so an agent knows when results may be incomplete; `rtok doctor` lists every project under 80 with its reasons.
+- **Edge cases:** a project being indexed for the first time shows "indexing" instead of a score; a missing project scores 0 and shows "missing"; text-only languages are not penalised beyond the backend component; scores update live as state changes and are recomputed at most once per second per project.
+
+#### 9. Docs
+
+`docs/plugins.md` (graph section: projects, links, references, scope, backends), `docs/lsp.md` (fallback chain and capability cache) and `docs/config.md` (the new `[plugins.graph]` keys), with `docs/ru/` and `docs/uk/` updated in the same change.
+
+#### 10. Delivery
+
+As PRs, backend first; do not merge them.
+
+Dependencies: T310.8 for the page; T285 and T289 for worktree-based adding; the existing graph index and LSP integration.
+
+Check: fixture repos under `tests/fixtures`, no network:
+
+- Repo A has a Cargo path dependency on B; B has one on C; D is unrelated.
+- Indexing A registers B and C (origin `reference`), indexes them and creates auto links A to B and B to C; D is not added.
+- Selecting A shows A in the header with "+ 2 linked"; `callers` of a function defined in C returns call sites in A and B, each labelled with its project; `impact` from that function walks up into A.
+- `dead` over A's scope does not report B's function that only A calls; selecting B alone does.
+- Unlinking B from A removes B and C from A's scope, survives a re-index (no re-link), and `callers` no longer crosses projects.
+- A manual link A to D adds D to the scope; a cycle (D links A) does not loop or duplicate rows.
+- Removing the path dependency from A's manifest and re-indexing removes the auto link but keeps B in the registry.
+- A reference to a missing path shows a warning and adds nothing; a deleted project root shows as missing and drops out of the scope.
+- `reference_depth = 1` stops at B; `max_auto_projects` limits are reported on the page and in logs.
+- A new agent session in a new directory registers it when `auto_add_projects` is on and not when it is off; `auto_link_references = false` adds no reference projects.
+- The selection survives an `rtok web` restart and syncs between two browser tabs.
+- MCP `callers` without `project` from A's directory crosses into B and C; with `project` set to D it does not.
+- Backends, with `backend = "auto"`: with rust-analyzer on `PATH`, A answers from LSP (result tagged LSP) and finds a type-position reference tags would miss; with it removed from `PATH` and the MCP server restarted, A answers from tree-sitter (tagged tree-sitter); a fixture project in a language with no grammar answers from text search (tagged text, `dead` reported as not available); a scope mixing all three labels each project with its own mode.
+- `backend = "lsp"` with no server still errors as today (no fallback when pinned).
+- A server that crashes mid-session: the current request is answered from tree-sitter with a notice, and later requests go straight to tree-sitter without respawning the server.
+- Capability cache: a test counts probes; 100 requests to the same project after the first run zero further `PATH` lookups or spawn attempts; installing the server without restarting changes nothing; restarting the MCP server picks it up; changing `backend` in config re-checks only the affected projects; two concurrent first requests run one check.
+- Remote text mode: a project registered as `ssh://localhost/<path>` (test runs only when passwordless SSH to localhost works, otherwise skipped) answers `symbol` over SSH; an unreachable host is reported as no backend available without hanging past the timeout.
+- Visual graph, level 1: with A, B, C, D the page shows 4 projects, 3 in A's scope and 3 linked pairs (A to B, B to C, A to D); the A-to-B edge is dashed with the Cargo reason on hover, A-to-D is solid; clicking B selects it; a missing project is drawn hollow and cannot be opened.
+- Visual graph, level 2: opening A shows its files with aggregated edges; expanding a file shows its functions; focusing the function that calls into C shows the edge ending at a C node, and clicking it opens the target symbol inside C; the breadcrumb and browser back return to the overview; a text-mode project shows the "call edges not available" banner; editing a file with `watch` on updates the node without resetting zoom; a fixture with more than 500 nodes shows "+N more" groups and the page stays responsive.
+- 3D: both levels render in Three.js (Playwright with SwiftShader sees a non-empty canvas and can select a node by click); disabling WebGL shows the 2D fallback with a notice; the 2D/3D toggle is remembered across reloads; orbiting the 500-node fixture stays smooth and the layout stops when settled; leaving the page releases the WebGL context.
+- Two-part UI: an MCP `callers` call from a separate process lights up the target node in the live graph within one second, animates the path into a linked project and adds a feed row whose symbols requested/returned, tokens and saving equal the matching `Measurement` row and `rtok stats`; part 1's camera and selection do not move; clicking, dragging, hovering and keyboard input on the live canvas change nothing (Playwright asserts no selection or camera change); drilling into a project in part 1 switches the live graph to it; freeze then unfreeze catches up without losing totals; a burst of 500 calls in 5 s keeps both parts responsive and the totals exact; a failing call shows red with its error; dropping and restoring `/ws` shows "reconnecting" and refreshes totals from the store; with the live part hidden, no live events are serialised; on a 375 px screen the live part stacks below as a metrics strip.
+- Export: PNG, SVG and JSON exports of A's scope open correctly; the JSON validates against the schema; absolute paths and the user name are redacted by default; a 2,000-node scope exports every node to JSON and the PNG footer notes hidden nodes; `rtok graph export` and MCP `graph_export` produce the same JSON; importing the JSON shows it read-only.
+- Alerts: unmounting (or renaming) B's directory raises "B missing" after two checks on the page, in `rtok doctor`, in `rtok graph projects --json` and as a notice in an MCP `callers` answer from A; restoring it clears the alert and re-indexes; a broken manifest path raises "link broken"; unmounting several projects at once shows one grouped alert; a removed project never alerts.
+- Diff: changing a function signature in B and running `rtok graph diff --from HEAD` from A reports the change and lists A's affected call sites; the working tree is untouched by building the old side; a rename is reported as a rename; an unknown ref errors clearly; MCP `graph_diff` returns a capped summary with a paging id.
+- Health: a fully indexed A with LSP and intact links scores 100; with 30% of files pending it drops below 80 with the reason shown; on tree-sitter fallback the backend component reads 0.6; a broken link lowers the links component; the scope shows the lowest score; an MCP answer from a scope under 80 includes the health note.
+- Playwright covers the selector, the indicator and its states, link/unlink, project badges, backend tags, both graph levels, export, alerts, compare mode, health rings, 3D and 2D modes, the two-part layout with the read-only live graph and its metric displays, and the list-view fallback; `just check`.
+
+### T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
+
+Ivan, 2026-10-01: one command group to see and clean junk for every agent: `rtok agents junk list` to view and `rtok agents junk clear` to remove. For each agent, show its folders (as links), the size of each folder in KB/MB/GB, and how much space a clear would free. `clear` stays a dry run by default and deletes only with `--yes`, as T182's `rtok agents junk clear` does today.
+
+Today `rtok agents junk clear` (T182, #286) only clears junk rtok itself owns under its home (rotated `rtok.log.<N>` siblings past `[log] files`, archive payloads past `core.retain_calls_days`). The per-host junk map is research only (`research.md` §22); T182.1 (wire the host folders after review) never landed. There is no `list`, no per-agent view and no sizes.
+
+#### Terms
+
+- **Agent:** each host in `agents::HOSTS` (Claude Code, Cursor, Codex, Gemini, Kimi, ...), plus **rtok** itself as its own row. Where rtok knows agent ids (T282, D34), sessions and worktrees are attributed to the agent id under its host.
+- **Agent folder:** a directory an agent writes to: its config/data home (for example `~/.claude`, `~/.cursor`, `~/.codex`), its cache dir (`~/Library/Caches/<app>`, `$XDG_CACHE_HOME/<app>`), its log dir, and per-project folders it creates (for example `<repo>/.claude/`), plus worktrees rtok created for it (T285).
+- **Junk:** files that can be deleted without losing user data, settings, credentials or history the user wants, because they are regenerated, re-downloaded or were only temporary. Each junk kind below has a **class**: `safe` (always regenerated, cleared by default), `review` (usually junk, cleared only when named or with `--include review`), or `never` (shown for size only, never deleted).
+
+#### Junk kinds per agent
+
+| Kind | Examples | Class | Notes |
+| --- | --- | --- | --- |
+| `cache` | HTTP/model/response caches, `Cache/`, `CachedData/`, `GPUCache/`, `Code Cache/` | safe | Regenerated on next run. |
+| `temp` | temp files and temp directories the agent created (`tmp/`, `*.tmp`, `$TMPDIR/<agent>-*`) | safe | Only entries older than 24 h and not open by a running process. |
+| `logs` | agent log files that are not tied to a session (`logs/*.log`, rotated logs) | review | Kept for the last `[agents.junk] keep_logs_days` (default 30). Session transcripts are the `sessions` kind below. |
+| `build` | build artifacts in agent worktrees and scratch dirs (`target/`, `dist/`, `build/`, `.next/`, `__pycache__/`) | safe | Only under agent-owned worktrees or scratch dirs, never in the user's main checkout. |
+| `deps` | reinstallable dependencies (`node_modules/`, `.venv/`, `vendor/` with a lockfile, `.gradle/`, Pods) | review | Only in agent-owned worktrees/scratch dirs; requires a lockfile or manifest next to it so it can be reinstalled. |
+| `locks` | stale lock files (`*.lock` for agent state, `LOCK`, `.lock` dirs) | safe | Only when no process holds them (checked with the OS); package-manager lockfiles (`Cargo.lock`, `package-lock.json`, `pnpm-lock.yaml`) are never junk. |
+| `backups` | backup files (`*.bak`, `*.bak-<ts>`, `*~`, `_backup/` generations past the cap, T249) | review | The newest backup of each file is always kept. |
+| `swap` | editor/agent swap files (`*.swp`, `*.swo`, `.#*`, `*.crswap`) | safe | Only when the owning process is gone. |
+| `index` | rebuildable indexes (rtok graph/tags index of a removed project, LSP caches like `.rust-analyzer/`, agent codebase indexes, SQLite `-wal`/`-shm` of closed DBs) | review | Rebuilt on next use; the active project's index is never cleared while rtok is running on it. |
+| `rtok-own` | today's T182 junk: rotated logs past cap, archives past retention | safe | Existing behaviour, unchanged. |
+
+Paths for each host come from `research.md` §22 (official docs or source only). A cell §22 marks "not documented" is not scanned; `list` says "not documented" for that kind rather than guessing.
+
+#### Never touched
+
+Settings, credentials and tokens, MCP and hook config, installed plugins and extensions, user-written files (rules, memories, prompts, skills), `rtok.db`, any archive a call still references, the user's main checkouts, package-manager lockfiles, and anything outside the paths listed per host. Symlinks are never followed out of an agent folder.
+
+#### Cache: rtok's own and each agent's
+
+Cache is junk for rtok itself and for every agent, listed with its size and clearable like any other kind.
+
+**rtok's cache (row `rtok`):**
+
+- The per-project LSP state rtok confines language servers to (`<root>/.rtok-lsp-xdg/{cache,data,state,pub-cache}`, `src/plugins/graph/lsp.rs`): `cache` and `pub-cache` are `cache` kind (safe); `data` and `state` are `index` kind (review).
+- Graph/tags index rows and files for projects no longer in the registry (T329) or whose root is gone: `index` kind (review).
+- Any other directory under rtok's home or `$XDG_CACHE_HOME/rtok` (`~/Library/Caches/rtok` on macOS, `%LOCALAPPDATA%\rtok\cache` on Windows) that rtok writes as a cache, and every directory under rtok-owned paths carrying a valid `CACHEDIR.TAG` (the same test `worktree::list::is_cache_dir` uses).
+- Plugin download/staging caches (version-numbered plugin copies a host no longer points to, T279): `cache` kind (safe) once no host config references them.
+
+**Each agent's cache:**
+
+- Detected from, in order: (1) the host's entry in `research.md` §22 (documented cache dirs only); (2) the platform cache root for that app (`~/Library/Caches/<bundle id or name>`, `$XDG_CACHE_HOME/<app>`, `%LOCALAPPDATA%\<app>\Cache`); (3) well-known Electron/Chromium cache subfolders inside the app's data dir (`Cache`, `Code Cache`, `GPUCache`, `CachedData`, `DawnCache`, `Service Worker/CacheStorage`), only when §22 confirms the host is Electron-based; (4) any directory under the agent's folders carrying a valid `CACHEDIR.TAG`; (5) `[agents.junk] extra` entries with `kind = "cache"`.
+- Not cache even if the name says so: anything §22 marks as settings or state, extension/plugin install dirs, and model weights the user downloaded on purpose (listed as `never`, size only).
+- Environment overrides are honoured (`XDG_CACHE_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and the like listed in §22), so a relocated cache is still found.
+
+**Sizes.** Disk usage per cache directory (allocated blocks), hard links and APFS clones counted once across the whole report, symlinks not followed. Shown per cache folder and summed per agent; the same numbers feed "Freed by `clear`".
+
+**Clearing.** `cache` is `safe`, so `rtok agents junk clear` (dry run) lists every cache folder and its size in the plan, and `--yes` deletes their contents, keeping the top folder (so apps that expect it to exist don't fail) and keeping any `CACHEDIR.TAG`. `--kind cache` clears only caches; `--agent rtok --kind cache` clears only rtok's. A running agent's cache is skipped unless §22 says that host tolerates it (reason "agent running").
+
+**Cache edge cases:** a cache dir shared between two agents (for example a common Electron runtime cache) is shown under both with a "shared with" note, counted once, and cleared once; a cache dir that is a symlink to another volume is listed by its target with a note and cleared only inside the target; a cache that refills during the clear (app running despite detection) is reported as "freed X, now Y"; a `CACHEDIR.TAG` with the wrong signature does not make a folder cache.
+
+#### More junk kinds
+
+| Kind | What | Class | Detection | Kept |
+| --- | --- | --- | --- | --- |
+| `sessions` | old sessions and their logs: transcripts (`*.jsonl`), per-session log files, per-session attachments and tool output dirs | review | §22 session paths per host; rtok's own session rows and logs keyed by session id (T284) | anything touched within `stale_session_days` (default 3); see "Old sessions: time only" below |
+| `stale-worktrees` | temporary worktrees an agent created and did not finish: rtok-tagged worktrees (T285) or host-created ones (T289) whose agent session ended, idle longer than `stale_worktree_days` (default 14) | review | `worktree::inventory` (T150) plus agent attribution | worktrees with uncommitted changes or unpushed commits are listed but **never** removed here; locked worktrees are never removed |
+| `stale-tokens` | auth/token cache files that hold only expired or revoked tokens (OAuth caches, `auth.json`-style files that contain only a token and its expiry) | review, explicit only | file is a token-only cache per §22 and the stored expiry is in the past (or the refresh token is marked invalid by the host's own format); rtok never calls a network to check | configs that mix tokens with settings are **never** edited or deleted: listed as "stale token inside config, sign in again in <host> to refresh" with size 0 |
+| `crash-dumps` | dumps and tracebacks from crashed runs: `*.dmp`, `*.crash`, `*.ips` for the agent's binary, Crashpad/Breakpad `Crashpad/completed`, `pending` folders, panic logs, core files named for the agent | safe after 7 days, review before | §22 crash paths; macOS `~/Library/Logs/DiagnosticReports/<app>*`; Linux `$XDG_STATE_HOME`/app crash dirs (not system `/var/crash`, which needs root) | dumps newer than 7 days stay unless named with `--kind crash-dumps` |
+| `snapshots` | old agent state snapshots if the host keeps them: checkpoint/undo snapshots, conversation state backups, shadow git repos for checkpoints | review | §22 snapshot paths per host; not scanned for hosts §22 marks "not documented" | the newest snapshot per project and anything newer than `keep_snapshots_days` (default 14) |
+
+Every kind in this table follows the same rules as the rest: listed per agent with folder links and sizes, included in "Freed with `--include review`" (or "Freed by `clear`" for safe ones), deleted only by `clear --yes`.
+
+Extra edge cases for these kinds:
+
+- `sessions`: a session file still being appended to (modified in the last 10 minutes, or open by a process) is never removed; a session whose project folder is gone is still listed under "(project missing)" with its path.
+- `stale-worktrees`: removal uses `git worktree remove` (never `rm -rf` on a checkout), then `git worktree prune`; the branch is kept (branch deletion stays with `rtok worktree gc`, T153); a worktree whose main repo is missing is listed as "orphaned" and removed only by deleting its folder with `--include review`, after showing its path.
+- `stale-tokens`: removing a token file signs the user out of that host; `list` says so on the row, and `clear` prints it again before the confirmation line. It is excluded from `--include review` and needs `--kind stale-tokens` by name.
+- `crash-dumps`: dumps can contain memory with secrets; they are never uploaded, copied or printed, only sized and deleted.
+- `snapshots`: hosts that use snapshots for "undo" lose undo for cleared sessions; the row says so.
+
+#### Old sessions: time only
+
+- **The only criterion is time.** A session is old (junk) when it has not been touched for longer than the threshold. Nothing else classifies a session as old for now: not its status (finished, errored, abandoned), size, number of messages, project, whether it is the newest session of its project, or whether it was ever resumed. Those criteria are out of scope for T330 and may come later as separate options.
+- **Setting:** `stale_session_days` in the `[agents.junk]` table of rtok's config. Default `3`. It lives in `config/default.toml` (shipped default), can be overridden in the user config (`~/.config/rtok/config.toml`), per project in `<git root>/.rtok.toml`, and per run through the environment (`RTOK_AGENTS_JUNK_STALE_SESSION_DAYS=7`), with the usual precedence (flags over env over project over user over default). `rtok config get agents.junk.stale_session_days` prints the effective value and `rtok config show --sources` shows where it came from. Documented in `docs/config.md` (and ru/uk).
+- **Value rules:** a whole number of days, `0` to `3650`. `0` means every session not currently open counts as old (useful for a full wipe, and `list` warns "threshold 0: every closed session is junk"). Fractions, negatives and non-numbers are rejected by `rtok config validate` and at load with an error naming the key; rtok then falls back to the default for that run and says so, rather than deleting with a wrong threshold.
+- **One-off override:** `rtok agents junk list|clear --session-days N` overrides the setting for that run only, and the output header shows the threshold in use ("old sessions: not touched for more than 3 days").
+- **"Touched" means** the session's last-used time as defined in the item breakdown: the host's own last-activity timestamp when its format records one, otherwise the newest modification time of any file belonging to the session (transcript, its log, its attachments). Reading a session (for example `list` itself, or `rtok stats` ingesting it) does not count as touching it.
+- **Threshold comparison:** a session is old when `now - last_used > stale_session_days * 24 h`, measured in UTC so time zone and daylight-saving changes don't shift it; exactly at the threshold it is not old yet.
+- **Safety guards (not classification):** a session that is open by a process or was modified in the last 10 minutes is never removed even with threshold `0`, because deleting a session being written can corrupt the agent's state. `list` shows such a session as old-by-time but "skipped: in use".
+- **All parts of an old session go together:** transcript, its per-session log, attachments and tool-output dirs are one item with one size; clearing removes all of them or none.
+- **Edge cases:** a session whose files have different mtimes uses the newest one; a session with a future timestamp (clock skew) counts as just touched and is shown with a "future timestamp" note; a host that records no timestamps and whose files rtok cannot stat is listed as "last used unknown" and not cleared; changing the setting takes effect on the next `list`/`clear` with no restart; lowering it from 3 to 1 makes more sessions old in the next `list`, and nothing is deleted until `clear --yes`.
+- **Expected results:** with the default, a session last touched 4 days ago is listed as old and removed by `clear --include review --yes` (or `--kind sessions --yes`); one touched 2 days ago is listed with "under the 3-day threshold" and kept; setting `stale_session_days = 1` and listing again marks the 2-day-old session old; `--session-days 7` on one run keeps both and the header says 7.
+
+#### Item-level breakdown in `list`
+
+`list` shows not just totals but every concrete item that `clear` would delete, so the user can verify the exact set before running `clear --yes`.
+
+- Under each agent and each kind, the items are listed one per line: a link to the item (OSC 8 `file://` hyperlink in a capable terminal, plain path otherwise), its size, and, for anything time-stamped, **last used** (relative and absolute, for example `3 weeks ago (2026-09-09 14:02)`).
+- "Last used" means, in order of preference: the host's own last-activity time when its format records one (session `updated_at`, last message timestamp); otherwise the newest modification time of any file inside the item; atime is not used (often disabled). For worktrees: the last commit time or the newest file change, whichever is later, and the owning agent id.
+- Each item also shows why it is junk (for example "not touched for 5 days (threshold 3)", "agent session ended 16 days ago", "token expired 2026-08-30", "crash dump 12 days old") and, if it is not going to be cleared, why ("touched 2 days ago, under the 3-day threshold", "uncommitted changes", "agent running", "review kind: add --include review").
+- Items are sorted by size, largest first (`--sort size|last-used|path`). To keep the default output readable, each kind shows its 10 largest items and a "+N more (X)" line; `--items all` shows every item, `--items 0` shows totals only.
+- `--json` always includes every item: `{ path, size_bytes, last_used, reason, will_clear, skip_reason? }`.
+- `clear` (dry run) prints the same item list as `list` restricted to what it would delete, so what the user reviewed is exactly what `--yes` removes. `clear --yes` re-scans and refuses to delete an item that changed since the dry run in a way that would change the decision (became recent, gained uncommitted changes, became open by a process) and reports it as skipped.
+- `rtok agents junk list --agent claude --kind sessions --items all` is the way to see every session with its last-used time.
+
+Breakdown edge cases: a kind with thousands of tiny items (temp files) is grouped by parent folder in text output ("1,240 files in /…/tmp, 380 MB, last used 2 days ago") while JSON keeps every file; an item whose last-used time cannot be read shows "unknown" and is treated as recent (not cleared) unless `--older-than` was given and the folder mtime satisfies it; times are shown in the local time zone; paths under the home directory are shown with `~`.
+
+#### `rtok agents junk list`
+
+- Scans every agent (or `--agent <host|id>`, repeatable) and prints, per agent: the agent name, each agent folder with a clickable link (OSC 8 hyperlink `file://` in a terminal that supports it, the plain path otherwise), the folder's total size, and under it each junk kind with its size and item count, then a line "Freed by `clear`: X" (safe kinds only) and "Freed with `--include review`: Y".
+- Sizes are shown in human units with one decimal (B, KB, MB, GB, TB; 1 KB = 1024 B, labelled as such in `--help`) and right-aligned; `--bytes` prints exact bytes. Size means disk usage (allocated blocks), not apparent size, so sparse files and APFS clones are not over-counted; hard links are counted once.
+- Ends with a total across agents: folder sizes, junk by kind, space freed by default and with review kinds.
+- Sorting: by space freed, largest first (`--sort name|size|freed`). `--kind <kind>` (repeatable) filters kinds. `--min-size 10MB` hides smaller rows.
+- `--json` prints the same data: `agents[] { name, id?, folders[] { path, size_bytes, kinds[] { kind, class, size_bytes, items, paths_sample[] } }, freed_default_bytes, freed_review_bytes }`, `totals`.
+- Agents that are not installed are skipped; `--all` lists them with "not installed".
+- Read-only: `list` never deletes, moves or touches files (no atime updates where the OS allows avoiding them).
+
+#### `rtok agents junk clear`
+
+- Same scan as `list`, then removes. Default is a **dry run**: it prints exactly what would be deleted (per agent, per kind, sizes, the space that would be freed) and changes nothing. `--yes` deletes. `--json` works for both.
+- By default only `safe` kinds are cleared. `--include review` adds review kinds; `--kind <kind>` limits to named kinds (a named review kind is included without `--include review`). `never` kinds are never deleted.
+- `--agent <host|id>` limits to one or more agents; `--older-than 7d` applies an age floor to every kind.
+- Before deleting each item, rtok re-checks it (still exists, still matches the kind, not open by a process, not a symlink pointing outside, not modified in the last minute). Anything that fails the check is skipped and reported.
+- Deletion goes to the OS trash when `--trash` is given (macOS Trash, freedesktop trash on Linux, Recycle Bin on Windows); otherwise it is a direct delete.
+- Output after `--yes`: per agent and kind, items removed, bytes freed, items skipped with reasons, and a total "Freed X of Y planned".
+- Exit codes: 0 when everything planned was removed (or on a dry run), 1 when some items could not be removed (as T182 does today: "some junk could not be removed"), 2 on usage errors.
+- Backwards compatible: `rtok agents junk clear` with no new flags still clears T182's `rtok-own` junk, and now also the safe kinds for every agent; `rtok agents junk clear --agent rtok` reproduces T182 exactly.
+
+#### Running agents
+
+- An agent whose process is running is detected (process list per host binary, plus live rtok sessions from T284). For a running agent, `clear` skips `temp`, `locks`, `swap`, `index` and the current session's logs, and says so; caches are still cleared only if the host's §22 entry says it tolerates that while running, otherwise skipped with "agent running".
+- `--force-running` is not offered; the user closes the agent and runs `clear` again.
+
+#### Config
+
+`[agents.junk] stale_session_days = 3`, `keep_logs_days = 30`, `keep_snapshots_days = 14`, `stale_worktree_days = 14`, `crash_dump_min_age_days = 7`, `temp_min_age_hours = 24`, `exclude = []` (glob paths never touched), `extra = []` (extra paths per host to treat as a kind, for example `{ host = "cursor", kind = "cache", path = "~/Library/Application Support/Cursor/CachedData" }`), documented in `docs/config.md`.
+
+#### Edge cases and expected results
+
+- A folder that does not exist: not listed. A folder without read permission: listed with "permission denied" and no size; `clear` skips it.
+- A path on another volume or network share: listed; scanning is bounded (`--timeout`, default 30 s per agent) and a timeout is reported, not hung on.
+- Very large trees (a 2 GB `node_modules`): scanning is parallel and streams progress in a TTY; `--json` waits and prints once.
+- A file deleted between scan and delete: counted as skipped "already gone", not an error.
+- The same folder reached from two agents (shared cache): listed under each with a "shared with" note and counted once in the totals; `clear` removes it once.
+- Windows: paths use `%LOCALAPPDATA%`/`%APPDATA%`; files locked by a process are skipped with the reason.
+- macOS: `~/Library/Caches` entries are treated as `cache`; nothing under `~/Library/Application Support/<app>` is cleared unless §22 lists that subfolder as junk.
+- A worktree rtok created for an agent that still has unmerged commits: its `build` and `deps` can be cleared, the worktree itself is never removed here (that is `rtok worktree gc`, T153).
+- `--yes` with nothing to clear: prints "Nothing to clear" and exits 0.
+
+#### Also
+
+- `rtok doctor` adds one line with total reclaimable space and a hint to run `rtok agents junk list` when it exceeds 1 GB.
+- The web UI gets the same data on a `junk` card on the hosts page (read-only list with sizes and a "clear safe junk" button that runs the dry run, shows it and asks for confirmation), after T310.8.
+- Docs: `docs/agents.md` (new "Junk" section), `docs/config.md`, and `research.md` §22 updated with any new paths, with `docs/ru/` and `docs/uk/` updated in the same change.
+- Deliver as a PR; do not merge it.
+
+Dependencies: T182 (existing `clear` and §22 map), T249 (backup generations), T282/T284 (agent ids and live sessions), T285/T153 (agent worktrees).
+
+Check: fixture home under a temp dir, `HOME`/`XDG_*`/`LOCALAPPDATA` pointed at it, no real agent folders touched:
+
+- A fixture with Claude Code, Cursor and Codex folders containing every junk kind: `list` shows each agent, its folders as links, each kind with the exact sizes created (checked in bytes with `--bytes` and in human units), "Freed by `clear`" equal to the sum of safe kinds, and totals equal to the per-agent sums; `--json` matches the table.
+- `clear` without `--yes` changes no file (tree hash before equals after) and prints the same plan as `list`'s freed lines.
+- `clear --yes` removes exactly the safe items; settings, credentials, plugins, package-manager lockfiles and `rtok.db` are untouched; freed bytes match the plan.
+- `--include review` also removes sessions not touched for longer than `stale_session_days`, logs older than `keep_logs_days`, `node_modules` with a lockfile, extra backups (newest kept) and rebuildable indexes; `node_modules` without a lockfile is not removed.
+- A lock file held by a test process and a swap file of a live process are skipped with reasons; a symlink inside a cache dir pointing to `$HOME/important` is not followed.
+- A shared folder is counted once in totals and removed once.
+- A simulated running agent skips temp, locks, swap, index and its current session.
+- Cache: rtok's `.rtok-lsp-xdg/cache` in a fixture project, a `$XDG_CACHE_HOME/rtok` folder and a `CACHEDIR.TAG` dir appear under `rtok` with exact sizes; a host cache in `~/Library/Caches/<app>` (or `$XDG_CACHE_HOME/<app>`) and an Electron `Code Cache` appear under that agent; `clear --kind cache` dry run lists them, `--yes` empties them and keeps the top folders and `CACHEDIR.TAG`; a folder with a bad `CACHEDIR.TAG` signature is not treated as cache.
+- New kinds: a session last touched 4 days ago is listed with its last-used time and removed with `--include review`, while one touched 2 days ago and one modified 5 minutes ago are kept; a finished-session worktree idle 20 days is removed with `git worktree remove` and its branch kept, while one with uncommitted changes and one with unpushed commits are listed and never removed; a token-only file with a past expiry is listed with the sign-out warning and removed only with `--kind stale-tokens`, a mixed config with an expired token is never touched; a 10-day-old crash dump is cleared by default, a 2-day-old one only with `--kind crash-dumps`; an old snapshot is removed and the newest kept.
+- Session threshold: `rtok config get agents.junk.stale_session_days` prints 3 by default; `.rtok.toml` and `RTOK_AGENTS_JUNK_STALE_SESSION_DAYS` override it; an invalid value (`-1`, `2.5`, `abc`) is rejected with an error naming the key and the run uses 3; a session exactly 72 h old is not old, at 72 h and 1 min it is; status, size and "newest in project" do not change the result; an open session with threshold 0 is skipped as in use.
+- Breakdown: every planned item appears in `list` with path link, size, last used and reason; `--items all` and `--json` list every item; the default shows 10 per kind plus "+N more"; `clear` dry run prints the same items; touching an item between the dry run and `--yes` makes `--yes` skip it with "changed since plan".
+- `rtok agents junk clear --agent rtok --yes` behaves exactly as T182's tests expect (existing tests stay green unchanged).
+- Permission-denied and timeout folders are reported, not fatal; exit code 1 when anything planned was not removed.
+- `--trash` moves items to the platform trash (tested on macOS and Linux CI).
+- `just check`.
+
+### T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
+
+Ivan, 2026-10-01: `rtok doctor` finds hooks in agent configs that point to files that no longer exist (broken hooks), hooks that are loaded twice for the same agent (duplicate hooks), and MCP servers that are loaded twice (duplicate MCP entries). It lists them, explains why each is a problem, and lets the user choose to clean them up: broken hooks are removed, and for duplicates one copy is kept and the extra ones removed. Nothing else in any config changes. Covered by many tests.
+
+Today `rtok doctor` (flags `--instructions`, `--json`) reports rtok's own install state and per-host status, and `rtok agents info` reports MCP per surface (T278), including `stale` rtok entries. Install/update rewrites stale **rtok** hook entries in place (T242.x). Nothing checks hooks or MCP entries that are not rtok's, nothing detects a hook whose script was deleted, and nothing detects the same hook or MCP server loaded from two config files (T271 covers one specific case: rtok's MCP seen twice in the Claude desktop Code tab).
+
+#### Terms
+
+- **Agent:** a host in `agents::HOSTS`, per surface where the host has several (for example Claude Code CLI, Claude desktop Code tab, Cursor, Codex, Gemini CLI, Kimi).
+- **Config source:** every file that agent reads hooks or MCP servers from, with its scope and load order, taken from `research.md` (per-host config map) and the existing host adapters: user/global files (for example `~/.claude/settings.json`, `~/.claude.json`, `~/.cursor/mcp.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`), project files (`<repo>/.claude/settings.json`, `<repo>/.claude/settings.local.json`, `<repo>/.mcp.json`, `<repo>/.cursor/mcp.json`, `<repo>/.gemini/settings.json`), enterprise/managed files where the host has them (read-only, see below), and installed plugins that contribute hooks or MCP servers (for example Claude Code plugins' `hooks/hooks.json` and `.mcp.json`).
+- **Effective set:** what the agent would actually load at the same time for the current directory: every source that applies to that directory, merged the way the host merges them (concatenated hook lists, MCP maps merged by name with the host's precedence).
+- **Hook entry:** one hook command: event (`PreToolUse`, `SessionStart`, ...), matcher (if any), command string (or script path), and the source file and JSON/TOML path it lives at.
+- **MCP entry:** one MCP server definition: name, transport (`stdio` command + args + env, or `url` for http/sse), and its source file and path.
+
+#### 1. Broken hooks: hooks that lead nowhere
+
+- **Detection:** for each hook entry in each source of each agent, rtok resolves what the command would run, without running it:
+  - Parse the command the way the host's shell would split it (POSIX shell words on macOS/Linux, `cmd`/PowerShell rules on Windows where the host uses them). Expand `~`, `$HOME`, `${VAR}` and the host's own variables (`$CLAUDE_PROJECT_DIR`, `${CLAUDE_PLUGIN_ROOT}`, `$CURSOR_...` per `research.md`), using the project directory the check runs for.
+  - The **target** is: the first word if it is a path (absolute, `./`, `../`, `~/` or contains a `/`); or the script argument when the first word is a known interpreter (`bash`, `sh`, `zsh`, `node`, `python`, `python3`, `deno`, `bun`, `ruby`, `pwsh`, `npx tsx`, `uv run`); or the program name looked up on `PATH` otherwise.
+  - The hook is **broken** when its target does not exist: the path is missing, a dangling symlink, or the program is not on `PATH` (and not a shell builtin).
+  - The hook is **suspect, not broken** when the target exists but is not executable while invoked directly (shown with the fix `chmod +x`, not offered for deletion), or when the command cannot be resolved statically (contains `$(…)`, backticks, `eval`, pipes into an interpreter, or an unknown variable): listed as "cannot verify" and never deleted.
+- **Report:** a "Broken hooks" section in `rtok doctor` per agent: source file (link), event and matcher, the command as written, the resolved target, and why it leads nowhere ("file not found: ~/scripts/old-guard.sh", "dangling symlink to /Volumes/X/hook.js", "`foo` not on PATH"). It says "can be cleaned up" for each one.
+- **Fix:** only hooks classified **broken** can be removed, and only those the user selects (see 4). Removing a hook removes just that entry from its source file: if its matcher group becomes empty, the empty group is removed too; if the event's list becomes empty, the event key is removed; nothing else in the file changes (comments, ordering and formatting kept, through the existing JSONC/TOML editors). The script file itself is never touched (it does not exist anyway).
+
+#### 2. Duplicate hooks
+
+- **What is a duplicate:** two or more hook entries in the same agent's effective set (so loaded at the same time) for the same event, with the same matcher (normalized: same regex or tool list, order-insensitive for lists) and the same command after normalization (variables expanded, paths canonicalized, redundant whitespace and quoting removed, `bash script.sh` equals `./script.sh` only when the script has a bash shebang, otherwise not). Timeouts or other options that differ are shown; entries that differ only in timeout are still duplicates and the one kept is chosen as below.
+- **Where duplicates come from:** the same hook in user and project settings; `settings.json` and `settings.local.json`; a hook installed by a plugin and also pasted into settings by hand (or by an older rtok install, T242/T275); a hook repeated inside one file.
+- **Not duplicates:** the same command on different events or different matchers; entries in sources that are never loaded together (two different projects, or a disabled plugin); a host that documents running each hook once per unique command (if `research.md` says so for that host, duplicates are reported as "harmless on <host>" with no fix offered).
+- **Report:** a "Duplicate hooks" section per agent: the hook (event, matcher, command), how many times it would run, and each copy with its source file (link) and position. It recommends which copy to keep.
+- **Which copy is kept (default, user can choose another):** (1) the copy owned by a plugin (so plugin updates keep working); otherwise (2) the copy in the most specific shared scope that is under version control (project `settings.json` over user settings, so teammates keep it); otherwise (3) the user-level copy over `settings.local.json`; otherwise (4) the first in load order. rtok's own hooks follow rtok's install rules (T275): the plugin copy is kept when the plugin serves the hook.
+- **Fix:** deletes only the extra copies the user selects, never the last copy. Same minimal-edit rules as for broken hooks. Managed/enterprise files are never edited; a duplicate whose extra copy lives only in a managed file keeps the managed copy and offers to remove the user/project copy instead.
+
+#### 3. Duplicate MCP entries
+
+- **What is a duplicate:** two or more MCP entries in the same agent's effective set that would start the same server at the same time:
+  - **same server, same name** from two sources that the host loads together (for example `~/.claude.json` and `<repo>/.mcp.json`), when the host does not de-duplicate by name (per `research.md`; where it does, the overridden one is reported as "shadowed, unused" instead, still removable);
+  - **same server, different names**: identical normalized launch (same command resolved to the same binary, same args, same relevant env keys; or the same URL with the same transport), for example `rtok` and `rtok-mcp` both running `rtok mcp`, or a plugin's MCP server also added by hand (the T271 case generalised to every host and every server).
+- **Normalization:** command resolved through `PATH` and symlinks (so `/opt/homebrew/bin/rtok` equals `rtok` when that is what `PATH` gives), `npx -y pkg@x` treated as the package `pkg` (versions differing are shown as a conflict, not a duplicate), URLs compared after lowercasing scheme/host and removing a trailing slash; env values are not printed (they may hold secrets), only whether they match.
+- **Not duplicates:** same command with different args that change behaviour (for example different `--root` or profile), same name in two projects that are never loaded together, a server disabled in the host's own disable list.
+- **Report:** a "Duplicate MCP servers" section per agent: server (name(s), command or URL), how many processes would start, each copy with its source file (link) and key path. Explains the cost (two processes, duplicate tools in the agent's context, double measurement for rtok per D21).
+- **Which copy is kept:** same order as hooks: plugin-provided first, then project-shared, then user, then local; for rtok's own server, the rules of T275 (plugin serves MCP, so the separate entry goes).
+- **Fix:** removes the selected extra entries only (the key under `mcpServers`, or the `[mcp_servers.<name>]` table in TOML), keeping the file otherwise unchanged; never removes the last copy; never edits managed files or a plugin's own files (a duplicate where the extra copy is inside a plugin is solved by removing the hand-written copy, or by telling the user to disable the plugin, never by editing the plugin).
+
+#### 4. How the user cleans up in doctor
+
+- `rtok doctor` stays read-only by default: it reports the three sections and ends with "N problems can be fixed: run `rtok doctor --fix`".
+- `rtok doctor --fix` in a terminal shows a checklist of every fixable item (broken hooks, extra duplicate copies), all pre-selected except items in project files under version control (pre-unselected, since the change affects teammates), lets the user toggle items and change which duplicate copy is kept, shows the exact diff per file, and asks for confirmation before writing.
+- Non-interactive: `rtok doctor --fix --yes` applies the default selection; `--fix --only broken-hooks|duplicate-hooks|duplicate-mcp` (repeatable) limits it; `--fix --dry-run` prints the diffs and writes nothing; `--json` works with all of them and lists `problems[] { kind, agent, source, path, detail, fixable, selected, keep? }`.
+- Every edited file is backed up first with the existing bounded `_backup` generations (T249), and the backup path is printed. If a file changed on disk between the scan and the write (mtime or hash differs), that file is skipped with "changed since check, run doctor again".
+- After writing, doctor re-runs the checks on the edited files and reports the result ("2 broken hooks removed, 1 duplicate MCP entry removed, 0 problems left"). If a write fails (permissions, read-only file), that file is reported and the rest proceed; exit code 1 if anything selected was not fixed.
+- The web UI doctor page (T310.7) shows the same sections and a "Fix selected" action with the same confirmation, after T310.7 lands.
+
+#### Edge cases and expected results
+
+- A hook target on an unmounted volume is broken now; the report says "path is on /Volumes/X, which is not mounted" so the user can decide; it is still selectable.
+- A hook using `${CLAUDE_PLUGIN_ROOT}` is resolved against that plugin's install dir; if the plugin is uninstalled but its hook entry remains in settings, the hook is broken.
+- A hook whose program is a shell builtin or an alias defined only in the user's interactive shell: builtins are fine; aliases are not visible to hooks, so a hook relying on one is reported broken with that explanation.
+- Relative script paths are resolved against the directory the host uses for hooks (project root for project settings, per `research.md`), not the doctor's current directory.
+- A JSON/TOML file that does not parse: doctor reports "cannot read <file>: <parse error>" and offers no fix for it.
+- Windows: `.cmd`/`.ps1`/`.exe` targets resolved with `PATHEXT`; case-insensitive paths.
+- Two duplicates plus one broken copy of the same hook: the broken one is listed as broken; the remaining two as duplicates; fixing both leaves one working copy.
+- Managed/enterprise policy files are read for the effective set but never edited; problems only fixable there are listed as "managed by your organization".
+- A host doctor cannot locate (not installed) is skipped; `--agent <host>` limits the check to one host.
+- Nothing to fix: the sections say "none found" and `--fix` exits 0 with "nothing to fix".
+
+Docs: `docs/agents.md` (doctor section) and the doctor help text, with `docs/ru/` and `docs/uk/` updated in the same change. Deliver as a PR; do not merge it.
+
+Dependencies: host adapters and config maps (`research.md`), JSONC/TOML editors, `_backup` generations (T249), T275/T278 (rtok MCP rules and per-surface state); relates to T271.
+
+#### Tests: heavily mocked, many, and isolated from the real machine
+
+**Rule: no test reads or writes a real file, a real agent directory or a real agent.** Every test runs against mocked data only. Concretely:
+
+- **No real paths.** Tests never touch `~`, `~/.claude*`, `~/.cursor`, `~/.codex`, `~/.gemini`, `~/.kimi`, the real `PATH`, real plugin directories, or the repository's own `.claude/`/`.mcp.json`. The doctor code reaches the filesystem, environment and process lookup only through injected traits (`Fs`, `Env`, `Which`, `Clock`), so tests pass mocks and production passes the real implementations. A guard test fails the suite if any doctor module calls `std::fs`, `std::env` or `which` directly instead of the traits.
+- **No real agents.** No host binary is launched, no MCP server is started, no hook is executed. Hosts are described by mocked host profiles (which config sources exist, their scope, load order, merge rules, whether the host de-duplicates MCP by name or hooks by command).
+- **A belt on top:** integration tests that need real files on disk (golden-file edits, permissions, mtime races) use a fresh `tempfile::TempDir` as a fake `HOME` and fake project, with `HOME`, `USERPROFILE`, `XDG_*`, `APPDATA` and `PATH` overridden for the process, and assert at the end that nothing outside the temp dir was created or changed.
+
+**What is mocked:**
+
+- **File system** (`MockFs`, in memory): files with contents, permissions (executable bit, read-only), mtimes and hashes; directories; symlinks, including dangling ones and symlink loops; unmounted volumes (a path prefix that reports "not mounted"); case-insensitive mode for Windows cases; injected failures (permission denied on read or write, disk full, file changed between read and write).
+- **Environment and PATH** (`MockEnv`, `MockWhich`): `HOME`, host variables (`CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, ...), a fake `PATH` with chosen programs present or absent, `PATHEXT` for Windows, shell builtins list.
+- **Agent configs:** mocked settings and MCP files per host and scope (user, project, local, managed/enterprise, plugin), in JSON, JSONC (with comments and trailing commas) and TOML, including deliberately unparsable files.
+- **Hook definitions:** built with a small builder (`hook(event).matcher(..).command(..).timeout(..)`) and rendered into each host's real config shape, so the same logical hook can be placed in several sources.
+- **MCP server entries:** builder (`mcp(name).command(..).args(..).env(..)` / `.url(..)`) rendered into `mcpServers` JSON or `[mcp_servers.<name>]` TOML.
+- **Plugins:** mocked installed and disabled plugins with their own `hooks.json` and `.mcp.json`.
+- **Doctor output:** the result model (`problems[]`) is asserted structurally; the human table and `--json` output are checked with snapshot tests (`insta`) over the mocked world, with temp paths normalized.
+- **User interaction:** the `--fix` checklist reads from an injected `Prompt` trait; tests script the answers (toggle item 2, keep copy B, confirm, or cancel). One pseudo-terminal test drives the real terminal UI against a mocked world.
+
+**How fixtures are structured:**
+
+- `tests/fixtures/doctor/<scenario>/` holds a declarative `world.toml`: host profiles, files (path, contents or a pointer to a file beside it, mode, symlink target), env, PATH programs, plugins; plus `expected.json` (the problems doctor must report) and, for fix scenarios, `after/` golden files and `selection.toml` (what the user picks).
+- A `World` builder loads a scenario into `MockFs`/`MockEnv` (unit level) or materializes it in a temp dir (integration level), so the same scenario runs at both levels.
+- Shared building blocks: one "clean" baseline world per host with valid hooks and MCP entries; scenarios add or remove a small delta so each test reads as "baseline plus this problem".
+- Property tests (`proptest`) generate random hook and MCP sets across sources and check invariants: fix never removes the last copy of anything, never removes a valid non-duplicate entry, and running doctor after fix reports no fixable problems.
+
+**Scenarios that must be covered (each with its expected result):**
+
+- **Broken hook references:** missing script; deleted script that a symlink still points to; program not on PATH; interpreter + missing script for each listed interpreter; `${CLAUDE_PLUGIN_ROOT}` of an uninstalled plugin; relative path resolved against the host's hook directory, not the test's working directory; unmounted volume; quoted paths with spaces; Windows `PATHEXT` and `cmd /c`. Expected: each listed as broken with the right reason and marked fixable.
+- **Hooks that must not be called broken:** valid script; builtin; program on PATH; existing but non-executable script (suspect, `chmod +x` hint, not fixable); command with `$(…)`, backticks, pipes or unknown variables (cannot verify, not fixable). Expected: not in the broken list, never offered for deletion.
+- **Duplicate hooks across configs:** user + project; `settings.json` + `settings.local.json`; plugin + hand-written copy; repeat inside one file; three copies; copies differing only in whitespace, quoting, matcher-list order or timeout. Expected: one group per duplicate with every copy, the recommended keep matching the keep rules.
+- **Not duplicates:** different event; different matcher; sources never loaded together (another project, disabled plugin); host that de-duplicates by command. Expected: no duplicate reported (or "harmless on <host>").
+- **Duplicate MCP entries:** same name in two loaded sources; different names with the same launch; plugin MCP plus hand-written entry (the T271 case on every host); URL servers differing only by case or trailing slash. Expected: one group per server, process count, keep recommendation; env values never appear in output.
+- **MCP that must not be called duplicate:** same command with behaviour-changing args; `npx pkg@1` vs `pkg@2` (conflict instead); disabled server; host that resolves by name (reported "shadowed").
+- **User selecting cleanup:** default selection with `--yes`; toggling items off; choosing a different copy to keep; `--only` per kind; `--dry-run`; cancel at the confirmation. Expected: only the selected entries disappear, golden files match byte for byte (comments, ordering and formatting kept), empty groups and events removed, backups created, cancel and dry run change nothing.
+- **Refusing to delete valid hooks and entries:** a selection file or JSON input that names a valid hook, a suspect hook, a "cannot verify" hook, the last copy of a duplicate, an entry in a managed file or in a plugin's own files. Expected: doctor refuses each with a clear message, writes nothing for it, and exits with code 1 if it was explicitly requested.
+- **Failure and race cases:** unparsable config (reported, untouched); read-only file (reported, others fixed, exit 1); file changed between scan and write (skipped with "changed since check"); write failure midway (the file is left as it was, the backup is intact).
+- **Combined case:** a world with broken hooks, duplicate hooks and duplicate MCP entries across several hosts at once; after `--fix --yes`, re-running doctor reports zero fixable problems and every valid entry is still present.
+
+Check: all of the above pass on Linux, macOS and Windows CI; the "no real paths" guard test passes; `just check`.
+
+### T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
+
+In the plan, T331 (plan.md on branch `docs/plan-doctor-hooks-mcp`, ~line 711, from PR #542 (T331), not merged yet) says "for rtok's own server, the rules of T275 (plugin serves MCP, so the separate entry goes)" and keeps the "plugin-provided first" copy by default, reporting a host that de-duplicates by name as "shadowed, unused, still removable" (~line 706). D33 (plan.md@966f067 line 709) and T275 (plan.md@966f067 lines 171-175) say "Install and update always write the config entry `rtok`; only `remove` takes it out, and a plugin no longer suppresses or strips it", "the rtok plugin ships no MCP server", and "Gemini keeps both, since settings.json wins over an extension's same-name server". These contradict each other because `rtok doctor --fix --yes` would delete exactly the config entry D33 requires (on Gemini, and on any host where an old plugin still serves MCP), and the next `rtok agents install|update` would write it back, so the two features undo each other.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T333. Investigate: T271 desktop-entry sweep vs D33/T275
+
+In the plan, T271 (plan.md@966f067 lines 138-139, table row line 17, P1 todo) says doctor must warn on "a desktop `mcpServers.rtok` entry while `code_serves_mcp` is true" and that every install/update path "also runs the desktop removal" (`unregister_mcp_ours`), with the fix `rtok agents install claude --desktop`; done task T171 (done.md:6548) ships the same check as a `duplicate:` line. T275 (plan.md@966f067 lines 171-172, "replaces T271's 'sweep' item") and D33 (plan.md@966f067 line 709) say "Install and update always write rtok's MCP entry into each agent's own config" and the plugin ships no MCP server. These contradict each other because T271 still asks rtok to remove and flag as an error the very entry D33 requires (the one Claude Desktop chat needs), while T271 stays an open P1 task.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T334. Investigate: graph default backend: T329 `auto` (LSP first, fallback) vs graph PLAN.md P30 decisions
+
+In the plan, T329 §6a (plan.md on branch `docs/plan-graph-projects`, ~line 752, from PR #540 (T329), not merged yet) says "T329 changes the default to an ordered fallback chain, `backend = "auto"`: LSP first, tree-sitter second, plain text search last", with per-request fallback on timeout. `src/plugins/graph/PLAN.md` (P30 survey) says "**C** rejected for gate honesty" (line 229, alternative C = tags-first with LSP fallback), lists under Rejected "**Default-on LSP** — tags stay default" (line 278) and "Hybrid tags+LSP per call without a mode flag (alternative C)" (line 279), and requires that the default answers stay byte-identical to tags (lines 246, 272); `roadmap.md:407` says "tags index remains default". These contradict each other because T329 makes the rejected design the default without revisiting the measured reasons (cold LSP start vs 23-26 ms warm tags, Gate P30 byte identity).
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T335. Investigate: graph text mode spawns `rg`/`grep`/`ssh` vs D6/D18
+
+In the plan, T329 §6a Mode 3 (branch `docs/plan-graph-projects`, ~line 774, from PR #540 (T329), not merged yet) says the text backend "Runs plain text search through the shell: `rg` (ripgrep) when present, `grep -rn` otherwise", and runs "the same commands ... over `ssh host`" for `ssh://` roots. D6 (plan.md@966f067 line 684) says "A plugin never spawns, links, imports, or reads the data of another tool", D18 (plan.md@966f067 line 695) says "D6 holds: no spawned graph tool", and the Working agreement (plan.md@966f067 line 753) says "No plugin shells out to ... a third-party tool (D6)". These contradict each other because the graph plugin would shell out to third-party tools (and to a remote host), which D6/D18 forbid; the existing LSP spawn was justified separately in the P30 survey, text search was not.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T336. Investigate: T329: default project for CLI/MCP is the selected project or the cwd
+
+In the plan, T329 Terms (branch `docs/plan-graph-projects`, ~line 679, from PR #540 (T329), not merged yet) says "**Selected project**: the project the graph page (and, by default, the CLI and MCP tools) answers for", and T329 §7 (~line 799) says "Without it, the project is the caller's current directory (agents keep today's behaviour)". These contradict each other because the selection is stored globally in the store (§2), so one rule makes an agent's MCP call follow whatever project the user last picked in the web UI and the other makes it follow the agent's cwd; the two give different answers whenever they differ.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T337. Investigate: T329: capability cache never re-probes vs alerts/health that need re-probing
+
+In the plan, T329 §6b (branch `docs/plan-graph-projects`, ~lines 787-791, from PR #540 (T329), not merged yet) says later requests "do not re-probe the modes that failed", the cache "is kept until that process restarts" and "nothing else invalidates it". T329 §8d (~lines 917-923) says a background check every 60 s detects **unreachable** (SSH root stops answering) and **backend down**, and "when the project comes back, the alert clears automatically"; §8f (~line 943) scores "Backend alive" from the same record. These contradict each other because detecting an unreachable SSH host or a recovered backend requires probing again, which §6b forbids; under §6b a backend-down alert can never clear without a restart.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T338. Investigate: T330 deletes sessions, tokens and snapshots vs research.md §22 "never junk"
+
+In the plan, T330 (branch `docs/plan-agents-junk`, ~lines 730-734, from PR #541 (T330), not merged yet) adds junk kinds `sessions` ("transcripts (`*.jsonl`), per-session log files"), `stale-tokens` ("auth/token cache files") and `snapshots` ("checkpoint/undo snapshots, conversation state backups"). `research.md` §22 (line 1772), the map T182 (done.md:6879) built and T330 says it relies on, says "Never junk, on any host: settings/config files, credentials and auth tokens, session or conversation history", and names Gemini's `~/.gemini/tmp/<hash>/` checkpoints as "session history, not junk" (line 1791). These contradict each other because T330 deletes three categories that the junk map classifies as never junk.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T339. Investigate: T330 scans only §22 paths vs heuristic cache detection
+
+In the plan, T330 (branch `docs/plan-agents-junk`, ~line 697, from PR #541 (T330), not merged yet) says "Paths for each host come from `research.md` §22 (official docs or source only). A cell §22 marks "not documented" is not scanned". The same task (~line 716) detects agent caches from "(2) the platform cache root for that app ... (3) well-known Electron/Chromium cache subfolders ... (4) any directory ... carrying a valid `CACHEDIR.TAG`", says "macOS: `~/Library/Caches` entries are treated as `cache`" (~line 811), and its Check clears Cursor caches although §22 marks every Cursor cell "not documented". These contradict each other because one rule forbids scanning undocumented paths and the other scans and deletes them by heuristics (the risk §22 warns about: "a wrong row here can destroy a user's real data").
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T340. Investigate: T330 "never touch rtok.db" vs clearing rows inside it
+
+In the plan, T330 "Never touched" (branch `docs/plan-agents-junk`, ~line 701, from PR #541 (T330), not merged yet) lists "`rtok.db`" (as T182 did: "It never touches `rtok.db`", done.md:6879). The same task clears "rtok's own session rows and logs keyed by session id (T284)" (`sessions` kind, ~line 730) and "Graph/tags index rows ... for projects no longer in the registry" (`index` kind, ~line 710); T182's result says the graph index "live[s] in the DB" (D18, line 695). These contradict each other because both row kinds live in `rtok.db`, so T330 cannot clear them without touching it.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T341. Investigate: T330 worktree removal vs T153 (prune, orphans) and its own edge case
+
+In the plan, T330 (branch `docs/plan-agents-junk`, ~line 741, from PR #541 (T330), not merged yet) says stale-worktree removal "uses `git worktree remove` ..., then `git worktree prune`" and that an "orphaned" worktree is "removed only by deleting its folder with `--include review`". Done task T153 (done.md:5181-5187) says "per record, never a blanket `git worktree prune`, which would also drop the records of another session's worktrees on a volume that is merely unmounted", "Orphans are reported, never removed", and "`rtok worktree clean`/`gc` never delete a worktree directory themselves". T330's own edge case (~line 812) also says "the worktree itself is never removed here (that is `rtok worktree gc`, T153)". These contradict each other because T330 reintroduces the two removal actions T153 forbids and disagrees with itself about whether `agents junk clear` removes worktrees at all.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T342. Investigate: T330 build/cache clearing vs T152 tagged-cache rules
+
+In the plan, T330 (branch `docs/plan-agents-junk`, ~line 689, from PR #541 (T330), not merged yet) makes `build` (`target/`, `dist/`, ...) in agent worktrees a `safe` kind cleared by default with no age rule, skips only "`temp`, `locks`, `swap`, `index`" for a running agent (~line 796), and clears caches by "keeping the top folder ... and keeping any `CACHEDIR.TAG`". Done task T152 (done.md:5229-5233) clears the same tagged caches only when idle ("`--idle`", default 24h), "Never the cache of the worktree the command runs from unless its path is given explicitly", and deletes "one cache root at a time with `remove_dir_all`". These contradict each other because two commands would delete the same `target/` directories under incompatible safety rules: T330 would clear a live agent's fresh build cache that T152 deliberately keeps.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T343. Investigate: T330 `--sort` takes two different value sets on `list`
+
+In the plan, T330 item breakdown (branch `docs/plan-agents-junk`, ~line 766, from PR #541 (T330), not merged yet) says "Items are sorted by size, largest first (`--sort size|last-used|path`)", and the `rtok agents junk list` section (~line 778) says "Sorting: by space freed, largest first (`--sort name|size|freed`)". These contradict each other because one flag on one command is given two incompatible value sets and two different defaults.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T344. Investigate: T330 "backwards compatible" vs new default deletions
+
+In the plan, T330 (branch `docs/plan-agents-junk`, ~line 792, from PR #541 (T330), not merged yet) says "Backwards compatible: `rtok agents junk clear` with no new flags still clears T182's `rtok-own` junk, and now also the safe kinds for every agent; `rtok agents junk clear --agent rtok` reproduces T182 exactly", and its Check requires T182's tests to "stay green unchanged". The same task adds to the `rtok` row the `.rtok-lsp-xdg` caches, `$XDG_CACHE_HOME/rtok`, every `CACHEDIR.TAG` directory and plugin staging caches as `safe` kinds (~lines 705-712). These contradict each other because `clear --yes` without flags now deletes agent data T182 never touched, and `--agent rtok` deletes more than T182 did, so neither claim of compatibility holds.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T345. Investigate: ProgressRunner in the rtok crate vs `crates/rtok-mcp` with no rtok dependency
+
+In the plan, T276 (plan.md@966f067 lines 248, 266) says `src/proc/` "is the only place in rtok that calls `std::process::Command::new`", enforced by a `clippy.toml` ban "including `crates/`". T277 (plan.md@966f067 lines 289, 298) says `crates/rtok-mcp` has "no dependency on the `rtok` crate" yet takes over "the MCP probe (`spawn_mcp`, `mcp_command`, using T276's `ProgressRunner` for the spawn)" and the T275.1 ping spawn. These contradict each other because the MCP crate can neither import `ProgressRunner` from the `rtok` crate nor call `Command::new` itself under the ban.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T346. Investigate: D27 "writing commands stay CLI-only" vs web write actions
+
+In the plan, D27 (plan.md@966f067 line 704) says "Anything a command prints, or the store keeps, is a page on `rtok web` and `rtok tui`. Writing commands stay CLI-only", and D23 (plan.md@966f067 line 700) says "A page that exists on one surface and not the other is a defect". T329 (branch `docs/plan-graph-projects`, ~lines 703, 818, from PR #540 (T329), not merged yet) adds web actions to select, link, unlink, re-index, remove and "Index now"; T330 (~line 818, from PR #541 (T330), not merged yet) adds a "clear safe junk" button that deletes files; T331 (~line 721, from PR #542 (T331), not merged yet) adds a "Fix selected" action that edits agent configs; none plans a `rtok tui` counterpart. These contradict each other because D27 keeps writes out of the web UI (and D23 demands TUI parity) while three open PRs plan write actions in the web UI only; the existing plugin toggle (T15.4, T310.6) shows the rule is already unclear.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T347. Investigate: D16 "one task = one PR" vs multi-PR execution plans
+
+In the plan, D16 (plan.md@966f067 line 694) says "**One task = one PR.** Each task gets its own branch ... and lands through its own pull request". T275 (plan.md@966f067 lines 193-197, PR A-E), T276 (plan.md@966f067 lines 278-283, PR 1-5), T277 (plan.md@966f067 lines 310-315, PR 1-6), T279 (plan.md@966f067 lines 403-407, PR 1-4), T283-T287 (two PRs each) and T329 §10 ("As PRs, backend first", from PR #540 (T329), not merged yet) plan several PRs for one task, while T310 splits its work into subtasks to keep one PR per task. These contradict each other because the rule and the plans disagree on what may land under one task id and when the `plan.md` → `done.md` move happens.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T348. Investigate: `--agent` means an agent id, a host, or both
+
+In the plan, D34 (plan.md@966f067 line 710) makes the agent id a UUID accepted by "any unique prefix of 4+ chars", and T285/T286/T289 (plan.md@966f067 lines 493, 510, 557) define `--agent <id-prefix>` for `rtok worktree` commands. T331 (branch `docs/plan-doctor-hooks-mcp`, ~line 733, from PR #542 (T331), not merged yet) defines "`--agent <host>` limits the check to one host", and T330 (~lines 775, 787, from PR #541 (T330), not merged yet) defines `--agent <host|id>`, including the pseudo-agent `rtok`. These contradict each other because one flag name gets three meanings, and under D12 (plan.md@966f067 line 690, "every CLI flag is a config key") it cannot map to one key; a host name that is also valid hex (for example `cafe`) would be ambiguous between the two forms.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
 
 ## Reference
 
