@@ -44,6 +44,23 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.12 | todo | P2 | 3 | 0% | |
 | T314 | in progress | P2 | 3 | 60% | Grok Bot |
 | T315 | in progress | P2 | 3 | 60% | Grok Bot |
+| T319 | todo | research | 1 | 0% | |
+| T320 | todo | research | 1 | 0% | |
+| T321 | todo | research | 1 | 0% | |
+| T322 | todo | research | 1 | 0% | |
+| T323 | todo | research | 1 | 0% | |
+| T324 | todo | research | 1 | 0% | |
+| T325 | todo | research | 1 | 0% | |
+| T326 | todo | research | 1 | 0% | |
+| T327 | todo | research | 1 | 0% | |
+| T328 | todo | research | 1 | 0% | |
+| T329 | todo | research | 1 | 0% | |
+| T330 | todo | research | 1 | 0% | |
+| T331 | todo | research | 1 | 0% | |
+| T332 | todo | research | 1 | 0% | |
+| T333 | todo | research | 1 | 0% | |
+| T334 | todo | research | 1 | 0% | |
+| T335 | todo | research | 1 | 0% | |
 
 
 
@@ -665,6 +682,142 @@ Plan:
 Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
 
 Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
+
+### T319. Investigate: rtok's own MCP duplicate: T318 keep rule vs D33/T275
+
+In the plan, T318 (plan.md on branch `docs/plan-doctor-hooks-mcp`, ~line 711, from PR #542 (T318), not merged yet) says "for rtok's own server, the rules of T275 (plugin serves MCP, so the separate entry goes)" and keeps the "plugin-provided first" copy by default, reporting a host that de-duplicates by name as "shadowed, unused, still removable" (~line 706). D33 (plan.md@966f067 line 709) and T275 (plan.md@966f067 lines 171-175) say "Install and update always write the config entry `rtok`; only `remove` takes it out, and a plugin no longer suppresses or strips it", "the rtok plugin ships no MCP server", and "Gemini keeps both, since settings.json wins over an extension's same-name server". These contradict each other because `rtok doctor --fix --yes` would delete exactly the config entry D33 requires (on Gemini, and on any host where an old plugin still serves MCP), and the next `rtok agents install|update` would write it back, so the two features undo each other.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T320. Investigate: T271 desktop-entry sweep vs D33/T275
+
+In the plan, T271 (plan.md@966f067 lines 138-139, table row line 17, P1 todo) says doctor must warn on "a desktop `mcpServers.rtok` entry while `code_serves_mcp` is true" and that every install/update path "also runs the desktop removal" (`unregister_mcp_ours`), with the fix `rtok agents install claude --desktop`; done task T171 (done.md:6548) ships the same check as a `duplicate:` line. T275 (plan.md@966f067 lines 171-172, "replaces T271's 'sweep' item") and D33 (plan.md@966f067 line 709) say "Install and update always write rtok's MCP entry into each agent's own config" and the plugin ships no MCP server. These contradict each other because T271 still asks rtok to remove and flag as an error the very entry D33 requires (the one Claude Desktop chat needs), while T271 stays an open P1 task.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T321. Investigate: graph default backend: T316 `auto` (LSP first, fallback) vs graph PLAN.md P30 decisions
+
+In the plan, T316 §6a (plan.md on branch `docs/plan-graph-projects`, ~line 752, from PR #540 (T316), not merged yet) says "T316 changes the default to an ordered fallback chain, `backend = "auto"`: LSP first, tree-sitter second, plain text search last", with per-request fallback on timeout. `src/plugins/graph/PLAN.md` (P30 survey) says "**C** rejected for gate honesty" (line 229, alternative C = tags-first with LSP fallback), lists under Rejected "**Default-on LSP** — tags stay default" (line 278) and "Hybrid tags+LSP per call without a mode flag (alternative C)" (line 279), and requires that the default answers stay byte-identical to tags (lines 246, 272); `roadmap.md:407` says "tags index remains default". These contradict each other because T316 makes the rejected design the default without revisiting the measured reasons (cold LSP start vs 23-26 ms warm tags, Gate P30 byte identity).
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T322. Investigate: graph text mode spawns `rg`/`grep`/`ssh` vs D6/D18
+
+In the plan, T316 §6a Mode 3 (branch `docs/plan-graph-projects`, ~line 774, from PR #540 (T316), not merged yet) says the text backend "Runs plain text search through the shell: `rg` (ripgrep) when present, `grep -rn` otherwise", and runs "the same commands ... over `ssh host`" for `ssh://` roots. D6 (plan.md@966f067 line 684) says "A plugin never spawns, links, imports, or reads the data of another tool", D18 (plan.md@966f067 line 695) says "D6 holds: no spawned graph tool", and the Working agreement (plan.md@966f067 line 753) says "No plugin shells out to ... a third-party tool (D6)". These contradict each other because the graph plugin would shell out to third-party tools (and to a remote host), which D6/D18 forbid; the existing LSP spawn was justified separately in the P30 survey, text search was not.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T323. Investigate: T316: default project for CLI/MCP is the selected project or the cwd
+
+In the plan, T316 Terms (branch `docs/plan-graph-projects`, ~line 679, from PR #540 (T316), not merged yet) says "**Selected project**: the project the graph page (and, by default, the CLI and MCP tools) answers for", and T316 §7 (~line 799) says "Without it, the project is the caller's current directory (agents keep today's behaviour)". These contradict each other because the selection is stored globally in the store (§2), so one rule makes an agent's MCP call follow whatever project the user last picked in the web UI and the other makes it follow the agent's cwd; the two give different answers whenever they differ.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T324. Investigate: T316: capability cache never re-probes vs alerts/health that need re-probing
+
+In the plan, T316 §6b (branch `docs/plan-graph-projects`, ~lines 787-791, from PR #540 (T316), not merged yet) says later requests "do not re-probe the modes that failed", the cache "is kept until that process restarts" and "nothing else invalidates it". T316 §8d (~lines 917-923) says a background check every 60 s detects **unreachable** (SSH root stops answering) and **backend down**, and "when the project comes back, the alert clears automatically"; §8f (~line 943) scores "Backend alive" from the same record. These contradict each other because detecting an unreachable SSH host or a recovered backend requires probing again, which §6b forbids; under §6b a backend-down alert can never clear without a restart.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T325. Investigate: T317 deletes sessions, tokens and snapshots vs research.md §22 "never junk"
+
+In the plan, T317 (branch `docs/plan-agents-junk`, ~lines 730-734, from PR #541 (T317), not merged yet) adds junk kinds `sessions` ("transcripts (`*.jsonl`), per-session log files"), `stale-tokens` ("auth/token cache files") and `snapshots` ("checkpoint/undo snapshots, conversation state backups"). `research.md` §22 (line 1772), the map T182 (done.md:6879) built and T317 says it relies on, says "Never junk, on any host: settings/config files, credentials and auth tokens, session or conversation history", and names Gemini's `~/.gemini/tmp/<hash>/` checkpoints as "session history, not junk" (line 1791). These contradict each other because T317 deletes three categories that the junk map classifies as never junk.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T326. Investigate: T317 scans only §22 paths vs heuristic cache detection
+
+In the plan, T317 (branch `docs/plan-agents-junk`, ~line 697, from PR #541 (T317), not merged yet) says "Paths for each host come from `research.md` §22 (official docs or source only). A cell §22 marks "not documented" is not scanned". The same task (~line 716) detects agent caches from "(2) the platform cache root for that app ... (3) well-known Electron/Chromium cache subfolders ... (4) any directory ... carrying a valid `CACHEDIR.TAG`", says "macOS: `~/Library/Caches` entries are treated as `cache`" (~line 811), and its Check clears Cursor caches although §22 marks every Cursor cell "not documented". These contradict each other because one rule forbids scanning undocumented paths and the other scans and deletes them by heuristics (the risk §22 warns about: "a wrong row here can destroy a user's real data").
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T327. Investigate: T317 "never touch rtok.db" vs clearing rows inside it
+
+In the plan, T317 "Never touched" (branch `docs/plan-agents-junk`, ~line 701, from PR #541 (T317), not merged yet) lists "`rtok.db`" (as T182 did: "It never touches `rtok.db`", done.md:6879). The same task clears "rtok's own session rows and logs keyed by session id (T284)" (`sessions` kind, ~line 730) and "Graph/tags index rows ... for projects no longer in the registry" (`index` kind, ~line 710); T182's result says the graph index "live[s] in the DB" (D18, line 695). These contradict each other because both row kinds live in `rtok.db`, so T317 cannot clear them without touching it.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T328. Investigate: T317 worktree removal vs T153 (prune, orphans) and its own edge case
+
+In the plan, T317 (branch `docs/plan-agents-junk`, ~line 741, from PR #541 (T317), not merged yet) says stale-worktree removal "uses `git worktree remove` ..., then `git worktree prune`" and that an "orphaned" worktree is "removed only by deleting its folder with `--include review`". Done task T153 (done.md:5181-5187) says "per record, never a blanket `git worktree prune`, which would also drop the records of another session's worktrees on a volume that is merely unmounted", "Orphans are reported, never removed", and "`rtok worktree clean`/`gc` never delete a worktree directory themselves". T317's own edge case (~line 812) also says "the worktree itself is never removed here (that is `rtok worktree gc`, T153)". These contradict each other because T317 reintroduces the two removal actions T153 forbids and disagrees with itself about whether `agents junk clear` removes worktrees at all.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T329. Investigate: T317 build/cache clearing vs T152 tagged-cache rules
+
+In the plan, T317 (branch `docs/plan-agents-junk`, ~line 689, from PR #541 (T317), not merged yet) makes `build` (`target/`, `dist/`, ...) in agent worktrees a `safe` kind cleared by default with no age rule, skips only "`temp`, `locks`, `swap`, `index`" for a running agent (~line 796), and clears caches by "keeping the top folder ... and keeping any `CACHEDIR.TAG`". Done task T152 (done.md:5229-5233) clears the same tagged caches only when idle ("`--idle`", default 24h), "Never the cache of the worktree the command runs from unless its path is given explicitly", and deletes "one cache root at a time with `remove_dir_all`". These contradict each other because two commands would delete the same `target/` directories under incompatible safety rules: T317 would clear a live agent's fresh build cache that T152 deliberately keeps.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T330. Investigate: T317 `--sort` takes two different value sets on `list`
+
+In the plan, T317 item breakdown (branch `docs/plan-agents-junk`, ~line 766, from PR #541 (T317), not merged yet) says "Items are sorted by size, largest first (`--sort size|last-used|path`)", and the `rtok agents junk list` section (~line 778) says "Sorting: by space freed, largest first (`--sort name|size|freed`)". These contradict each other because one flag on one command is given two incompatible value sets and two different defaults.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T331. Investigate: T317 "backwards compatible" vs new default deletions
+
+In the plan, T317 (branch `docs/plan-agents-junk`, ~line 792, from PR #541 (T317), not merged yet) says "Backwards compatible: `rtok agents junk clear` with no new flags still clears T182's `rtok-own` junk, and now also the safe kinds for every agent; `rtok agents junk clear --agent rtok` reproduces T182 exactly", and its Check requires T182's tests to "stay green unchanged". The same task adds to the `rtok` row the `.rtok-lsp-xdg` caches, `$XDG_CACHE_HOME/rtok`, every `CACHEDIR.TAG` directory and plugin staging caches as `safe` kinds (~lines 705-712). These contradict each other because `clear --yes` without flags now deletes agent data T182 never touched, and `--agent rtok` deletes more than T182 did, so neither claim of compatibility holds.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T332. Investigate: ProgressRunner in the rtok crate vs `crates/rtok-mcp` with no rtok dependency
+
+In the plan, T276 (plan.md@966f067 lines 248, 266) says `src/proc/` "is the only place in rtok that calls `std::process::Command::new`", enforced by a `clippy.toml` ban "including `crates/`". T277 (plan.md@966f067 lines 289, 298) says `crates/rtok-mcp` has "no dependency on the `rtok` crate" yet takes over "the MCP probe (`spawn_mcp`, `mcp_command`, using T276's `ProgressRunner` for the spawn)" and the T275.1 ping spawn. These contradict each other because the MCP crate can neither import `ProgressRunner` from the `rtok` crate nor call `Command::new` itself under the ban.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T333. Investigate: D27 "writing commands stay CLI-only" vs web write actions
+
+In the plan, D27 (plan.md@966f067 line 704) says "Anything a command prints, or the store keeps, is a page on `rtok web` and `rtok tui`. Writing commands stay CLI-only", and D23 (plan.md@966f067 line 700) says "A page that exists on one surface and not the other is a defect". T316 (branch `docs/plan-graph-projects`, ~lines 703, 818, from PR #540 (T316), not merged yet) adds web actions to select, link, unlink, re-index, remove and "Index now"; T317 (~line 818, from PR #541 (T317), not merged yet) adds a "clear safe junk" button that deletes files; T318 (~line 721, from PR #542 (T318), not merged yet) adds a "Fix selected" action that edits agent configs; none plans a `rtok tui` counterpart. These contradict each other because D27 keeps writes out of the web UI (and D23 demands TUI parity) while three open PRs plan write actions in the web UI only; the existing plugin toggle (T15.4, T310.6) shows the rule is already unclear.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T334. Investigate: D16 "one task = one PR" vs multi-PR execution plans
+
+In the plan, D16 (plan.md@966f067 line 694) says "**One task = one PR.** Each task gets its own branch ... and lands through its own pull request". T275 (plan.md@966f067 lines 193-197, PR A-E), T276 (plan.md@966f067 lines 278-283, PR 1-5), T277 (plan.md@966f067 lines 310-315, PR 1-6), T279 (plan.md@966f067 lines 403-407, PR 1-4), T283-T287 (two PRs each) and T316 §10 ("As PRs, backend first", from PR #540 (T316), not merged yet) plan several PRs for one task, while T310 splits its work into subtasks to keep one PR per task. These contradict each other because the rule and the plans disagree on what may land under one task id and when the `plan.md` → `done.md` move happens.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T335. Investigate: `--agent` means an agent id, a host, or both
+
+In the plan, D34 (plan.md@966f067 line 710) makes the agent id a UUID accepted by "any unique prefix of 4+ chars", and T285/T286/T289 (plan.md@966f067 lines 493, 510, 557) define `--agent <id-prefix>` for `rtok worktree` commands. T318 (branch `docs/plan-doctor-hooks-mcp`, ~line 733, from PR #542 (T318), not merged yet) defines "`--agent <host>` limits the check to one host", and T317 (~lines 775, 787, from PR #541 (T317), not merged yet) defines `--agent <host|id>`, including the pseudo-agent `rtok`. These contradict each other because one flag name gets three meanings, and under D12 (plan.md@966f067 line 690, "every CLI flag is a config key") it cannot map to one key; a host name that is also valid hex (for example `cafe`) would be ambiguous between the two forms.
+
+Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
+
+Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
 
 ## Reference
 
