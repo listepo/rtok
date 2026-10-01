@@ -957,7 +957,7 @@ As PRs, backend first; do not merge them.
 
 Dependencies: T310.8 for the page; T285 and T289 for worktree-based adding; the existing graph index and LSP integration.
 
-Check (fixture repos under `tests/fixtures`, no network):
+Check: fixture repos under `tests/fixtures`, no network:
 
 - Repo A has a Cargo path dependency on B; B has one on C; D is unrelated.
 - Indexing A registers B and C (origin `reference`), indexes them and creates auto links A to B and B to C; D is not added.
