@@ -23,7 +23,7 @@ pub fn issues(path: &Path) -> Result<Vec<String>> {
 /// Parsed as a [`toml_edit::Document`], not a `DocumentMut`: only the immutable document
 /// keeps item spans, and the spans are what make `file:line` name the offending line rather
 /// than the first line that happens to start with the same key.
-fn issues_in(path: &Path, text: &str) -> Vec<String> {
+pub(crate) fn issues_in(path: &Path, text: &str) -> Vec<String> {
     let doc: toml_edit::Document<String> = match text.to_owned().parse() {
         Ok(d) => d,
         Err(e) => return vec![format!("{}:{e}", path.display())],

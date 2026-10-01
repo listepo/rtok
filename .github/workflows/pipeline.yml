@@ -1,5 +1,6 @@
-# Gated pipeline. Local ci.yml and the shared pyrlyn/infra pipeline (CodeQL, Semgrep, Snyk;
-# Rust CI stays local, `rust: false`) run in parallel; `gate` passes only when both succeeded.
+# Gated pipeline. Local ci.yml and pyrlyn/infra's config-driven ci.yml (CodeQL, Semgrep, Snyk,
+# SonarCloud on main, actionlint; configured in .github/infra.yml, Rust CI stays local) run in
+# parallel; `gate` passes only when both succeeded.
 # Anything downstream (deploy, release, publish) must `needs: gate`. Draft pull requests skip
 # every job, the gate included, until marked ready. Secrets are passed explicitly.
 # Shared workflows: https://github.com/pyrlyn/infra/blob/main/docs/reusable-workflows.md
@@ -30,29 +31,31 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      actions: write # ci.yml cancels the run on the first failed step
 
   pipeline:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    uses: pyrlyn/infra/.github/workflows/pipeline.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    uses: pyrlyn/infra/.github/workflows/ci.yml@863d8960601216eec62d4aa78924f84ce61d72b9 # main
+    # The union every nested job asks for, validated up front even for disabled checks.
     permissions:
       contents: read
       security-events: write
-      actions: read
-    with:
-      rust: false
-      codeql-languages: '["actions", "javascript-typescript", "python", "rust"]'
+      pull-requests: read
+      actions: write
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   gate:
     needs: [ci, pipeline]
-    # !cancelled(): report a failed, cancelled or skipped need, but do not hold a cancelled run.
+    # always(): ci.yml cancels the run on its first failure, and a skipped gate would read as
+    # passing, so the gate still runs and reports the failed or cancelled need.
     # Skipped on draft PRs like every other job, so a draft never leaves a green `gate` behind.
     if: >-
-      !cancelled()
+      always()
       && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     steps:
-      - uses: pyrlyn/infra/.github/actions/gate@189816ac5a375e18e0235044970efcbc40e3cabd
+      - uses: pyrlyn/infra/.github/actions/gate@863d8960601216eec62d4aa78924f84ce61d72b9 # main
         with:
           needs: ${{ toJSON(needs) }}

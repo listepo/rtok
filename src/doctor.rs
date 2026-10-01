@@ -19,7 +19,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 /// What `rtok doctor` found, as data.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct Report {
     pub hooks_total: usize,
     pub hooks_by_event: BTreeMap<String, usize>,
@@ -54,14 +54,14 @@ pub struct Report {
     pub agents: Vec<AgentModules>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct AgentModules {
     pub host: &'static str,
     pub kind: &'static str,
     pub modules: Vec<crate::agents::ModuleRow>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct ServerInfo {
     pub name: String,
     pub cmd: String,
@@ -69,13 +69,13 @@ pub struct ServerInfo {
     pub desc_tokens: u32,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, schemars::JsonSchema)]
 pub struct Instructions {
     pub rows: Vec<InstructionRow>,
     pub duplicates: Vec<(String, Vec<String>)>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct InstructionRow {
     pub name: String,
     pub tokens: u32,
@@ -86,7 +86,7 @@ pub struct InstructionRow {
 /// Share of Read-class transcript tokens spent in native Grep/Glob (T50.4):
 /// `(grep + glob) / (read + grep + glob)` by estimated tokens. `None` when the
 /// transcripts hold no Read-class results — the default stays off on no data.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct ReadShare {
     pub read_tokens: u64,
     pub grep_tokens: u64,
@@ -96,14 +96,14 @@ pub struct ReadShare {
 
 /// The skills audit (T61.3): what the host lists and what it costs the system
 /// prompt. Advice only — nothing here edits a file.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct SkillsAudit {
     pub rows: Vec<SkillRow>,
     /// Description bytes the listing rides with every request (≈ tokens/4).
     pub desc_bytes: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct SkillRow {
     pub name: String,
     /// `user`, `project`, or `plugin:<id>@<marketplace>`.

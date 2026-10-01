@@ -445,24 +445,28 @@ Options:
   -h, --help           Print help
 
 $ rtok completions --help
-Print shell completions for `bash`, `zsh`, `fish` or `powershell`
+Print shell completions (bash, zsh, fish, powershell, elvish; clink for Windows cmd)
 
-Usage: rtok completions [OPTIONS] <SHELL>
+Usage: rtok completions [OPTIONS] [SHELL]
 
 Arguments:
-  <SHELL>  Shell to complete for [possible values: bash, elvish, fish, powershell, zsh]
+  [SHELL]  Shell to complete for (with `--install`/`--uninstall`: default `$SHELL`) [possible
+           values: bash, zsh, fish, powershell, elvish, clink]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --install        Write the script to the shell's per-user completions directory
+      --uninstall      Remove what `--install` wrote
   -h, --help           Print help
 
 $ rtok man --help
-Print the man page (roff) to stdout
+Print the man page (roff), or write every page with `--dir`
 
 Usage: rtok man [OPTIONS]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --dir <DIR>      Write `rtok.1` and a page for every subcommand into this directory
   -h, --help           Print help
 
 $ rtok plugins --help

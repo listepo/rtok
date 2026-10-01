@@ -103,6 +103,11 @@ Coverage: `just test-cov` runs the same suite under `cargo-llvm-cov`, writes
 (`just test-cov -E 'test(formatters)'`). Slower, so it is not part of `just check`;
 CI runs it in the SonarCloud job on `main`.
 
+Fuzzing: `fuzz/` holds cargo-fuzz (libFuzzer) targets for the CLI argv and the parsers of
+untrusted input (config, rules, hook JSON, proxy bodies, JSONC edits). Nightly only and outside
+the workspace, so not part of `just check`; `just fuzz` lists them, `just fuzz <target> 120`
+runs one. See `fuzz/README.md`.
+
 Unit tests for logic; integration tests (`assert_cmd`, `predicates`,
 `assert_fs`, `trycmd`) for the binary, args, and output — see `plan.md` →
 Reference / Working agreement.

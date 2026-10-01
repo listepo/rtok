@@ -17,14 +17,20 @@
 pub mod agents;
 pub mod bench;
 pub mod cli;
+pub mod completions;
 pub mod config;
 pub mod demon;
 pub mod doctor;
 pub mod expand;
 pub mod fs;
+/// `cargo fuzz` entry points (`fuzz/`); absent from every normal build.
+#[cfg(fuzzing)]
+#[doc(hidden)]
+pub mod fuzzing;
 pub mod hooks;
 pub mod info;
 pub mod log;
+pub mod man;
 pub mod mcp;
 pub mod measure;
 pub mod modes;

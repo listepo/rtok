@@ -43,8 +43,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('filter', 'filter', [CompletionResultType]::ParameterValue, 'Filter text from stdin without executing')
             [CompletionResult]::new('expand', 'expand', [CompletionResultType]::ParameterValue, 'Print an archived payload')
             [CompletionResult]::new('archive', 'archive', [CompletionResultType]::ParameterValue, 'The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)')
-            [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Print shell completions for `bash`, `zsh`, `fish` or `powershell`')
-            [CompletionResult]::new('man', 'man', [CompletionResultType]::ParameterValue, 'Print the man page (roff) to stdout')
+            [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Print shell completions (bash, zsh, fish, powershell, elvish; clink for Windows cmd)')
+            [CompletionResult]::new('man', 'man', [CompletionResultType]::ParameterValue, 'Print the man page (roff), or write every page with `--dir`')
             [CompletionResult]::new('plugins', 'plugins', [CompletionResultType]::ParameterValue, 'List plugins: id, enabled, surfaces')
             [CompletionResult]::new('config', 'config', [CompletionResultType]::ParameterValue, 'The one config file')
             [CompletionResult]::new('memory', 'memory', [CompletionResultType]::ParameterValue, 'Notes (`mem_save` / import / export)')
@@ -833,11 +833,14 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         }
         'rtok;completions' {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--install', '--install', [CompletionResultType]::ParameterName, 'Write the script to the shell''s per-user completions directory')
+            [CompletionResult]::new('--uninstall', '--uninstall', [CompletionResultType]::ParameterName, 'Remove what `--install` wrote')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
         'rtok;man' {
+            [CompletionResult]::new('--dir', '--dir', [CompletionResultType]::ParameterName, 'Write `rtok.1` and a page for every subcommand into this directory')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
@@ -1362,8 +1365,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('filter', 'filter', [CompletionResultType]::ParameterValue, 'Filter text from stdin without executing')
             [CompletionResult]::new('expand', 'expand', [CompletionResultType]::ParameterValue, 'Print an archived payload')
             [CompletionResult]::new('archive', 'archive', [CompletionResultType]::ParameterValue, 'The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)')
-            [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Print shell completions for `bash`, `zsh`, `fish` or `powershell`')
-            [CompletionResult]::new('man', 'man', [CompletionResultType]::ParameterValue, 'Print the man page (roff) to stdout')
+            [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Print shell completions (bash, zsh, fish, powershell, elvish; clink for Windows cmd)')
+            [CompletionResult]::new('man', 'man', [CompletionResultType]::ParameterValue, 'Print the man page (roff), or write every page with `--dir`')
             [CompletionResult]::new('plugins', 'plugins', [CompletionResultType]::ParameterValue, 'List plugins: id, enabled, surfaces')
             [CompletionResult]::new('config', 'config', [CompletionResultType]::ParameterValue, 'The one config file')
             [CompletionResult]::new('memory', 'memory', [CompletionResultType]::ParameterValue, 'Notes (`mem_save` / import / export)')

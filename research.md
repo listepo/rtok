@@ -1930,3 +1930,105 @@ What survives D4, D8 and D13: an index of titles plus a fetch (`mem_get`), a cha
 ### 27.3 What follows
 
 T291 is the one module. T292 turns the four flags on inside the existing budgets (200 / 400 / 300 / 800). T293 puts a token count and the `mem_get` name on each title line, and records a measurement when a body is fetched. T294 adds tombstone fields to the JSONL row. T131 still measures the spawn-brief net; D35 says that net does not choose the default.
+
+## 28. Projects, task claiming and cross-agent session handoff (2026-09-30)
+
+Creator request 2026-09-30: research how rtok could give agents *projects* that stay in sync across different agents, make tasks easy to claim and track, reuse what the agents already ship (as a plugin where useful), and let one session start on one agent and finish on another. Survey the alternatives and take the union of their features without duplication.
+
+Method: rtok code read at `d25d5ed0`; host docs and third-party repos read 2026-09-30 (repo facts from `gh api repos/<r>` and `/releases/latest` on that date). Secondary claims are marked **unverified**.
+
+### 28.1 What rtok already has
+
+| Piece | Where | Reuse for |
+| --- | --- | --- |
+| Agent id per host session (UUIDv4, parent for sub-agents), `agents` table with activity and `status_text` | D34, `src/store/schema.rs` (`agents`), T281–T284 | claim owner, liveness (lease) |
+| Worktree ownership by git lock reason `<owner> \| <task-id> \| <date> \| agent <uuid>`; `worktree_claims` table; `worktree claim/adopt` | D34, T285–T289 | one task = one worktree = one owner |
+| Agent-to-agent messages, framed as information (`agents send/inbox`, MCP `agent_send/agent_inbox`) | T287–T288 | messages keyed by task id |
+| `handoff` MCP tool: budgeted digest of paths, symbol ranges and `expand` ids | `src/plugins/memory/handoff.rs` (T59.6) | handoff body |
+| SessionEnd note `session:<id>`; SessionStart `startup` recall injects the newest one for the project on any host with a SessionStart hook | `src/plugins/checkpoint.rs`, `inject/mod.rs` (T71.2) | cross-host handoff on one machine already works, implicitly |
+| Transcript parsers: Claude Code (full), Codex (token counts only) | `src/measure/jsonl.rs`, `src/measure/codex.rs` | reading the source session |
+| `memory export/import` (JSONL) | T66.2 | the only cross-machine path today |
+| Claim protocol for this repo's own tasks: `plan.md` table, Status + Agent columns, `todo.md` mirror, `done.md` | `plan.md`, workspace rulebook | the task format itself |
+
+Constraint: D8 keeps one SQLite file per machine and no sync protocol; §27.2 rejects "a git repo as the source of truth" for memory. Tasks are different: the creator's `plan.md` already lives in git and already is the source of truth.
+
+### 28.2 What the agents ship (do not duplicate)
+
+| Need | Native answer | Source |
+| --- | --- | --- |
+| Shared task list across sessions | Only Claude Code: `CLAUDE_CODE_TASK_LIST_ID=<name>` → `~/.claude/tasks/<name>/`; agent teams claim with file locks, one team per session, experimental | https://code.claude.com/docs/en/interactive-mode#task-list, https://code.claude.com/docs/en/agent-teams |
+| In-session todo | Codex `update_plan` (off by default since 0.152.0, **unverified**: seen quoted in https://github.com/openai/codex/issues/42365), Gemini `write_todos` (session-scoped), OpenCode `todowrite`, Copilot CLI todos, Roo `update_todo_list` | https://raw.githubusercontent.com/google-gemini/gemini-cli/main/docs/tools/todos.md, https://opencode.ai/docs/tools/, https://roocodeinc.github.io/Roo-Code/features/task-todo-list |
+| Cross-agent board | Cline Kanban (research preview): worktree per card, dependency chains, runs Cline, Claude Code, Codex, OpenCode | https://docs.cline.bot/usage/kanban.md |
+| Same-vendor session move | Claude `--teleport` / `--cloud`; Codex `cloud` + `apply`; Copilot `/delegate`; Cursor `&` to a Cloud Agent (return path **unverified**) | https://code.claude.com/docs/en/cli-reference, https://learn.chatgpt.com/docs/developer-commands?surface=cli, https://docs.github.com/en/copilot/reference/cli-command-reference, https://cursor.com/docs/cli/using |
+| Resume / fork in place | Claude `-c/-r/--fork-session`; `codex resume/fork`; Gemini `--resume`; OpenCode `-c/--session/--fork`, `export`/`import`; Copilot `--resume` | same pages; https://geminicli.com/docs/cli/session-management/, https://opencode.ai/docs/cli/ |
+| Thread handoff | Amp `/handoff` (2025-10-23), removed 2026-05-06 in favour of compaction and thread references | https://ampcode.com/news/handoff, https://ampcode.com/news/neo |
+| Cross-vendor session move | **None native.** Claude documents its transcript as internal and version-dependent. `claude import codex` imports config, not sessions. Zed imports threads from its external agents | https://code.claude.com/docs/en/sessions, https://zed.dev/docs/ai/external-agents |
+| Standards | ACP `session/load/resume/list` (per agent, no translation), plan entries; MCP `tasks` = async request state, not a todo list; A2A tasks unused by coding hosts; AGENTS.md = instructions only | https://agentclientprotocol.com/protocol/session-setup, https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks, https://a2a-protocol.org/latest/specification/, https://agents.md/ |
+
+Hooks that carry session state exist on the hosts rtok already wires: SessionStart/SessionEnd/PreCompact on Claude Code, Codex, Cursor, Gemini (`PreCompress`), Copilot; Claude adds `TaskCreated`/`TaskCompleted` (https://learn.chatgpt.com/docs/hooks, https://cursor.com/docs/agent/hooks, https://raw.githubusercontent.com/google-gemini/gemini-cli/main/docs/hooks/index.md).
+
+### 28.3 Third-party alternatives
+
+| Tool | Storage / sync | Claim | Deps + ready | Maintained (2026-09-30) | Source |
+| --- | --- | --- | --- | --- | --- |
+| beads (`bd`) | Dolt SQL, push/pull on a git ref, cell merge; hash ids; JSONL export only | atomic `--claim` | 4 link types, only `blocks` gates `bd ready` | MIT, Go, v1.3.0 2026-09-15 | https://github.com/gastownhall/beads |
+| Gas Town (`gt`) | on beads + worktree "hooks" | `sling`, federated `wl claim` | convoys | MIT, v1.2.1 2026-06-06 | https://github.com/gastownhall/gastown |
+| Backlog.md | one Markdown file per task, YAML frontmatter; reads other active branches | assignee + status (not atomic) | deps, ordinal; AC, DoD, plan, notes | MIT, v1.53.0 2026-09-24 | https://github.com/MrLesk/Backlog.md |
+| Task Master | `.taskmaster/tasks.json` | none | deps, `next`, validate/fix deps; tags | MIT + Commons Clause; last release 2026-03-31 (slowing) | https://github.com/eyaltoledano/claude-task-master |
+| MCP Agent Mail | git Markdown + SQLite FTS5, HTTP server | TTL file leases (exclusive/shared, advisory), build slots, pre-commit guard | uses beads ids as threads | MIT + rider, v0.3.2 2026-04-16 | https://github.com/Dicklesworthstone/mcp_agent_mail |
+| Spec Kit / Kiro | `tasks.md` in repo, `[P]` parallel marker / dependency waves | none | phases, waves | Spec Kit MIT v1.0.13 2026-09-29 | https://github.com/github/spec-kit, https://kiro.dev/docs/specs |
+| CCPM | Markdown + GitHub Issues as truth | issue per worktree | `depends_on`, `parallel`, `conflicts_with` | MIT, no releases, last push 2026-03-18 | https://github.com/automazeio/ccpm |
+| git-bug | git objects, operation DAG, conflict-free | assignee | none | GPL-3.0, v0.11.0 2026-09-22 | https://github.com/git-bug/git-bug |
+| Vibe Kanban | SQLite board | board assign | none | README says sunsetting | https://github.com/BloopAI/vibe-kanban |
+| casr | canonical session IR → native target file, atomic write, read-back verify, rollback | – | – | MIT + rider, Rust, v0.4.1 2026-09-07, ~120 stars | https://github.com/Dicklesworthstone/cross_agent_session_resumer |
+| continues | reads 16 tools' native stores, cross-tool → context document (3/10/20/50-message tiers, file changes, command log, git state) | – | – | MIT, no releases, last push 2026-05-07 | https://github.com/yigitkonur/cli-continues |
+| session-porter | Claude ↔ Codex, raw/full/compact/resume-only, registers in Codex's SQLite | – | – | MIT, ~46 stars | https://github.com/liwala/session-porter |
+| cass | search over 30+ agents' sessions, SQLite + Tantivy, SSH/rsync sources | – | – | MIT + rider, v0.9.0 2026-09-25 | https://github.com/Dicklesworthstone/coding_agent_session_search |
+| SpecStory | Markdown history of ~14 agents, optional cloud; cross-agent resume claimed in README (**unverified**) | – | – | Apache-2.0, v2.15.1 2026-09-24 | https://github.com/specstoryai/getspecstory |
+
+Linear MCP and GitHub MCP give an assignee field (non-atomic) on a SaaS tracker (https://linear.app/docs/mcp, https://github.com/github/github-mcp-server). Task Master's PRD parsing and complexity analysis, Ruflo's swarm and vector memory, and Shrimp (last push 2025-08-21) are out of scope: LLM work or unmaintained.
+
+### 28.4 Feature union, deduplicated, and what rtok does with each
+
+| # | Feature | Origin | rtok verdict |
+| --- | --- | --- | --- |
+| F1 | Atomic claim: owner + `in progress` in one step, refused if owned | beads `--claim` | **take** — local SQLite transaction + `plan.md` row edit |
+| F2 | Claim = lease: owner's agent id must be alive (hook activity); stale claims flagged, not auto-freed | Agent Mail TTL, Gas Town stall detector | **take** — D34 `agents.activity` is the heartbeat |
+| F3 | Ready queue: `todo`, unowned, no open blocker, sorted by priority | beads `bd ready`, Task Master `next` | **take** |
+| F4 | Typed deps, only "blocked by" gates readiness; validate cycles and dangling ids | beads, Task Master `validate-dependencies` | **take** (one `Depends:` line in the card; the table stays as the rulebook defines it) |
+| F5 | Collision-free id allocation | beads hash ids | **adapt** — keep `T<n>`; allocate `max(origin/main, local claims)+1` under the DB lock (the collision is a known pain: memory note on concurrent plan ids) |
+| F6 | Progress: readiness %, status transitions, close = move row + card to `done.md`, sync `todo.md` | rulebook, Backlog.md DoD | **take** — rtok writes all three files so they never drift |
+| F7 | Session-start priming: inject the agent's claimed task (id, title, card plan) within the `inject` budget | beads `bd prime` | **take** — a token saving: the agent stops re-reading `plan.md` |
+| F8 | Messages threaded by task id | Agent Mail, beads messages | **reuse** T287 with a `task` field |
+| F9 | Parallel-safe / conflict markers | Spec Kit `[P]`, CCPM `conflicts_with` | **later** — worktree-per-task already isolates |
+| F10 | File leases + pre-commit guard | Agent Mail | **skip** — worktree per task covers it; revisit if agents share a checkout |
+| F11 | Mirror to GitHub Issues / Linear | CCPM, git-bug bridges | **later**, optional exporter; never the source of truth |
+| F12 | Handoff document in tiers (minimal / standard / full): goal, open task, last N prompts, files and symbols touched, commands and errors, git state (branch, diff stat, unpushed commits), `expand` ids | continues, session-porter modes, rtok `handoff` | **take** — extend `handoff` + `checkpoint::extract` |
+| F13 | Explicit, one-shot pickup on the target agent (consumed on first SessionStart in the same worktree / task) | Amp handoff, rtok T71.2 | **take** — replaces "newest note of the project" guessing |
+| F14 | Native-file conversion so the target's own `resume` works | casr, session-porter | **skip in-tree** — formats are internal and change per release (Claude docs); optionally shell out to `casr` when installed |
+| F15 | Parsers for more hosts' transcripts | continues, cass | **take incrementally**: Codex full, Gemini, OpenCode (`opencode export` JSON) first |
+| F16 | Cross-machine: handoff and claim travel with git | beads refs, CCPM | **adapt** — claim commit on `plan.md`; handoff as `.rtok/handoff/<task>.md` on the *task branch* (removed before merge), so no sync protocol (D8 holds) |
+| F17 | Redaction before export | OpenCode `--sanitize` | **take** — reuse `guard` secret patterns if present, else a minimal token/key regex |
+| F18 | Query an old session instead of replaying it | Gas Town `seance`, Amp thread refs | **already** — `mem_search` + `expand` |
+| F19 | Mirror host todo into the task | Claude `CLAUDE_CODE_TASK_LIST_ID`, `TaskCompleted` hook | **later** — host todos stay sub-steps of one rtok task; optionally set the list id to `<project>-<task>` so a Claude resume sees the same sub-steps |
+| F20 | Board UI | Backlog.md web, Vibe Kanban, Cline Kanban | **later** — `rtok dashboard` page (the plugin trait has `dashboard_page`) |
+
+### 28.5 Build or adopt
+
+The rulebook says take the best ready tool first. beads is the strongest (atomic claim, ready queue, maintained), but its source of truth is Dolt, not `plan.md`; adopting it means two trackers or dropping the workspace-wide `plan.md` convention, plus a Go binary and a Dolt store beside D8's SQLite. Backlog.md is Markdown but one file per task with its own schema, and its claim is not atomic. Neither reads `plan.md`. So the fit is a thin rtok layer over the existing files, not a new tracker. Session handoff: no maintained, permissively licensed Rust library exists (casr carries a licence rider and ~120 stars), and rtok already owns 80 % of the parts (`handoff`, checkpoint extract, SessionStart inject, archive).
+
+Creator decision needed before planning:
+1. Source of truth for tasks: **(a) `plan.md` via rtok (recommended)**, (b) beads with `plan.md` generated from it, (c) Backlog.md.
+2. Scope: rtok's charter is cutting tokens; F7 and F12–F13 save tokens, F1–F6 are coordination. Ship them in the same binary as a `project` plugin, or as a separate crate under `packages/`.
+3. Cross-machine handoff file on the task branch (F16): allowed in the repo tree, or local-only via `memory export/import`.
+
+### 28.6 Proposed shape (if 1a)
+
+One plugin `project` (D21: plugin + MCP as one unit), CLI and MCP with one call path each:
+
+- `rtok task list [--ready]`, `task claim <id>`, `task progress <id> <n>%`, `task done <id>`, `task new <title> [--priority --complexity --depends]`, `task release <id>`. MCP: `task_ready`, `task_claim`, `task_progress`, `task_done`. Claim also runs `worktree claim` (D34) so task, worktree and agent share one owner record.
+- Store: a `task_claims` table (task id, repo root, agent uuid, since); `plan.md`/`todo.md`/`done.md` stay the truth and are edited with anchor checks; host config rules from AGENTS.md unchanged.
+- `rtok session handoff [--to <host>] [--tier standard]` writes the brief (F12), stores it as note `handoff:<task>` + archive, prints the target command (`codex "…"`, `claude "…"`, `gemini -i "…"`); the target's SessionStart in the same worktree injects it once (F13).
+- Measurement rows: bytes injected by priming and handoff vs. the reads they replace; no saving claim without them.
+
+Ideas filed: I-103 – I-107.

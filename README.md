@@ -70,9 +70,15 @@ Shell completions and the man page are generated from the same clap tree as
 `--help`, so they never drift from the CLI surface:
 
 ```bash
-rtok completions bash > ~/.bash_completion.d/rtok   # or zsh, fish, powershell
+rtok completions bash > ~/.bash_completion.d/rtok   # or zsh, fish, powershell, elvish
+rtok completions clink > %LOCALAPPDATA%\clink\rtok.lua  # cmd.exe through Clink
+rtok completions --install                           # to $SHELL's own directory; --uninstall undoes it
 rtok man | man -l -                                  # or save as manpath/rtok.1
+rtok man --dir ~/.local/share/man/man1               # rtok.1 plus rtok-<command>.1 for every subcommand
 ```
+
+Release archives also carry them pre-built in `share/`: `share/man/man1/*.1` and
+`share/completions/` (`rtok.bash`, `_rtok`, `rtok.fish`, `rtok.ps1`, `rtok.elv`, `rtok.lua`).
 
 A shorter path (install → doctor → hooks) is also in
 [`docs/getting-started.md`](docs/getting-started.md).

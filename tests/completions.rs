@@ -5,7 +5,7 @@
 
 use assert_cmd::Command;
 use clap::ValueEnum;
-use clap_complete::Shell;
+use rtok::completions::Shell;
 
 fn stdout(args: &[&str]) -> Vec<u8> {
     Command::cargo_bin("rtok")

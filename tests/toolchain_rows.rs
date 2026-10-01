@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 /// All manifests whose direct deps `toolchain.md` claims to list.
 /// `crates/rtok-webui` is excluded from the cargo workspace (wasm-only
 /// toolchain) but its crates still need `toolchain.md` rows, so it is
-/// listed here explicitly.
+/// listed here explicitly; so is the `fuzz/` crate (its own workspace, nightly only).
 const MANIFESTS: &[&str] = &[
     "Cargo.toml",
     "crates/rtok-agent-sdk/Cargo.toml",
@@ -19,6 +19,7 @@ const MANIFESTS: &[&str] = &[
     "crates/rtok-sys/Cargo.toml",
     "crates/rtok-wasm-demo-guest/Cargo.toml",
     "crates/rtok-webui/Cargo.toml",
+    "fuzz/Cargo.toml",
 ];
 
 #[test]

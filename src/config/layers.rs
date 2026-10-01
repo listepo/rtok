@@ -417,6 +417,20 @@ fn assemble(
     fig
 }
 
+/// `crate::fuzzing`: [`assemble`] with `text` as the only file layer and no env, `.env` or
+/// project file, then the [`load`] finish minus its log write; returns the `config show` rows.
+#[cfg(fuzzing)]
+pub(crate) fn extract_str(text: &str) -> Result<Vec<(String, String, String)>> {
+    let fig = Figment::from(Named(Serialized::defaults(Config::default()), "default"))
+        .merge(Named(Toml::string(text), "user"));
+    let legacy_base = fig.clone();
+    let fig = fig.merge(LegacyFold { base: legacy_base });
+    let mut cfg: Config = fig.extract()?;
+    super::apply_legacy_fold(&mut cfg);
+    cfg.rebase_paths(Path::new("/rtok-fuzz-home"));
+    Ok(entries(&fig))
+}
+
 /// Clap `Option<T>` overlay for `rtok proxy` (`flag` layer). Only `Some` / `--dry-run`.
 pub fn proxy_flags(
     port: Option<u16>,
@@ -497,6 +511,8 @@ pub fn load(home: &Path, config_file: Option<&Path>, flags: Option<Dict>) -> Res
     )
     .extract()?;
     cfg.finish(home);
+    // Every command reaches its config through here, so this is where `[ui]` takes effect.
+    crate::ui::style::configure(&cfg.ui);
     for w in &warnings {
         crate::log::append(&cfg, "warn", "config", "dotenv", w);
     }

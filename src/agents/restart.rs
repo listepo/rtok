@@ -268,7 +268,7 @@ fn with_restart(
                     let msg = format!(
                         "could not quit {name}: {e:#}; restart it manually to load the new config"
                     );
-                    eprintln!("warning: {msg}");
+                    eprintln!("{}", crate::ui::style::warn(&format!("warning: {msg}")));
                     crate::log::append(cfg, "warn", "agents", "restart", &msg);
                 } else {
                     wait_until_not_running(procs, &name, Duration::from_secs(5));
@@ -289,7 +289,7 @@ fn with_restart(
     for (name, path) in to_reopen {
         if let Err(e) = procs.open(&name, &path) {
             let msg = format!("could not reopen {name}: {e:#}; open it manually");
-            eprintln!("warning: {msg}");
+            eprintln!("{}", crate::ui::style::warn(&format!("warning: {msg}")));
             crate::log::append(cfg, "warn", "agents", "restart", &msg);
         }
     }

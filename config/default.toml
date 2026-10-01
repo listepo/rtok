@@ -69,6 +69,10 @@ port = 3333                           # --port
 tab       = ""                        # "" = first tab          (--tab <page>)
 tick_secs = 2                         # model re-read cadence, same as the web 2 s tick (--tick-secs)
 
+[ui]                                  # rtok's own lines on a terminal; pipes, --json stay plain
+emoji = true                          # emoji before status/warn/error lines (RTOK_UI_EMOJI)
+color = true                          # colour them; NO_COLOR/CLICOLOR_FORCE apply (RTOK_UI_COLOR)
+
 [demon]                               # rtok demon start | stop | restart | status | kill
 services       = ["proxy"]            # what `rtok demon start` starts when given no name
 state_dir      = "~/.rtok/demon"      # <name>.json, <name>.log and the <name>.stop marker

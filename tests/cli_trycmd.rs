@@ -28,6 +28,7 @@ fn cli() {
             // snapbox redacts `EXE_SUFFIX` (`.exe`) to `[EXE]` on Windows, which rewrites
             // `tool.execute.after` in `filter --stdin`'s help; the scripts are
             // platform-independent and stay covered on Linux and macOS.
+            .skip("tests/trycmd/completions-clink.toml")
             .skip("tests/trycmd/completions-fish.toml")
             .skip("tests/trycmd/completions-powershell.toml")
             .skip("tests/trycmd/completions-zsh.toml");

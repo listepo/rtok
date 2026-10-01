@@ -67,7 +67,7 @@ error: a value is required for '--config <PATH>' but none was supplied
 ...
 $ rtok completions nu
 ? 2
-error: invalid value 'nu' for '<SHELL>'
+error: invalid value 'nu' for '[SHELL]'
 ...
 $ rtok man --config
 ? 2

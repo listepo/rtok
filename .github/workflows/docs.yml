@@ -1,11 +1,12 @@
+# Build the Hugo site (site/, `just site`) and deploy it to GitHub Pages through
+# pyrlyn/infra's pages.yml. Tools (just, hugo, go) come from mise.toml.
 name: docs
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# One Pages deploy at a time; never cancel one half-done (same as pyrlyn/ketch).
-# PR / push builds share the group so they queue instead of racing the deploy.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -13,40 +14,15 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  # Each job installs only the mise.toml tools it runs (`install_args` below). Without these, a
-  # bare `mise exec` (how the justfile runs each tool) first installs every other one in mise.toml.
-  MISE_AUTO_INSTALL: "false"
-  MISE_EXEC_AUTO_INSTALL: "false"
-
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # hugo.toml sets enableGitInfo; last-modified needs full history
-      # Installs the Hugo, Go and just versions pinned in mise.toml, nothing else.
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install_args: just hugo go
-          cache_key_prefix: mise-v1-site
-      - run: just site # --panicOnWarning: a broken mount or link fails the build
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: site/public
-
-  deploy:
-    # Publishing is main-only; pull requests stop after the build above.
-    if: github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
+  pages:
+    uses: pyrlyn/infra/.github/workflows/pages.yml@863d8960601216eec62d4aa78924f84ce61d72b9 # main
     permissions:
+      contents: read
       pages: write
       id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - id: deploy
-        uses: actions/deploy-pages@v5
+    with:
+      fetch-depth: 0 # hugo.toml sets enableGitInfo; last-modified needs full history
+      mise-install-args: just hugo go
+      build-command: just site # --panicOnWarning: a broken mount or link fails the build
+      artifact-path: site/public

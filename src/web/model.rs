@@ -11,6 +11,7 @@ pub use agents::{
 };
 
 use anyhow::Result;
+use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -28,7 +29,7 @@ use crate::store::{CallRow, SessionTotals, Store};
 
 /// Everything a surface needs for one refresh. `Default` is the empty frame a surface
 /// paints while its first read is still running.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, JsonSchema)]
 pub struct Snapshot {
     #[serde(rename = "type")]
     pub kind: &'static str,
@@ -93,7 +94,7 @@ pub struct Snapshot {
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
-#[derive(Debug, Default, Clone, Copy, Serialize)]
+#[derive(Debug, Default, Clone, Copy, Serialize, JsonSchema)]
 pub struct Stats {
     pub input: i64,
     pub output: i64,
@@ -108,7 +109,7 @@ pub struct Stats {
 /// context-token-turns and the per-turn series behind the sparkline. The totals stay
 /// flat under the `usage` key, so the `/ws` frame keeps the shape P19 pinned and the
 /// Slint UI reads on untouched.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, JsonSchema)]
 pub struct Overview {
     #[serde(flatten)]
     pub totals: Stats,
@@ -144,7 +145,7 @@ pub const SESSIONS_ROWS: usize = 120;
 
 /// A plugin's page: its manifest, the static copy it contributes through
 /// `Plugin::dashboard_page`, and the stats widget when it saves tokens.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct PluginPage {
     pub id: &'static str,
     pub enabled: bool,
@@ -173,14 +174,14 @@ pub struct AgentListRow {
 }
 
 /// Skills page (T63.1, D23): one row per skill the host lists.
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, JsonSchema)]
 pub struct SkillsPage {
     /// Totals: listed, desc bytes ≈ tokens/req (chars/4, research.md §10.2), resident, input share.
     pub header: String,
     pub rows: Vec<SkillPageRow>,
 }
 
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, JsonSchema)]
 pub struct SkillPageRow {
     pub name: String,
     pub source: String,

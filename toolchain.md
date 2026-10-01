@@ -12,6 +12,7 @@ Project programs and direct packages from the manifests.
 | twiggy | optional (cargo install) | Per-function and per-crate size of the webui wasm when `tests/web_wasm.rs` reports growth (research.md, T60.7) | https://github.com/AlexEne/twiggy |
 | cargo-nextest | global (cargo install) | Parallel test runner | https://github.com/nextest-rs/nextest |
 | cargo-llvm-cov | mise | `just test-cov` (T301): coverage over the nextest suite; lcov for SonarCloud | https://github.com/taiki-e/cargo-llvm-cov |
+| cargo-fuzz | global (`cargo install cargo-fuzz`) + `rustup toolchain install nightly` | `just fuzz` / `fuzz/README.md`: libFuzzer targets; nightly only for the fuzz build, the pinned toolchain is untouched | https://github.com/rust-fuzz/cargo-fuzz |
 | codeql | mise | `just codeql` (T119): local run of the code scanning in `.github/workflows/codeql.yml` | https://github.com/github/codeql-cli-binaries |
 | git-cliff | mise | Changelog | https://github.com/orhun/git-cliff |
 | go | mise | hugo resolves the hextra theme as a Go module (site/go.mod) | https://github.com/golang/go |
@@ -54,6 +55,7 @@ Project programs and direct packages from the manifests.
 | react-dom | local | https://github.com/facebook/react | T310.1: React DOM renderer |
 | vite | local | https://github.com/vitejs/vite | T310.1: SPA dev server + build (`just spa-dev` / `just spa-build`) |
 | @vitejs/plugin-react | local | https://github.com/vitejs/vite-plugin-react | T310.1: React fast refresh + JSX transform for Vite |
+| json-schema-to-typescript | local | https://github.com/bcherny/json-schema-to-typescript | T310.2: `web/src/api/snapshot.gen.ts` from the `/ws` JSON Schema (`npm run gen:api`) |
 | typescript | local | https://github.com/microsoft/TypeScript | T310.1: strict typecheck (`just spa-typecheck`) |
 | @types/react | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.1: React types |
 | @types/react-dom | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.1: React DOM types |
@@ -65,6 +67,7 @@ Project programs and direct packages from the manifests.
 | Package | Where | Source | Why here |
 | --- | --- | --- | --- |
 | anyhow | local | https://crates.io/crates/anyhow | CLI errors |
+| arbitrary | local | https://crates.io/crates/arbitrary | `fuzz/`: structured fuzz inputs (argv, hook/rules bodies) |
 | assert_cmd | local | https://crates.io/crates/assert_cmd | CLI e2e tests |
 | axum | local | https://crates.io/crates/axum | Rust dependency |
 | clap | local | https://crates.io/crates/clap | CLI |
@@ -88,6 +91,7 @@ Project programs and direct packages from the manifests.
 | insta | local | https://crates.io/crates/insta | Snapshot tests for stable text output |
 | js-sys | local | https://crates.io/crates/js-sys | JS bindings for the Slint web UI (T222) |
 | jsonc-parser | local | https://crates.io/crates/jsonc-parser | JSONC parse for Zed settings (T222) |
+| libfuzzer-sys | local | https://crates.io/crates/libfuzzer-sys | `fuzz/`: libFuzzer runtime for the cargo-fuzz targets |
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | Rust dependency |
 | log | local | https://crates.io/crates/log | T225: logging facade env_logger drains; D26 lines are mirrored into it |
 | notify | local | https://crates.io/crates/notify | Rust dependency |
@@ -104,6 +108,7 @@ Project programs and direct packages from the manifests.
 | rustls-pemfile | local | https://crates.io/crates/rustls-pemfile | `SSL_CERT_FILE` bundle parsing (T53.3) |
 | semver | local | https://crates.io/crates/semver | T279: plugin version compare + `.rtok-plugin-version` (de)serialization |
 | serde | local | https://crates.io/crates/serde | Serialization |
+| schemars | local | https://github.com/GREsau/schemars | T310.2: JSON Schema of the `/ws` protocol, committed as `web/src/api/ws.schema.json` |
 | serde_json | local | https://crates.io/crates/serde_json | JSON |
 | sha2 | local | https://crates.io/crates/sha2 | Rust dependency |
 | similar | local | https://crates.io/crates/similar | Rust dependency |

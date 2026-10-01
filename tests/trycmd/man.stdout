@@ -65,10 +65,10 @@ rtok/-archive(1)
 The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)
 .TP
 rtok/-completions(1)
-Print shell completions for `bash`, `zsh`, `fish` or `powershell`
+Print shell completions (bash, zsh, fish, powershell, elvish; clink for Windows cmd)
 .TP
 rtok/-man(1)
-Print the man page (roff) to stdout
+Print the man page (roff), or write every page with `/-/-dir`
 .TP
 rtok/-plugins(1)
 List plugins: id, enabled, surfaces
@@ -96,8 +96,32 @@ rtok/*(Aqs own log (`rtok logs` prints, `rtok logs export` strips numbering and 
 .TP
 rtok/-report(1)
 The operator model as one document (D24): Markdown, HTML and PDF
-.TP
-rtok/-help(1)
-Print this message or the help of the given subcommand(s)
 .SH VERSION
 v[..] ([..])
+.SH "SEE ALSO"
+/fBrtok-hook/fR(1),
+/fBrtok-mcp/fR(1),
+/fBrtok-proxy/fR(1),
+/fBrtok-web/fR(1),
+/fBrtok-tui/fR(1),
+/fBrtok-stats/fR(1),
+/fBrtok-bench/fR(1),
+/fBrtok-doctor/fR(1),
+/fBrtok-worktree/fR(1),
+/fBrtok-info/fR(1),
+/fBrtok-agents/fR(1),
+/fBrtok-run/fR(1),
+/fBrtok-filter/fR(1),
+/fBrtok-expand/fR(1),
+/fBrtok-archive/fR(1),
+/fBrtok-completions/fR(1),
+/fBrtok-man/fR(1),
+/fBrtok-plugins/fR(1),
+/fBrtok-config/fR(1),
+/fBrtok-memory/fR(1),
+/fBrtok-graph/fR(1),
+/fBrtok-guard/fR(1),
+/fBrtok-demon/fR(1),
+/fBrtok-otel/fR(1),
+/fBrtok-logs/fR(1),
+/fBrtok-report/fR(1)

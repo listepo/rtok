@@ -1119,13 +1119,16 @@ esac
 (completions)
 _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'(--uninstall)--install[Write the script to the shell'/''s per-user completions directory]' /
+'--uninstall[Remove what /`--install/` wrote]' /
 '-h[Print help]' /
 '--help[Print help]' /
-':shell -- Shell to complete for:(bash elvish fish powershell zsh)' /
+'::shell -- Shell to complete for (with `--install`/`--uninstall`/: default `$SHELL`):(bash zsh fish powershell elvish clink)' /
 && ret=0
 ;;
 (man)
 _arguments "${_arguments_options[@]}" : /
+'--dir=[Write /`rtok.1/` and a page for every subcommand into this directory]:DIR:_files' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '-h[Print help]' /
 '--help[Print help]' /
@@ -2360,8 +2363,8 @@ _rtok_commands() {
 'filter:Filter text from stdin without executing' /
 'expand:Print an archived payload' /
 'archive:The archive live zone (/`rtok archive rewrite/` — pi /`context/` carrier, T70.2)' /
-'completions:Print shell completions for /`bash/`, /`zsh/`, /`fish/` or /`powershell/`' /
-'man:Print the man page (roff) to stdout' /
+'completions:Print shell completions (bash, zsh, fish, powershell, elvish; clink for Windows cmd)' /
+'man:Print the man page (roff), or write every page with /`--dir/`' /
 'plugins:List plugins/: id, enabled, surfaces' /
 'config:The one config file' /
 'memory:Notes (/`mem_save/` / import / export)' /
@@ -3002,8 +3005,8 @@ _rtok__subcmd__help_commands() {
 'filter:Filter text from stdin without executing' /
 'expand:Print an archived payload' /
 'archive:The archive live zone (/`rtok archive rewrite/` — pi /`context/` carrier, T70.2)' /
-'completions:Print shell completions for /`bash/`, /`zsh/`, /`fish/` or /`powershell/`' /
-'man:Print the man page (roff) to stdout' /
+'completions:Print shell completions (bash, zsh, fish, powershell, elvish; clink for Windows cmd)' /
+'man:Print the man page (roff), or write every page with /`--dir/`' /
 'plugins:List plugins/: id, enabled, surfaces' /
 'config:The one config file' /
 'memory:Notes (/`mem_save/` / import / export)' /

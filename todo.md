@@ -26,7 +26,6 @@
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
 - T310. React SPA replaces the Slint web UI (epic)
-- T310.2. `/ws` contract: JSON Schema from Rust types, generated TS
 - T310.3. Data layer: WebSocket client + TanStack Query
 - T310.4. App shell: router, layout, theme, states
 - T310.5. UI kit + Storybook
@@ -37,3 +36,5 @@
 - T310.10. Playwright e2e against the real binary
 - T310.11. CI job for the SPA
 - T310.12. Delete Slint, the WASM build and the HTML design
+- T314. Fuzz testing with cargo-fuzz / libFuzzer
+- T315. Emoji and colour on by default for human-facing output

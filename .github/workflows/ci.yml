@@ -37,6 +37,9 @@ jobs:
   lint:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write # cancel-run
     steps:
       - uses: actions/checkout@v7
       # Rust toolchain from the last run; mise then skips `rustup toolchain install`.
@@ -69,14 +72,19 @@ jobs:
       # T279: every plugin manifest and .rtok-plugin-version file must match Cargo.toml,
       # so a host that caches a plugin by its manifest version sees a new build.
       - run: tools/plugin-versions.sh --check "$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)"
+      - if: failure() && github.event_name == 'pull_request'
+        uses: ./.github/actions/cancel-run
 
   check:
     # Draft PRs still emit synchronize; skip until ready_for_review.
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         os: [ubuntu-latest, macos-latest]
+    permissions:
+      contents: read
+      actions: write # cancel-run
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -106,6 +114,8 @@ jobs:
           restore-keys: vitest-${{ runner.os }}-
       - run: just test
       - run: just example
+      - if: failure() && github.event_name == 'pull_request'
+        uses: ./.github/actions/cancel-run
 
   # T44.4: the agent installers write Windows paths and `%APPDATA%` files; run the suite there.
   # T83.4: a gate like `check` — a Windows-only failure fails the run and reverts main.
@@ -115,12 +125,15 @@ jobs:
   windows:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         partition: [1, 2]
         partitions: [2]
     name: windows (${{ matrix.partition }}/${{ matrix.partitions }})
     runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: write # cancel-run
     # A hung test is killed by nextest's `terminate-after`; this caps everything else.
     timeout-minutes: 30
     steps:
@@ -141,6 +154,8 @@ jobs:
       - run: >-
           mise exec -- cargo nextest run --workspace
           --partition count:${{ matrix.partition }}/${{ matrix.partitions }}
+      - if: failure() && github.event_name == 'pull_request'
+        uses: ./.github/actions/cancel-run
 
   revert-on-failure:
     name: revert-on-failure
@@ -155,72 +170,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Revert commits from this push
-        id: revert
-        env:
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            echo "No parent (new branch); skip revert"
-            exit 0
-          fi
-          subject=$(git log -1 --format=%s "$AFTER")
-          author=$(git log -1 --format=%an "$AFTER")
-          case "$subject" in
-            "ci: auto-revert"*) echo "Already an auto-revert; skip"; exit 0 ;;
-          esac
-          if [ "$author" = "github-actions[bot]" ]; then
-            echo "Last commit is from actions bot; skip"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          parent_count=$(git rev-list --parents -n 1 "$AFTER" | awk '{print NF}')
-          if [ "$parent_count" -gt 2 ]; then
-            git revert --no-edit -m 1 "$AFTER"
-          else
-            git revert --no-commit "$BEFORE".."$AFTER"
-            if git diff --cached --quiet; then
-              echo "Nothing to revert"
-              exit 0
-            fi
-            short=$(git rev-parse --short "$AFTER")
-            git commit -m "ci: auto-revert $short — main CI failed"
-          fi
-          git push origin HEAD:main
-          echo "reverted=true" >> "$GITHUB_OUTPUT"
-      # T84: main is green again; the work comes back as a draft PR to fix and re-land. Draft
-      # because `check` skips drafts and this tree is known-red. Needs the repo setting
-      # "Allow GitHub Actions to create and approve pull requests" (on since T253).
-      - name: Open a PR that re-applies the reverted work
-        if: steps.revert.outputs.reverted == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          AFTER: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          short=$(git rev-parse --short "$AFTER")
-          # Merged PR -> its head branch and title; direct push to main -> the short sha and
-          # the commit subject. T253: the title carries a `[Revert]` prefix.
-          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$AFTER/pulls" \
-            --jq '[.[] | select(.merged_at != null)][0] // {}' || echo '{}')
-          name=$(jq -r '.head.ref // empty' <<<"$pr")
-          title=$(jq -r '.title // empty' <<<"$pr")
-          title="[Revert] ${title:-$(git log -1 --format=%s "$AFTER")}"
-          branch="revert-${name:-$short}"
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
-            branch="$branch-$short"
-          fi
-          git checkout -b "$branch"
-          git revert --no-commit HEAD
-          git commit --author="$(git log -1 --format='%an <%ae>' "$AFTER")" \
-            -m "Reapply $short — reverted after main CI failed"
-          git push origin "$branch"
-          gh pr create --draft --base main --head "$branch" \
-            --title "$title" \
-            --body "CI failed on main at $AFTER ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID), so the push was auto-reverted. This branch re-applies it on top of main: push the fix here, mark the PR ready for review, merge when CI is green."
+      # Revert, then a draft `revert-<branch>` PR that re-applies the work (T84, T253). The
+      # shared action skips new branches, bot and auto-revert commits, and pushes touching
+      # .github/ (GITHUB_TOKEN cannot push workflow files).
+      - uses: pyrlyn/infra/.github/actions/revert-on-failure@863d8960601216eec62d4aa78924f84ce61d72b9
