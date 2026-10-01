@@ -1076,7 +1076,7 @@ pub fn apply(
         // behind a trailer — only the block's own length counts against `max_lines`.
         if trace_kept[i] {
             if omitted > 0 {
-                picked.push(format!("… {omitted} lines omitted (expand {archive_id})"));
+                picked.push(omitted_marker(omitted, archive_id));
                 omitted = 0;
             }
             picked.push(line);
@@ -1086,19 +1086,17 @@ pub fn apply(
         if take[i] {
             if picked.len() < max {
                 if omitted > 0 {
-                    let extra = if picked.len() + 1 >= max {
-                        (total - i) - trace_rest_from[i]
-                    } else {
-                        0
-                    };
-                    let count = omitted + extra;
-                    picked.push(format!("… {count} lines omitted (expand {archive_id})"));
+                    // Nothing but trace blocks prints past a spent budget; when none
+                    // remain ahead, fold everything (this line included) and stop (the
+                    // pinned true-count tests hold only under that exact fold). With a
+                    // trace still ahead, the lines after this one are counted as they
+                    // come, so folding them here would count them twice.
+                    let fold = picked.len() + 1 >= max && trace_rest_from[i + 1] == 0;
+                    let count = omitted + if fold { total - i } else { 0 };
+                    picked.push(omitted_marker(count, archive_id));
                     omitted = 0;
                     last_pushed_trace = false;
-                    // Nothing but trace blocks prints past a spent budget; when none
-                    // remain ahead, fold everything and stop (the pinned true-count
-                    // tests hold only under that exact fold).
-                    if trace_rest_from[i + 1] == 0 && picked.len() >= max {
+                    if fold {
                         break;
                     }
                 }
@@ -1118,9 +1116,19 @@ pub fn apply(
             picked.pop();
             omitted += 1;
         }
-        picked.push(format!("… {omitted} lines omitted (expand {archive_id})"));
+        picked.push(omitted_marker(omitted, archive_id));
     }
     picked.join("\n")
+}
+
+/// `… N lines omitted (expand <id>)`; with no archive (the store was unavailable) there is
+/// nothing to expand, so the marker names no id.
+fn omitted_marker(n: usize, archive_id: &str) -> String {
+    if archive_id.is_empty() {
+        format!("… {n} lines omitted")
+    } else {
+        format!("… {n} lines omitted (expand {archive_id})")
+    }
 }
 
 /// Built-in [`rules/default.toml`](../../../rules/default.toml).
@@ -1262,6 +1270,62 @@ mod tests {
         );
         let content = out.lines().filter(|l| !l.contains("lines omitted")).count();
         assert_eq!(n_lines - content, expect_omitted, "{out}");
+    }
+
+    /// Sum of every `… N lines omitted` trailer in `out`.
+    fn omitted_sum(out: &str) -> usize {
+        out.lines()
+            .filter_map(|l| l.strip_prefix("… "))
+            .filter_map(|l| l.split(' ').next()?.parse::<usize>().ok())
+            .sum()
+    }
+
+    /// A trace block behind a spent budget must not make the cut count a dropped line
+    /// twice: shown lines plus every trailer's count is exactly the input.
+    #[rstest]
+    #[case(4, 3, 1)]
+    #[case(5, 2, 2)]
+    #[case(3, 1, 1)]
+    #[case(6, 4, 1)]
+    fn omitted_counts_add_up_with_a_trace_past_the_budget(
+        #[case] max_lines: u32,
+        #[case] head: u32,
+        #[case] tail: u32,
+    ) {
+        let mut lines: Vec<String> = (0..5).map(|i| format!("a{i}")).collect();
+        lines.push("error: boom".into());
+        lines.extend(
+            [
+                "Traceback (most recent call last):",
+                "  File \"x\", line 1",
+                "    foo()",
+                "ValueError: x",
+            ]
+            .map(str::to_string),
+        );
+        lines.extend((0..3).map(|i| format!("z{i}")));
+        let rule = Rule {
+            max_lines,
+            head,
+            tail,
+            dedupe: Dedupe::Off,
+            ..Rule::default()
+        };
+        let out = apply(&settings(80), &lines.join("\n"), 0, &rule, "arc");
+        let shown = out.lines().filter(|l| lines.iter().any(|x| x == l)).count();
+        assert_eq!(shown + omitted_sum(&out), lines.len(), "{out}");
+    }
+
+    /// No archive id (store unavailable) → the marker names no `expand` target.
+    #[test]
+    fn omitted_marker_without_an_archive_id_has_no_empty_expand() {
+        let body = (0..200)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = apply(&settings(80), &body, 0, &Rule::default(), "");
+        assert!(out.contains("lines omitted"), "{out}");
+        assert!(!out.contains("(expand )"), "{out}");
     }
 
     #[test]
