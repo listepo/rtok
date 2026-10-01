@@ -44,6 +44,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.12 | todo | P2 | 3 | 0% | |
 | T314 | in progress | P2 | 3 | 60% | Grok Bot |
 | T315 | in progress | P2 | 3 | 60% | Grok Bot |
+| T318 | todo | P1 | 4 | 0% | |
 
 
 
@@ -665,6 +666,102 @@ Plan:
 Dependencies: `owo-colors` 4 (`supports-colors`) is already a dependency (T20.2); no new crate. Independent of T314.
 
 Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and off; `rtok hook`, MCP and `--json` output contain no ANSI escapes or emoji with both keys on and `CLICOLOR_FORCE=1`; piped output and `NO_COLOR=1` output have no colour; `just check`.
+
+### T318. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
+
+Ivan, 2026-10-01: `rtok doctor` finds hooks in agent configs that point to files that no longer exist (broken hooks), hooks that are loaded twice for the same agent (duplicate hooks), and MCP servers that are loaded twice (duplicate MCP entries). It lists them, explains why each is a problem, and lets the user choose to clean them up: broken hooks are removed, and for duplicates one copy is kept and the extra ones removed. Nothing else in any config changes. Covered by many tests.
+
+Today `rtok doctor` (flags `--instructions`, `--json`) reports rtok's own install state and per-host status, and `rtok agents info` reports MCP per surface (T278), including `stale` rtok entries. Install/update rewrites stale **rtok** hook entries in place (T242.x). Nothing checks hooks or MCP entries that are not rtok's, nothing detects a hook whose script was deleted, and nothing detects the same hook or MCP server loaded from two config files (T271 covers one specific case: rtok's MCP seen twice in the Claude desktop Code tab).
+
+#### Terms
+
+- **Agent:** a host in `agents::HOSTS`, per surface where the host has several (for example Claude Code CLI, Claude desktop Code tab, Cursor, Codex, Gemini CLI, Kimi).
+- **Config source:** every file that agent reads hooks or MCP servers from, with its scope and load order, taken from `research.md` (per-host config map) and the existing host adapters: user/global files (for example `~/.claude/settings.json`, `~/.claude.json`, `~/.cursor/mcp.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`), project files (`<repo>/.claude/settings.json`, `<repo>/.claude/settings.local.json`, `<repo>/.mcp.json`, `<repo>/.cursor/mcp.json`, `<repo>/.gemini/settings.json`), enterprise/managed files where the host has them (read-only, see below), and installed plugins that contribute hooks or MCP servers (for example Claude Code plugins' `hooks/hooks.json` and `.mcp.json`).
+- **Effective set:** what the agent would actually load at the same time for the current directory: every source that applies to that directory, merged the way the host merges them (concatenated hook lists, MCP maps merged by name with the host's precedence).
+- **Hook entry:** one hook command: event (`PreToolUse`, `SessionStart`, ...), matcher (if any), command string (or script path), and the source file and JSON/TOML path it lives at.
+- **MCP entry:** one MCP server definition: name, transport (`stdio` command + args + env, or `url` for http/sse), and its source file and path.
+
+#### 1. Broken hooks: hooks that lead nowhere
+
+- **Detection:** for each hook entry in each source of each agent, rtok resolves what the command would run, without running it:
+  - Parse the command the way the host's shell would split it (POSIX shell words on macOS/Linux, `cmd`/PowerShell rules on Windows where the host uses them). Expand `~`, `$HOME`, `${VAR}` and the host's own variables (`$CLAUDE_PROJECT_DIR`, `${CLAUDE_PLUGIN_ROOT}`, `$CURSOR_...` per `research.md`), using the project directory the check runs for.
+  - The **target** is: the first word if it is a path (absolute, `./`, `../`, `~/` or contains a `/`); or the script argument when the first word is a known interpreter (`bash`, `sh`, `zsh`, `node`, `python`, `python3`, `deno`, `bun`, `ruby`, `pwsh`, `npx tsx`, `uv run`); or the program name looked up on `PATH` otherwise.
+  - The hook is **broken** when its target does not exist: the path is missing, a dangling symlink, or the program is not on `PATH` (and not a shell builtin).
+  - The hook is **suspect, not broken** when the target exists but is not executable while invoked directly (shown with the fix `chmod +x`, not offered for deletion), or when the command cannot be resolved statically (contains `$(…)`, backticks, `eval`, pipes into an interpreter, or an unknown variable): listed as "cannot verify" and never deleted.
+- **Report:** a "Broken hooks" section in `rtok doctor` per agent: source file (link), event and matcher, the command as written, the resolved target, and why it leads nowhere ("file not found: ~/scripts/old-guard.sh", "dangling symlink to /Volumes/X/hook.js", "`foo` not on PATH"). It says "can be cleaned up" for each one.
+- **Fix:** only hooks classified **broken** can be removed, and only those the user selects (see 4). Removing a hook removes just that entry from its source file: if its matcher group becomes empty, the empty group is removed too; if the event's list becomes empty, the event key is removed; nothing else in the file changes (comments, ordering and formatting kept, through the existing JSONC/TOML editors). The script file itself is never touched (it does not exist anyway).
+
+#### 2. Duplicate hooks
+
+- **What is a duplicate:** two or more hook entries in the same agent's effective set (so loaded at the same time) for the same event, with the same matcher (normalized: same regex or tool list, order-insensitive for lists) and the same command after normalization (variables expanded, paths canonicalized, redundant whitespace and quoting removed, `bash script.sh` equals `./script.sh` only when the script has a bash shebang, otherwise not). Timeouts or other options that differ are shown; entries that differ only in timeout are still duplicates and the one kept is chosen as below.
+- **Where duplicates come from:** the same hook in user and project settings; `settings.json` and `settings.local.json`; a hook installed by a plugin and also pasted into settings by hand (or by an older rtok install, T242/T275); a hook repeated inside one file.
+- **Not duplicates:** the same command on different events or different matchers; entries in sources that are never loaded together (two different projects, or a disabled plugin); a host that documents running each hook once per unique command (if `research.md` says so for that host, duplicates are reported as "harmless on <host>" with no fix offered).
+- **Report:** a "Duplicate hooks" section per agent: the hook (event, matcher, command), how many times it would run, and each copy with its source file (link) and position. It recommends which copy to keep.
+- **Which copy is kept (default, user can choose another):** (1) the copy owned by a plugin (so plugin updates keep working); otherwise (2) the copy in the most specific shared scope that is under version control (project `settings.json` over user settings, so teammates keep it); otherwise (3) the user-level copy over `settings.local.json`; otherwise (4) the first in load order. rtok's own hooks follow rtok's install rules (T275): the plugin copy is kept when the plugin serves the hook.
+- **Fix:** deletes only the extra copies the user selects, never the last copy. Same minimal-edit rules as for broken hooks. Managed/enterprise files are never edited; a duplicate whose extra copy lives only in a managed file keeps the managed copy and offers to remove the user/project copy instead.
+
+#### 3. Duplicate MCP entries
+
+- **What is a duplicate:** two or more MCP entries in the same agent's effective set that would start the same server at the same time:
+  - **same server, same name** from two sources that the host loads together (for example `~/.claude.json` and `<repo>/.mcp.json`), when the host does not de-duplicate by name (per `research.md`; where it does, the overridden one is reported as "shadowed, unused" instead, still removable);
+  - **same server, different names**: identical normalized launch (same command resolved to the same binary, same args, same relevant env keys; or the same URL with the same transport), for example `rtok` and `rtok-mcp` both running `rtok mcp`, or a plugin's MCP server also added by hand (the T271 case generalised to every host and every server).
+- **Normalization:** command resolved through `PATH` and symlinks (so `/opt/homebrew/bin/rtok` equals `rtok` when that is what `PATH` gives), `npx -y pkg@x` treated as the package `pkg` (versions differing are shown as a conflict, not a duplicate), URLs compared after lowercasing scheme/host and removing a trailing slash; env values are not printed (they may hold secrets), only whether they match.
+- **Not duplicates:** same command with different args that change behaviour (for example different `--root` or profile), same name in two projects that are never loaded together, a server disabled in the host's own disable list.
+- **Report:** a "Duplicate MCP servers" section per agent: server (name(s), command or URL), how many processes would start, each copy with its source file (link) and key path. Explains the cost (two processes, duplicate tools in the agent's context, double measurement for rtok per D21).
+- **Which copy is kept:** same order as hooks: plugin-provided first, then project-shared, then user, then local; for rtok's own server, the rules of T275 (plugin serves MCP, so the separate entry goes).
+- **Fix:** removes the selected extra entries only (the key under `mcpServers`, or the `[mcp_servers.<name>]` table in TOML), keeping the file otherwise unchanged; never removes the last copy; never edits managed files or a plugin's own files (a duplicate where the extra copy is inside a plugin is solved by removing the hand-written copy, or by telling the user to disable the plugin, never by editing the plugin).
+
+#### 4. How the user cleans up in doctor
+
+- `rtok doctor` stays read-only by default: it reports the three sections and ends with "N problems can be fixed: run `rtok doctor --fix`".
+- `rtok doctor --fix` in a terminal shows a checklist of every fixable item (broken hooks, extra duplicate copies), all pre-selected except items in project files under version control (pre-unselected, since the change affects teammates), lets the user toggle items and change which duplicate copy is kept, shows the exact diff per file, and asks for confirmation before writing.
+- Non-interactive: `rtok doctor --fix --yes` applies the default selection; `--fix --only broken-hooks|duplicate-hooks|duplicate-mcp` (repeatable) limits it; `--fix --dry-run` prints the diffs and writes nothing; `--json` works with all of them and lists `problems[] { kind, agent, source, path, detail, fixable, selected, keep? }`.
+- Every edited file is backed up first with the existing bounded `_backup` generations (T249), and the backup path is printed. If a file changed on disk between the scan and the write (mtime or hash differs), that file is skipped with "changed since check, run doctor again".
+- After writing, doctor re-runs the checks on the edited files and reports the result ("2 broken hooks removed, 1 duplicate MCP entry removed, 0 problems left"). If a write fails (permissions, read-only file), that file is reported and the rest proceed; exit code 1 if anything selected was not fixed.
+- The web UI doctor page (T310.7) shows the same sections and a "Fix selected" action with the same confirmation, after T310.7 lands.
+
+#### Edge cases and expected results
+
+- A hook target on an unmounted volume is broken now; the report says "path is on /Volumes/X, which is not mounted" so the user can decide; it is still selectable.
+- A hook using `${CLAUDE_PLUGIN_ROOT}` is resolved against that plugin's install dir; if the plugin is uninstalled but its hook entry remains in settings, the hook is broken.
+- A hook whose program is a shell builtin or an alias defined only in the user's interactive shell: builtins are fine; aliases are not visible to hooks, so a hook relying on one is reported broken with that explanation.
+- Relative script paths are resolved against the directory the host uses for hooks (project root for project settings, per `research.md`), not the doctor's current directory.
+- A JSON/TOML file that does not parse: doctor reports "cannot read <file>: <parse error>" and offers no fix for it.
+- Windows: `.cmd`/`.ps1`/`.exe` targets resolved with `PATHEXT`; case-insensitive paths.
+- Two duplicates plus one broken copy of the same hook: the broken one is listed as broken; the remaining two as duplicates; fixing both leaves one working copy.
+- Managed/enterprise policy files are read for the effective set but never edited; problems only fixable there are listed as "managed by your organization".
+- A host doctor cannot locate (not installed) is skipped; `--agent <host>` limits the check to one host.
+- Nothing to fix: the sections say "none found" and `--fix` exits 0 with "nothing to fix".
+
+Docs: `docs/agents.md` (doctor section) and the doctor help text, with `docs/ru/` and `docs/uk/` updated in the same change. Deliver as a PR; do not merge it.
+
+Dependencies: host adapters and config maps (`research.md`), JSONC/TOML editors, `_backup` generations (T249), T275/T278 (rtok MCP rules and per-surface state); relates to T271.
+
+#### Tests (many, all on fixture homes and fixture projects; no real agent config is touched)
+
+Unit tests on the pure classifiers (no files, no processes):
+
+- Command parsing: plain path, `~/`, `$HOME`, `${VAR}`, quoted paths with spaces, interpreter + script for each listed interpreter, `npx`/`uv run` forms, Windows `cmd /c` and PowerShell forms; `$(…)`, backticks and pipes classify as "cannot verify".
+- Broken: missing file, dangling symlink, program not on a fixture `PATH`, unknown variable (cannot verify), existing non-executable direct target (suspect, not broken), builtin (fine).
+- Duplicate hooks: same event + matcher + command in two sources (duplicate); differing only by whitespace/quoting (duplicate); different matcher (not); different event (not); matcher lists in different order (duplicate); differing timeout (duplicate, timeout shown); `bash x.sh` vs `./x.sh` with and without a bash shebang.
+- Duplicate MCP: same name in two loaded sources; different names with identical launch; same command different args (not); `npx pkg@1` vs `npx pkg@2` (conflict, not duplicate); URL normalization; env values compared but never printed; host that de-duplicates by name reports "shadowed".
+- Keep-choice: plugin over project over user over local over first; rtok's own entries follow T275; never removes the last copy.
+
+Integration tests per host (Claude Code, Cursor, Codex, Gemini, Kimi at least), each with a fixture home and project:
+
+- Effective set: user + project + local + plugin sources merge as the host does; a source from another project is not included.
+- `rtok doctor` lists exactly the seeded broken hooks, duplicate hooks and duplicate MCP entries with source paths, and nothing else; `--json` matches.
+- `rtok doctor` without `--fix` changes no file (hash of every fixture file before equals after).
+- `--fix --dry-run` prints the expected diffs and changes nothing.
+- `--fix --yes` removes only the selected entries: broken hooks gone; one copy of each duplicate kept (the expected one); every other key, comment and formatting byte-identical (golden files); empty groups and events removed; backups created.
+- `--only duplicate-mcp` touches only MCP entries.
+- Managed file and plugin files are never edited; a duplicate resolvable only there is reported, not fixed.
+- File changed between scan and write is skipped with the message; unparsable file reported and untouched; read-only file reported, others fixed, exit code 1.
+- Re-running `rtok doctor` after `--fix --yes` reports zero problems.
+- Interactive checklist driven through a pseudo-terminal: toggling an item and changing the kept copy changes the written result accordingly.
+- Windows CI: `PATHEXT` resolution and case-insensitive duplicate detection.
+
+Check: all of the above pass; `just check`.
 
 ## Reference
 
