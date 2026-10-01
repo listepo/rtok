@@ -821,7 +821,7 @@ Breakdown edge cases: a kind with thousands of tiny items (temp files) is groupe
 
 Dependencies: T182 (existing `clear` and §22 map), T249 (backup generations), T282/T284 (agent ids and live sessions), T285/T153 (agent worktrees).
 
-Check (fixture home under a temp dir, `HOME`/`XDG_*`/`LOCALAPPDATA` pointed at it, no real agent folders touched):
+Check: fixture home under a temp dir, `HOME`/`XDG_*`/`LOCALAPPDATA` pointed at it, no real agent folders touched:
 
 - A fixture with Claude Code, Cursor and Codex folders containing every junk kind: `list` shows each agent, its folders as links, each kind with the exact sizes created (checked in bytes with `--bytes` and in human units), "Freed by `clear`" equal to the sum of safe kinds, and totals equal to the per-agent sums; `--json` matches the table.
 - `clear` without `--yes` changes no file (tree hash before equals after) and prints the same plan as `list`'s freed lines.
