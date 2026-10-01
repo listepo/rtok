@@ -38,3 +38,5 @@
 - T310.12. Delete Slint, the WASM build and the HTML design
 - T314. Fuzz testing with cargo-fuzz / libFuzzer
 - T315. Emoji and colour on by default for human-facing output
+- T326. Proxy usage accounting: Gemini thinking tokens, Responses incomplete/failed usage, OpenAI cached tokens
+- T327. Graph, archive and memory bugs: LSP kind map, rstest dead code, non-ASCII slice, title index cap
