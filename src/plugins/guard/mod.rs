@@ -188,10 +188,26 @@ pub(crate) fn cache_key(tool: &str, input: &Value, agent: Option<&str>) -> Optio
                 .or_else(|| input.get("path"))?
                 .as_str()?
                 .trim();
-            (!p.is_empty()).then(|| format!("read\t{p}"))
+            if p.is_empty() {
+                return None;
+            }
+            // T322: a slice (`offset`/`limit`/`pages`) is a different body. The slice is a
+            // suffix after the path, so the `read\t{path}` prefix clear still reaches it.
+            let slice = ["offset", "limit", "pages"].map(|f| match input.get(f) {
+                Some(Value::String(s)) => s.clone(),
+                Some(Value::Null) | None => String::new(),
+                Some(v) => v.to_string(),
+            });
+            Some(if slice.iter().all(String::is_empty) {
+                format!("read\t{p}")
+            } else {
+                format!("read\t{p}\t{}", slice.join(":"))
+            })
         }
         "Bash" => {
-            let c = norm_cmd(input.get("command")?.as_str()?);
+            // T322: `norm_cmd` collapses newlines to spaces, which would hide a command
+            // separator (`ls\nrm x` → `ls rm x`): make each one a `;` first.
+            let c = norm_cmd(&input.get("command")?.as_str()?.replace(['\n', '\r'], " ; "));
             // Only read-only commands are keyed: a repeat of `cargo test` after an Edit is
             // new information, not a duplicate.
             read_only(&c).then(|| format!("bash\t{c}"))
@@ -213,11 +229,36 @@ pub(crate) fn cache_key(tool: &str, input: &Value, agent: Option<&str>) -> Optio
 /// segment's stem is read-only and no writer marker is present (`>`/`>>`, `| tee`,
 /// pipe into a non-read-only stem, `find -delete`/`-exec`, `sed -i`, `tail -f`).
 fn read_only(cmd: &str) -> bool {
-    after_cd_prefix(cmd)
-        .split('|')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .all(segment_read_only)
+    // T322: a substitution runs a command the segment scan never sees (over-detecting
+    // is safe: a false writer only skips a dedup).
+    !cmd.contains("$(")
+        && !cmd.contains('`')
+        && segments(after_cd_prefix(cmd))
+            .into_iter()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .all(segment_read_only)
+}
+
+/// Splits at every unquoted `|`, `;` and `&` (so also `||`, `&&`, `|&`, a lone `&`:
+/// the empty pieces between doubled separators are filtered by the caller).
+fn segments(s: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let (mut start, mut quote) = (0, None);
+    for (i, b) in s.bytes().enumerate() {
+        match quote {
+            Some(q) if b == q => quote = None,
+            Some(_) => {}
+            None if b == b'\'' || b == b'"' => quote = Some(b),
+            None if matches!(b, b'|' | b';' | b'&') => {
+                out.push(&s[start..i]);
+                start = i + 1;
+            }
+            None => {}
+        }
+    }
+    out.push(&s[start..]);
+    out
 }
 
 fn segment_read_only(seg: &str) -> bool {
@@ -227,12 +268,30 @@ fn segment_read_only(seg: &str) -> bool {
 fn stem_read_only(seg: &str) -> bool {
     let mut w = seg.split_whitespace();
     match super::cmd::formatters::cmd_stem(w.next().unwrap_or("")) {
-        "ls" | "cat" | "head" | "tail" | "grep" | "rg" | "find" | "tree" | "wc" | "sed" | "jq"
-        | "awk" => true,
-        "git" => matches!(
-            w.next(),
-            Some("status" | "log" | "diff" | "show" | "branch" | "rev-parse")
-        ),
+        "ls" | "cat" | "head" | "tail" | "grep" | "rg" | "find" | "tree" | "wc" | "sed" | "jq" => {
+            true
+        }
+        // T322: an awk program can write from inside its quotes (`system(`, `print >`,
+        // `| "cmd"`), which the quote-aware redirect scan does not see.
+        "awk" => !seg.contains("system(") && !seg.contains(['>', '|']),
+        "git" => match w.next() {
+            Some("status" | "log" | "diff" | "show" | "rev-parse") => true,
+            // Only the listing forms: `-D`, `-m`, `-c` and `newname` mutate refs.
+            Some("branch") => w.all(|a| {
+                matches!(
+                    a,
+                    "-a" | "-r"
+                        | "-v"
+                        | "-vv"
+                        | "--all"
+                        | "--remotes"
+                        | "--verbose"
+                        | "--list"
+                        | "--show-current"
+                )
+            }),
+            _ => false,
+        },
         "cargo" => matches!(w.next(), Some("metadata")),
         _ => false,
     }
@@ -971,6 +1030,81 @@ mod tests {
             "an unreadable body must still deny — only its metadata was consulted"
         );
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    /// T322: compound commands are keyed only when every segment is read-only; a writer
+    /// behind `;`, `&&`, `||`, `&`, a newline or a substitution must take the mutating path.
+    #[test]
+    fn compound_commands_with_a_writer_are_not_keyed() {
+        let k = |c: &str| cache_key("Bash", &json!({"command": c}), None);
+        for w in [
+            "ls && rm -rf build",
+            "cat a; rm a",
+            "ls || rm x",
+            "ls & rm x",
+            "ls\nrm x",
+            "cat $(rm x)",
+            "cat `rm x`",
+            "cd d && ls && rm x",
+        ] {
+            assert!(k(w).is_none(), "{w:?}");
+        }
+        for r in [
+            "ls && cat a",
+            "cat a; ls",
+            "grep 'a;b' f",
+            "cd d && ls; wc f",
+        ] {
+            assert!(k(r).is_some(), "{r:?}");
+        }
+    }
+
+    /// T322: only the plain listing forms of `git branch` are read-only.
+    #[test]
+    fn git_branch_is_read_only_only_when_listing() {
+        let k = |c: &str| cache_key("Bash", &json!({"command": c}), None);
+        for w in ["git branch -D x", "git branch -m a b", "git branch newname"] {
+            assert!(k(w).is_none(), "{w}");
+        }
+        for r in [
+            "git branch",
+            "git branch -a",
+            "git branch -vv",
+            "git branch --show-current",
+        ] {
+            assert!(k(r).is_some(), "{r}");
+        }
+    }
+
+    /// T322: an awk program can write (`system(`, `print >`, `| cmd`) inside its quotes.
+    #[test]
+    fn awk_writers_are_not_read_only() {
+        let k = |c: &str| cache_key("Bash", &json!({"command": c}), None);
+        assert!(k(r#"awk 'BEGIN{system("rm x")}'"#).is_none());
+        assert!(k(r#"awk '{print > "f"}' g"#).is_none());
+        assert!(k(r#"awk '{print | "sh"}' g"#).is_none());
+        assert!(k("awk '{print $1}' f").is_some());
+    }
+
+    /// T322: each Read slice is its own key; a plain Read keeps the bare path key.
+    #[test]
+    fn read_slices_get_distinct_keys() {
+        let k = |v: Value| cache_key("Read", &v, None).unwrap();
+        let plain = k(json!({"file_path": "/f"}));
+        assert_eq!(plain, "read\t/f");
+        let a = k(json!({"file_path": "/f", "offset": 1, "limit": 50}));
+        let b = k(json!({"file_path": "/f", "offset": 300, "limit": 50}));
+        assert_ne!(a, b);
+        assert_ne!(a, plain);
+        assert_eq!(a, k(json!({"file_path": "/f", "offset": 1, "limit": 50})));
+        assert!(
+            a.starts_with("read\t/f\t"),
+            "prefix clear must reach slices"
+        );
+        assert_ne!(
+            k(json!({"file_path": "/f.pdf", "pages": "1-3"})),
+            k(json!({"file_path": "/f.pdf", "pages": "4-6"}))
+        );
     }
 
     /// T57.1: flag-aware read-only keys — writer markers take the mutating path.
