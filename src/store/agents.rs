@@ -168,6 +168,7 @@ impl Store {
     /// row's very first insert. `activity` follows [`Store::touch_agent`]'s rule: `None`
     /// leaves whatever is already stored untouched (`register_agent` never blanks a hook
     /// event's activity when a later event, e.g. `SessionEnd`, only needs the id back).
+    /// A repeat also clears `ended_at`, so a resumed session is live again (T324).
     pub fn register_agent(
         &self,
         host_id: i32,
@@ -204,6 +205,8 @@ impl Store {
             .do_update()
             .set((
                 agents::last_seen.eq(unixepoch().assume_not_null()),
+                // A registering event is proof of life: a resumed session revives its row.
+                agents::ended_at.eq(None::<i64>),
                 agents::cwd.eq(coalesce(diesel::upsert::excluded(agents::cwd), agents::cwd)),
                 agents::activity.eq(coalesce(
                     diesel::upsert::excluded(agents::activity),
@@ -510,5 +513,23 @@ mod tests {
             store.live_agents("not-a-duration").is_err(),
             "a bad [agents] idle must error, not panic"
         );
+    }
+
+    /// T324: a resumed session registers the same row again; it is alive again, not stuck
+    /// behind the `ended_at` stamp of its earlier run.
+    #[test]
+    fn registering_an_ended_agent_again_makes_it_live() {
+        let store = Store::open_in_memory().unwrap();
+        let claude = store.host_id("claude").unwrap().unwrap();
+        let id = store
+            .register_agent(claude, "sess-resume", None, None, None)
+            .unwrap();
+        store.end_agent(&id, 1_800_000_000).unwrap();
+        assert!(store.live_agents("30m").unwrap().iter().all(|r| r.id != id));
+        let again = store
+            .register_agent(claude, "sess-resume", None, None, None)
+            .unwrap();
+        assert_eq!(again, id);
+        assert!(store.live_agents("30m").unwrap().iter().any(|r| r.id == id));
     }
 }
