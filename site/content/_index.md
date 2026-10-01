@@ -25,6 +25,11 @@ layout: hextra-home
 
 <div class="hx:mb-10 hx:flex hx:flex-wrap hx:gap-3">
 {{< hextra/hero-button text="Get started" link="docs/getting-started" >}}
+<a class="rtok-pyrlyn-credit rtok-byline" href="https://github.com/pyrlyn" target="_blank" rel="noopener noreferrer">
+  <span>by</span>
+  <img class="hx:block hx:dark:hidden" src="pyrlyn/pyrlyn-lockup-on-light.svg" alt="Pyrlyn" width="78" height="18">
+  <img class="hx:hidden hx:dark:block" src="pyrlyn/pyrlyn-lockup-on-dark.svg" alt="Pyrlyn" width="78" height="18">
+</a>
 </div>
 
 <div class="rtok-hero-shot hx:mb-16">
