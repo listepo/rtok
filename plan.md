@@ -670,15 +670,19 @@ Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and of
 
 ### T326. Proxy usage accounting: Gemini thinking tokens, Responses incomplete/failed usage, OpenAI cached tokens
 
-Found by the 2026-10-01 bug hunt. The proxy under-counts or mis-prices usage on three wires: Gemini ignores `usageMetadata.thoughtsTokenCount` (thinking tokens are billed as output); OpenAI Responses reads usage only from `response.completed`, so a `response.incomplete` or `response.failed` stream records none; OpenAI `prompt_tokens`/`input_tokens` already include `cached_tokens`, so cached input may be priced twice. Done: each real bug has a fail-first regression test; Anthropic accounting is unchanged.
+Found by the 2026-10-01 bug hunt. The proxy under-counts or mis-prices usage on three wires: Gemini ignores `usageMetadata.thoughtsTokenCount` (thinking tokens are billed as output); OpenAI Responses reads usage only from `response.completed`, so a `response.incomplete` or `response.failed` stream records none; OpenAI `prompt_tokens`/`input_tokens` already include `cached_tokens`, so cached input may be priced twice.
 
 Plan: branch `t326-proxy-usage` (worktree `_worktrees/rtok-t326`). Verify each finding in `src/proxy/gemini.rs`, `src/proxy/openai_responses.rs`, `src/proxy/openai_chat.rs` and the cost math; fix the real ones; add a test per fix next to the existing wire tests; `just check`.
 
+Check: a fail-first regression test per real finding in the wire tests (`gemini.rs`, `openai_responses.rs`, `openai_chat.rs`) and `tests/proxy.rs`; Anthropic usage tests unchanged; `just check`.
+
 ### T327. Graph, archive and memory bugs: LSP kind map, rstest dead code, non-ASCII slice, title index cap
 
-Found by the 2026-10-01 bug hunt. `graph::lsp::kind_name` maps LSP SymbolKind 10/11 wrongly (10 = Enum, 11 = Interface); `graph::dead_candidates` reports `#[rstest]` tests and functions under stacked attributes as dead; `archive::rewrite_skill` can panic slicing a non-ASCII string at a byte index; `memory::render_title_index` lets one long title push the index past its cap. Done: each real bug has a fail-first regression test.
+Found by the 2026-10-01 bug hunt. `graph::lsp::kind_name` maps LSP SymbolKind 10/11 wrongly (10 = Enum, 11 = Interface); `graph::dead_candidates` reports `#[rstest]` tests and functions under stacked attributes as dead; `archive::rewrite_skill` can panic slicing a non-ASCII string at a byte index; `memory::render_title_index` lets one long title push the index past its cap.
 
 Plan: branch `t327-graph-archive-memory` (worktree `_worktrees/rtok-t327`). Verify each finding in `src/plugins/graph/lsp.rs`, `src/plugins/graph/mod.rs`, `src/plugins/archive/mod.rs`, `src/plugins/memory/mod.rs`; fix the real ones with a test each; `just check`.
+
+Check: a fail-first regression test per real finding next to the existing tests of `graph/lsp.rs`, `graph/mod.rs`, `archive/mod.rs` and `memory/mod.rs`; `just check`.
 
 ## Reference
 
