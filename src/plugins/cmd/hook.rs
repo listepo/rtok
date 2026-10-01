@@ -91,14 +91,36 @@ fn agent_flag(cx: &Ctx) -> String {
     }
 }
 
+/// A builtin whose effect outlives the command (cwd, environment, aliases) would be lost
+/// inside `rtok run`'s child shell, so such a command is never wrapped.
+fn changes_shell_state(cmd: &str) -> bool {
+    super::bounded::stages(cmd).iter().any(|stage| {
+        matches!(
+            stage.first().map(String::as_str),
+            Some(
+                "cd" | "pushd" | "popd" | "export" | "source" | "." | "unset" | "alias" | "unalias"
+            )
+        )
+    })
+}
+
 /// Wrap a Bash command unless the skip rules fire.
 pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
     let cfg = cx.plugin_config::<crate::config::Cmd>("cmd");
     if ev.tool_name != "Bash" || !cfg.rewrite {
         return None;
     }
-    let cmd = ev.tool_input.get("command")?.as_str()?;
-    if skip_wrap(cmd, &cfg) {
+    let full = ev.tool_input.get("command")?.as_str()?;
+    if skip_wrap(full, &cfg) {
+        return None;
+    }
+    // The host keeps its shell's cwd between calls, so leading `cd <dir> &&` hops stay in
+    // that shell and only the rest runs inside `rtok run`'s child.
+    let mut cmd = full;
+    while let Some((_, rest)) = crate::plugins::guard::strip_cd_hop(cmd) {
+        cmd = &full[full.len() - rest.len()..];
+    }
+    if changes_shell_state(cmd) {
         return None;
     }
     let mut input = ev.tool_input.clone();
@@ -106,7 +128,8 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
     // `--agent` token (alnum/`_`/`-` only, validated above) sits before `--` and never
     // touches the quoting that protects `cmd` on either the POSIX or Windows path.
     input["command"] = json!(format!(
-        "rtok run {}-- {}",
+        "{}rtok run {}-- {}",
+        &full[..full.len() - cmd.len()],
         agent_flag(cx),
         super::run::wrap_quote(cmd)
     ));
@@ -188,6 +211,44 @@ mod tests {
             wrapped(&d),
             "rtok run -- 'sleep 90; cat /tmp/tasks/x.output | tail -30'"
         );
+    }
+
+    /// The host keeps the shell's cwd between Bash calls, so a leading `cd` must run in
+    /// the host shell, not inside `rtok run`'s child: only the rest is wrapped.
+    #[test]
+    fn leading_cd_hops_stay_outside_the_wrap() {
+        let d = decide("cd crates/rtok && cargo test").unwrap();
+        assert_eq!(wrapped(&d), "cd crates/rtok && rtok run -- 'cargo test'");
+        // Double quotes: on Windows any apostrophe keeps the command unwrapped (T55.12).
+        let d = decide(r#"cd "a && b" && cd c && git status | head"#).unwrap();
+        assert_eq!(
+            wrapped(&d),
+            r#"cd "a && b" && cd c && rtok run -- 'git status | head'"#
+        );
+        let d = decide_as(Some("sub_1"), "cd x && ls").unwrap();
+        assert_eq!(wrapped(&d), "cd x && rtok run --agent sub_1 -- 'ls'");
+    }
+
+    /// Anything else that changes the calling shell's state stays unwrapped whole.
+    #[test]
+    fn shell_state_builtins_are_not_wrapped() {
+        for cmd in [
+            "cd /repo",
+            "cd /repo; ls",
+            "ls && cd /repo",
+            "cd a && cargo test && cd b",
+            "export A=1",
+            "export A=1 && cargo test",
+            "source .venv/bin/activate && pytest",
+            ". ./env.sh",
+            "unset A",
+            "pushd x && ls",
+            "popd",
+            "alias g=git",
+        ] {
+            assert!(decide(cmd).is_none(), "{cmd} must stay unwrapped");
+        }
+        assert!(decide("git checkout -b export").is_some());
     }
 
     #[test]

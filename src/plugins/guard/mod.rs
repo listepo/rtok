@@ -375,7 +375,7 @@ fn fold_cd(s: &str) -> (Option<String>, String) {
 /// One `cd <dir> &&` prefix: the target word (quotes kept as typed) and the remainder
 /// after `&&`. `None` unless `&&` follows the target at top level — a quoted path with
 /// `&&` inside is one word, not a split point.
-fn strip_cd_hop(s: &str) -> Option<(String, String)> {
+pub(crate) fn strip_cd_hop(s: &str) -> Option<(String, String)> {
     let after = s.strip_prefix("cd ")?;
     let rest = crate::plugins::skip_word(after)?;
     let target = after[..after.len() - rest.len()].trim_end();
