@@ -39,3 +39,20 @@
 - T329. Graph page: project selector, auto-added projects and linked projects
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
+- T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
+- T333. Investigate: T271 desktop-entry sweep vs D33/T275
+- T334. Investigate: graph default backend: T329 `auto` (LSP first, fallback) vs graph PLAN.md P30 decisions
+- T335. Investigate: graph text mode spawns `rg`/`grep`/`ssh` vs D6/D18
+- T336. Investigate: T329: default project for CLI/MCP is the selected project or the cwd
+- T337. Investigate: T329: capability cache never re-probes vs alerts/health that need re-probing
+- T338. Investigate: T330 deletes sessions, tokens and snapshots vs research.md §22 "never junk"
+- T339. Investigate: T330 scans only §22 paths vs heuristic cache detection
+- T340. Investigate: T330 "never touch rtok.db" vs clearing rows inside it
+- T341. Investigate: T330 worktree removal vs T153 (prune, orphans) and its own edge case
+- T342. Investigate: T330 build/cache clearing vs T152 tagged-cache rules
+- T343. Investigate: T330 `--sort` takes two different value sets on `list`
+- T344. Investigate: T330 "backwards compatible" vs new default deletions
+- T345. Investigate: ProgressRunner in the rtok crate vs `crates/rtok-mcp` with no rtok dependency
+- T346. Investigate: D27 "writing commands stay CLI-only" vs web write actions
+- T347. Investigate: D16 "one task = one PR" vs multi-PR execution plans
+- T348. Investigate: `--agent` means an agent id, a host, or both
