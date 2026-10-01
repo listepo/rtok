@@ -43,6 +43,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.11 | todo | P2 | 3 | 0% | |
 | T310.12 | todo | P2 | 3 | 0% | |
 | T329 | todo | P2 | 5 | 0% | |
+| T330 | todo | P2 | 4 | 0% | |
 
 
 
@@ -952,6 +953,178 @@ Check: fixture repos under `tests/fixtures`, no network:
 - Diff: changing a function signature in B and running `rtok graph diff --from HEAD` from A reports the change and lists A's affected call sites; the working tree is untouched by building the old side; a rename is reported as a rename; an unknown ref errors clearly; MCP `graph_diff` returns a capped summary with a paging id.
 - Health: a fully indexed A with LSP and intact links scores 100; with 30% of files pending it drops below 80 with the reason shown; on tree-sitter fallback the backend component reads 0.6; a broken link lowers the links component; the scope shows the lowest score; an MCP answer from a scope under 80 includes the health note.
 - Playwright covers the selector, the indicator and its states, link/unlink, project badges, backend tags, both graph levels, export, alerts, compare mode, health rings, 3D and 2D modes, the two-part layout with the read-only live graph and its metric displays, and the list-view fallback; `just check`.
+
+### T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
+
+Ivan, 2026-10-01: one command group to see and clean junk for every agent: `rtok agents junk list` to view and `rtok agents junk clear` to remove. For each agent, show its folders (as links), the size of each folder in KB/MB/GB, and how much space a clear would free. `clear` stays a dry run by default and deletes only with `--yes`, as T182's `rtok agents junk clear` does today.
+
+Today `rtok agents junk clear` (T182, #286) only clears junk rtok itself owns under its home (rotated `rtok.log.<N>` siblings past `[log] files`, archive payloads past `core.retain_calls_days`). The per-host junk map is research only (`research.md` §22); T182.1 (wire the host folders after review) never landed. There is no `list`, no per-agent view and no sizes.
+
+#### Terms
+
+- **Agent:** each host in `agents::HOSTS` (Claude Code, Cursor, Codex, Gemini, Kimi, ...), plus **rtok** itself as its own row. Where rtok knows agent ids (T282, D34), sessions and worktrees are attributed to the agent id under its host.
+- **Agent folder:** a directory an agent writes to: its config/data home (for example `~/.claude`, `~/.cursor`, `~/.codex`), its cache dir (`~/Library/Caches/<app>`, `$XDG_CACHE_HOME/<app>`), its log dir, and per-project folders it creates (for example `<repo>/.claude/`), plus worktrees rtok created for it (T285).
+- **Junk:** files that can be deleted without losing user data, settings, credentials or history the user wants, because they are regenerated, re-downloaded or were only temporary. Each junk kind below has a **class**: `safe` (always regenerated, cleared by default), `review` (usually junk, cleared only when named or with `--include review`), or `never` (shown for size only, never deleted).
+
+#### Junk kinds per agent
+
+| Kind | Examples | Class | Notes |
+| --- | --- | --- | --- |
+| `cache` | HTTP/model/response caches, `Cache/`, `CachedData/`, `GPUCache/`, `Code Cache/` | safe | Regenerated on next run. |
+| `temp` | temp files and temp directories the agent created (`tmp/`, `*.tmp`, `$TMPDIR/<agent>-*`) | safe | Only entries older than 24 h and not open by a running process. |
+| `logs` | agent log files that are not tied to a session (`logs/*.log`, rotated logs) | review | Kept for the last `[agents.junk] keep_logs_days` (default 30). Session transcripts are the `sessions` kind below. |
+| `build` | build artifacts in agent worktrees and scratch dirs (`target/`, `dist/`, `build/`, `.next/`, `__pycache__/`) | safe | Only under agent-owned worktrees or scratch dirs, never in the user's main checkout. |
+| `deps` | reinstallable dependencies (`node_modules/`, `.venv/`, `vendor/` with a lockfile, `.gradle/`, Pods) | review | Only in agent-owned worktrees/scratch dirs; requires a lockfile or manifest next to it so it can be reinstalled. |
+| `locks` | stale lock files (`*.lock` for agent state, `LOCK`, `.lock` dirs) | safe | Only when no process holds them (checked with the OS); package-manager lockfiles (`Cargo.lock`, `package-lock.json`, `pnpm-lock.yaml`) are never junk. |
+| `backups` | backup files (`*.bak`, `*.bak-<ts>`, `*~`, `_backup/` generations past the cap, T249) | review | The newest backup of each file is always kept. |
+| `swap` | editor/agent swap files (`*.swp`, `*.swo`, `.#*`, `*.crswap`) | safe | Only when the owning process is gone. |
+| `index` | rebuildable indexes (rtok graph/tags index of a removed project, LSP caches like `.rust-analyzer/`, agent codebase indexes, SQLite `-wal`/`-shm` of closed DBs) | review | Rebuilt on next use; the active project's index is never cleared while rtok is running on it. |
+| `rtok-own` | today's T182 junk: rotated logs past cap, archives past retention | safe | Existing behaviour, unchanged. |
+
+Paths for each host come from `research.md` §22 (official docs or source only). A cell §22 marks "not documented" is not scanned; `list` says "not documented" for that kind rather than guessing.
+
+#### Never touched
+
+Settings, credentials and tokens, MCP and hook config, installed plugins and extensions, user-written files (rules, memories, prompts, skills), `rtok.db`, any archive a call still references, the user's main checkouts, package-manager lockfiles, and anything outside the paths listed per host. Symlinks are never followed out of an agent folder.
+
+#### Cache: rtok's own and each agent's
+
+Cache is junk for rtok itself and for every agent, listed with its size and clearable like any other kind.
+
+**rtok's cache (row `rtok`):**
+
+- The per-project LSP state rtok confines language servers to (`<root>/.rtok-lsp-xdg/{cache,data,state,pub-cache}`, `src/plugins/graph/lsp.rs`): `cache` and `pub-cache` are `cache` kind (safe); `data` and `state` are `index` kind (review).
+- Graph/tags index rows and files for projects no longer in the registry (T329) or whose root is gone: `index` kind (review).
+- Any other directory under rtok's home or `$XDG_CACHE_HOME/rtok` (`~/Library/Caches/rtok` on macOS, `%LOCALAPPDATA%\rtok\cache` on Windows) that rtok writes as a cache, and every directory under rtok-owned paths carrying a valid `CACHEDIR.TAG` (the same test `worktree::list::is_cache_dir` uses).
+- Plugin download/staging caches (version-numbered plugin copies a host no longer points to, T279): `cache` kind (safe) once no host config references them.
+
+**Each agent's cache:**
+
+- Detected from, in order: (1) the host's entry in `research.md` §22 (documented cache dirs only); (2) the platform cache root for that app (`~/Library/Caches/<bundle id or name>`, `$XDG_CACHE_HOME/<app>`, `%LOCALAPPDATA%\<app>\Cache`); (3) well-known Electron/Chromium cache subfolders inside the app's data dir (`Cache`, `Code Cache`, `GPUCache`, `CachedData`, `DawnCache`, `Service Worker/CacheStorage`), only when §22 confirms the host is Electron-based; (4) any directory under the agent's folders carrying a valid `CACHEDIR.TAG`; (5) `[agents.junk] extra` entries with `kind = "cache"`.
+- Not cache even if the name says so: anything §22 marks as settings or state, extension/plugin install dirs, and model weights the user downloaded on purpose (listed as `never`, size only).
+- Environment overrides are honoured (`XDG_CACHE_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and the like listed in §22), so a relocated cache is still found.
+
+**Sizes.** Disk usage per cache directory (allocated blocks), hard links and APFS clones counted once across the whole report, symlinks not followed. Shown per cache folder and summed per agent; the same numbers feed "Freed by `clear`".
+
+**Clearing.** `cache` is `safe`, so `rtok agents junk clear` (dry run) lists every cache folder and its size in the plan, and `--yes` deletes their contents, keeping the top folder (so apps that expect it to exist don't fail) and keeping any `CACHEDIR.TAG`. `--kind cache` clears only caches; `--agent rtok --kind cache` clears only rtok's. A running agent's cache is skipped unless §22 says that host tolerates it (reason "agent running").
+
+**Cache edge cases:** a cache dir shared between two agents (for example a common Electron runtime cache) is shown under both with a "shared with" note, counted once, and cleared once; a cache dir that is a symlink to another volume is listed by its target with a note and cleared only inside the target; a cache that refills during the clear (app running despite detection) is reported as "freed X, now Y"; a `CACHEDIR.TAG` with the wrong signature does not make a folder cache.
+
+#### More junk kinds
+
+| Kind | What | Class | Detection | Kept |
+| --- | --- | --- | --- | --- |
+| `sessions` | old sessions and their logs: transcripts (`*.jsonl`), per-session log files, per-session attachments and tool output dirs | review | §22 session paths per host; rtok's own session rows and logs keyed by session id (T284) | anything touched within `stale_session_days` (default 3); see "Old sessions: time only" below |
+| `stale-worktrees` | temporary worktrees an agent created and did not finish: rtok-tagged worktrees (T285) or host-created ones (T289) whose agent session ended, idle longer than `stale_worktree_days` (default 14) | review | `worktree::inventory` (T150) plus agent attribution | worktrees with uncommitted changes or unpushed commits are listed but **never** removed here; locked worktrees are never removed |
+| `stale-tokens` | auth/token cache files that hold only expired or revoked tokens (OAuth caches, `auth.json`-style files that contain only a token and its expiry) | review, explicit only | file is a token-only cache per §22 and the stored expiry is in the past (or the refresh token is marked invalid by the host's own format); rtok never calls a network to check | configs that mix tokens with settings are **never** edited or deleted: listed as "stale token inside config, sign in again in <host> to refresh" with size 0 |
+| `crash-dumps` | dumps and tracebacks from crashed runs: `*.dmp`, `*.crash`, `*.ips` for the agent's binary, Crashpad/Breakpad `Crashpad/completed`, `pending` folders, panic logs, core files named for the agent | safe after 7 days, review before | §22 crash paths; macOS `~/Library/Logs/DiagnosticReports/<app>*`; Linux `$XDG_STATE_HOME`/app crash dirs (not system `/var/crash`, which needs root) | dumps newer than 7 days stay unless named with `--kind crash-dumps` |
+| `snapshots` | old agent state snapshots if the host keeps them: checkpoint/undo snapshots, conversation state backups, shadow git repos for checkpoints | review | §22 snapshot paths per host; not scanned for hosts §22 marks "not documented" | the newest snapshot per project and anything newer than `keep_snapshots_days` (default 14) |
+
+Every kind in this table follows the same rules as the rest: listed per agent with folder links and sizes, included in "Freed with `--include review`" (or "Freed by `clear`" for safe ones), deleted only by `clear --yes`.
+
+Extra edge cases for these kinds:
+
+- `sessions`: a session file still being appended to (modified in the last 10 minutes, or open by a process) is never removed; a session whose project folder is gone is still listed under "(project missing)" with its path.
+- `stale-worktrees`: removal uses `git worktree remove` (never `rm -rf` on a checkout), then `git worktree prune`; the branch is kept (branch deletion stays with `rtok worktree gc`, T153); a worktree whose main repo is missing is listed as "orphaned" and removed only by deleting its folder with `--include review`, after showing its path.
+- `stale-tokens`: removing a token file signs the user out of that host; `list` says so on the row, and `clear` prints it again before the confirmation line. It is excluded from `--include review` and needs `--kind stale-tokens` by name.
+- `crash-dumps`: dumps can contain memory with secrets; they are never uploaded, copied or printed, only sized and deleted.
+- `snapshots`: hosts that use snapshots for "undo" lose undo for cleared sessions; the row says so.
+
+#### Old sessions: time only
+
+- **The only criterion is time.** A session is old (junk) when it has not been touched for longer than the threshold. Nothing else classifies a session as old for now: not its status (finished, errored, abandoned), size, number of messages, project, whether it is the newest session of its project, or whether it was ever resumed. Those criteria are out of scope for T330 and may come later as separate options.
+- **Setting:** `stale_session_days` in the `[agents.junk]` table of rtok's config. Default `3`. It lives in `config/default.toml` (shipped default), can be overridden in the user config (`~/.config/rtok/config.toml`), per project in `<git root>/.rtok.toml`, and per run through the environment (`RTOK_AGENTS_JUNK_STALE_SESSION_DAYS=7`), with the usual precedence (flags over env over project over user over default). `rtok config get agents.junk.stale_session_days` prints the effective value and `rtok config show --sources` shows where it came from. Documented in `docs/config.md` (and ru/uk).
+- **Value rules:** a whole number of days, `0` to `3650`. `0` means every session not currently open counts as old (useful for a full wipe, and `list` warns "threshold 0: every closed session is junk"). Fractions, negatives and non-numbers are rejected by `rtok config validate` and at load with an error naming the key; rtok then falls back to the default for that run and says so, rather than deleting with a wrong threshold.
+- **One-off override:** `rtok agents junk list|clear --session-days N` overrides the setting for that run only, and the output header shows the threshold in use ("old sessions: not touched for more than 3 days").
+- **"Touched" means** the session's last-used time as defined in the item breakdown: the host's own last-activity timestamp when its format records one, otherwise the newest modification time of any file belonging to the session (transcript, its log, its attachments). Reading a session (for example `list` itself, or `rtok stats` ingesting it) does not count as touching it.
+- **Threshold comparison:** a session is old when `now - last_used > stale_session_days * 24 h`, measured in UTC so time zone and daylight-saving changes don't shift it; exactly at the threshold it is not old yet.
+- **Safety guards (not classification):** a session that is open by a process or was modified in the last 10 minutes is never removed even with threshold `0`, because deleting a session being written can corrupt the agent's state. `list` shows such a session as old-by-time but "skipped: in use".
+- **All parts of an old session go together:** transcript, its per-session log, attachments and tool-output dirs are one item with one size; clearing removes all of them or none.
+- **Edge cases:** a session whose files have different mtimes uses the newest one; a session with a future timestamp (clock skew) counts as just touched and is shown with a "future timestamp" note; a host that records no timestamps and whose files rtok cannot stat is listed as "last used unknown" and not cleared; changing the setting takes effect on the next `list`/`clear` with no restart; lowering it from 3 to 1 makes more sessions old in the next `list`, and nothing is deleted until `clear --yes`.
+- **Expected results:** with the default, a session last touched 4 days ago is listed as old and removed by `clear --include review --yes` (or `--kind sessions --yes`); one touched 2 days ago is listed with "under the 3-day threshold" and kept; setting `stale_session_days = 1` and listing again marks the 2-day-old session old; `--session-days 7` on one run keeps both and the header says 7.
+
+#### Item-level breakdown in `list`
+
+`list` shows not just totals but every concrete item that `clear` would delete, so the user can verify the exact set before running `clear --yes`.
+
+- Under each agent and each kind, the items are listed one per line: a link to the item (OSC 8 `file://` hyperlink in a capable terminal, plain path otherwise), its size, and, for anything time-stamped, **last used** (relative and absolute, for example `3 weeks ago (2026-09-09 14:02)`).
+- "Last used" means, in order of preference: the host's own last-activity time when its format records one (session `updated_at`, last message timestamp); otherwise the newest modification time of any file inside the item; atime is not used (often disabled). For worktrees: the last commit time or the newest file change, whichever is later, and the owning agent id.
+- Each item also shows why it is junk (for example "not touched for 5 days (threshold 3)", "agent session ended 16 days ago", "token expired 2026-08-30", "crash dump 12 days old") and, if it is not going to be cleared, why ("touched 2 days ago, under the 3-day threshold", "uncommitted changes", "agent running", "review kind: add --include review").
+- Items are sorted by size, largest first (`--sort size|last-used|path`). To keep the default output readable, each kind shows its 10 largest items and a "+N more (X)" line; `--items all` shows every item, `--items 0` shows totals only.
+- `--json` always includes every item: `{ path, size_bytes, last_used, reason, will_clear, skip_reason? }`.
+- `clear` (dry run) prints the same item list as `list` restricted to what it would delete, so what the user reviewed is exactly what `--yes` removes. `clear --yes` re-scans and refuses to delete an item that changed since the dry run in a way that would change the decision (became recent, gained uncommitted changes, became open by a process) and reports it as skipped.
+- `rtok agents junk list --agent claude --kind sessions --items all` is the way to see every session with its last-used time.
+
+Breakdown edge cases: a kind with thousands of tiny items (temp files) is grouped by parent folder in text output ("1,240 files in /…/tmp, 380 MB, last used 2 days ago") while JSON keeps every file; an item whose last-used time cannot be read shows "unknown" and is treated as recent (not cleared) unless `--older-than` was given and the folder mtime satisfies it; times are shown in the local time zone; paths under the home directory are shown with `~`.
+
+#### `rtok agents junk list`
+
+- Scans every agent (or `--agent <host|id>`, repeatable) and prints, per agent: the agent name, each agent folder with a clickable link (OSC 8 hyperlink `file://` in a terminal that supports it, the plain path otherwise), the folder's total size, and under it each junk kind with its size and item count, then a line "Freed by `clear`: X" (safe kinds only) and "Freed with `--include review`: Y".
+- Sizes are shown in human units with one decimal (B, KB, MB, GB, TB; 1 KB = 1024 B, labelled as such in `--help`) and right-aligned; `--bytes` prints exact bytes. Size means disk usage (allocated blocks), not apparent size, so sparse files and APFS clones are not over-counted; hard links are counted once.
+- Ends with a total across agents: folder sizes, junk by kind, space freed by default and with review kinds.
+- Sorting: by space freed, largest first (`--sort name|size|freed`). `--kind <kind>` (repeatable) filters kinds. `--min-size 10MB` hides smaller rows.
+- `--json` prints the same data: `agents[] { name, id?, folders[] { path, size_bytes, kinds[] { kind, class, size_bytes, items, paths_sample[] } }, freed_default_bytes, freed_review_bytes }`, `totals`.
+- Agents that are not installed are skipped; `--all` lists them with "not installed".
+- Read-only: `list` never deletes, moves or touches files (no atime updates where the OS allows avoiding them).
+
+#### `rtok agents junk clear`
+
+- Same scan as `list`, then removes. Default is a **dry run**: it prints exactly what would be deleted (per agent, per kind, sizes, the space that would be freed) and changes nothing. `--yes` deletes. `--json` works for both.
+- By default only `safe` kinds are cleared. `--include review` adds review kinds; `--kind <kind>` limits to named kinds (a named review kind is included without `--include review`). `never` kinds are never deleted.
+- `--agent <host|id>` limits to one or more agents; `--older-than 7d` applies an age floor to every kind.
+- Before deleting each item, rtok re-checks it (still exists, still matches the kind, not open by a process, not a symlink pointing outside, not modified in the last minute). Anything that fails the check is skipped and reported.
+- Deletion goes to the OS trash when `--trash` is given (macOS Trash, freedesktop trash on Linux, Recycle Bin on Windows); otherwise it is a direct delete.
+- Output after `--yes`: per agent and kind, items removed, bytes freed, items skipped with reasons, and a total "Freed X of Y planned".
+- Exit codes: 0 when everything planned was removed (or on a dry run), 1 when some items could not be removed (as T182 does today: "some junk could not be removed"), 2 on usage errors.
+- Backwards compatible: `rtok agents junk clear` with no new flags still clears T182's `rtok-own` junk, and now also the safe kinds for every agent; `rtok agents junk clear --agent rtok` reproduces T182 exactly.
+
+#### Running agents
+
+- An agent whose process is running is detected (process list per host binary, plus live rtok sessions from T284). For a running agent, `clear` skips `temp`, `locks`, `swap`, `index` and the current session's logs, and says so; caches are still cleared only if the host's §22 entry says it tolerates that while running, otherwise skipped with "agent running".
+- `--force-running` is not offered; the user closes the agent and runs `clear` again.
+
+#### Config
+
+`[agents.junk] stale_session_days = 3`, `keep_logs_days = 30`, `keep_snapshots_days = 14`, `stale_worktree_days = 14`, `crash_dump_min_age_days = 7`, `temp_min_age_hours = 24`, `exclude = []` (glob paths never touched), `extra = []` (extra paths per host to treat as a kind, for example `{ host = "cursor", kind = "cache", path = "~/Library/Application Support/Cursor/CachedData" }`), documented in `docs/config.md`.
+
+#### Edge cases and expected results
+
+- A folder that does not exist: not listed. A folder without read permission: listed with "permission denied" and no size; `clear` skips it.
+- A path on another volume or network share: listed; scanning is bounded (`--timeout`, default 30 s per agent) and a timeout is reported, not hung on.
+- Very large trees (a 2 GB `node_modules`): scanning is parallel and streams progress in a TTY; `--json` waits and prints once.
+- A file deleted between scan and delete: counted as skipped "already gone", not an error.
+- The same folder reached from two agents (shared cache): listed under each with a "shared with" note and counted once in the totals; `clear` removes it once.
+- Windows: paths use `%LOCALAPPDATA%`/`%APPDATA%`; files locked by a process are skipped with the reason.
+- macOS: `~/Library/Caches` entries are treated as `cache`; nothing under `~/Library/Application Support/<app>` is cleared unless §22 lists that subfolder as junk.
+- A worktree rtok created for an agent that still has unmerged commits: its `build` and `deps` can be cleared, the worktree itself is never removed here (that is `rtok worktree gc`, T153).
+- `--yes` with nothing to clear: prints "Nothing to clear" and exits 0.
+
+#### Also
+
+- `rtok doctor` adds one line with total reclaimable space and a hint to run `rtok agents junk list` when it exceeds 1 GB.
+- The web UI gets the same data on a `junk` card on the hosts page (read-only list with sizes and a "clear safe junk" button that runs the dry run, shows it and asks for confirmation), after T310.8.
+- Docs: `docs/agents.md` (new "Junk" section), `docs/config.md`, and `research.md` §22 updated with any new paths, with `docs/ru/` and `docs/uk/` updated in the same change.
+- Deliver as a PR; do not merge it.
+
+Dependencies: T182 (existing `clear` and §22 map), T249 (backup generations), T282/T284 (agent ids and live sessions), T285/T153 (agent worktrees).
+
+Check: fixture home under a temp dir, `HOME`/`XDG_*`/`LOCALAPPDATA` pointed at it, no real agent folders touched:
+
+- A fixture with Claude Code, Cursor and Codex folders containing every junk kind: `list` shows each agent, its folders as links, each kind with the exact sizes created (checked in bytes with `--bytes` and in human units), "Freed by `clear`" equal to the sum of safe kinds, and totals equal to the per-agent sums; `--json` matches the table.
+- `clear` without `--yes` changes no file (tree hash before equals after) and prints the same plan as `list`'s freed lines.
+- `clear --yes` removes exactly the safe items; settings, credentials, plugins, package-manager lockfiles and `rtok.db` are untouched; freed bytes match the plan.
+- `--include review` also removes sessions not touched for longer than `stale_session_days`, logs older than `keep_logs_days`, `node_modules` with a lockfile, extra backups (newest kept) and rebuildable indexes; `node_modules` without a lockfile is not removed.
+- A lock file held by a test process and a swap file of a live process are skipped with reasons; a symlink inside a cache dir pointing to `$HOME/important` is not followed.
+- A shared folder is counted once in totals and removed once.
+- A simulated running agent skips temp, locks, swap, index and its current session.
+- Cache: rtok's `.rtok-lsp-xdg/cache` in a fixture project, a `$XDG_CACHE_HOME/rtok` folder and a `CACHEDIR.TAG` dir appear under `rtok` with exact sizes; a host cache in `~/Library/Caches/<app>` (or `$XDG_CACHE_HOME/<app>`) and an Electron `Code Cache` appear under that agent; `clear --kind cache` dry run lists them, `--yes` empties them and keeps the top folders and `CACHEDIR.TAG`; a folder with a bad `CACHEDIR.TAG` signature is not treated as cache.
+- New kinds: a session last touched 4 days ago is listed with its last-used time and removed with `--include review`, while one touched 2 days ago and one modified 5 minutes ago are kept; a finished-session worktree idle 20 days is removed with `git worktree remove` and its branch kept, while one with uncommitted changes and one with unpushed commits are listed and never removed; a token-only file with a past expiry is listed with the sign-out warning and removed only with `--kind stale-tokens`, a mixed config with an expired token is never touched; a 10-day-old crash dump is cleared by default, a 2-day-old one only with `--kind crash-dumps`; an old snapshot is removed and the newest kept.
+- Session threshold: `rtok config get agents.junk.stale_session_days` prints 3 by default; `.rtok.toml` and `RTOK_AGENTS_JUNK_STALE_SESSION_DAYS` override it; an invalid value (`-1`, `2.5`, `abc`) is rejected with an error naming the key and the run uses 3; a session exactly 72 h old is not old, at 72 h and 1 min it is; status, size and "newest in project" do not change the result; an open session with threshold 0 is skipped as in use.
+- Breakdown: every planned item appears in `list` with path link, size, last used and reason; `--items all` and `--json` list every item; the default shows 10 per kind plus "+N more"; `clear` dry run prints the same items; touching an item between the dry run and `--yes` makes `--yes` skip it with "changed since plan".
+- `rtok agents junk clear --agent rtok --yes` behaves exactly as T182's tests expect (existing tests stay green unchanged).
+- Permission-denied and timeout folders are reported, not fatal; exit code 1 when anything planned was not removed.
+- `--trash` moves items to the platform trash (tested on macOS and Linux CI).
+- `just check`.
 
 ## Reference
 
