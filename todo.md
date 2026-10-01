@@ -36,3 +36,4 @@
 - T310.10. Playwright e2e against the real binary
 - T310.11. CI job for the SPA
 - T310.12. Delete Slint, the WASM build and the HTML design
+- T329. Graph page: project selector, auto-added projects and linked projects
