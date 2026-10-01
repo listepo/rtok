@@ -44,7 +44,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.12 | todo | P2 | 3 | 0% | |
 | T314 | in progress | P2 | 3 | 60% | Grok Bot |
 | T315 | in progress | P2 | 3 | 60% | Grok Bot |
-| T316 | todo | P2 | 4 | 0% | |
+| T316 | todo | P2 | 5 | 0% | |
 
 
 
@@ -669,25 +669,121 @@ Check: `tests/ui_style.rs` covers each line kind with emoji and colour on and of
 
 ### T316. Graph page: project selector, auto-added projects and linked projects
 
-Ivan, 2026-10-01: in the web UI's graph tab, the graph is built for a project the user picks. The page always shows which project is selected, projects can be added automatically, and other projects can be linked to the selected one so the graph traverses into them as if they were one project.
+Ivan, 2026-10-01: in the web UI's graph tab, the graph is built for a project the user picks. The page always shows which project is selected. Projects the user needs are added automatically. Other projects can be linked to the selected one, and the graph then traverses into them as if everything were one project. If the selected project references other projects, those are added, indexed and linked automatically, so an agent working in the current project can follow the graph across them right away.
 
-Today the graph plugin indexes a single root (the page shows `root .`), so the graph tab only ever shows the project rtok was started in.
+Today the graph plugin (`src/plugins/graph/`) always works on one root: the process's current directory. The index is keyed by that root (`index::canon(root)` in `src/store/symbols.rs`), and the MCP tools `symbol`, `callers`, `impact`, `outline` and `explore`, plus `dead` and `affected`, only see that root. The graph page shows the same single root (`root .`). There is no way to pick another project and no way to follow a call into a dependency's source.
 
-Plan:
-1. Project registry: a list of known projects, each with an id, display name and root path, stored in the rtok store next to the graph index. Each project keeps its own index (rows, files, pending, `indexed_at`, watch state), so switching projects does not re-index the others.
-2. Project selector on the graph page: a dropdown (or list) of known projects. Picking one rebuilds the graph view for that project. The selection persists across page reloads and `rtok web` restarts.
-3. Current-project indicator: the selected project's name and root path are always visible in the graph page header, together with its index status (rows, files, pending, last indexed). An empty or unindexed project shows a clear empty state with an "Index now" action.
-4. Automatic project adding: a project is added to the registry automatically when rtok sees it in use: the working directory of a hooked agent session, a worktree created through `rtok worktree`, or a repo the graph plugin is asked about over MCP. The user can also add a project by path from the page and remove one from the registry (removing only drops rtok's index, never the project's files). Auto-adding can be turned off in config (`[plugins.graph] auto_add_projects = true` by default), documented in `docs/config.md` and `docs/plugins.md`.
-5. Linked projects: from the selected project, the user can link other known projects (for example a library and the app that uses it). Links are stored per project and shown on the page as a list with an unlink action.
-6. Cross-project traversal: when projects are linked, symbol lookup, callers, callees, impact and dead-symbol queries treat the selected project and its linked projects as one graph. An edge from a call site in one project to a definition in a linked project is resolved and followed. Results show which project each node belongs to (a project badge or colour). Links are directional by default (the selected project sees into its links); cycles between linked projects are allowed and must not loop.
-7. The same project selection and links are available outside the web UI: `rtok graph` commands and the graph MCP tools accept a project (defaulting to the current one), so agents get the same cross-project answers.
-8. Lands in the React SPA graph page (T310.8). If T310.8 has not landed yet, ship the backend (registry, links, traversal, `/ws` messages) first and the page with T310.8.
-9. Docs: `docs/plugins.md` (graph section) and `docs/config.md`, with `docs/ru/` and `docs/uk/` updated in the same change.
-10. Deliver as PRs; do not merge them.
+#### Terms
 
-Dependencies: T310.8 for the page; the graph plugin's index.
+- **Project**: a directory rtok indexes as one unit, identified by its canonical root path. Display name defaults to the directory name (or the package name from the manifest when there is one); the user can rename it.
+- **Selected project**: the project the graph page (and, by default, the CLI and MCP tools) answers for.
+- **Link**: a directed edge "project A sees into project B". A link is either **manual** (the user made it) or **auto** (rtok made it from a reference, see 4).
+- **Graph scope**: the selected project plus every project reachable through its links (transitively). All graph queries run over the scope.
 
-Check: with two fixture repos A and B where A calls a function defined in B: selecting A shows A in the header and builds A's graph; linking B makes callers/impact of B's function include A's call site and the reverse lookup cross into B, with each node labelled by project; unlinking B removes those edges; switching to B shows B alone; a new agent session in a third directory adds it to the selector automatically, and it does not when auto-adding is off; the selection survives an `rtok web` restart; Playwright covers the selector, the indicator and link/unlink; `just check`.
+#### 1. Project registry
+
+- A `projects` table in the rtok store holds id, canonical root, display name, origin (`manual`, `session`, `worktree`, `mcp`, `reference`), created and last-used times, and per-project index status (rows, files, pending, `indexed_at`, watch state, last error).
+- Each project keeps its own symbol index, keyed by its canonical root as today, so switching projects never re-indexes the others and never mixes their rows.
+- Two paths that canonicalize to the same directory (symlinks, `..`, case on macOS) are the same project; registering one twice is a no-op that only updates last-used.
+- A project whose root no longer exists stays in the registry marked **missing**: it is greyed out in the selector, excluded from the scope, and its links are kept so they come back if the directory returns. The user can remove it.
+- Removing a project drops rtok's index rows, its links in both directions and its registry row. It never touches the project's files.
+- The registry and links migrate forward with the store schema; an existing store starts with one project, the root it already indexed, selected.
+
+#### 2. Project selector on the graph page
+
+- The page header has a project selector listing every known project: name, root path, index status and a link count. It is searchable when there are more than about ten projects.
+- Picking a project switches the whole page to that project's scope: summary counts, dead symbols, the symbol/callers/impact views and the graph drawing.
+- The selection is stored in the rtok store, so it survives page reloads, other browser tabs (they update over `/ws`) and `rtok web` restarts.
+- When `rtok web` starts in a directory that is a known project and nothing is selected yet, that project is selected. A stored selection that is now missing falls back to the current directory's project, with a notice.
+
+#### 3. Current-project indicator
+
+- The selected project's name and root path are always visible in the page header, together with its index status: rows, files, pending files, last indexed time and watch state.
+- When the scope includes linked projects, the header says so ("+ 3 linked") and expands to list them, each with its own status.
+- States the page must show clearly: **not indexed yet** (empty state with an "Index now" action), **indexing** (progress, the page stays usable on the old data), **stale** (pending files, same banner the tools already use), **failed** (the error and a retry action), **missing** (root gone).
+
+#### 4. Automatic adding
+
+Projects are added to the registry, without the user asking, in two ways.
+
+**4a. Projects rtok sees in use.** The working directory of a hooked agent session, a worktree created or adopted through `rtok worktree` (T285, T289), and the root of any graph MCP call are registered when first seen. A worktree is registered as its own project (its files differ from the main checkout) with its display name showing the branch.
+
+**4b. Projects the selected project references.** When a project is indexed, rtok reads its manifests and collects references to code that lives outside its root but on this machine. Each referenced directory is registered as a project (origin `reference`), indexed, and auto-linked from the referencing project. Reference sources, in this order:
+
+- Cargo: `path = "..."` dependencies and `[patch]` entries, and workspace members outside the root.
+- npm/pnpm/yarn: `file:`, `link:` and `workspace:` dependencies that resolve outside the root.
+- Go: `replace` directives with a local path in `go.mod`, and `go.work` `use` entries.
+- Python: path dependencies in `pyproject.toml` (`{ path = "..." }`, editable installs).
+- Git submodules (`.gitmodules`) whose checkout is present.
+- Anything else the indexer finds while resolving imports: an import that resolves to a file outside the root (through an LSP server or the language's resolver) adds that file's project root (nearest directory with a manifest or `.git`).
+
+Rules for 4b:
+
+- References are followed transitively: if B (referenced by A) references C, C is added, indexed and linked from B, so A's scope includes C. A depth limit (`[plugins.graph] reference_depth`, default 3) and a project cap (`max_auto_projects`, default 20) stop runaway chains; hitting either is shown on the page and logged, never silent.
+- Registry dependencies that are not local source (crates.io, npm registry, PyPI, Go module cache) are not followed by default, so the scope stays the user's own code. An opt-in setting (`include_registry_deps = false`) can add them later; it is out of scope for the first PR.
+- A reference to a path that does not exist is recorded on the referencing project as a warning ("references ../foo, not found") and nothing is added.
+- Auto-indexing runs in the background with the existing index code; the selected project is usable while its references are still indexing, and results from a reference that is not indexed yet are marked incomplete rather than missing.
+- Re-indexing a project re-reads its manifests: a new reference adds and links a project; a removed reference removes the auto link (the project stays in the registry until the user removes it). Manual links are never removed automatically.
+- If the user unlinks an auto link, rtok remembers that and does not re-create it on the next index.
+
+**Turning it off.** `[plugins.graph] auto_add_projects = true` controls 4a and `auto_link_references = true` controls 4b, both on by default, documented in `docs/config.md`. With both off, the registry changes only through the page and the CLI.
+
+#### 5. Manual links
+
+- From the selected project the user can link any known project and unlink any linked one; the page lists links with their kind (manual or auto) and the reason for auto links (for example "Cargo path dependency `../ketch-core`").
+- Linking a project that is not indexed yet starts indexing it.
+- Links are directional: linking B into A puts B in A's scope, not A in B's. The page offers "link both ways" as a shortcut that creates two links.
+- Cycles are allowed (A to B to A). Scope building visits each project once, so cycles never loop or duplicate rows.
+- A project cannot link to itself, and linking an already-linked project is a no-op.
+
+#### 6. Cross-project traversal
+
+- Every graph query runs over the scope as one graph: `symbol`, `callers`, `impact` (with `depth` and `to`), `explore`, `affected` and `dead`.
+- A reference from a call site in one project to a definition in a linked project resolves and is followed, in both directions: `callers` of a function in B include call sites in A when A links B, and `impact` from a change in B walks up into A.
+- Each result row shows which project it belongs to (project name badge on the page, a `project` field in JSON, a `[name]` prefix in text output).
+- Ambiguity: when the same symbol name is defined in several projects in the scope, results are grouped by project and marked ambiguous, using the same banner the single-project path already uses. A definition in the selected project ranks first.
+- `dead` is computed over the scope: a symbol in B used only from A is not dead while A links B. Dead symbols are still reported per project.
+- `affected` with git changes reads `git diff` in every project in the scope that is a git repo, and maps test commands per project.
+- Output caps and token budgets apply to the whole scoped answer, not per project, so linking projects does not multiply the size of an MCP reply.
+- Watching: when `watch` is on, file changes in any project in the scope update its index and refresh the page over `/ws`.
+
+#### 7. CLI and MCP
+
+- `rtok graph projects` lists projects, `rtok graph projects add <path>`, `remove <id|path>`, `select <id|path>`, `link <id|path>`, `unlink <id|path>`; all support `--json`.
+- Every graph command and every graph MCP tool takes an optional `project` (id or path). Without it, the project is the caller's current directory (agents keep today's behaviour) and the scope includes that project's links, so an agent working in A automatically sees into the projects A references.
+- MCP results carry the same `project` field per row as the CLI's JSON.
+
+#### 8. Web UI
+
+- Lands on the React SPA graph page (T310.8): selector, indicator, links panel, project badges in every list and in the graph drawing (one colour per project, with a legend).
+- New `/ws` messages: project list, selection changed, links changed, per-project index progress.
+- If T310.8 has not landed when the backend is ready, ship the registry, links, references, traversal, CLI, MCP and `/ws` first, and the page with T310.8.
+
+#### 9. Docs
+
+`docs/plugins.md` (graph section: projects, links, references, scope) and `docs/config.md` (the new `[plugins.graph]` keys), with `docs/ru/` and `docs/uk/` updated in the same change.
+
+#### 10. Delivery
+
+As PRs, backend first; do not merge them.
+
+Dependencies: T310.8 for the page; T285 and T289 for worktree-based adding; the existing graph index and LSP integration.
+
+Check (fixture repos under `tests/fixtures`, no network):
+
+- Repo A has a Cargo path dependency on B; B has one on C; D is unrelated.
+- Indexing A registers B and C (origin `reference`), indexes them and creates auto links A to B and B to C; D is not added.
+- Selecting A shows A in the header with "+ 2 linked"; `callers` of a function defined in C returns call sites in A and B, each labelled with its project; `impact` from that function walks up into A.
+- `dead` over A's scope does not report B's function that only A calls; selecting B alone does.
+- Unlinking B from A removes B and C from A's scope, survives a re-index (no re-link), and `callers` no longer crosses projects.
+- A manual link A to D adds D to the scope; a cycle (D links A) does not loop or duplicate rows.
+- Removing the path dependency from A's manifest and re-indexing removes the auto link but keeps B in the registry.
+- A reference to a missing path shows a warning and adds nothing; a deleted project root shows as missing and drops out of the scope.
+- `reference_depth = 1` stops at B; `max_auto_projects` limits are reported on the page and in logs.
+- A new agent session in a new directory registers it when `auto_add_projects` is on and not when it is off; `auto_link_references = false` adds no reference projects.
+- The selection survives an `rtok web` restart and syncs between two browser tabs.
+- MCP `callers` without `project` from A's directory crosses into B and C; with `project` set to D it does not.
+- Playwright covers the selector, the indicator and its states, link/unlink and project badges; `just check`.
 
 ## Reference
 
