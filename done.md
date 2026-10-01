@@ -7241,6 +7241,20 @@ Plan: one funnel helper for the four loops matching the `Err`, extracting the pa
 Check: `a_panicking_plugin_is_logged_and_the_rest_survives` — a registry with one panicking and one returning plugin: stdout keeps the good plugin's context and the store holds one `level = "error"` log row naming the plugin; `just test` green.
 
 Result: The four per-plugin `catch_unwind` loops in `src/hooks/mod.rs` (PreCompact, PreToolUse, PostToolUse, the inject events) route an `Err` through one `log_panic` helper: it takes the `&str`/`String` payload (else "non-string panic payload") and writes one `cx.log("error", "plugin", <id>, "<event> panicked: …")` before dropping that plugin's output. The non-panic path is unchanged. There is no `catch_unwind` outside hooks. Test: `a_panicking_plugin_is_logged_and_the_rest_survives`.
+### T322. Guard: no false "duplicate" deny for compound writers, `git branch -D`, awk writers, Read slices
+
+Found by a bug-hunt pass over `src/plugins/guard/**`. The guard denies a repeat of a keyed (read-only) call as `duplicate; rtok expand <id>`. Four ways a mutating or different call was keyed, so its repeat was denied and never ran:
+
+1. `read_only` split only on `|`: `ls && rm -rf build`, `cat a; rm a`, `ls || rm x`, `ls & rm x`, `ls` newline `rm x`, `cat $(rm x)` were keyed as read-only. Segments now split at every unquoted `|`, `;`, `&` (newlines become `;`), and a `$(` or backtick is never read-only.
+2. `git branch` was read-only with any arguments, so `git branch -D x` was keyed. Only the listing forms are now (`-a`, `-r`, `-v`, `-vv`, `--all`, `--remotes`, `--verbose`, `--list`, `--show-current`).
+3. `awk` programs that write (`system(`, `print >`, `| "cmd"`) were keyed; such a segment is no longer read-only.
+4. The Read key ignored `offset`/`limit`/`pages`, so a second slice of a file was denied with the first slice's archive. A slice is now a key suffix after the path, so the `read\t{path}` prefix clear still reaches it.
+
+Check: new `compound_commands_with_a_writer_are_not_keyed`, `git_branch_is_read_only_only_when_listing`, `awk_writers_are_not_read_only`, `read_slices_get_distinct_keys` (all failed before the fix); `just check` green.
+
+Status: done 2026-10-01
+Model: Claude Code / sonnet (reviewed by Claude Code / claude-opus-5-5)
+
 ### T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
 
 Found 2026-09-22 in the surfaces pass: `initialize` (`src/mcp.rs:208-231`) discards `params.protocolVersion` and returns whatever `ServerInfo` serializes — no negotiation, and no test pins `result.protocolVersion`, so a dependency bump can silently change the advertised dialect (`src/doctor.rs:862` probes `2024-11-05` while tests send `2025-06-18`). `-32601` carries the raw method name as `message` instead of "Method not found". And `tools/call` coerces instead of validating: `mem_save` without `body` stores an empty note (`unwrap_or("")`, :332-339), a missing `expand` `id` becomes "unknown archive id: ", `handoff` truncates `budget_tokens` u64→u32 (:438-444) — schema-vs-handler drift turning client bugs into corrupt data.
