@@ -38,3 +38,4 @@
 - T310.12. Delete Slint, the WASM build and the HTML design
 - T329. Graph page: project selector, auto-added projects and linked projects
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
+- T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
