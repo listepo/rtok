@@ -126,7 +126,7 @@ impl Wire for OpenAiChat {
 }
 
 /// `prompt_tokens` counts cached tokens too (Anthropic's `input_tokens` does not), so
-/// `input` here is the billed prompt total and `cache_read` is the cached slice of it.
+/// `cache_read` is the cached slice and `input` is `prompt_tokens` minus it (uncached).
 /// There is no cache-creation signal on this wire, so `cache_create` is always 0.
 fn usage_block(value: &Value) -> Option<Usage> {
     find_usage(
@@ -139,6 +139,8 @@ fn usage_block(value: &Value) -> Option<Usage> {
             cache_create: None,
             cache_read: "cached_tokens",
             cache_read_details: Some("prompt_tokens_details"),
+            input_includes_cache: true,
+            output_extra: None,
         },
     )
 }
@@ -171,8 +173,10 @@ mod tests {
         let usage = json!({"usage":{
             "prompt_tokens":10,"completion_tokens":2,
             "prompt_tokens_details":{"cached_tokens":7}}});
+        // `prompt_tokens` (10) already contains the 7 cached tokens, so the uncached
+        // input is 3 and the four counters stay disjoint (cost must not count them twice).
         let expected = Usage {
-            input: 10,
+            input: 3,
             cache_create: 0,
             cache_read: 7,
             output: 2,
@@ -181,8 +185,7 @@ mod tests {
         assert_eq!(OPENAI_CHAT.usage_from_sse(&usage), Some(expected));
         // Every non-final chunk carries `usage: null`.
         assert_eq!(OPENAI_CHAT.usage_from_sse(&json!({"usage":null})), None);
-        // `prompt_tokens` already contains the cached slice, so the ledger total is
-        // input + output (12) and not the sum of all four counters (19).
+        // The ledger total is still prompt + completion (12), not 19.
         assert_eq!(OPENAI_CHAT.provider_total(expected), 12);
     }
 

@@ -1815,8 +1815,8 @@ impl Store {
 
     /// Provider counters for an api_request (plan T5.1): one `tokens` row,
     /// `phase = 'after'`, `source = 'provider'`, carrying the four counters. `total` comes
-    /// from the wire ([`rtok_plugin_sdk`-side `Wire::provider_total`]): Anthropic's counters
-    /// are disjoint and sum, OpenAI's `input` already contains the cached slice.
+    /// from the wire ([`rtok_plugin_sdk`-side `Wire::provider_total`]); the counters are
+    /// disjoint on every wire (OpenAI/Gemini `input` has the cached slice subtracted).
     pub fn insert_provider_tokens(
         &self,
         call_id: i32,

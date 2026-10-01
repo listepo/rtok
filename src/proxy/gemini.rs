@@ -86,17 +86,13 @@ impl Wire for Gemini {
     fn usage_from_sse(&self, event: &Value) -> Option<Usage> {
         usage_block(event)
     }
-
-    /// `promptTokenCount` already contains the cached slice (like both OpenAI wires),
-    /// so the ledger total is input + output — adding `cache_read` again would charge
-    /// the same tokens twice.
-    fn provider_total(&self, usage: Usage) -> i64 {
-        usage.input.saturating_add(usage.output)
-    }
 }
 
-/// `cachedContentTokenCount` is the cached slice of the prompt (implicit or explicit
-/// caching); there is no cache-creation signal on this wire, so `cache_create` is 0.
+/// `promptTokenCount` already contains the cached slice (like both OpenAI wires), so
+/// `input` is that minus `cachedContentTokenCount` (implicit or explicit caching).
+/// `thoughtsTokenCount` (thinking tokens) is billed as output but reported apart from
+/// `candidatesTokenCount`, so it is added to `output`. There is no cache-creation
+/// signal on this wire, so `cache_create` is 0.
 fn usage_block(value: &Value) -> Option<Usage> {
     find_usage(
         value,
@@ -108,6 +104,8 @@ fn usage_block(value: &Value) -> Option<Usage> {
             cache_create: None,
             cache_read: "cachedContentTokenCount",
             cache_read_details: None,
+            input_includes_cache: true,
+            output_extra: Some("thoughtsTokenCount"),
         },
     )
 }
@@ -174,8 +172,9 @@ mod tests {
         let usage = json!({"usageMetadata":{
             "promptTokenCount":12,"cachedContentTokenCount":7,
             "candidatesTokenCount":3,"totalTokenCount":15}});
+        // 12 prompt tokens contain the 7 cached ones: uncached input is 5.
         let expected = Usage {
-            input: 12,
+            input: 5,
             cache_create: 0,
             cache_read: 7,
             output: 3,
@@ -188,5 +187,25 @@ mod tests {
         assert_eq!(GEMINI.usage_from_body(&json!([{"candidates":[]}])), None);
         // `promptTokenCount` already contains the cached slice: 12 + 3, not 12 + 7 + 3.
         assert_eq!(GEMINI.provider_total(expected), 15);
+    }
+
+    #[test]
+    fn thinking_tokens_count_as_output() {
+        let usage = json!({"usageMetadata":{
+            "promptTokenCount":12,"candidatesTokenCount":3,"thoughtsTokenCount":40,
+            "totalTokenCount":55}});
+        let expected = Usage {
+            input: 12,
+            cache_create: 0,
+            cache_read: 0,
+            output: 43,
+        };
+        assert_eq!(GEMINI.usage_from_body(&usage), Some(expected));
+        assert_eq!(GEMINI.usage_from_sse(&usage), Some(expected));
+        assert_eq!(
+            GEMINI.provider_total(expected),
+            55,
+            "matches totalTokenCount"
+        );
     }
 }

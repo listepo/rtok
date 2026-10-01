@@ -1805,6 +1805,14 @@ Evidence: `cargo test --test proxy` 26 passed incl. 2 new; `cargo test --lib gem
 
 Deviation: 10 files (wire + shared helper + config/docs + 2 fixtures + tests + snapshot); no new dependency.
 
+## T326 — Proxy usage accounting: Gemini thinking tokens, Responses incomplete/failed usage, OpenAI cached tokens
+
+Found by the 2026-10-01 bug hunt. Gemini ignored `usageMetadata.thoughtsTokenCount`, so thinking tokens (billed as output) were never counted; OpenAI Responses took usage only from `response.completed`, so an `incomplete` or `failed` stream recorded none; OpenAI Chat/Responses and Gemini report a prompt total that already contains the cached slice, yet `input` and `cache_read` were stored side by side, so `row_cost`, the hit rate and context sums counted cached tokens twice (the `tokens` ledger total had its own OpenAI/Gemini special case and was right).
+
+Fix: `UsageFields` gains `output_extra` (Gemini adds `thoughtsTokenCount` to output) and `input_includes_cache` (OpenAI and Gemini subtract the cached slice, Anthropic unchanged), so `Usage` counters are disjoint on every wire — the same convention `measure/codex.rs` already uses — and `provider_total` is a plain sum again (ledger totals unchanged); `usage_from_sse` accepts all three terminal Responses events. Rows stored before the fix keep their inflated `input`.
+
+Check: `thinking_tokens_count_as_output`, `terminal_events_incomplete_and_failed_carry_usage_too`, the updated wire usage tests and six `tests/proxy.rs` assertions; `just check`.
+
 ## T53.2 — Shell completions and man page
 
 **T53.2 Shell completions and man page** · P3, 1/5 · `Cargo.toml`, `Cargo.lock`, `src/cli.rs`, `tests/completions.rs`, `tests/surface_parity.rs`, `tests/trycmd/completions-bash.toml`, `tests/trycmd/completions-bash.stdout`, `tests/trycmd/help.stdout`, `README.md`, `toolchain.md`
