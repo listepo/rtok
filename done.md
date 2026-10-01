@@ -7320,6 +7320,17 @@ Check: store unit tests (register is idempotent, sub-agent row, resolve prefix /
 Status: done 2026-09-27 (#439; hook bench p95 9.10 ms PreToolUse, 9.51 ms PostToolUse)
 Model: Claude Code / claude-opus-5-5
 
+### T325. Bash rewrite keeps `cd` in the host shell; shell-state builtins stay unwrapped
+
+Found by a bug-hunt pass over `src/plugins/cmd/hook.rs`. The PreToolUse rewrite turned `cd crates/x && cargo test` into `rtok run -- 'cd crates/x && cargo test'`, so the `cd` ran in `rtok run`'s child shell. Hosts that keep the shell's cwd between Bash calls (Claude Code) lost it: the next call ran in the old directory. `export`, `source`, `unset`, `alias`, `pushd`/`popd` had the same problem.
+
+Fix (creator's choice: hoist the `cd`): leading `cd <dir> &&` hops stay outside the wrap (`cd crates/x && rtok run -- 'cargo test'`, reusing `guard::strip_cd_hop`, quote-aware). A command with any other `cd`, `pushd`, `popd`, `export`, `source`, `.`, `unset`, `alias` or `unalias` stage (found with `bounded::stages`, the existing lexer) is not wrapped at all.
+
+Check: new `hook::tests::leading_cd_hops_stay_outside_the_wrap` and `shell_state_builtins_are_not_wrapped`; `just check` green.
+
+Status: done 2026-10-01
+Model: Claude Code / claude-opus-5-5
+
 ### T272. ketch.toml syncs with the live registry entry, plus the rtok-hook hazard note
 
 Found 2026-09-26, from `rtok agents install claude` hanging on Windows: `ketch install pyrlyn/rtok` had linked `rtok-hook.exe` (the 390 KB std-only hook client dist ships beside the 34 MB `rtok.exe`) into `~/.ketch/bin/rtok.exe`, so every `rtok` invocation — `--version` included — hung reading stdin for a hook payload that never came. Chain: the registry entry pins `bin = [{ path = "rtok*", name = "rtok" }];` ketch resolves a glob to the first payload match; NTFS lists `rtok-hook.exe` before `rtok.exe`, so Windows takes the stub (Unix readdir order keeps `rtok` first, which is why only Windows hung). No `*`/`?` pattern matches `rtok`+`rtok.exe` while excluding `rtok-hook.exe`, so the entry's spelling is the best ketch's matcher allows; the durable fix — prefer the candidate whose stem is the link name — belongs to ketch (its B62). Meanwhile this repo's `ketch.toml`, the file `ketch push` sends, still predated registry commit 9b73cae: no `bin` pin and no Windows zip in `[asset] include`. A push from it would have dropped the pin and returned Windows installs to linking `plugins/cursor/scripts/mcp.cmd` — the exact regression 9b73cae fixed.
