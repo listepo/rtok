@@ -228,9 +228,34 @@ if "Check plugin manifest versions" not in text:
         sys.exit(1)
     text = text.replace(plan_checkout, plan_checkout_with_check, 1)
 
+# A last job that turns a failed release into a `release-failure` issue (pyrlyn/infra).
+NOTIFY = """
+  # Added by tools/dist-generate.sh: a failed release (not a pull request or a dry run)
+  # opens or comments on a `release-failure` issue that mentions and assigns @listepo. The
+  # only release failure notification: GitHub cannot filter Actions notifications per
+  # workflow. Pinned to pyrlyn/infra's ci/notify-release-failure; repin to its merge commit.
+  notify-failure:
+    needs: [plan, build-local-artifacts, build-global-artifacts, host, announce]
+    if: >-
+      always() && github.event_name == 'workflow_dispatch' && inputs.tag != 'dry-run'
+      && contains(needs.*.result, 'failure')
+    runs-on: "ubuntu-22.04"
+    timeout-minutes: 5
+    permissions:
+      "actions": "read"
+      "issues": "write"
+    steps:
+      - uses: pyrlyn/infra/.github/actions/notify-release-failure@0139bdcb95d4e021540743f8fe2c83529a8f676e
+        with:
+          ref: ${{ inputs.tag }}
+          needs: ${{ toJSON(needs) }}
+"""
+if "notify-failure:" not in text:
+    text = text.rstrip("\n") + "\n" + NOTIFY
+
 path.write_text(text)
 print(
     f"patched {path}: MACOS_* secrets, artifact size reports, release notes sizes, "
-    "plugin version check"
+    "plugin version check, notify-failure job"
 )
 PY

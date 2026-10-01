@@ -22,10 +22,13 @@ permissions:
 
 jobs:
   bump:
-    uses: pyrlyn/infra/.github/workflows/bump.yml@863d8960601216eec62d4aa78924f84ce61d72b9
+    # Pinned to pyrlyn/infra ci/notify-release-failure (a failed run opens a release-failure
+    # issue; needs issues: write); repin to its merge commit.
+    uses: pyrlyn/infra/.github/workflows/bump.yml@0139bdcb95d4e021540743f8fe2c83529a8f676e
     permissions:
       contents: write # push the version commit
       actions: write # dispatch release.yml, cancel-run
+      issues: write # notify-failure: a failed run opens a release-failure issue
     with:
       level: ${{ inputs.level }}
       release-script: tools/release.sh
