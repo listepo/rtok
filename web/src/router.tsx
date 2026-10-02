@@ -21,6 +21,7 @@ import { Plugins } from "./pages/Plugins";
 import { Services } from "./pages/Services";
 import { Skills } from "./pages/Skills";
 import { Stats } from "./pages/Stats";
+import { Usage } from "./pages/Usage";
 import { Worktrees } from "./pages/Worktrees";
 import { PAGES, type Page } from "./pages";
 import { NotFound, Shell } from "./Shell";
@@ -55,6 +56,7 @@ const screens: Partial<Record<Page["id"], RouteComponent>> = {
     config: Config,
     services: Services,
     worktrees: Worktrees,
+    usage: Usage,
 };
 
 const root = createRootRoute({ component: Shell, notFoundComponent: NotFound });

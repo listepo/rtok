@@ -433,6 +433,35 @@ fn worktrees_page_exists_on_both_surfaces() {
     );
 }
 
+/// T358.5: both surfaces render the Usage page from the one report `rtok agents usage` builds
+/// (`usage::report`): the tui and the Slint page show its text, the SPA its rows as data.
+#[test]
+fn usage_page_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        web,
+        slint,
+        ..
+    } = SURFACES;
+    assert!(
+        model.contains("(\"usage\", \"agent_usage\")"),
+        "pages() offers usage"
+    );
+    assert!(
+        model.contains("usage::report("),
+        "the one report lives behind the model (D23)"
+    );
+    assert!(
+        tui.contains("\"usage\" =>"),
+        "the TUI renders the usage page"
+    );
+    assert!(
+        web.contains("usage_text") && slint.contains("page-id == \"usage\""),
+        "the web Usage page renders the same text"
+    );
+}
+
 #[test]
 fn wasm_ui_renders_every_model_page() {
     let lib = include_str!(concat!(
@@ -501,6 +530,7 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     ("otel status", "services"),
     // the Worktrees page rides the snapshot since T232, so `worktree list` renders it
     ("worktree list", "worktrees"),
+    ("agents usage", "usage"),
 ];
 
 /// The commands D27 exempts, each with its reason. Streaming commands print a stream,
@@ -635,11 +665,6 @@ const EXEMPT: &[(&str, &str)] = &[
          not a shared model page",
     ),
     (
-        "agents usage",
-        "reading command whose Usage page on `rtok web` / `rtok tui` is T358.5 (D23/D27); it \
-         moves to COMMAND_PAGES with it",
-    ),
-    (
         "info",
         "prints version, paths, disk usage, error count and proxy status",
     ),
@@ -752,6 +777,7 @@ const JSON_READERS: &[&str] = &[
     "otel status",
     "memory status",
     "worktree list",
+    "agents usage",
     "graph status",
     "graph dead",
 ];

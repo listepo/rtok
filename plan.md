@@ -66,7 +66,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T358 | todo | P2 | 4 | 0% | |
 | T358.3 | todo | P2 | 4 | 0% | |
 | T358.4 | todo | P2 | 3 | 0% | |
-| T358.5 | in progress | P2 | 3 | 5% | Claude Code / sonnet-5 |
 
 
 
@@ -1578,14 +1577,6 @@ Check: one fixture per host pins its totals; each reader was run against that ho
 Scope: the T358.4 bullet under "Split when claiming" in T358.
 
 Check: one fixture per host pins its totals; `unsupported` hosts are listed in `docs/agents.md`; `just check`.
-
-### T358.5. The Usage page on `rtok web` and `rtok tui`
-
-Scope: the T358.5 bullet under "Split when claiming" in T358. T358.1 lists `agents usage` in `EXEMPT` in `tests/surface_parity.rs` with this task as the reason; this task moves it to `COMMAND_PAGES`.
-
-Check: `surface_parity` passes with `agents usage` in `COMMAND_PAGES`; the page shows the CLI's rows on web and tui; `just check`.
-
-Execution: (1) `model.rs` gains `UsagePage { text, report }` and the snapshot field `agent_usage`, page `("usage", "agent_usage")` (the key `usage` is the Overview's). One function builds it: `agents::usage::report` (the call `rtok agents usage` makes, over `[agents.usage]`), with `text` = `Report::to_text()`, so the CLI, the tui (`text`) and the SPA (`report`) show the same rows and nothing is aggregated twice. Reading agent logs is slow, so it runs in a `Background` thread with its own TTL, like Hosts and Worktrees; cold start says "reading usage…". `Report` and its row types derive `JsonSchema`. (2) tui: a `"usage" =>` page that renders `text`. (3) The Slint page list (until T310.12 removes it) gets `usage` as a text page so the parity test holds. (4) Schema: `RTOK_BLESS=1` the schema test, then `npm --prefix web run gen:api`. (5) SPA: `web/src/pages/Usage.tsx` (summary KPIs, unpriced warning, per-agent or per-model table, daily or monthly table) on `report`, a `pages.ts` entry and route, fixtures in `fixtures.ts`, sample data, stories and Vitest. (6) `tests/surface_parity.rs`: `agents usage` moves from `EXEMPT` to `COMMAND_PAGES` and into `JSON_READERS`, plus a both-surfaces test for the page. Verify: spa-test/typecheck/js/build/stories, the touched cargo test binaries (`surface_parity`, `web`, `web_e2e`, model unit tests, schema test), then `just check`.
 
 ## Reference
 

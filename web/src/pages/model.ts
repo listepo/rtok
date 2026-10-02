@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
-import type { CallRow, PluginPage, Report, SessionTotals, Snapshot } from "../api/snapshot.gen";
+import type {
+  CallRow,
+  PluginPage,
+  Report,
+  SessionTotals,
+  Snapshot,
+  UsagePage,
+} from "../api/snapshot.gen";
 import { fmt } from "./format";
 
 /** Σ tokens a call put through the model, `null` when the call carried no usage. */
@@ -225,3 +232,6 @@ export function overview(snap: Snapshot) {
     recent: recentSessions(snap.sessions),
   };
 }
+
+/** The Usage page's report, as `rtok agents usage --json` prints it; `null` while the logs are read. */
+export type UsageReport = NonNullable<UsagePage["report"]>;

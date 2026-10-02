@@ -17,7 +17,7 @@ use std::rc::Rc;
 /// `tests/surface_parity.rs` asserts this equals `rtok::web::model::pages()`.
 pub const PAGE_IDS: &[&str] = &[
     "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats", "graph",
-    "hosts", "config", "services", "worktrees",
+    "hosts", "config", "services", "worktrees", "usage",
 ];
 
 /// Pure snapshot → view fields. Native-testable; the WASM `load_snapshot` applies these
@@ -49,6 +49,7 @@ pub mod snapshot {
         pub config_text: String,
         pub services_text: String,
         pub worktrees_text: String,
+        pub usage_text: String,
     }
 
     #[derive(Debug, Default, PartialEq, Eq)]
@@ -124,6 +125,7 @@ pub mod snapshot {
             config_text: config_of(&v["config"]),
             services_text: services_of(&v["services"]),
             worktrees_text: worktrees_of(&v["worktrees"]),
+            usage_text: usage_of(&v["agent_usage"]),
         }
     }
 
@@ -491,6 +493,14 @@ pub mod snapshot {
         })
     }
 
+    /// The Usage page (T358.5): the CLI's own screen, which the server renders into
+    /// `agent_usage.text`, so this page keeps no second formatter.
+    fn usage_of(v: &Value) -> String {
+        v["text"].as_str().map(str::to_string).unwrap_or_else(|| {
+            "usage did not answer this tick — `rtok agents usage` has the details".into()
+        })
+    }
+
     fn savings_text(v: &Value) -> String {
         let Some(plugins) = v["plugins"].as_array() else {
             return "no measured savings yet".into();
@@ -614,6 +624,7 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
     sync_config_view(ui, &view.config_text);
     ui.set_services_text(SharedString::from(view.services_text));
     ui.set_worktrees_text(SharedString::from(view.worktrees_text));
+    ui.set_usage_text(SharedString::from(view.usage_text));
 
     let plugins: Vec<PluginRow> = view
         .plugins
@@ -939,7 +950,7 @@ mod tests {
             PAGE_IDS,
             [
                 "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats",
-                "graph", "hosts", "config", "services", "worktrees"
+                "graph", "hosts", "config", "services", "worktrees", "usage"
             ]
         );
     }
@@ -986,7 +997,8 @@ mod tests {
             "hosts": "CLI: Codex\n  app     -\n",
             "config": "proxy.port = 8899 (default)\n",
             "services": "proxy  running  pid=123  uptime=10s  log=/x\n",
-            "worktrees": "path branch owner state seen modified source cache\n"
+            "worktrees": "path branch owner state seen modified source cache\n",
+            "agent_usage": {"text": "rtok agents usage: through rtok\n", "report": null}
         });
         let view = snapshot::parse(&v);
         assert!(
@@ -1002,7 +1014,8 @@ mod tests {
                 && PAGE_IDS.contains(&"hosts")
                 && PAGE_IDS.contains(&"config")
                 && PAGE_IDS.contains(&"services")
-                && PAGE_IDS.contains(&"worktrees"),
+                && PAGE_IDS.contains(&"worktrees")
+                && PAGE_IDS.contains(&"usage"),
             "every model page id is a WASM tab"
         );
         assert_eq!(view.usage_ctt, 5);
@@ -1024,6 +1037,7 @@ mod tests {
         assert!(view.config_text.contains("proxy.port = 8899"));
         assert!(view.services_text.contains("proxy  running"));
         assert!(view.worktrees_text.contains("path branch owner"));
+        assert!(view.usage_text.contains("rtok agents usage"));
     }
 
     #[test]
@@ -1121,5 +1135,12 @@ mod tests {
         let v = json!({"type": "snapshot", "worktrees": null, "plugins": [], "calls": [], "sessions": [], "logs": [], "usage": {}});
         let view = snapshot::parse(&v);
         assert!(view.worktrees_text.contains("did not answer"));
+    }
+
+    #[test]
+    fn missing_usage_is_a_failed_tick_not_empty() {
+        let v = json!({"type": "snapshot", "plugins": [], "calls": [], "sessions": [], "logs": [], "usage": {}});
+        let view = snapshot::parse(&v);
+        assert!(view.usage_text.contains("did not answer"));
     }
 }
