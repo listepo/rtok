@@ -2060,6 +2060,23 @@ Deviations: no CLI prints the scope yet; it is a store call that T329.4 and the 
 Status: done 2026-10-03 · Model: Claude Code / sonnet-5
 
 
+## T329.7 — Reference discovery from manifests (Cargo, npm, Go, Python, submodules)
+
+T329 §4b sources, in the card's order: Cargo `path`/`[patch]`/out-of-root workspace members, npm/pnpm/yarn `file:`/`link:`/`workspace:`, Go `replace` and `go.work`, Python path dependencies, `.gitmodules`. A pure function from a project root to a list of `(directory, reason)`, plus warnings for paths that do not exist. Import-resolver references are left to a later sub-id once T329.9 lands. Fixture repos only; no registry writes.
+
+Execution: `src/project/refs.rs` (`discover(root) -> Found { refs, warnings }`, the shared `Ctx::add`, glob expansion and `.gitmodules`) with one file per ecosystem under `src/project/refs/` (`cargo`, `npm`, `go`, `python`). The root manifest and the manifests of its workspace members are read; a member outside the root is itself a reference; a path inside the root, or one that contains it, is the project's own code and is skipped, except a submodule. One entry per directory, the first source in card order wins its reason. A missing path is `<manifest>: references <path>, not found`; an unreadable or unparsable manifest is `<manifest>: not read: …` and the other sources still run. Registry dependencies carry no path and are never returned. Reused: `crate::fs::normalize` (lexical joining), `toml_edit` and `serde_json` (already direct dependencies), `testutil::tmp_dir`. New dependencies: `globset` (workspace member globs; already in the tree through `ignore`) and `serde-saphyr` (`pnpm-workspace.yaml`; maintained, no YAML parser was in the tree and `serde_yaml` is deprecated). `go.mod`/`go.work` are read by a ~25-line directive reader because no Rust crate for them is in the tree and the format is line based. `.gitmodules` uses a tiny INI-style reader because no `gix` is in the tree.
+
+Check: `project::refs::tests` (8 tests on tempdir fixtures: Cargo path/dev/target/workspace/`[patch]` and out-of-root members, npm/pnpm/yarn, Go block and single forms with `go.work`, Python PEP 508, Poetry, uv and `requirements.txt`, submodules, dedup and source order, unparsable manifests, a path containing the root); `just check`.
+
+Sources (checked 2026-10-03): Cargo path dependencies, https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html, and workspace `members` globs, https://doc.rust-lang.org/cargo/reference/workspaces.html; npm `file:` local paths and `workspaces`, https://docs.npmjs.com/cli/v10/configuring-npm/package-json; pnpm `packages` with `!` exclusions, https://pnpm.io/pnpm-workspace_yaml; Go `replace` with a `./`, `../` or absolute right side, and `go.work` `use`, https://go.dev/ref/mod; uv `members` globs and `tool.uv.sources` `path`, https://docs.astral.sh/uv/concepts/projects/workspaces/; Poetry `path`, https://python-poetry.org/docs/dependency-specification/; `.gitmodules` `submodule.<name>.path`, https://git-scm.com/docs/gitmodules.
+
+Unverified, handled anyway: workspace members outside the root and `path` in `[workspace.dependencies]` (the Cargo docs read did not state either), the `workspace:../x` relative form of pnpm, PEP 508 `name @ file:…` with a relative path, the `link:` prefix, and `-e`/`./` lines of `requirements.txt`. Not covered: `**` in a workspace glob is matched as one level, `yarn` `portal:`, `[replace]` of Cargo, npm `overrides`/`resolutions`, Python `file:` URLs with a host, Go module `vendor`.
+
+Deviations: the card lists "Python path dependencies"; `requirements.txt` paths are included as well. The 300-line budget is met per ecosystem file, not for the whole feature (about 530 lines in five files, tests excluded).
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet-5
+
+
 ## T48.7 — aider host
 
 **T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
