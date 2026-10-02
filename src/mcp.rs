@@ -160,21 +160,27 @@ fn rpc_error(id: Value, code: i32, message: &str) -> Value {
 
 /// T263: the first `file://` root of a `roots/list` answer becomes the cwd, so every tool's
 /// `current_dir()` is the project even when the host launched us in `/` (Claude.app).
-/// Anything else keeps the launch cwd.
+/// Anything else keeps the launch cwd. T351: every `file://` directory root, the first
+/// included, is also an allowed root of the path guard.
 fn apply_roots_response(result: &Value) {
-    let Some(path) = result["roots"].as_array().and_then(|roots| {
-        roots
-            .iter()
-            .filter_map(|r| r["uri"].as_str())
-            .find(|uri| uri.starts_with("file://"))
-            .and_then(|uri| url::Url::parse(uri).ok())
-            .and_then(|url| url.to_file_path().ok())
-    }) else {
-        return;
-    };
-    if path.is_dir() {
-        let _ = std::env::set_current_dir(path);
+    let paths: Vec<std::path::PathBuf> = result["roots"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r["uri"].as_str())
+        .filter(|uri| uri.starts_with("file://"))
+        .filter_map(|uri| url::Url::parse(uri).ok())
+        .filter_map(|url| url.to_file_path().ok())
+        .collect();
+    if let Some(first) = paths.first()
+        && first.is_dir()
+    {
+        let _ = std::env::set_current_dir(first);
     }
+    #[cfg(feature = "read")]
+    crate::plugins::read::roots::set_client_roots(
+        paths.into_iter().filter(|p| p.is_dir()).collect(),
+    );
 }
 
 /// Protocol dialects `rtok mcp` has been built and tested against, oldest first. Per the
@@ -307,6 +313,9 @@ impl Server {
         // the literal "mcp" made every `rtok mcp` process answer `unchanged since <sha>` for a
         // file only another conversation had read. The surface stays "mcp" (see `record`).
         let cx = Runtime::open(cfg.clone(), format!("mcp-{}", std::process::id()))?;
+        // T351: sibling worktrees and client roots pass the path guard in this process only.
+        #[cfg(feature = "read")]
+        crate::plugins::read::roots::enable();
         let mut listed = vec![
             Listed {
                 plugin: "archive",

@@ -4,6 +4,7 @@
 mod common;
 
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
@@ -369,4 +370,97 @@ fn mcp_refuses_symbol_at_filesystem_root_without_walking() {
     drop(stdin);
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&home);
+}
+
+/// T351: a path in a sibling worktree of the cwd's repository and a path under any
+/// `roots/list` root pass the guard of `read`, `search` and `outline`; everything else,
+/// a scratchpad included, is still refused with `isError`.
+#[test]
+fn mcp_accepts_sibling_worktrees_and_every_client_root() {
+    let base = std::env::temp_dir().join(format!("rtok-mcp-t351-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let names = ["home", "main", "extra", "scratchpad", "outside"];
+    for n in names {
+        std::fs::create_dir_all(base.join(n)).unwrap();
+    }
+    // macOS: `/var` is a symlink; the server compares canonical paths. `dunce`: Windows git
+    // rejects the `\\?\` verbatim form `canonicalize` returns.
+    let base = dunce::canonicalize(&base).unwrap();
+    let [home, main, extra, scratch, outside] = names.map(|n| base.join(n));
+    let wt = base.join("wt");
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(&main)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .output()
+            .expect("git");
+        assert!(out.status.success(), "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    std::fs::write(main.join("m.txt"), "m\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "init"]);
+    git(&["worktree", "add", "-q", wt.to_str().unwrap(), "-b", "w"]);
+    std::fs::write(wt.join("w.rs"), "fn in_worktree() {}\n").unwrap();
+    for (dir, f) in [(&extra, "e.txt"), (&scratch, "s.txt"), (&outside, "o.txt")] {
+        std::fs::write(dir.join(f), "x\n").unwrap();
+    }
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
+        .arg("mcp")
+        .env("RTOK_HOME", &home)
+        .current_dir(&main)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn rtok mcp");
+    let mut stdin = child.stdin.take().expect("stdin");
+    let lines = LineReader::new(child.stdout.take().expect("stdout"));
+    let mut send = |line: String| writeln!(stdin, "{line}").unwrap();
+    send(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{"roots":{}},"clientInfo":{"name":"t","version":"1"}}}"#.into());
+    lines.next_line();
+    send(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.into());
+    lines.next_line(); // our roots/list request
+    let uri = |p: &Path| url::Url::from_directory_path(p).unwrap();
+    send(format!(
+        r#"{{"jsonrpc":"2.0","id":"rtok-roots","result":{{"roots":[{{"uri":"{}"}},{{"uri":"{}"}}]}}}}"#,
+        uri(&main),
+        uri(&extra)
+    ));
+    let mut call = |name: &str, args: serde_json::Value| -> (bool, String) {
+        send(
+            serde_json::json!({"jsonrpc":"2.0","id":7,"method":"tools/call",
+                "params":{"name":name,"arguments":args}})
+            .to_string(),
+        );
+        let v: serde_json::Value = serde_json::from_str(&lines.next_line()).expect("response");
+        let text = v["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or_default();
+        (v["result"]["isError"] == true, text.to_string())
+    };
+    let p = |d: &Path, f: &str| d.join(f).to_string_lossy().into_owned();
+
+    let (err, text) = call("read", serde_json::json!({"path": p(&wt, "w.rs")}));
+    assert!(!err && text.contains("in_worktree"), "{text}");
+    let (err, text) = call(
+        "search",
+        serde_json::json!({"pattern": "in_worktree", "path": wt}),
+    );
+    assert!(!err && text.contains("w.rs"), "{text}");
+    let (err, text) = call("outline", serde_json::json!({"path": p(&wt, "w.rs")}));
+    assert!(!err && text.contains("in_worktree"), "{text}");
+    let (err, text) = call("read", serde_json::json!({"path": p(&extra, "e.txt")}));
+    assert!(!err, "second roots/list root: {text}");
+    for (dir, f) in [(&scratch, "s.txt"), (&outside, "o.txt")] {
+        let (err, text) = call("read", serde_json::json!({"path": p(dir, f)}));
+        assert!(err && text.contains("path outside cwd"), "{text}");
+    }
+
+    drop(stdin);
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&base);
 }
