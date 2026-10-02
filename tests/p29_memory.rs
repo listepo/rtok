@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Gate P29 — optional embed search beside FTS5 (T29.2).
 
 use rtok::plugin::{Measurement, Runtime};

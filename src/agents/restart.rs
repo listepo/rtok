@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Close a running desktop app before `agents install|uninstall` writes its config, reopen it
 //! after (T141; replaces T76's interactive y/N prompt with an automatic, no-prompt flow).
 //!
