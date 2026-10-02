@@ -43,6 +43,7 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 '--call=[Call one listed tool and print the text result (pi /`registerTool/` shim, T70.3)]:TOOL:_default' /
 '--json=[JSON arguments for /`--call/`]:ARGS:_default' /
+'--host=[The host this MCP entry belongs to (/`claude/`, /`cursor/`, /`grok/`, …)/: overlays /`/[hook/] host/` so the process can find its rtok agent (T283.1)]:HOST:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '-h[Print help]' /
 '--help[Print help]' /
