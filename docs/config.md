@@ -106,6 +106,14 @@ enabled    = true                     # false = hooks skip agent register/touch/
 idle       = "30m"                    # `live()`'s window: no `ended_at` and `last_seen` within this of now
 push_bytes = 1024                     # framed messages pushed per UserPromptSubmit/PostToolUse; the rest → "and N more" (T288)
 
+[agents.usage]                        # rtok agents usage (T358)
+source = "logs"                       # logs = the agents' own session files (Claude Code, Codex); rtok = what passed through rtok; both
+hosts  = []                           # [] = every host; else host ids, e.g. ["claude", "codex"]
+since  = ""                           # "" = all time; a date (2026-09-01, whole days in tz) or a duration (30d)
+until  = ""                           # "" = through today; a date, inclusive
+period = "monthly"                    # monthly | daily: the bottom table
+tz     = ""                           # IANA zone for day and month boundaries; "" = the system zone
+
 [mcp]                                 # rtok mcp
 tools                   = []          # [] = all tools from enabled plugins; else an allow-list; `expand` always stays listed (D4)
 max_description_tokens  = 60          # enforced by a test (T4.1)
@@ -557,6 +565,7 @@ Unset keeps Mozilla roots only. `rtok hook` never opens TLS.
 | `agents remove` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
 | `agents list` | — | reads the host configs and `<bin> --version` (`--json` is the reading row) |
 | `agents whoami` | — | reads `RTOK_AGENT_ID` and resolves it through the store (T283); no key, no `setup.*` (`--json` is the reading row) |
+| `agents usage` | `--source`, `--host`, `--since`, `--until`, `--daily` / `--monthly`, `--tz` | `agents.usage.source`, `.hosts`, `.since`, `.until`, `.period`, `.tz` (`--unpriced` picks the view of one call, `--json` is the reading row) |
 | `agents sessions` | `--all` | (action: also lists ended sessions; live vs idle follows `agents.idle`) |
 | `agents show` | — | resolves an id prefix through the store (T284); live vs idle follows `agents.idle` (`--json` is the reading row) |
 | `agents status` | — | writes the calling agent's (`RTOK_AGENT_ID`) status text, ≤ 120 chars (T284); no key |

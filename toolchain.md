@@ -63,6 +63,10 @@ Project programs and direct packages from the manifests.
 | @types/react-dom | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.1: React DOM types |
 | tailwindcss | local | https://github.com/tailwindlabs/tailwindcss | T310.1: utility CSS, themed from the design tokens |
 | @tailwindcss/vite | local | https://github.com/tailwindlabs/tailwindcss | T310.1: Tailwind v4 Vite plugin |
+| @tanstack/react-router | local | https://github.com/TanStack/router | T310.4: code-based route tree built from the page list |
+| @testing-library/react | local | https://github.com/testing-library/react-testing-library | T310.4: renders the shell and routes in Vitest |
+| @testing-library/dom | local | https://github.com/testing-library/dom-testing-library | T310.4: peer of @testing-library/react (queries, events) |
+| happy-dom | local | https://github.com/capricorn86/happy-dom | T310.4: DOM for component tests (`// @vitest-environment happy-dom`, faster than jsdom) |
 
 ## cargo
 
@@ -91,6 +95,7 @@ Project programs and direct packages from the manifests.
 | ignore | local | https://crates.io/crates/ignore | Rust dependency |
 | indicatif | local | https://crates.io/crates/indicatif | Rust dependency |
 | insta | local | https://crates.io/crates/insta | Snapshot tests for stable text output |
+| jiff | local | https://crates.io/crates/jiff | T358: IANA time zones with DST for `rtok agents usage` day and month buckets (`--tz`); already in the lock as a transitive dep of env_logger |
 | js-sys | local | https://crates.io/crates/js-sys | JS bindings for the Slint web UI (T222) |
 | jsonc-parser | local | https://crates.io/crates/jsonc-parser | JSONC parse for Zed settings (T222) |
 | libfuzzer-sys | local | https://crates.io/crates/libfuzzer-sys | `fuzz/`: libFuzzer runtime for the cargo-fuzz targets |
