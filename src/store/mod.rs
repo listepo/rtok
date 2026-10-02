@@ -1821,6 +1821,51 @@ impl Store {
         )
     }
 
+    /// Test-only: one `usage` row for `session` (attributed to `host`, a seeded slug) at a
+    /// fixed `ts`, so day and month bucketing can be pinned. `legs` is input, cache write,
+    /// cache read, output.
+    #[cfg(test)]
+    pub fn insert_usage_at(
+        &self,
+        session: &str,
+        host: Option<&str>,
+        model: &str,
+        ts: i64,
+        legs: [i64; 4],
+    ) -> Result<()> {
+        let host_id = match host {
+            Some(h) => self.host_id(h)?,
+            None => None,
+        };
+        self.upsert_session(session, host_id, None, None, Some("proxy"))?;
+        let call = self.insert_call(
+            session,
+            "proxy",
+            "api_request",
+            None,
+            None,
+            None,
+            None,
+            Some("/v1/messages"),
+        )?;
+        let [input, cache_create, cache_read, output] = legs;
+        self.insert_usage(
+            session,
+            Some(model),
+            "anthropic",
+            input,
+            cache_create,
+            cache_read,
+            output,
+            call,
+        )?;
+        let mut conn = self.lock()?;
+        diesel::update(usage::table.filter(usage::call_id.eq(call)))
+            .set(usage::ts.eq(ts))
+            .execute(&mut *conn)?;
+        Ok(())
+    }
+
     /// Provider counters for an api_request (plan T5.1): one `tokens` row,
     /// `phase = 'after'`, `source = 'provider'`, carrying the four counters. `total` comes
     /// from the wire ([`rtok_plugin_sdk`-side `Wire::provider_total`]); the counters are
@@ -1988,6 +2033,63 @@ impl Store {
             entry.output += output.unwrap_or(0);
         }
         Ok(by_model.into_values().collect())
+    }
+
+    /// Usage grouped by session, model and timestamp for `rtok agents usage` (T358.1), with
+    /// `ts` in `[since, until)`. The caller cuts day and month boundaries in a time zone, so
+    /// the store never sees one; Diesel 2.3 cannot `GROUP BY` a computed `ts / N` bucket (the
+    /// gap [`Self::usage_by_model`] documents), so the grain is the request. The host comes from a second read of
+    /// `sessions` because Diesel 2.3 cannot group a join's columns across tables (the same gap
+    /// as [`Self::usage_by_model`]); a session with no host row (an older proxy-only session)
+    /// reads back with `host = None`, which the caller labels by `api`.
+    pub fn usage_slices(&self, since: i64, until: i64) -> Result<Vec<UsageSlice>> {
+        type Row = (
+            String,
+            String,
+            Option<String>,
+            i64,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+        );
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = usage::table
+            .filter(usage::ts.ge(since).and(usage::ts.lt(until)))
+            .group_by((usage::api, usage::session, usage::model, usage::ts))
+            .select((
+                usage::api,
+                usage::session,
+                usage::model,
+                usage::ts,
+                sum_bigint(usage::input),
+                sum_bigint(usage::cache_create),
+                sum_bigint(usage::cache_read),
+                sum_bigint(usage::output),
+            ))
+            .load(&mut *conn)?;
+        let host_of: HashMap<String, Option<String>> = sessions::table
+            .left_join(hosts::table)
+            .select((sessions::id, hosts::slug.nullable()))
+            .load(&mut *conn)?
+            .into_iter()
+            .collect();
+        Ok(rows
+            .into_iter()
+            .map(
+                |(api, session, model, ts, input, cache_create, cache_read, output)| UsageSlice {
+                    host: host_of.get(&session).cloned().flatten(),
+                    api,
+                    session,
+                    model,
+                    ts,
+                    input: input.unwrap_or(0),
+                    cache_create: cache_create.unwrap_or(0),
+                    cache_read: cache_read.unwrap_or(0),
+                    output: output.unwrap_or(0),
+                },
+            )
+            .collect())
     }
 
     /// One row per session the store knows (T25.1, D27): the single read behind the
@@ -2519,6 +2621,21 @@ pub struct ApiUsage {
 #[derive(Debug, Clone)]
 pub struct ModelUsage {
     pub model: String,
+    pub input: i64,
+    pub cache_create: i64,
+    pub cache_read: i64,
+    pub output: i64,
+}
+
+/// One [`Store::usage_slices`] row: the usage of one session on one model at `ts` (unix
+/// seconds, UTC).
+#[derive(Debug, Clone)]
+pub struct UsageSlice {
+    pub host: Option<String>,
+    pub api: String,
+    pub session: String,
+    pub model: Option<String>,
+    pub ts: i64,
     pub input: i64,
     pub cache_create: i64,
     pub cache_read: i64,

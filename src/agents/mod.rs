@@ -35,6 +35,7 @@ pub(crate) mod plugin_install;
 pub(crate) mod plugin_version;
 pub mod restart;
 pub mod skill;
+pub mod usage;
 pub mod vscode;
 pub mod windsurf;
 pub mod zcode;
