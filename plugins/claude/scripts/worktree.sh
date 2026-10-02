@@ -41,7 +41,8 @@ WorktreeCreate)
     fi
     echo "rtok: rtok worktree add failed; creating a plain worktree" >&2
   fi
-  name=$(field name | tr -c 'A-Za-z0-9._-' '-')
+  # printf: a POSIX sed ends its output with a newline, and tr -c would turn it into a dash.
+  name=$(printf '%s' "$(field name)" | tr -c 'A-Za-z0-9._-' '-')
   case "$name" in '' | .* | -*) name="w-$name" ;; esac
   root=$(git -C "$(field cwd)" rev-parse --show-toplevel) || exit 1
   # The host's own default: .claude/worktrees/<name> on worktree-<name>, from the current HEAD.
