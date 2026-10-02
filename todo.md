@@ -18,6 +18,9 @@
 - T279.1. `rtok agents outdated`: list only the hosts whose rtok plugin is older than the running rtok
 - T281. Probe: tie a host session's hooks and its rtok MCP server to one agent
 - T283. An agent learns its own rtok agent id
+- T283.1. MCP agent link: `rtok mcp --host`, the doc-derived link rule, MCP `whoami`
+- T283.2. `--host <id>` in every host's MCP entry
+- T283.3. MCP link rule (b): the nearest common host ancestor pid
 - T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
 - T285. Worktree claims: `rtok worktree add` hands the worktree to the calling agent; MCP `worktree_add`
 - T286. `rtok worktree remove` and MCP `worktree_remove`: an agent removes its own worktree
