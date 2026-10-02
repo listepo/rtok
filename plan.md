@@ -73,6 +73,17 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T348 | todo | research | 1 | 0% | |
 | T356 | in progress | P1 | 2 | 5% | Claude Code / claude-opus-5-5 |
 | T358 | todo | P2 | 4 | 0% | |
+| T368 | todo | P1 | 3 | 0% | |
+| T369 | todo | P1 | 2 | 0% | |
+| T370 | todo | P1 | 4 | 0% | |
+| T371 | todo | P2 | 2 | 0% | |
+| T372 | todo | P2 | 1 | 0% | |
+| T373 | todo | P2 | 1 | 0% | |
+| T374 | todo | P3 | 2 | 0% | |
+| T376 | todo | P2 | 2 | 0% | |
+| T375 | todo | P3 | 2 | 0% | |
+| T377 | todo | P3 | 2 | 0% | |
+| T378 | todo | P3 | 3 | 0% | |
 
 
 
@@ -1639,6 +1650,116 @@ Check: every item below passes.
 - `rtok config validate` accepts every new key; each has its `default.toml` row and `docs/config.md` row; `just check` green.
 - The screenshot's layout (summary, warning, per-agent table, monthly totals) is what `rtok agents usage` prints for the fixture.
 
+### T368. Rank ambiguous `callers` / `impact` / `explore` hits by import evidence and name IDF
+
+From the Empryo study (2026-10-02; idea-only, clean-room — Empryo is BSL 1.1, no code copied; Empryo `src/core/intelligence/repo-map.ts` @ `669ff91` was read for the idea only). Today a common name (`new`, `run`, `parse`) returns every same-named definition and every reference to any of them; `annotate_ambiguous` (`src/plugins/graph/mod.rs:312`) only says "ambiguous", and `impact_bfs` (`mod.rs:836`) walks all of them. Empryo resolves an edge by (a) whether the referencing file imports the defining file and (b) the IDF of the name, `ln(N_files / df)`, and drops names referenced in more than ~5 % of files from ranking. rtok stores only the last import path segment (`scoped` in `src/plugins/graph/index.rs`, `scope` is empty for `kind == "import"`), so (a) needs the full import path. Overlaps T8.8 (graph_truth fixture) and I-28 / T52.3 (they share the IDF table).
+
+Plan: store the full import path of an `import` row in `scope` (no new column) and bump `extractor_fingerprint()` (`index.rs`) so roots reindex once. New `Store` query next to `symbol_ref_groups` / `symbol_imports` (`src/store/symbols.rs:574`, `:897`): per reference file, the candidate definition files it imports. Rank: imported candidate first, then same directory, then the rest, ties by IDF; `callers` / `explore` print the top candidate group and a `+N other definitions of <name>` line; `impact_bfs` follows only edges whose definition is the resolved one (all edges when nothing resolves — the current behaviour). IDF per root is one `GROUP BY name` over `symbols`, computed at index end.
+
+Done when: for an ambiguous name with an import-resolvable definition, `callers` and `impact` list only that definition's references first and name the rest in one line; unresolvable names behave as today.
+
+Check: extend `tests/fixtures/graph_truth.toml` with at least 10 ambiguous names (two crates/packages defining the same name); `tests/graph_truth.rs` callers precision on those +20 pp vs `main`, recall drop ≤ 2 pp, T8.8 overall score stays ≥ 0.93; `impact` output bytes on the ambiguous set −30 %; `just check`.
+
+### T369. Answer a symbol-shaped `Grep` with the definition instead of a deny
+
+From the Empryo study (idea-only, clean-room; Empryo `src/core/tools/repo-map-intercept.ts:190-245`). When the agent greps for an identifier (`fn foo`, `class Foo`, `\bfoo\(`), Empryo answers from its symbol index ("defined at path:line, N refs in …") and only falls through to grep when the pattern is not a symbol. rtok's guard denies native Grep (I-08 / T50.4) or redirects to MCP `search` (`native_redirect`, `src/plugins/guard/mod.rs:149`), which costs a second round trip even when `symbol` would have answered.
+
+Plan: in `pre_tool` (`guard/mod.rs:37`), before `native_redirect`, classify the Grep pattern: a bare identifier or `fn|def|class|struct|type|func|interface <ident>` with no path glob. Look the name up with `symbol_defs` (`src/store/symbols.rs:475`); one to five definitions → deny with the `path:line kind` list and the ref count as the reason (the same text `symbol` prints, capped at `inject` budget); zero or more than five → current behaviour. Config `plugins.guard.grep_symbol = false` next to `deny_grep_glob` (`src/config/mod.rs:761`); off until the check below passes. Record a `Measurement` (`plugin: "guard"`, `kind: "grep_symbol"`). Must stay inside the ≤ 10 ms PreToolUse budget: index lookup only, never `index_for`.
+
+Done when: with the flag on, `Grep pattern="fn parse_since"` in an indexed project is answered with the definition line(s); a regex such as `TODO|FIXME` is untouched.
+
+Check: unit tests for the classifier (identifier, `fn x`, `class X`, regex, path-globbed); a replay over the Grep calls in local Claude Code transcripts (`[stats] transcripts_dir`) shows ≥ 70 % of symbol-shaped patterns are answered from the index; after a dated window with the flag on, the share of follow-up Grep/Read on the same name within 3 calls is ≤ 25 % (row in `research.md`); hook p95 stays ≤ 10 ms; `just check`.
+
+### T370. SessionStart repo map ranked by file-level personalized PageRank
+
+From the Empryo study (idea-only, clean-room; Empryo `repo-map.ts` PageRank and render, `repo-map-utils.ts:479-493`: damping 0.85, 20 iterations, budget 1500 / 2500 / 4000 tokens). T52.3 / I-28 ranks definitions by raw reference count (`symbol_top_refs`, `src/store/symbols.rs:614`), off by default and without a live A/B; `repo_map` (`src/plugins/graph/mod.rs:1090`) pops and re-estimates the rendered text in a loop, quadratic in the number of rows. A file graph (edge = file A references a name defined in file B, weighted by T368's IDF) with PageRank puts hub files first, and a personalization vector moves the map toward what the session is about.
+
+Plan: new `src/plugins/graph/rank.rs` — CSR adjacency from one `symbols` scan, power iteration (0.85, 20 iterations or L1 delta < 1e-6), dangling mass spread uniformly. Global ranks persisted per root in a `file_rank` table (new migration), recomputed at index end; personalized ranks are computed at SessionStart and never persisted (Empryo issue #228: a stored personalized rank leaked one session's focus into the next). Personalization: git-dirty files, the last checkpoint's paths on `compact` (`src/plugins/checkpoint.rs`), and the SessionStart `source` (`crates/rtok-plugin-sdk/src/lib.rs:274`). Render top files with their top definitions; fill the budget in one pass with a running token estimate instead of pop-and-re-estimate. Host trait method in `crates/rtok-plugin-sdk/src/host.rs` and its Runtime impl in `src/plugin.rs`. Config `plugins.graph.map_rank = "refs" | "pagerank"`, default `refs` until the check passes.
+
+Done when: with `map_rank = "pagerank"`, the SessionStart map lists files by rank under `map_tokens`, personalized by dirty files, and a stored rank never contains session state.
+
+Check: unit tests for PageRank on a 4-node graph (known stationary vector, sum = 1 ± 1e-9) and for personalization; offline backtest over the last 200 commits of this repo: recall of the commit's touched files in a `map_tokens = 1000` map, `pagerank` minus `refs` ≥ 15 pp; SessionStart hook p95 ≤ 30 ms on this repo (divan bench); `just check`.
+
+### T371. Git co-change pairs feed `impact` and the repo map
+
+From the Empryo study (idea-only, clean-room; Empryo `repo-map.ts` co-change: last 300 commits, skip commits touching more than 20 files, keep pairs with count ≥ 2, cache keyed by HEAD). Files that change together but share no symbol (a migration and its model, a test and a fixture, docs and code) are invisible to the symbol graph.
+
+Plan: new `src/plugins/graph/cochange.rs`: run `git log --name-only --format=%H -n 300` the way `mod.rs` already shells out to git (no new dependency), count unordered file pairs, store `(root, head, a, b, count)` in the key-value table from migration 0018 or a small `cochange` table, rebuilt only when HEAD moves. Use: `impact` appends `changes with: a.rs (7), b.rs (4)` for the target file's top 5 partners; T370 adds co-change edges with a lower weight (0.3 of a symbol edge, tunable).
+
+Done when: `impact <name>` on a file with co-change history lists its top partners; a root that is not a git repo behaves as today.
+
+Check: unit test on a scripted temp repo (three commits, one over the 20-file cap) asserts the pairs and counts; backtest over the last 100 commits: for each commit's first file, hit@5 of its other files among the top co-change partners ≥ 0.30; build ≤ 300 ms on this repo; `just check`.
+
+### T372. Link tests to sources by naming convention in `affected_from_paths`
+
+From the Empryo study (idea-only, clean-room; Empryo `repo-map.ts` test-file linking). `affected_from_paths` (`src/plugins/graph/mod.rs:710`) finds tests through symbol references only, so a test that exercises a binary through `assert_cmd` or a fixture file, or a TS/Python test with dynamic imports, is missed.
+
+Plan: add name-convention links before the symbol walk: `foo.rs` ↔ `tests/foo.rs` / `foo_test.rs`, `foo.ts` ↔ `foo.test.ts` / `foo.spec.ts` / `__tests__/foo.ts`, `foo.py` ↔ `test_foo.py` / `foo_test.py`, `foo.go` ↔ `foo_test.go`; existing files only, one `HashSet` of indexed paths. Union with the symbol result; mark them `(by name)` in the output.
+
+Done when: changing `src/foo.ts` with an existing `src/foo.test.ts` that does not import it by a resolvable path lists that test.
+
+Check: table-driven unit test over the four language conventions plus a negative case (no such file); existing affected tests unchanged; `just check`.
+
+### T373. `rrf_merge` breaks score ties by note id
+
+From the Empryo study (idea-only; Empryo's memory recall merges FTS and vector hits with RRF and a stable order). `rrf_merge` (`src/store/embed.rs:198`) collects scores in a `HashMap` and sorts by score alone, so notes with equal RRF score (common: rank i in one list, absent from the other) may come back in a different order between runs — suspected, not reproduced. A nondeterministic recall order also breaks the cache-stable prefix when recall is injected.
+
+Plan: write the failing test first (two lists producing equal scores, run the merge 50 times, assert one order); then sort by `(score desc, id asc)`.
+
+Done when: `rrf_merge` output is identical across runs for equal scores.
+
+Check: the new unit test in `src/store/embed.rs`; `tests/p29_memory.rs` unchanged; `just check`. If the test passes before the fix, close the card with that note.
+
+### T374. Memory notes linked to files: recall boosted by the files in play
+
+From the Empryo study (idea-only, clean-room; Empryo memory DB file links and recall boosting). P29 recall matches on the prompt text only; a note about `src/proxy/semantic_cache.rs` is not preferred when the session is editing that file. Low priority while the store holds few notes (18 on the creator's machine, 2026-10-02).
+
+Plan: new `note_files (note_id, path)` table (migration); filled at `mem_save` (`src/plugins/memory/mod.rs:266`) from paths found in the note body that exist under the root, and from the current checkpoint's paths. In `prompt_recall` (`memory/mod.rs:163`), add a third ranked list — notes linked to files read this session (`read_cache`) or named in the prompt — to the RRF merge (`src/store/embed.rs:198`, after T373).
+
+Done when: a note linked to a file the session has read ranks above an equally text-matching unlinked note.
+
+Check: new cases in `tests/fixtures/p29_memory.toml` with file context; recall@5 on the file-context cases ≥ 0.6 and no drop on the existing cases; `just check`.
+
+### T375. Checkpoint keeps per-file actions (read / edited / created / deleted)
+
+From the Empryo study (idea-only, clean-room; Empryo `compaction/working-state.ts`, `extractor.ts`: a deterministic working state built from tool calls, not from an LLM). `Checkpoint` (`src/plugins/checkpoint.rs:11`) records paths without what happened to them, so after compact the agent re-reads files it only looked at and may miss the ones it changed.
+
+Plan: extend the checkpoint's path list to `(path, action, last_line_range)` from PostToolUse events (Read → read, Edit/MultiEdit → edited, Write on a new path → created, `rm`/`git rm` in Bash → deleted); render edited/created first. Backward-compatible decode of old rows (missing action = read).
+
+Done when: after a session that reads A and edits B, the checkpoint lists `B (edited)` before `A (read)`.
+
+Check: unit tests for the event → action mapping and old-row decode; the checkpoint rendering snapshot (`insta`) updated; `just check`.
+
+### T376. Graph LSP backend falls back to tags per call when the server is not ready or dies
+
+From the Empryo study (idea-only, clean-room; Empryo's intelligence router tries LSP, then tree-sitter, then regex per call and records which one answered). With `plugins.graph.backend = "lsp"`, `symbol_filtered`, `callers`, `impact`, `outline` and `explore` (`src/plugins/graph/mod.rs` around `:260`, `:390`, `:441`, `:897`, `:1015`) return `lsp::…` directly; a server that is missing, still indexing past `READY` (40 s, `src/plugins/graph/lsp.rs`) or dead turns the call into an error instead of a tags answer (to verify: whether `lsp.rs` already degrades internally).
+
+Plan: one wrapper in `mod.rs`: try `lsp::<op>`; on `Err` or an empty answer for a name the tags index has, run the tags path and prefix `(tags; lsp: <reason>)`. Record a `Measurement` (`plugin: "graph"`, `kind: "lsp_fallback"`). No retry loop; the existing restart logic in `lsp.rs` stays.
+
+Done when: with `backend = "lsp"` and no server on PATH (or a fake that exits), `symbol <name>` returns the tags answer with the fallback prefix.
+
+Check: test with the fake/absent server for each of the five ops; existing LSP tests unchanged; `just check`.
+
+### T377. `impact` renders a budgeted blast radius: grouped by file, depth-ranked, with a cut line
+
+From the Empryo study (idea-only, clean-room; Empryo's blast-radius output groups dependents by file and fills a token budget). `impact_bfs` (`src/plugins/graph/mod.rs:836`) prints every reached reference up to `depth`; for a hub symbol the output runs to thousands of lines, which is the cost rtok exists to cut.
+
+Plan: group the BFS result by file, order files by (depth asc, T370 rank or ref count desc), print `path (N refs, depth d)` with the first 3 lines per file, stop at `plugins.graph.impact_tokens` (default 1500) with `+K files, M refs not shown — impact <name> --all`. `--all` keeps today's output.
+
+Done when: `impact` on a hub symbol fits the budget and ends with the cut line; a small impact is unchanged.
+
+Check: snapshot test on a fixture with a hub symbol; output tokens on the ambiguous set from T368 within budget; `tests/graph_truth.rs` impact recall unchanged with `--all`; `just check`.
+
+### T378. Trigram prefilter for `search` (only if I-95 shows p95 > 200 ms)
+
+From the Empryo study (idea-only, clean-room; Empryo `trigram.ts`: per-file trigram sets, candidate files = intersection of the query's literal trigrams). `search` (`src/plugins/read/search.rs:92`) walks and scans every file. Gate: I-95 (parallel walk) measures `search` p95 on a large repo first; if it is ≤ 200 ms, close this card with the number.
+
+Plan: per-root trigram posting lists (`file_id` bitmaps, `roaring` only with a `Cargo.toml` justification, else sorted `Vec<u32>`) built in the graph index pass for text files ≤ 1 MB; queries with a literal of ≥ 3 bytes scan only candidate files; regexes without a usable literal take the full scan.
+
+Done when: a literal `search` on a 50k-file repo scans only candidate files and returns the same hits.
+
+Check: equivalence test (prefiltered vs full scan) over a fixture; divan bench `search` p95 −50 % on the large repo; index size growth recorded in the card; `just check`.
+
 ## Reference
 
 Historical phase notes (P0–P39) live in `done.md`. Companion evidence: `research.md`, `architecture.md`. Per-plugin plan: `roadmap.md`. Unapproved propositions: `ideas.md`.
@@ -1793,3 +1914,28 @@ Fits for rtok (1–3):
 Already covered: `assert_cmd`, `divan`, `httpmock`, `insta`, `rstest`,
 `trycmd`, `similar`. Skip `test-case` / `expect-test` / `mockito` duplicates;
 `testcontainers` / `bolero`/`honggfuzz` only if a measured e2e/fuzz gap appears.
+
+---
+
+## Note 2026-10-02 — Empryo-derived tasks (T368–T378)
+
+Source: study of [proxysoul/Empryo](https://github.com/proxysoul/Empryo) (formerly SoulForge) at `669ff91`. **Idea-only, clean-room: Empryo is BSL 1.1, no code copied.** Every card cites Empryo only for the idea; implementations are written from the card.
+
+Take first, in order: T368, T369, T370, T371, T372, T373, T374. Then T376, T375, T377, T378 (gated on I-95).
+
+The 14 portable ideas and where each landed:
+
+1. PageRank repo map — T370 (extends T52.3 / I-28).
+2. Edge confidence / name IDF — T368.
+3. Git co-change — T371.
+4. Blast radius under a budget — T377.
+5. Trigram index — T378 (gated on I-95).
+6. Clone detection (MinHash) — not now: T52.4 / I-29 (dead code) has no measured question that duplicates answer, and Empryo's own perf PR #220 shows the cold-scan cost; revisit after T68.9.
+7. Grep → symbol intercept — T369 (builds on I-08 / T50.4).
+8. Post-edit diagnostics delta — does not fit: rtok does not run edits; it is the agent loop's job (cox).
+9. Backend fallback / LSP hygiene — T376.
+10. Compound tools (rename, project check) — does not fit: they need the agent's edit loop and approvals; rtok stays read/measure.
+11. Deterministic compaction state — T375 (checkpoint); LLM compaction itself is the host's.
+12. Memory RRF / file affinity — T373, T374.
+13. Edit robustness (fuzzy `old_string`) — does not fit now: I-43 / T58.3 measured 1.3 % `old_string` misses; below the gate.
+14. Shell output compress / tee — already covered by the `cmd` rules (`src/plugins/cmd/rules.rs`) and the archive (`expand <id>`).
