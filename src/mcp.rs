@@ -42,6 +42,7 @@ fn ping_def() -> ToolDef {
 /// Serve MCP on stdin/stdout until EOF.
 #[cfg_attr(not(feature = "graph"), allow(unused_variables))]
 pub fn run(cfg: &Config) -> Result<()> {
+    crate::agents::ensure_hook_client_link_here();
     let server = Server::new(cfg)?;
     // Background, own connection: housekeeping must neither delay `initialize` nor die on a
     // contended store (T75, T352).

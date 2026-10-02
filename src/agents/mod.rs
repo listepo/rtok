@@ -791,6 +791,9 @@ pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
             "warning: rtok is not on PATH; the hooks and MCP entries spawn `rtok` by name and will fail until it is\n",
         );
     }
+    if req.mode != Mode::Remove && !cfg.setup.dry_run {
+        ensure_hook_client_link_here();
+    }
     let mut taken: Vec<PathBuf> = Vec::new();
     if !cfg.setup.dry_run && cfg.setup.backup {
         let mut seen: Vec<PathBuf> = Vec::new();
@@ -1365,6 +1368,110 @@ pub(crate) fn bin_on_path(bin: &str, path: Option<&std::ffi::OsStr>) -> bool {
     std::env::split_paths(path).any(|dir| {
         dir.join(bin).is_file() || (cfg!(windows) && dir.join(format!("{bin}.exe")).is_file())
     })
+}
+
+/// What [`ensure_hook_client_link`] did (T357); the caller only needs it for tests and doctor.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum LinkOutcome {
+    /// `rtok-hook` already resolves on `PATH` (not through a stale link of ours).
+    AlreadyOnPath,
+    /// No `rtok-hook` beside the running executable, no `rtok` on `PATH`, or not unix.
+    Nothing,
+    /// The link was created.
+    Linked,
+    /// A stale or dangling link was re-pointed at this version's client.
+    Relinked,
+    /// The link already points at this version's client.
+    Current,
+    /// Something else owns the name; left alone.
+    Foreign,
+    /// An IO error (read-only directory, race): fail soft, nothing changed.
+    Failed,
+}
+
+/// T357: package managers (ketch) may link only `rtok` onto `PATH`, leaving the fast hook
+/// client `rtok-hook` (T178) unused. Link it next to the `rtok` the hooks run, in the first
+/// `path` directory that has one. Fail soft: never an error; a few stats, so cheap enough for
+/// the start of `rtok mcp`, `rtok hook --serve` and the host-hook install, never per hook.
+pub(crate) fn ensure_hook_client_link(path: Option<&std::ffi::OsStr>, exe: &Path) -> LinkOutcome {
+    #[cfg(unix)]
+    {
+        link_hook_client(path, exe)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, exe);
+        LinkOutcome::Nothing
+    }
+}
+
+#[cfg(unix)]
+fn link_hook_client(path: Option<&std::ffi::OsStr>, exe: &Path) -> LinkOutcome {
+    use std::os::unix::fs::symlink;
+    const NAME: &str = "rtok-hook";
+    let Some(path) = path else {
+        return LinkOutcome::Nothing;
+    };
+    let Some(dir) = std::env::split_paths(path).find(|d| d.join("rtok").is_file()) else {
+        return LinkOutcome::Nothing;
+    };
+    // Only the `rtok` that IS this executable: a dev build or a test binary must never link
+    // into the `PATH` of a different install.
+    let Ok(exe) = std::fs::canonicalize(exe) else {
+        return LinkOutcome::Nothing;
+    };
+    if std::fs::canonicalize(dir.join("rtok")).ok().as_deref() != Some(exe.as_path()) {
+        return LinkOutcome::Nothing;
+    }
+    let link = dir.join(NAME);
+    let meta = std::fs::symlink_metadata(&link);
+    if meta.is_err() && bin_on_path(NAME, Some(path)) {
+        return LinkOutcome::AlreadyOnPath;
+    }
+    let sibling = exe.parent().map(|p| p.join(NAME));
+    let Some(sibling) = sibling.filter(|s| s.is_file()) else {
+        return LinkOutcome::Nothing;
+    };
+    let relink = match meta {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => return LinkOutcome::Failed,
+        Ok(m) if m.file_type().is_symlink() => {
+            let Ok(target) = std::fs::read_link(&link) else {
+                return LinkOutcome::Failed;
+            };
+            let target = dir.join(target);
+            if std::fs::canonicalize(&target).is_ok_and(|t| t == sibling) {
+                return LinkOutcome::Current;
+            }
+            let dangling = !target.exists();
+            if !dangling && target.file_name().is_none_or(|n| n != NAME) {
+                return LinkOutcome::Foreign;
+            }
+            true
+        }
+        Ok(_) => return LinkOutcome::Foreign,
+    };
+    let tmp = dir.join(format!(".{NAME}.{}.tmp", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    if symlink(&sibling, &tmp).is_err() {
+        return LinkOutcome::Failed;
+    }
+    if std::fs::rename(&tmp, &link).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return LinkOutcome::Failed;
+    }
+    if relink {
+        LinkOutcome::Relinked
+    } else {
+        LinkOutcome::Linked
+    }
+}
+
+/// [`ensure_hook_client_link`] for the running process: real `PATH` and executable.
+pub(crate) fn ensure_hook_client_link_here() {
+    if let Ok(exe) = std::env::current_exe() {
+        ensure_hook_client_link(std::env::var_os("PATH").as_deref(), &exe);
+    }
 }
 
 /// Basename of a command path — split on `/` and `\`, drop a trailing `.exe`
@@ -2500,5 +2607,148 @@ mod tests {
         for v in a.variants().iter().filter(|v| app_path(v).is_none()) {
             assert!(!present(a, v, &cfg), "{}", v.name);
         }
+    }
+
+    /// T357 fixture: `pkg/v1` and `pkg/v2` hold `rtok` + `rtok-hook`; `bin/rtok` links `pkg/v1`.
+    #[cfg(unix)]
+    struct LinkFx {
+        root: PathBuf,
+    }
+
+    #[cfg(unix)]
+    impl LinkFx {
+        fn new(name: &str) -> Self {
+            use std::os::unix::fs::symlink;
+            let root =
+                std::env::temp_dir().join(format!("rtok-t357-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            for v in ["v1", "v2"] {
+                std::fs::create_dir_all(root.join("pkg").join(v)).unwrap();
+                for f in ["rtok", "rtok-hook"] {
+                    std::fs::write(root.join("pkg").join(v).join(f), "").unwrap();
+                }
+            }
+            std::fs::create_dir_all(root.join("bin")).unwrap();
+            symlink(root.join("pkg/v1/rtok"), root.join("bin/rtok")).unwrap();
+            Self { root }
+        }
+        fn bin(&self) -> PathBuf {
+            self.root.join("bin")
+        }
+        fn path(&self) -> std::ffi::OsString {
+            std::env::join_paths([self.bin()]).unwrap()
+        }
+        fn exe(&self, v: &str) -> PathBuf {
+            self.root.join("pkg").join(v).join("rtok")
+        }
+        fn link(&self) -> PathBuf {
+            self.bin().join("rtok-hook")
+        }
+        fn run(&self, v: &str) -> LinkOutcome {
+            ensure_hook_client_link(Some(&self.path()), &self.exe(v))
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for LinkFx {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hook_client_link_created_then_current() {
+        let fx = LinkFx::new("create");
+        assert_eq!(fx.run("v1"), LinkOutcome::Linked);
+        let target = std::fs::canonicalize(fx.link()).unwrap();
+        assert_eq!(
+            target,
+            std::fs::canonicalize(fx.root.join("pkg/v1/rtok-hook")).unwrap()
+        );
+        assert!(bin_on_path("rtok-hook", Some(&fx.path())));
+        assert_eq!(fx.run("v1"), LinkOutcome::Current);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hook_client_link_noop_when_already_on_path() {
+        let fx = LinkFx::new("onpath");
+        let other = fx.root.join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("rtok-hook"), "").unwrap();
+        let path = std::env::join_paths([fx.bin(), other]).unwrap();
+        let got = ensure_hook_client_link(Some(&path), &fx.exe("v1"));
+        assert_eq!(got, LinkOutcome::AlreadyOnPath);
+        assert!(std::fs::symlink_metadata(fx.link()).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hook_client_link_repoints_other_version() {
+        use std::os::unix::fs::symlink;
+        let fx = LinkFx::new("repoint");
+        symlink(fx.root.join("pkg/v1/rtok-hook"), fx.link()).unwrap();
+        // The package manager moved `rtok` to v2; the link still names v1.
+        std::fs::remove_file(fx.bin().join("rtok")).unwrap();
+        symlink(fx.exe("v2"), fx.bin().join("rtok")).unwrap();
+        assert_eq!(fx.run("v2"), LinkOutcome::Relinked);
+        let want = std::fs::canonicalize(fx.root.join("pkg/v2/rtok-hook")).unwrap();
+        assert_eq!(std::fs::canonicalize(fx.link()).unwrap(), want);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hook_client_link_repoints_dangling() {
+        use std::os::unix::fs::symlink;
+        let fx = LinkFx::new("dangling");
+        symlink(fx.root.join("gone/anything"), fx.link()).unwrap();
+        assert_eq!(fx.run("v1"), LinkOutcome::Relinked);
+        assert!(fx.link().is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hook_client_link_leaves_foreign_names_alone() {
+        use std::os::unix::fs::symlink;
+        let fx = LinkFx::new("foreign");
+        std::fs::write(fx.link(), "mine").unwrap();
+        assert_eq!(fx.run("v1"), LinkOutcome::Foreign);
+        assert_eq!(std::fs::read_to_string(fx.link()).unwrap(), "mine");
+        std::fs::remove_file(fx.link()).unwrap();
+        let elsewhere = fx.root.join("pkg/v1/rtok");
+        symlink(&elsewhere, fx.link()).unwrap();
+        assert_eq!(fx.run("v1"), LinkOutcome::Foreign);
+        assert_eq!(std::fs::read_link(fx.link()).unwrap(), elsewhere);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hook_client_link_needs_sibling_and_own_rtok() {
+        let fx = LinkFx::new("nosibling");
+        // `bin/rtok` is v1, not this executable: never link another install's PATH.
+        assert_eq!(fx.run("v2"), LinkOutcome::Nothing);
+        assert_eq!(
+            ensure_hook_client_link(None, &fx.exe("v1")),
+            LinkOutcome::Nothing
+        );
+        std::fs::remove_file(fx.root.join("pkg/v1/rtok-hook")).unwrap();
+        assert_eq!(fx.run("v1"), LinkOutcome::Nothing);
+        assert!(std::fs::symlink_metadata(fx.link()).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hook_client_link_read_only_dir_fails_soft() {
+        use std::os::unix::fs::PermissionsExt;
+        let fx = LinkFx::new("readonly");
+        std::fs::set_permissions(fx.bin(), std::fs::Permissions::from_mode(0o555)).unwrap();
+        let got = fx.run("v1");
+        std::fs::set_permissions(fx.bin(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        // root ignores directory modes; either way nothing panics.
+        assert!(
+            matches!(got, LinkOutcome::Failed | LinkOutcome::Linked),
+            "{got:?}"
+        );
     }
 }

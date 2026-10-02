@@ -32,6 +32,7 @@ struct State {
 /// Serve until the home goes away or a client of another version calls. Returns at once when
 /// another resident holds the home or the environment gives it no endpoint.
 pub fn serve() -> Result<()> {
+    crate::agents::ensure_hook_client_link_here();
     let Some(home) = rtok_hook::home(|k| std::env::var_os(k)) else {
         return Ok(());
     };

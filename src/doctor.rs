@@ -1438,6 +1438,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// T357: once rtok links its sibling `rtok-hook` next to itself, the T349 advice is gone.
+    #[cfg(unix)]
+    #[test]
+    fn hook_client_link_silences_the_advice() {
+        use std::os::unix::fs::symlink;
+        let dir = std::env::temp_dir().join(format!("rtok-t357-doctor-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (pkg, bin) = (dir.join("pkg"), dir.join("bin"));
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(pkg.join("rtok"), "").unwrap();
+        std::fs::write(pkg.join("rtok-hook"), "").unwrap();
+        symlink(pkg.join("rtok"), bin.join("rtok")).unwrap();
+        let path = std::env::join_paths([&bin]).unwrap();
+        assert!(hook_client_advice(true, Some(&path)).is_some());
+        crate::agents::ensure_hook_client_link(Some(&path), &pkg.join("rtok"));
+        assert!(hook_client_advice(true, Some(&path)).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// T349: the ketch package links both binaries, or hooks never reach the fast client.
     #[test]
     fn ketch_manifest_links_rtok_and_rtok_hook() {
