@@ -667,6 +667,22 @@ const EXEMPT: &[(&str, &str)] = &[
     ("graph impact", "need a target; CLI/MCP only"),
     ("graph affected", "need a target; CLI/MCP only"),
     (
+        "graph projects",
+        "the registry's list and actions; the Graph page gets the selector in T329.12",
+    ),
+    (
+        "graph projects add",
+        "changes the registry; the selector is T329.12",
+    ),
+    (
+        "graph projects select",
+        "changes the registry; the selector is T329.12",
+    ),
+    (
+        "graph projects remove",
+        "changes the registry; the selector is T329.12",
+    ),
+    (
         "logs export",
         "the same Logs selection, unnumbered and uncoloured",
     ),
