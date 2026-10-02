@@ -32,7 +32,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
 | T310 | todo | P1 | 5 | 0% | |
-| T310.6 | todo | P1 | 3 | 0% | |
 | T310.7 | todo | P2 | 3 | 0% | |
 | T310.8 | todo | P2 | 3 | 0% | |
 | T310.9 | todo | P1 | 4 | 0% | |
@@ -605,10 +604,6 @@ Check: `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where host tables
 Done when: `rtok web` serves the SPA from the binary, every page of `model::pages()` renders on it, Playwright drives the real binary, and no Slint code is left.
 
 Check: `rtok web` from a release build shows every page of `model::pages()` from the embedded SPA; no `slint`/`rtok-webui` left in the tree; `just check` and the SPA CI job green.
-
-### T310.6. Pages: overview, plugins (toggle), calls (expand)
-
-Check: each page matches `design/html/admin/<page>.html` in dark and light at 375 and 1280 px on sample data; toggle and expand round-trip against `rtok web`; stories and Vitest for page logic.
 
 ### T310.7. Pages: sessions, doctor, logs
 

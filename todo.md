@@ -26,7 +26,6 @@
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
 - T310. React SPA replaces the Slint web UI (epic)
-- T310.6. Pages: overview, plugins (toggle), calls (expand)
 - T310.7. Pages: sessions, doctor, logs
 - T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
 - T310.9. Serve the SPA from `rtok web`

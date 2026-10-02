@@ -114,12 +114,12 @@ describe("shared states", () => {
     });
 
     test("empty when the page's data is empty", async () => {
-        mount(server("open", { ...sampleSnapshot, plugins: [] }), "/plugins");
-        expect(await screen.findByText("No plugins data yet")).toBeTruthy();
+        mount(server("open", { ...sampleSnapshot, logs: [] }), "/logs");
+        expect(await screen.findByText("No logs data yet")).toBeTruthy();
     });
 
     test("data shows no state panel", async () => {
-        mount(server("open", sampleSnapshot), "/plugins");
+        mount(server("open", sampleSnapshot), "/logs");
         expect(await screen.findByText(/rows$/)).toBeTruthy();
         expect(screen.queryByRole("alert")).toBeNull();
     });

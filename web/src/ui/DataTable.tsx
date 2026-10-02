@@ -53,9 +53,14 @@ export function DataTable<T extends RowData>({
     const table = useTable({ features, columns: defs, data: rows as T[], getRowId });
     const body = table.getRowModel().rows;
     const scroller = useRef<HTMLDivElement>(null);
+    // A short table shrinks to its rows instead of leaving a tall empty panel.
+    const viewport = Math.min(height, body.length * rowHeight);
     const virtualizer = useVirtualizer({
         count: body.length,
         getScrollElement: () => scroller.current,
+        // The scroller has a CSS height at most `height`, so no measuring is needed (and none
+        // works without layout, as in happy-dom). Over-reporting only renders a few extra rows.
+        observeElementRect: (_, cb) => cb({ width: 0, height }),
         estimateSize: () => rowHeight,
         getItemKey: (i) => body[i]?.id ?? i,
         overscan: 8,
@@ -81,7 +86,7 @@ export function DataTable<T extends RowData>({
                         role="row"
                         aria-rowindex={1}
                         style={grid}
-                        className="grid h-8 items-center border-b border-border bg-surface px-3 text-2xs font-semibold tracking-table-head text-fg-subtle uppercase"
+                        className="grid h-8 gap-x-3 items-center border-b border-border bg-surface px-3 text-2xs font-semibold tracking-table-head text-fg-subtle uppercase"
                     >
                         {group.headers.map((header, i) => (
                             <div
@@ -100,7 +105,7 @@ export function DataTable<T extends RowData>({
                 ref={scroller}
                 role="rowgroup"
                 tabIndex={onSelect ? undefined : 0}
-                style={{ height, overflow: "auto" }}
+                style={{ height: viewport, overflow: "auto" }}
                 className={focusRing}
             >
                 <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
@@ -119,7 +124,11 @@ export function DataTable<T extends RowData>({
                                 onKeyDown={
                                     onSelect &&
                                     ((e) => {
-                                        if (e.key === "Enter" || e.key === " ") {
+                                        // A switch or button inside the row keeps its own Enter and Space.
+                                        if (
+                                            e.target === e.currentTarget &&
+                                            (e.key === "Enter" || e.key === " ")
+                                        ) {
                                             e.preventDefault();
                                             onSelect(row.original);
                                         }
@@ -133,7 +142,7 @@ export function DataTable<T extends RowData>({
                                     height: item.size,
                                     transform: `translateY(${item.start}px)`,
                                 }}
-                                className={`${focusRing} grid items-center border-b border-border/50 px-3 text-xs hover:bg-surface-2/70 aria-selected:bg-accent/15 ${onSelect ? "cursor-pointer" : ""}`}
+                                className={`${focusRing} grid items-center gap-x-3 border-b border-border/50 px-3 text-xs hover:bg-surface-2/70 aria-selected:bg-accent/15 ${onSelect ? "cursor-pointer" : ""}`}
                             >
                                 {row.getAllCells().map((cell, i) => (
                                     <div
