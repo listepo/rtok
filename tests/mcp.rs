@@ -383,8 +383,9 @@ fn mcp_accepts_sibling_worktrees_and_every_client_root() {
     for n in names {
         std::fs::create_dir_all(base.join(n)).unwrap();
     }
-    // macOS: `/var` is a symlink; the server compares canonical paths.
-    let base = base.canonicalize().unwrap();
+    // macOS: `/var` is a symlink; the server compares canonical paths. `dunce`: Windows git
+    // rejects the `\\?\` verbatim form `canonicalize` returns.
+    let base = dunce::canonicalize(&base).unwrap();
     let [home, main, extra, scratch, outside] = names.map(|n| base.join(n));
     let wt = base.join("wt");
     let git = |args: &[&str]| {
