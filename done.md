@@ -833,6 +833,16 @@ Execution: `web/src/api/ws.ts` — a transport-agnostic client (injected `WebSoc
 
 Result (2026-10-03, Claude Code / claude-opus-5-5): `web/src/api/ws.ts` (`connectWs`: injectable socket and location, same-origin `ws`/`wss`, backoff 500 ms doubling to a 10 s cap and reset on open; `parseFrame` keeps a failed tick's `{"type":"snapshot","error"}` apart from a full `Snapshot` and drops malformed frames), `web/src/api/sample.ts` (`Snapshot`-typed fixture, `?sample` source with the same `Connect` interface), `web/src/api/query.tsx` (`createApi` writes pushed frames into the query cache, `DataProvider`, `useSnapshot`/`useConnection`/`useServerMessage` as `skipToken` cache-only queries, `useSetMutation`, `useExpandMutation`; a server `message` or a closed link fails every expand in flight because refusals do not name their request). `App.tsx` shows the connection state and the plugin list. Deps: `@tanstack/react-query` 5.104.1, `vitest` 5.0.3 (dev); `just spa-test`. Check: Vitest 28/28; `just spa-typecheck`, `just js`, `just spa-build`; the built page on `vite preview` shows `Connection: open` and the sample plugins on `?sample`, and `Connection: closed` with no server. No render-level test yet (no DOM env); CI wiring is T310.11.
 
+### T310.4. App shell: router, layout, theme, states
+
+TanStack Router (code-based route tree built from one page list), sidebar/top bar from `design/html`, theme toggle (`rtok-theme` in localStorage, system default), the orb background, reduced motion, and shared loading/empty/error/offline states.
+
+Check: Vitest covers the route tree built from the page list, theme persistence across reload and the four shared states; every route reachable by keyboard.
+
+Execution: `web/src/pages.ts` holds the one page list (id plus the `Snapshot` field it reads, mirroring `model::pages()`); `web/src/router.tsx` builds the code-based route tree from it (index redirect, per-page placeholder reading `useSnapshot`) on hash history; `web/src/Shell.tsx` is the layout (skip link, sidebar that becomes a bottom tab bar on phones, top bar with connection and theme toggle, focus moved to the page heading on navigation); `web/src/theme.ts`, `web/src/Orb.tsx` + `web/src/orbGl.ts` and `web/src/states.tsx` carry the theme, the orb and the four shared states; `web/src/app.test.tsx` covers them under happy-dom.
+
+Result (2026-10-03, Claude Code / sonnet-5): the SPA now has an app shell on top of the T310.3 data layer. One `PAGES` list drives the route tree (`/` redirects to `/overview`, an unknown path shows "Page not found"), the sidebar and the bottom tab bar, so a page cannot be routable and missing from the nav; every link is a plain focusable anchor, the heading takes focus after each navigation and a skip link targets `#main`. Hash history keeps `?sample` in the real query string (a path router drops it on the first navigation) and needs no server fallback. The theme toggle reads and writes `rtok-theme` (system default, tracks the OS while unset, tolerates blocked storage); the orb is the WebGL shader from `design/html/js/orb.js` with the CSS gradient as first paint and fallback, off under reduced motion or `rtok-orb=off`, one still frame while the tab is hidden. `Loading`, `Empty`, `ErrorState` and `Offline` are the shared states: offline is driven by `useConnection()` and the snapshot's `error` becomes an alert banner. Vitest (happy-dom + Testing Library, 12 new tests) covers the route tree, keyboard-reachable navigation, theme persistence across a fresh mount, the four states and the orb fallback. Not done here: per-page icons (only 9 of the design's icons are in `web/assets/icons`, so the nav is text-only until the UI kit T310.5) and the settings dialog for the orb and opaque-panel switches.
+
 ### T80. `rtok web` from an installed binary 404s the whole UI
 
 Do (2026-09-21): `src/web/mod.rs` resolved the Slint bundle as `env!("CARGO_MANIFEST_DIR")/crates/rtok-webui/pkg` — baked at compile time, so the v0.3.2 ketch binary looked for CI's `/Users/runner/work/rtok/rtok/crates/rtok-webui/pkg`. That directory exists on no user machine, `pkg.is_dir()` was false, `/pkg` was never mounted, and the dashboard answered `/` 200 with a blank canvas while `GET /pkg/rtok_webui.js` 404'd, saying nothing about why. `pkg_dir` now resolves at run time and returns an `Option`: `RTOK_WEB_PKG`, then `pkg/` beside the executable (where a release archive unpacks), then `share/rtok/pkg` beside and one level above `bin/`, then the source tree as the dev fallback. `app` splits into `app_with_pkg(state, Option<PathBuf>)` so both surfaces are testable without touching the process environment (same reason as T78's handed-in gate). With no bundle, `/pkg/{*path}` answers 503 with the paths tried and how to build one, and `serve` prints that same text once at startup — one string, two places.
@@ -7511,6 +7521,23 @@ Result (2026-10-03, Claude Code / sonnet-5): `rtok agents usage` now prints the 
 Status: done 2026-10-03
 Model: Claude Code / claude-sonnet-5
 
+### T358.2. `rtok agents usage --source logs|both` for Claude Code and Codex
+
+Scope: the T358.2 bullet under "Split when claiming" in T358 (`--source logs` for Claude Code and Codex on the existing transcript readers, and `--source both`), plus the `source` default flip to `logs` and display names. Moved to T358.6 to stay near 300 LOC: `--by agent|model`, the saved columns and `rtok saved` line, the JSON `skipped` field, and agents that exist only in the store when `both` is used. `[agents.usage.dirs]` moves to T358.3: the two hosts here read the existing `[stats] transcripts_dir` and `codex_dir`.
+
+Check: the T358 Check items for `logs` and `both` on fixture homes for Claude Code and Codex; `just check`.
+
+Execution:
+
+1. Stack on T358.1 (#656). `jsonl::Usage` gains `ts` and `model` (the parser already dedups streamed messages by `message.id`); `codex::requests` returns one record per `token_count` line and `codex::collect` sums it, so there is one Codex parser.
+2. `measure::usage` turns both into `UsageSlice` rows (sub-agent transcripts join the parent's session); `agents::usage::report` takes its rows from the logs, the store, or both and fills `through_rtok_tokens` and `coverage` per agent for `both`.
+3. Fixture logs under `tests/trycmd/input/usage-logs/`, unit tests, trycmd goldens, `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `rtok agents usage` now defaults to `--source logs`: the Claude Code transcripts (`[stats] transcripts_dir`) and Codex rollouts (`[stats] codex_dir`) are read on the fly, never written to the store, and bucketed per request by day and month in `--tz`, priced through `[stats.prices]` like the `rtok` source. Agents print with their display names (`Claude Code`, `Codex`; JSON carries `host` and `name`). `--source both` keeps the logs' totals and costs and adds `Through rtok` and `Coverage` columns (JSON `through_rtok_tokens`, `coverage`), so an agent that bypasses the proxy reads low. Reused, not rewritten: `jsonl::parse_path` (message-id dedup), `codex::jsonl_paths`, `subagents::is_subagent`, `stats::row_cost` and `parse_since`. Known limits: a Claude Code session resumed into a second file is counted in both (dedup is per file, as in `rtok stats`); a request with no parsable timestamp is left out. Checked: unit tests for both readers (streamed duplicate, `<synthetic>` zero turn, sub-agent session, model from the latest `turn_context`, unparsable timestamp), logs totals with one unpriced model across the UTC and Kyiv month edge, `both` coverage, trycmd cases `agents-usage-logs` and `agents-usage-both` on fixture files, `config_coverage` and `surface_parity`.
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
+
 ### T325. Bash rewrite keeps `cd` in the host shell; shell-state builtins stay unwrapped
 
 Found by a bug-hunt pass over `src/plugins/cmd/hook.rs`. The PreToolUse rewrite turned `cd crates/x && cargo test` into `rtok run -- 'cd crates/x && cargo test'`, so the `cd` ran in `rtok run`'s child shell. Hosts that keep the shell's cwd between Bash calls (Claude Code) lost it: the next call ran in the old directory. `export`, `source`, `unset`, `alias`, `pushd`/`popd` had the same problem.
@@ -7542,6 +7569,18 @@ Check: `an_empty_rtok_home_falls_back_to_the_user_home`, `a_dotenv_directory_doe
 
 Status: done 2026-10-01
 Model: Claude Code / sonnet (reviewed by Claude Code / claude-opus-5-5)
+
+### T362. `rtok config validate` fails with ENOENT on a fresh install
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). The first command the reference file header tells a new user to run fails with a raw OS error, while the failed run still leaves `config.toml` behind, so a second run passes. `ConfigCmd::Validate` (`src/cli.rs:974`) calls `validate::issues(&path)`, which reads the file (`src/config/validate.rs:16`) without the `Config::ensure_user_file` step that every other subcommand gets through `Config::load_with`.
+
+Repro: `mkdir /tmp/h1 && HOME=/tmp/h1 rtok config validate; echo $?` → `Error: /tmp/h1/.rtok/config.toml … No such file or directory (os error 2)`, exit 1; the same command again prints `ok`, exit 0.
+
+Done when: with no explicit path, `config validate` first calls `Config::ensure_user_file(&home, config_file.as_deref())` (the default file is created as `load_with` does) and prints `ok …/config.toml` on the first run; an explicit missing path still errors with its name.
+
+Check: a trycmd or `tests/` case on an empty temp `HOME` gets `ok` and exit 0 on the first `config validate`, and an explicit missing path still exits non-zero; `just check`.
+
+**Result (2026-10-03, Claude Code / sonnet-5):** `ConfigCmd::Validate` (`src/cli.rs`) calls `Config::ensure_user_file(&home, config_file.as_deref())` when no path argument is given, the same call `load_with` makes, so the first `config validate` on an empty home creates the default file and prints `ok <home>/config.toml`. A path typed as the argument is not created: a missing one still fails naming it, and `--config`/`RTOK_CONFIG` stay untouched because `ensure_user_file` skips them. The rule tables in `src/config/validate.rs` are not touched. Checked by `config_validate_creates_the_default_file_but_not_an_explicit_one` in `tests/commands_e2e.rs` (empty temp HOME: `ok`, exit 0, file created; explicit missing path exits non-zero naming it) and `just check`.
 
 ### T349. Hooks never reach the fast client: ketch links `rtok` but not `rtok-hook`
 
