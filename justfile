@@ -74,6 +74,10 @@ spa-build:
 spa-typecheck:
     {{npm}} --prefix web run typecheck
 
+# T310.3: Vitest for web/src (the root vitest.config.mjs only covers plugins/).
+spa-test:
+    {{npm}} --prefix web run test
+
 # T183: tools/publish_marketplace's own test suite (no network, no real `gh`).
 python:
     {{pytest}} tools/tests
