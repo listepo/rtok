@@ -124,6 +124,9 @@ fn remove(p: &Payload, store: Option<&Store>) -> Result<String> {
     };
     // An unmerged branch keeps its commits: the worktree goes, the branch stays.
     let keep_branch = entry.state == State::Unmerged;
+    // Windows refuses to delete any process's current directory, and the host may start this
+    // hook inside the worktree; git then drops its record but leaves the directory behind.
+    let _ = std::env::set_current_dir(main);
     let done = remove::run(main, &p.worktree_path, &who, keep_branch);
     match &done {
         Ok(removed) => {
