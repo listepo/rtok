@@ -1,6 +1,6 @@
-//! `rtok agents usage` (T358): tokens and estimated cost per agent, day and month. T358.1
-//! reads only what passed through rtok (`usage` rows in the store); the agents' own logs are
-//! T358.2. Costs come from `[stats.prices]` through `measure::stats::row_cost`, the same
+//! `rtok agents usage` (T358): tokens and estimated cost per agent, day and month, from the
+//! agents' own logs (`measure::usage`), from what passed through rtok (`usage` rows in the
+//! store), or both (T358.1, T358.2). Costs come from `[stats.prices]` through `measure::stats::row_cost`, the same
 //! price table and arithmetic as `rtok stats --price` (T49.1), and a model without a price
 //! counts in every token total and is named in `unpriced`, never guessed.
 
@@ -14,6 +14,7 @@ use serde::Serialize;
 
 use crate::config::{Config, ModelPrice};
 use crate::measure::stats::{parse_since, row_cost};
+use crate::measure::usage::{claude_slices, codex_slices};
 use crate::render::{Col, table};
 use crate::store::{Store, UsageSlice};
 
@@ -60,8 +61,16 @@ pub struct Totals {
 #[derive(Debug, Serialize)]
 pub struct Agent {
     pub host: String,
+    pub name: String,
     #[serde(flatten)]
     pub row: Row,
+    /// `both` only: tokens of this agent that also passed through rtok.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub through_rtok_tokens: Option<i64>,
+    /// `both` only: `through_rtok_tokens` over the logs' tokens, so an agent that bypasses
+    /// the proxy reads low. `None` when the logs hold no tokens for it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coverage: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,12 +107,12 @@ pub struct Report {
 /// `since = "30d"` window.
 pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
     let o = &cfg.agents.usage;
-    if o.source != "rtok" {
-        bail!(
-            "agents.usage.source `{}` is not available yet; only `rtok` is (the agents' own logs are T358.2)",
-            o.source
-        );
-    }
+    let source = match o.source.as_str() {
+        "logs" => "logs",
+        "rtok" => "rtok",
+        "both" => "both",
+        other => bail!("agents.usage.source `{other}`: expected `logs`, `rtok` or `both`"),
+    };
     let daily = match o.period.as_str() {
         "monthly" => false,
         "daily" => true,
@@ -131,12 +140,29 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
     let (mut agents, mut periods): (BTreeMap<String, Row>, BTreeMap<String, Row>) =
         (BTreeMap::new(), BTreeMap::new());
     let mut unpriced: BTreeMap<(String, String), i64> = BTreeMap::new();
-    for b in store.usage_slices(since, until)? {
-        let host = b
-            .host
-            .clone()
-            .unwrap_or_else(|| format!("unattributed ({})", b.api));
-        if !o.hosts.is_empty() && !o.hosts.contains(&host) {
+    let logs = || {
+        let mut v = claude_slices(&cfg.stats.transcripts_dir, since);
+        v.extend(codex_slices(&cfg.stats.codex_dir, since));
+        v.retain(|b| b.ts < until);
+        v
+    };
+    let wanted = |h: &str| o.hosts.is_empty() || o.hosts.iter().any(|w| w == h);
+    let (primary, rtok) = match source {
+        "rtok" => (store.usage_slices(since, until)?, None),
+        "logs" => (logs(), None),
+        _ => (logs(), Some(store.usage_slices(since, until)?)),
+    };
+    let mut through_rtok: BTreeMap<String, i64> = BTreeMap::new();
+    for b in rtok.into_iter().flatten() {
+        let host = host_label(&b);
+        if wanted(&host) {
+            *through_rtok.entry(host).or_default() +=
+                b.input + b.cache_create + b.cache_read + b.output;
+        }
+    }
+    for b in primary {
+        let host = host_label(&b);
+        if !wanted(&host) {
             continue;
         }
         let model = b.model.as_deref().unwrap_or("unknown");
@@ -167,9 +193,17 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
     let through = days.iter().map(|(_, d)| d.clone()).max();
     let mut agents: Vec<Agent> = agents
         .into_iter()
-        .map(|(host, row)| Agent {
-            host,
-            row: row.rounded(),
+        .map(|(host, row)| {
+            let rtok = (source == "both").then(|| through_rtok.get(&host).copied().unwrap_or(0));
+            Agent {
+                name: name(&host),
+                through_rtok_tokens: rtok,
+                coverage: rtok
+                    .filter(|_| row.tokens > 0)
+                    .map(|t| (t as f64 / row.tokens as f64 * 1e4).round() / 1e4),
+                host,
+                row: row.rounded(),
+            }
         })
         .collect();
     // Dearest first; an unpriced agent (`None`) sorts below every priced one.
@@ -182,7 +216,7 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
         by_cost.then(b.row.tokens.cmp(&a.row.tokens))
     });
     Ok(Report {
-        source: "rtok",
+        source,
         tz: tz.iana_name().unwrap_or("local").to_string(),
         through,
         unpriced_models: unpriced
@@ -213,6 +247,26 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
             .collect(),
         daily,
     })
+}
+
+/// The agent a request belongs to: its host id, else `unattributed (<api>)` for a proxy
+/// request whose session has no host.
+fn host_label(b: &UsageSlice) -> String {
+    b.host
+        .clone()
+        .unwrap_or_else(|| format!("unattributed ({})", b.api))
+}
+
+/// The name a person knows the host by (`Claude Code`), else the host id.
+fn name(host: &str) -> String {
+    super::host(host)
+        .and_then(|a| {
+            let vs = a.variants();
+            vs.iter()
+                .find(|v| v.kind == super::Kind::Cli)
+                .or(vs.first())
+        })
+        .map_or_else(|| host.to_string(), |v| v.name.to_string())
 }
 
 /// `tz` as an IANA zone; empty is the system zone (jiff reads `TZ` and the OS setting).
@@ -296,18 +350,33 @@ fn usd(cost: Option<f64>) -> String {
 }
 
 impl Report {
+    /// Where the numbers come from, as the header says it.
+    fn from(&self) -> String {
+        let logs = format!(
+            "logs from {} agent{}",
+            self.agents.len(),
+            if self.agents.len() == 1 { "" } else { "s" }
+        );
+        match self.source {
+            "logs" => logs,
+            "both" => format!("{logs} and through rtok"),
+            _ => "through rtok".into(),
+        }
+    }
+
     /// The default screen: header, summary, the unpriced warning, per-agent table, then the
     /// month (or day) rows.
     pub fn to_text(&self) -> String {
+        let from = self.from();
         let Some(through) = &self.through else {
             return format!(
-                "rtok agents usage: through rtok, no usage recorded ({})\n",
+                "rtok agents usage: {from}, no usage recorded ({})\n",
                 self.tz
             );
         };
         let t = &self.totals;
         let mut out = format!(
-            "rtok agents usage: through rtok, up to {through} ({})\n\n  {} tokens\n  {} estimated cost\n  {} sessions\n  {} daily rows\n",
+            "rtok agents usage: {from}, up to {through} ({})\n\n  {} tokens\n  {} estimated cost\n  {} sessions\n  {} daily rows\n",
             self.tz,
             units(t.row.tokens),
             usd(t.row.cost_usd),
@@ -323,17 +392,26 @@ impl Report {
             ));
         }
         let cols = [Col::left(0), Col::right(0), Col::right(0)];
-        let mut rows = vec![vec![
-            "Agent".into(),
-            "Tokens".into(),
-            "Estimated cost".into(),
-        ]];
-        rows.extend(
-            self.agents
-                .iter()
-                .map(|a| vec![a.host.clone(), units(a.row.tokens), usd(a.row.cost_usd)]),
-        );
-        out.push_str(&format!("\n{}", table(&cols, &rows)));
+        let both = self.source == "both";
+        let mut head: Vec<String> = ["Agent", "Tokens", "Estimated cost"].map(Into::into).into();
+        let mut agent_cols = vec![Col::left(0), Col::right(0), Col::right(0)];
+        if both {
+            head.extend(["Through rtok".into(), "Coverage".into()]);
+            agent_cols.extend([Col::right(0), Col::right(0)]);
+        }
+        let mut rows = vec![head];
+        rows.extend(self.agents.iter().map(|a| {
+            let mut r = vec![a.name.clone(), units(a.row.tokens), usd(a.row.cost_usd)];
+            if both {
+                r.push(units(a.through_rtok_tokens.unwrap_or(0)));
+                r.push(
+                    a.coverage
+                        .map_or_else(|| "-".into(), |c| format!("{:.0}%", c * 100.0)),
+                );
+            }
+            r
+        }));
+        out.push_str(&format!("\n{}", table(&agent_cols, &rows)));
         let (label, head) = if self.daily {
             ("Daily totals", "Day")
         } else {
@@ -392,6 +470,7 @@ mod tests {
             ("claude-test".into(), price(1.0, 1.25, 0.1, 5.0)),
             ("gpt-x".into(), price(2.0, 2.0, 0.0, 10.0)),
         ]);
+        cfg.agents.usage.source = "rtok".into();
         cfg.agents.usage.tz = "Europe/Kyiv".into();
         let store = Store::open_in_memory().unwrap();
         let rows = [
@@ -462,8 +541,8 @@ rtok agents usage: through rtok, up to 2026-10-02 (Europe/Kyiv)
   the estimate. `rtok agents usage --unpriced` lists them.
 
 Agent                    Tokens Estimated cost
-codex                      1.2M          $4.00
-claude                     3.6M          $2.20
+Codex                      1.2M          $4.00
+Claude Code                3.6M          $2.20
 unattributed (anthropic)     2K          $0.00
 
 Monthly totals
@@ -493,6 +572,105 @@ Month   Tokens Estimated cost
 
     /// Kyiv is UTC+3 on 1 August and UTC+2 on 1 January: the same 21:30 UTC lands on the
     /// next local day in summer and, an hour later, in winter.
+    /// The on-disk fixture the trycmd cases read too: one Claude Code transcript (a streamed
+    /// message repeated, one unpriced model) and one Codex rollout.
+    fn logs_config(source: &str) -> Config {
+        let root = format!(
+            "{}/tests/trycmd/input/usage-logs",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let mut cfg = config_in(&tmp_dir("usage-logs"));
+        cfg.stats.transcripts_dir = format!("{root}/claude").into();
+        cfg.stats.codex_dir = format!("{root}/codex").into();
+        cfg.stats.prices = BTreeMap::from([
+            ("claude-test".into(), price(1.0, 1.25, 0.1, 5.0)),
+            ("gpt-x".into(), price(2.0, 2.0, 0.0, 10.0)),
+        ]);
+        cfg.agents.usage.source = source.into();
+        cfg.agents.usage.tz = "Europe/Kyiv".into();
+        cfg
+    }
+
+    #[test]
+    fn logs_total_each_agent_once_and_cut_days_in_the_zone() {
+        let cfg = logs_config("logs");
+        let store = Store::open_in_memory().unwrap();
+        let r = report(&cfg, &store, 0).unwrap();
+        assert_eq!(r.totals.row.tokens, 6_850_000);
+        assert_eq!((r.totals.sessions, r.totals.daily_rows), (2, 3));
+        // 1.7 (claude-test) + 6.0 (gpt-x); `mystery-model` is counted, not priced.
+        assert_eq!(r.totals.row.cost_usd, Some(7.7));
+        assert_eq!(
+            (r.unpriced_models, r.unpriced[0].model.as_str()),
+            (1, "mystery-model")
+        );
+        let names: Vec<_> = r.agents.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["Codex", "Claude Code"]);
+        assert!(r.agents.iter().all(|a| a.coverage.is_none()));
+        // 23:30 UTC on 30 Sept is already 1 Oct in Kyiv.
+        assert_eq!(
+            r.periods
+                .iter()
+                .map(|p| p.period.as_str())
+                .collect::<Vec<_>>(),
+            ["2026-10"]
+        );
+        assert!(
+            r.to_text().starts_with(
+                "rtok agents usage: logs from 2 agents, up to 2026-10-02 (Europe/Kyiv)"
+            )
+        );
+        let mut utc = logs_config("logs");
+        utc.agents.usage.tz = "UTC".into();
+        let r = report(&utc, &store, 0).unwrap();
+        assert_eq!(
+            r.periods
+                .iter()
+                .map(|p| p.period.as_str())
+                .collect::<Vec<_>>(),
+            ["2026-09", "2026-10"]
+        );
+        let mut one = logs_config("logs");
+        one.agents.usage.hosts = vec!["codex".into()];
+        assert_eq!(
+            report(&one, &store, 0).unwrap().totals.row.tokens,
+            3_200_000
+        );
+    }
+
+    #[test]
+    fn both_reports_how_much_of_each_agent_passed_through_rtok() {
+        let cfg = logs_config("both");
+        let store = Store::open_in_memory().unwrap();
+        store
+            .insert_usage_at(
+                "s1",
+                Some("claude"),
+                "claude-test",
+                at("2026-10-01T09:00:00Z"),
+                [1_000_000, 0, 0, 0],
+            )
+            .unwrap();
+        let r = report(&cfg, &store, 0).unwrap();
+        // Totals and costs stay the logs'; the store only fills the coverage columns.
+        assert_eq!(r.totals.row.tokens, 6_850_000);
+        let claude = r.agents.iter().find(|a| a.host == "claude").unwrap();
+        assert_eq!(claude.through_rtok_tokens, Some(1_000_000));
+        assert_eq!(claude.coverage, Some(0.274));
+        let codex = r.agents.iter().find(|a| a.host == "codex").unwrap();
+        assert_eq!(
+            (codex.through_rtok_tokens, codex.coverage),
+            (Some(0), Some(0.0))
+        );
+        let text = r.to_text();
+        assert!(
+            text.contains("logs from 2 agents and through rtok"),
+            "{text}"
+        );
+        assert!(text.contains("Through rtok Coverage"), "{text}");
+        assert!(text.contains("27%"), "{text}");
+    }
+
     #[test]
     fn month_edges_follow_the_daylight_saving_offset() {
         let (mut cfg, _) = fixture();
@@ -545,7 +723,7 @@ Month   Tokens Estimated cost
             ("hosts", "nope"),
             ("tz", "Mars/Base"),
             ("period", "weekly"),
-            ("source", "logs"),
+            ("source", "bogus"),
         ] {
             let (mut bad, store) = fixture();
             match key {
@@ -600,6 +778,7 @@ Month   Tokens Estimated cost
                 "cost_usd",
                 "host",
                 "input",
+                "name",
                 "output",
                 "tokens"
             ]

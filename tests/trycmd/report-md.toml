@@ -51,7 +51,7 @@ Every effective key with its origin — the `config show --sources` page.
 | agents.usage.hosts | [] | default |
 | agents.usage.period | monthly | default |
 | agents.usage.since |  | default |
-| agents.usage.source | rtok | default |
+| agents.usage.source | logs | default |
 | agents.usage.tz |  | default |
 | agents.usage.until |  | default |
 | bench.configs.a | bench/configs/legacy.json | default |
