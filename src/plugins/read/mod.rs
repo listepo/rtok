@@ -21,6 +21,7 @@ use crate::fs::normalize;
 pub mod cache;
 pub mod hook;
 pub(crate) mod outline;
+pub mod roots;
 pub mod search;
 #[cfg(test)]
 pub(crate) mod walk;
@@ -212,6 +213,14 @@ pub(crate) fn resolve_with(
     // Lexical allow, then (when the path exists) reject symlink escapes past the root.
     let check = fs.canonicalize(&abs).unwrap_or_else(|| abs.clone());
     if roots.iter().any(|r| under(&check, r)) {
+        return Ok(abs);
+    }
+    // T351 (`rtok mcp` only): sibling worktrees and client roots, looked up after the cheap
+    // checks failed so an ordinary in-cwd call never pays for them.
+    if roots::dynamic(cwd)
+        .iter()
+        .any(|r| under(&check, &fs.canonicalize(r).unwrap_or_else(|| r.clone())))
+    {
         return Ok(abs);
     }
     bail!("path outside cwd: {}", path.display())

@@ -31,7 +31,10 @@ Five MCP tools instead of seventy-eight, and no per-turn banner.
   host's `Edit` wants a native `Read` first, an MCP `read` does not count, and one line is
   enough — so content always comes from `read` and the edit gate costs one line.
 
-Root guard: paths must be under cwd or `allow_paths`.
+Root guard: paths must be under cwd or `allow_paths`. In `rtok mcp` (T351) every worktree of the
+cwd's repository (`git worktree list`, re-read at most every 30 s, only after a path failed the
+cheap checks) and every `file://` root of the client's `roots/list` answer count too; host
+scratchpads and any other directory stay outside, so `allow_paths` is the escape hatch.
 
 ## Config
 
