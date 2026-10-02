@@ -367,6 +367,10 @@ impl Server {
             },
             Listed {
                 plugin: "mcp",
+                def: worktrees::adopt_def(),
+            },
+            Listed {
+                plugin: "mcp",
                 def: messages::send_def(),
             },
             Listed {
@@ -467,6 +471,9 @@ impl Server {
             "worktree_remove" => self
                 .agent()
                 .and_then(|(agent, _)| worktrees::remove(&self.cx, &agent, args)),
+            "worktree_adopt" => self
+                .agent()
+                .and_then(|(agent, _)| worktrees::adopt(&self.cx, &agent, args)),
             "agent_send" => self
                 .agent()
                 .and_then(|(agent, _)| messages::send(&self.cx, &agent, args)),

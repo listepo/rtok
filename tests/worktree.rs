@@ -798,7 +798,7 @@ fn adopt_binds_a_host_made_worktree_and_lists_its_origin() {
     };
 
     let out = adopt(&cursor, &[]);
-    assert!(String::from_utf8_lossy(&out.stderr).contains("pass --task"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("name it with --task"));
     let out = adopt(&held, &["--task", "t9"]);
     assert!(String::from_utf8_lossy(&out.stderr).contains("not taken"));
 
@@ -1080,4 +1080,87 @@ fn mcp_worktree_remove_takes_only_the_linked_agent_s_clean_worktree() {
     assert!(got[3].0 && got[3].1.contains("locked by"), "{}", got[3].1);
     assert!(tmp.join("wt-theirs").exists());
     assert!(got[4].0 && got[4].1.contains("required"), "{}", got[4].1);
+}
+
+/// T289.2: MCP `worktree_adopt` for the linked agent, same code as the CLI: a Cursor-pool
+/// worktree is claimed without a lock, any other pool gets the v2 lock, a detached HEAD needs
+/// `task`, and a foreign lock is refused.
+#[test]
+fn mcp_worktree_adopt_binds_a_host_made_worktree_for_the_linked_agent() {
+    let tmp = rtok::testutil::tmp_dir("worktree-mcp-adopt");
+    run(&tmp, &["init", "-q", "work"]);
+    let work = tmp.join("work");
+    commit(&work, "a.txt");
+    let (store, _) = agents(&tmp, &[]);
+    let claude = store.host_id("claude").unwrap().unwrap();
+    let cwd = work.canonicalize().unwrap();
+    let register = || {
+        store
+            .register_agent(claude, "sess-me", None, cwd.to_str(), None)
+            .unwrap()
+    };
+    let me = register();
+    let cursor = tmp.join(".cursor/worktrees/work/abc");
+    let kilo = tmp.join(".kilo/worktrees/t7-x");
+    let held = tmp.join(".cursor/worktrees/work/held");
+    run(
+        &work,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "--detach",
+            cursor.to_str().unwrap(),
+        ],
+    );
+    run(
+        &work,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "t7-x",
+            kilo.to_str().unwrap(),
+        ],
+    );
+    let reason = "Cursor / grok | t3 | 2026-09-22";
+    let held_args = [
+        "worktree", "add", "-q", "--detach", "--lock", "--reason", reason,
+    ];
+    run(&work, &[&held_args[..], &[held.to_str().unwrap()]].concat());
+
+    let call = |args: serde_json::Value| ("worktree_adopt", args.to_string());
+    let calls = [
+        call(serde_json::json!({"path": cursor})),
+        call(serde_json::json!({"path": cursor, "task": "t9"})),
+        call(serde_json::json!({"path": kilo})),
+        call(serde_json::json!({"path": held, "task": "t9"})),
+    ];
+    let calls: Vec<(&str, &str)> = calls.iter().map(|(n, a)| (*n, a.as_str())).collect();
+    let got = common::mcp::session(&tmp, &work, || drop(register()), &calls);
+    assert!(
+        got[0].0 && got[0].1.contains("name it with"),
+        "{}",
+        got[0].1
+    );
+    assert!(!got[1].0, "{}", got[1].1);
+    let v: serde_json::Value = serde_json::from_str(&got[1].1).unwrap();
+    assert_eq!(
+        (v["origin"].as_str(), v["locked"].as_bool()),
+        (Some("cursor"), Some(false))
+    );
+    assert!(!got[2].0, "{}", got[2].1);
+    let lock = lock_of(&work, "t7-x");
+    assert_eq!(
+        (lock.task.as_str(), lock.agent.as_deref()),
+        ("t7", Some(me.as_str()))
+    );
+    assert!(got[3].0 && got[3].1.contains("not taken"), "{}", got[3].1);
+    let claims = store.open_worktree_claims().unwrap();
+    let want = cursor.canonicalize().unwrap().display().to_string();
+    assert!(
+        claims.iter().any(|(p, a)| *p == want && *a == me),
+        "{claims:?}"
+    );
 }

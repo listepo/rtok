@@ -7598,6 +7598,14 @@ Done means: `rtok worktree adopt [<path>] [--task <id>] [--agent] [--owner]` loc
 
 Result (2026-10-03, Claude Code / sonnet-5): `rtok worktree adopt [<path>] [--task] [--agent] [--owner] [--json]` binds the linked worktree that holds the path (the cwd by default, any directory inside it). The task is `--task`, else the old lock's, else the branch's first `-` segment; a detached HEAD with none of them asks for `--task`. Pools whose host evicts worktrees to stay under a cap (Cursor, Codex, Windsurf/Devin) get a store claim and no git lock, since a lock's effect on that eviction is untested (the creator's live probe, T281, decides); every other pool gets the v2 lock like `claim`, and a foreign lock is refused either way. `worktree list` gained an `origin` column and JSON field (`main`, `cursor`, `windsurf`, `codex`, `claude`, `kilo`, `conductor`, `other`), read from where the worktree lives (`src/worktree/origin.rs`; `$CODEX_HOME` moves Codex's pool). `claim` and `adopt` share `claim::run` and `claim::bind`, which MCP `worktree_adopt` reuses in T289.2. The `source` name from the original plan is `origin`, because `source` is already the source-bytes column.
 
+### T289.2. MCP `worktree_adopt`
+
+Done means: `worktree_adopt {path?, task?}` for the session's linked agent, same code path as the CLI (no agent or owner argument).
+
+Check: MCP e2e.
+
+Result (2026-10-03, Claude Code / sonnet-5): MCP `worktree_adopt {path?, task?}` calls `claim::bind` like the CLI. The agent is the session's link and there is no owner argument. `path` is the worktree or a directory inside it, relative to the server's cwd, which is the project root for many hosts, so a model in a host-made worktree passes its path. A detached HEAD needs `task`. The MCP listing grows to 25 tools (~663 description tokens); the creator's decision on the listing is still pending.
+
 ### T358.1. `rtok agents usage --source rtok`: CLI, `[agents.usage]` config and store reads
 
 First slice of T358: scope is the T358.1 bullet under "Split when claiming" there; the spec text stays in T358.
