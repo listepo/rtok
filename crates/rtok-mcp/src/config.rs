@@ -48,10 +48,20 @@ pub enum Written {
 /// is absent — never a substring match on the raw text (the bug `src/agents/mcp.rs::has_entry`
 /// already fixed for the read side; this is the same rule for every format).
 pub fn read_entry(fs: &impl Fs, spec: &McpSpec) -> Result<Option<Value>> {
+    Ok(read_servers(fs, spec)?.and_then(|m| m.get(spec.server.name).cloned()))
+}
+
+/// Every server in the table at `spec.key_path`, whatever its name, or `None` if the file or the
+/// table is absent. The doctor's duplicate check reads whole tables through this, so it parses
+/// a host's file exactly as [`read_entry`] does.
+pub fn read_servers(
+    fs: &impl Fs,
+    spec: &McpSpec,
+) -> Result<Option<serde_json::Map<String, Value>>> {
     match spec.format {
-        Format::Json => read_json(fs, spec),
-        Format::Jsonc => read_jsonc(fs, spec),
-        Format::Toml => read_toml(fs, spec),
+        Format::Json => servers_json(fs, spec),
+        Format::Jsonc => servers_jsonc(fs, spec),
+        Format::Toml => servers_toml(fs, spec),
     }
 }
 
@@ -91,14 +101,12 @@ fn parse_json(bytes: &[u8], path: &Path) -> Result<Value> {
     serde_json::from_slice(bytes).with_context(|| format!("{}: not strict JSON", path.display()))
 }
 
-fn read_json(fs: &impl Fs, spec: &McpSpec) -> Result<Option<Value>> {
+fn servers_json(fs: &impl Fs, spec: &McpSpec) -> Result<Option<serde_json::Map<String, Value>>> {
     let Some(bytes) = fs.read(&spec.config_path) else {
         return Ok(None);
     };
     let root = parse_json(&bytes, &spec.config_path)?;
-    Ok(walk_json(&root, &spec.key_path)
-        .and_then(|s| s.get(spec.server.name))
-        .cloned())
+    Ok(walk_json(&root, &spec.key_path).cloned())
 }
 
 fn walk_json<'a>(
@@ -188,7 +196,7 @@ fn parse_jsonc(bytes: Option<Vec<u8>>, path: &Path) -> Result<CstRootNode> {
         .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))
 }
 
-fn read_jsonc(fs: &impl Fs, spec: &McpSpec) -> Result<Option<Value>> {
+fn servers_jsonc(fs: &impl Fs, spec: &McpSpec) -> Result<Option<serde_json::Map<String, Value>>> {
     let Some(bytes) = fs.read(&spec.config_path) else {
         return Ok(None);
     };
@@ -202,7 +210,10 @@ fn read_jsonc(fs: &impl Fs, spec: &McpSpec) -> Result<Option<Value>> {
         };
         obj = next;
     }
-    Ok(obj.get(spec.server.name).and_then(|p| p.to_serde_value()))
+    Ok(match obj.to_serde_value() {
+        Some(Value::Object(m)) => Some(m),
+        _ => None,
+    })
 }
 
 fn write_jsonc(fs: &mut impl Fs, spec: &McpSpec, entry: Option<&Value>) -> Result<Written> {
@@ -260,7 +271,7 @@ fn parse_toml(bytes: &[u8], path: &Path) -> Result<toml_edit::DocumentMut> {
         .with_context(|| format!("{}: not valid TOML", path.display()))
 }
 
-fn read_toml(fs: &impl Fs, spec: &McpSpec) -> Result<Option<Value>> {
+fn servers_toml(fs: &impl Fs, spec: &McpSpec) -> Result<Option<serde_json::Map<String, Value>>> {
     let Some(bytes) = fs.read(&spec.config_path) else {
         return Ok(None);
     };
@@ -272,7 +283,12 @@ fn read_toml(fs: &impl Fs, spec: &McpSpec) -> Result<Option<Value>> {
         };
         table = next;
     }
-    Ok(table.get(spec.server.name).map(toml_item_to_json))
+    Ok(Some(
+        table
+            .iter()
+            .map(|(k, v)| (k.to_string(), toml_item_to_json(v)))
+            .collect(),
+    ))
 }
 
 fn write_toml(fs: &mut impl Fs, spec: &McpSpec, entry: Option<&Value>) -> Result<Written> {

@@ -37,8 +37,8 @@ clink.argmatcher("rtok")
       :addflags({ "--tasks" .. clink.argmatcher():addarg(clink.filematches), "--runs" .. clink.argmatcher():addarg({}), "--dry-run", "--timeout" .. clink.argmatcher():addarg({}), "--suite" .. clink.argmatcher():addarg({}), "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
       :adddescriptions({ ["--tasks"] = "Task list TOML", ["--runs"] = "Repeats per task × config", ["--dry-run"] = "Print the schedule and exit", ["--timeout"] = "Per-run timeout in seconds", ["--suite"] = "Task suite (`graph` = with/without rtok MCP)", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
     "doctor" .. clink.argmatcher()
-      :addflags({ "--instructions", "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
-      :adddescriptions({ ["--instructions"] = "Also run the instruction-file audit (T7.2)", ["--json"] = "JSON instead of the table", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+      :addflags({ "--instructions", "--json", "--fix", "--yes", "--dry-run", "--only" .. clink.argmatcher():addarg({ "broken-hooks" }), "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
+      :adddescriptions({ ["--instructions"] = "Also run the instruction-file audit (T7.2)", ["--json"] = "JSON instead of the table", ["--fix"] = "Remove the hooks whose script no longer exists; prints the diff, writes only with --yes", ["--yes"] = "With --fix: write the changes (a copy goes to `_backup/` first)", ["--dry-run"] = "With --fix --yes: print the diffs and write nothing", ["--only"] = "With --fix: which problems to fix (only `broken-hooks` for now)", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
     "worktree" .. clink.argmatcher()
       :addarg({
         "add" .. clink.argmatcher()

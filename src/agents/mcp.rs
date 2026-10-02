@@ -73,12 +73,15 @@ pub(crate) fn toml_item_to_json(item: &Item) -> Value {
     match item {
         Item::None => Value::Null,
         Item::Value(v) => toml_value_to_json(v),
-        Item::Table(t) => t
-            .iter()
-            .map(|(k, v)| (k.to_string(), toml_item_to_json(v)))
-            .collect(),
-        Item::ArrayOfTables(_) => Value::Null,
+        Item::Table(t) => table_to_json(t),
+        Item::ArrayOfTables(a) => a.iter().map(table_to_json).collect(),
     }
+}
+
+fn table_to_json(t: &toml_edit::Table) -> Value {
+    t.iter()
+        .map(|(k, v)| (k.to_string(), toml_item_to_json(v)))
+        .collect()
 }
 
 fn toml_value_to_json(v: &toml_edit::Value) -> Value {
@@ -851,6 +854,17 @@ mod tests {
         assert_eq!(
             toml_item_to_json(&item),
             serde_json::json!({"command": "rtok", "args": ["mcp"]})
+        );
+    }
+
+    #[test]
+    fn toml_item_to_json_converts_an_array_of_tables() {
+        let doc: DocumentMut = "[[hooks]]\nevent = \"Stop\"\n[[hooks]]\nevent = \"Start\"\n"
+            .parse()
+            .unwrap();
+        assert_eq!(
+            toml_item_to_json(doc.as_item()),
+            serde_json::json!({"hooks": [{"event": "Stop"}, {"event": "Start"}]})
         );
     }
 }

@@ -144,8 +144,20 @@ enum Cmd {
         #[arg(long)]
         instructions: bool,
         /// JSON instead of the table
-        #[arg(long)]
+        #[arg(long, conflicts_with = "fix")]
         json: bool,
+        /// Remove the hooks whose script no longer exists; prints the diff, writes only with --yes
+        #[arg(long)]
+        fix: bool,
+        /// With --fix: write the changes (a copy goes to `_backup/` first)
+        #[arg(long, requires = "fix")]
+        yes: bool,
+        /// With --fix --yes: print the diffs and write nothing
+        #[arg(long, requires = "yes")]
+        dry_run: bool,
+        /// With --fix: which problems to fix (only `broken-hooks` for now)
+        #[arg(long, requires = "fix", value_enum, default_value = "broken-hooks")]
+        only: FixClass,
     },
     /// Git worktrees of this repository: owner, state and disk cost
     Worktree {
@@ -365,6 +377,12 @@ enum LogsCmd {
     Export,
     /// Print the last lines, then follow: new lines arrive above the old, newest first
     Watch,
+}
+
+/// `--only` for `rtok doctor --fix` (D14: a `ValueEnum`). T331.6 adds the duplicate classes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum FixClass {
+    BrokenHooks,
 }
 
 /// `--format` for `rtok report` (D14: a `ValueEnum`, like `demon`'s `Service`, so clap
@@ -1142,7 +1160,24 @@ pub fn run() -> Result<()> {
             )?;
             print!("{}", crate::bench::run(&cfg)?);
         }
-        Cmd::Doctor { instructions, json } => {
+        Cmd::Doctor {
+            instructions,
+            fix: true,
+            yes,
+            dry_run,
+            only: FixClass::BrokenHooks,
+            ..
+        } => {
+            let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
+            let (text, code) = crate::doctor::fix::run(&cfg, yes && !dry_run);
+            print!("{text}");
+            if code != 0 {
+                std::process::exit(code);
+            }
+        }
+        Cmd::Doctor {
+            instructions, json, ..
+        } => {
             let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
             let report = model::doctor(&cfg)?;
             if json {

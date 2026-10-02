@@ -55,6 +55,9 @@ Live probes (the `rtok doctor` page), not store rows.
 
 ```text
 hooks 0
+hooks check none found
+duplicate hooks none found
+duplicate mcp servers none found
 mcp
 proxy 
 proxy openai 

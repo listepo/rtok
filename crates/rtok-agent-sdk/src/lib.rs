@@ -515,8 +515,8 @@ pub fn keep_edited(apply: &Apply, at: &str) -> Option<String> {
 }
 
 /// True when `v` (or anything nested in it) is a string naming the rtok binary — [`judge_owned`]'s
-/// "not rtok's" check.
-fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
+/// "not rtok's" check, and the doctor's way to tell rtok's own MCP entry from any other server.
+pub fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
     match v {
         Value::String(s) => is_bin(s),
         Value::Array(a) => a.iter().any(|x| runs_bin(x, is_bin)),
