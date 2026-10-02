@@ -211,12 +211,17 @@ impl Roots {
 mod tests {
     use super::*;
 
-    fn roots(env: &[(&str, &str)]) -> Roots {
-        let env: Vec<(String, String)> = env
+    /// An absolute path on every OS (`/c` is not absolute on Windows, so `Roots::new` would drop it).
+    fn abs(name: &str) -> PathBuf {
+        std::env::temp_dir().join("rtok-junk-map").join(name)
+    }
+
+    fn roots(env: &[(&str, PathBuf)]) -> Roots {
+        let env: Vec<(String, PathBuf)> = env
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), v.clone()))
             .collect();
-        Roots::new(PathBuf::from("/h"), move |k| {
+        Roots::new(abs("h"), move |k| {
             env.iter().find(|(n, _)| n == k).map(|(_, v)| v.into())
         })
     }
@@ -224,43 +229,44 @@ mod tests {
     #[test]
     fn defaults_sit_under_home() {
         let r = roots(&[]);
-        assert_eq!(
-            r.resolve("{claude}/debug"),
-            PathBuf::from("/h/.claude/debug")
-        );
-        assert_eq!(r.resolve("{codex}"), PathBuf::from("/h/.codex"));
+        let h = abs("h");
+        assert_eq!(r.resolve("{claude}/debug"), h.join(".claude").join("debug"));
+        assert_eq!(r.resolve("{codex}"), h.join(".codex"));
         assert_eq!(
             r.resolve("{xdg_cache}/opencode"),
-            PathBuf::from("/h/.cache/opencode")
+            h.join(".cache").join("opencode")
         );
         assert_eq!(
             r.resolve("{xdg_data}/opencode/log"),
-            PathBuf::from("/h/.local/share/opencode/log")
+            h.join(".local").join("share").join("opencode").join("log")
         );
     }
 
     #[test]
     fn environment_overrides_move_every_path_under_them() {
         let r = roots(&[
-            ("CLAUDE_CONFIG_DIR", "/c"),
-            ("CODEX_HOME", "/x"),
-            ("XDG_CACHE_HOME", "/xc"),
-            ("COPILOT_CACHE_HOME", "/cc"),
+            ("CLAUDE_CONFIG_DIR", abs("c")),
+            ("CODEX_HOME", abs("x")),
+            ("XDG_CACHE_HOME", abs("xc")),
+            ("COPILOT_CACHE_HOME", abs("cc")),
         ]);
         assert_eq!(
             r.resolve("{claude}/paste-cache"),
-            PathBuf::from("/c/paste-cache")
+            abs("c").join("paste-cache")
         );
-        assert_eq!(r.resolve("{codex}/log"), PathBuf::from("/x/log"));
-        assert_eq!(r.resolve("{xdg_cache}/zed"), PathBuf::from("/xc/zed"));
-        assert_eq!(r.resolve("{copilot_cache}"), PathBuf::from("/cc"));
+        assert_eq!(r.resolve("{codex}/log"), abs("x").join("log"));
+        assert_eq!(r.resolve("{xdg_cache}/zed"), abs("xc").join("zed"));
+        assert_eq!(r.resolve("{copilot_cache}"), abs("cc"));
     }
 
     #[test]
     fn a_relative_or_empty_override_is_ignored() {
-        let r = roots(&[("CLAUDE_CONFIG_DIR", "rel"), ("CODEX_HOME", "")]);
-        assert_eq!(r.resolve("{claude}"), PathBuf::from("/h/.claude"));
-        assert_eq!(r.resolve("{codex}"), PathBuf::from("/h/.codex"));
+        let r = roots(&[
+            ("CLAUDE_CONFIG_DIR", PathBuf::from("rel")),
+            ("CODEX_HOME", PathBuf::new()),
+        ]);
+        assert_eq!(r.resolve("{claude}"), abs("h").join(".claude"));
+        assert_eq!(r.resolve("{codex}"), abs("h").join(".codex"));
     }
 
     #[test]
