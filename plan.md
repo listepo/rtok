@@ -63,7 +63,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
 | T352 | in progress | P1 | 3 | 10% | Claude Code / claude-opus-5-5 |
-| T355 | in progress | P2 | 2 | 10% | Claude Code / claude-opus-5-5 |
 | T356 | todo | P1 | 2 | 0% | |
 
 
@@ -1409,16 +1408,6 @@ Execution plan:
 2. `run_retention` also drops `symbols`/`symbol_stale` rows of roots that are no longer a directory.
 3. Pages back to the disk: a new store opens with `auto_vacuum = INCREMENTAL`; `run_retention` ends with `PRAGMA incremental_vacuum`; `rtok agents junk clear` (not `--dry-run`) converts an existing store once (`auto_vacuum = INCREMENTAL` + `VACUUM`). Pragmas stay in `src/store/sql_ext.rs` (Diesel cannot express them).
 4. Tests: store tests for body retention, vanished-root drop, incremental vacuum shrinking a file; config coverage. Then measure `rtok.db` before/after on a copy of the real store and record it here.
-
-### T355. Measure what the native `Read` deny costs
-
-Found 2026-10-02 in Claude Code transcripts (578 sessions, last 7 days): the read hook denied native `Read` 710 times ("use rtok read; before Edit run native Read(limit=N) — it satisfies the edit gate", T127) and the guard denied 59 duplicate reads. Each deny is an extra model turn plus a retry; there is no `Measurement` row showing the deny saves more tokens than it costs.
-
-Done when: a measurement over the stored calls pairs each deny with the follow-up call (rtok `read`, ranged native `Read`, or giving up) and reports net tokens per deny; the result and a recommendation (keep, narrow, or turn into advice without deny) are recorded in this card. No behaviour change in this task.
-
-Check: the measurement query/script is reproducible from the store; numbers recorded here.
-
-Execution plan: read-only `sqlite3` queries over a copy of `~/.rtok/rtok.db` (hook `calls` + inline `call_io` bodies, last 7 days, while T352 still keeps them): find each `PreToolUse` `Read` the read hook denied, then the same session's next tool call — rtok `read` (MCP), ranged native `Read`, another tool, or nothing; estimate tokens of the deny turn (deny text + retried call) against the saving of the rtok `read` that replaced it (`measurements`). Queries go into `research.md` with the date; numbers and a recommendation (keep, narrow, advice-only) go here. No code change.
 
 ### T356. Never index `$HOME` or `/` as a graph root
 
