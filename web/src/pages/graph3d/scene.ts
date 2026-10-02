@@ -73,7 +73,7 @@ export interface SceneOptions {
 export function colorOf(root: string): string {
   let h = 2166136261;
   for (let i = 0; i < root.length; i++) h = Math.imul(h ^ root.charCodeAt(i), 16777619);
-  return `hsl(${(h >>> 0) % 360} 62% 56%)`;
+  return `hsl(${(h >>> 0) % 360}, 62%, 56%)`;
 }
 
 /** Symbols are the size: a log scale keeps one huge project from hiding the rest. */
