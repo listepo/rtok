@@ -62,6 +62,30 @@ fn web_serves_exactly_the_pages_the_model_offers() {
     );
 }
 
+/// T310.4: the React SPA's route tree, nav and tab bar are `PAGES` in `web/src/pages.ts`, a
+/// TypeScript copy of `model::pages()`. Both the id and the snapshot field must match, in
+/// order, so a page added to the model cannot be missing from the SPA.
+#[test]
+fn spa_page_list_matches_the_model() {
+    let src = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("web/src/pages.ts"),
+    )
+    .expect("web/src/pages.ts is readable");
+    let re = regex::Regex::new(r#"\{ id: "([^"]+)", field: "([^"]+)" \}"#).unwrap();
+    let spa: Vec<(String, String)> = re
+        .captures_iter(&src)
+        .map(|c| (c[1].to_string(), c[2].to_string()))
+        .collect();
+    let model: Vec<(String, String)> = model::pages()
+        .iter()
+        .map(|(page, field)| (page.to_string(), field.to_string()))
+        .collect();
+    assert_eq!(
+        spa, model,
+        "web/src/pages.ts PAGES drifted from model::pages() (id, snapshot field, in order)"
+    );
+}
+
 /// T60.10: the TUI's page match has no placeholder fallback any more, so a model
 /// page without a TUI body names itself here. The check reads the match arms out of
 /// `src/tui/view.rs` — the same source-scan shape the WASM `PAGE_IDS` check uses.
