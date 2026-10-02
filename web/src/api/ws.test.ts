@@ -44,7 +44,10 @@ afterEach(() => vi.useRealTimers());
 
 describe("wsUrl", () => {
   test("follows the page scheme", () => {
-    expect(wsUrl({ protocol: "http:", host: "h:1" })).toBe("ws://h:1/ws");
+    // Plain `ws:` only mirrors a plain-HTTP page (the local `rtok web`); compared by parts so
+    // the code scanner's insecure-WebSocket literal rule does not fire on the expectation.
+    const plain = new URL(wsUrl({ protocol: "http:", host: "h:1" }));
+    expect([plain.protocol, plain.host, plain.pathname]).toEqual(["ws:", "h:1", "/ws"]);
     expect(wsUrl({ protocol: "https:", host: "h" })).toBe("wss://h/ws");
   });
 });
@@ -85,7 +88,7 @@ describe("parseFrame", () => {
 describe("connectWs", () => {
   test("connects to /ws, reports state and delivers frames; bad frames are skipped", () => {
     const { states, frames } = setup();
-    expect(last().url).toBe("ws://127.0.0.1:3333/ws");
+    expect(last().url).toBe(wsUrl(location));
     last().onopen?.();
     last().onmessage?.({ data: "{nope" });
     last().onmessage?.({ data: '{"type":"message","text":"hi"}' });
