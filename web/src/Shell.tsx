@@ -6,9 +6,10 @@ import { Orb } from "./Orb";
 import { PAGES, type Page } from "./pages";
 import { Empty, ErrorState, Offline } from "./states";
 import { useTheme } from "./theme";
+import { Icon } from "./ui/Icon";
 
 const focusRing = "outline-none focus-visible:shadow-ring";
-const navLink = `${focusRing} flex h-9 shrink-0 items-center rounded-md px-2.5 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg aria-[current=page]:bg-accent/15 aria-[current=page]:text-accent-fg`;
+const navLink = `${focusRing} flex h-9 shrink-0 items-center gap-3 rounded-md px-2.5 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg aria-[current=page]:bg-accent/15 aria-[current=page]:text-accent-fg`;
 
 export function Shell() {
     const connection = useConnection();
@@ -47,6 +48,7 @@ export function Shell() {
                     </div>
                     {PAGES.map((p: Page) => (
                         <Link key={p.id} to={`/${p.id}`} className={navLink}>
+                            <Icon name={p.id} />
                             {p.id}
                         </Link>
                     ))}
