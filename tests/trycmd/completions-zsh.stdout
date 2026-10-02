@@ -199,6 +199,18 @@ _arguments "${_arguments_options[@]}" : /
 ':path -- The worktree:_files' /
 && ret=0
 ;;
+(adopt)
+_arguments "${_arguments_options[@]}" : /
+'--task=[The task id, when the lock and the branch do not name one (a detached HEAD)]:TASK:_default' /
+'--agent=[The rtok agent id (any unique prefix); defaults to /`RTOK_AGENT_ID/`]:AGENT:_default' /
+'--owner=[The owner the lock names, as /`<provider> / <model>/`. Defaults to /`<host> / <model>/` of the agent]:OWNER:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[Print the result as JSON]' /
+'-h[Print help]' /
+'--help[Print help]' /
+'::path -- The worktree, or a directory inside it; defaults to the current directory:_files' /
+&& ret=0
+;;
 (remove)
 _arguments "${_arguments_options[@]}" : /
 '--agent=[The rtok agent id (any unique prefix); defaults to /`RTOK_AGENT_ID/`]:AGENT:_default' /
@@ -258,6 +270,10 @@ _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
 (claim)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(adopt)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -1955,6 +1971,10 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
+(adopt)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
 (remove)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
@@ -3529,6 +3549,7 @@ _rtok__subcmd__help__subcmd__worktree_commands() {
     local commands; commands=(
 'add:Create the worktree for a task/: one location, one name, one locked owner; prints its path' /
 'claim:Bind an existing worktree to an agent/: rewrites its lock only when unlocked or already yours' /
+'adopt:Bind the worktree you are in (made by a host'/''s own tool) to your agent. A worktree in a pool its host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only' /
 'remove:Remove your own finished worktree/: unlock, /`git worktree remove/`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees' /
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
 'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
@@ -3540,6 +3561,11 @@ _rtok__subcmd__help__subcmd__worktree_commands() {
 _rtok__subcmd__help__subcmd__worktree__subcmd__add_commands() {
     local commands; commands=()
     _describe -t commands 'rtok help worktree add commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__worktree__subcmd__adopt_commands] )) ||
+_rtok__subcmd__help__subcmd__worktree__subcmd__adopt_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help worktree adopt commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help__subcmd__worktree__subcmd__claim_commands] )) ||
 _rtok__subcmd__help__subcmd__worktree__subcmd__claim_commands() {
@@ -3858,6 +3884,7 @@ _rtok__subcmd__worktree_commands() {
     local commands; commands=(
 'add:Create the worktree for a task/: one location, one name, one locked owner; prints its path' /
 'claim:Bind an existing worktree to an agent/: rewrites its lock only when unlocked or already yours' /
+'adopt:Bind the worktree you are in (made by a host'/''s own tool) to your agent. A worktree in a pool its host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only' /
 'remove:Remove your own finished worktree/: unlock, /`git worktree remove/`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees' /
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
 'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
@@ -3870,6 +3897,11 @@ _rtok__subcmd__worktree_commands() {
 _rtok__subcmd__worktree__subcmd__add_commands() {
     local commands; commands=()
     _describe -t commands 'rtok worktree add commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__worktree__subcmd__adopt_commands] )) ||
+_rtok__subcmd__worktree__subcmd__adopt_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok worktree adopt commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__worktree__subcmd__claim_commands] )) ||
 _rtok__subcmd__worktree__subcmd__claim_commands() {
@@ -3891,6 +3923,7 @@ _rtok__subcmd__worktree__subcmd__help_commands() {
     local commands; commands=(
 'add:Create the worktree for a task/: one location, one name, one locked owner; prints its path' /
 'claim:Bind an existing worktree to an agent/: rewrites its lock only when unlocked or already yours' /
+'adopt:Bind the worktree you are in (made by a host'/''s own tool) to your agent. A worktree in a pool its host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only' /
 'remove:Remove your own finished worktree/: unlock, /`git worktree remove/`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees' /
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
 'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
@@ -3903,6 +3936,11 @@ _rtok__subcmd__worktree__subcmd__help_commands() {
 _rtok__subcmd__worktree__subcmd__help__subcmd__add_commands() {
     local commands; commands=()
     _describe -t commands 'rtok worktree help add commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__worktree__subcmd__help__subcmd__adopt_commands] )) ||
+_rtok__subcmd__worktree__subcmd__help__subcmd__adopt_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok worktree help adopt commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__worktree__subcmd__help__subcmd__claim_commands] )) ||
 _rtok__subcmd__worktree__subcmd__help__subcmd__claim_commands() {

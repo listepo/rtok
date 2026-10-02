@@ -50,6 +50,10 @@ clink.argmatcher("rtok")
           :addarg(clink.filematches)
           :addflags({ "--agent" .. clink.argmatcher():addarg({}), "--owner" .. clink.argmatcher():addarg({}), "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
           :adddescriptions({ ["--agent"] = "The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`", ["--owner"] = "The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> / <model>` of the agent", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+        "adopt" .. clink.argmatcher()
+          :addarg(clink.filematches)
+          :addflags({ "--task" .. clink.argmatcher():addarg({}), "--agent" .. clink.argmatcher():addarg({}), "--owner" .. clink.argmatcher():addarg({}), "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
+          :adddescriptions({ ["--task"] = "The task id, when the lock and the branch do not name one (a detached HEAD)", ["--agent"] = "The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`", ["--owner"] = "The owner the lock names, as `<provider> / <model>`. Defaults to `<host> / <model>` of the agent", ["--json"] = "Print the result as JSON", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
         "remove" .. clink.argmatcher()
           :addarg({})
           :addflags({ "--agent" .. clink.argmatcher():addarg({}), "--owner" .. clink.argmatcher():addarg({}), "--keep-branch", "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
@@ -68,16 +72,17 @@ clink.argmatcher("rtok")
           :addarg({
             "add" .. clink.argmatcher(),
             "claim" .. clink.argmatcher(),
+            "adopt" .. clink.argmatcher(),
             "remove" .. clink.argmatcher(),
             "list" .. clink.argmatcher(),
             "gc" .. clink.argmatcher(),
             "clean" .. clink.argmatcher(),
             "help" .. clink.argmatcher()
           })
-          :adddescriptions({ ["add"] = "Create the worktree for a task: one location, one name, one locked owner; prints its path", ["claim"] = "Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours", ["remove"] = "Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees", ["list"] = "Every worktree and orphan with its owner, state, source and build-cache bytes", ["gc"] = "Remove merged, clean, idle worktrees with their branches; drop records of deleted ones", ["clean"] = "Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`", ["help"] = "Print this message or the help of the given subcommand(s)" })
+          :adddescriptions({ ["add"] = "Create the worktree for a task: one location, one name, one locked owner; prints its path", ["claim"] = "Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours", ["adopt"] = "Bind the worktree you are in (made by a host's own tool) to your agent. A worktree in a pool its host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only", ["remove"] = "Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees", ["list"] = "Every worktree and orphan with its owner, state, source and build-cache bytes", ["gc"] = "Remove merged, clean, idle worktrees with their branches; drop records of deleted ones", ["clean"] = "Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`", ["help"] = "Print this message or the help of the given subcommand(s)" })
       })
       :addflags({ "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
-      :adddescriptions({ ["add"] = "Create the worktree for a task: one location, one name, one locked owner; prints its path", ["claim"] = "Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours", ["remove"] = "Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees", ["list"] = "Every worktree and orphan with its owner, state, source and build-cache bytes", ["gc"] = "Remove merged, clean, idle worktrees with their branches; drop records of deleted ones", ["clean"] = "Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`", ["help"] = "Print this message or the help of the given subcommand(s)", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+      :adddescriptions({ ["add"] = "Create the worktree for a task: one location, one name, one locked owner; prints its path", ["claim"] = "Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours", ["adopt"] = "Bind the worktree you are in (made by a host's own tool) to your agent. A worktree in a pool its host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only", ["remove"] = "Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees", ["list"] = "Every worktree and orphan with its owner, state, source and build-cache bytes", ["gc"] = "Remove merged, clean, idle worktrees with their branches; drop records of deleted ones", ["clean"] = "Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`", ["help"] = "Print this message or the help of the given subcommand(s)", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
     "info" .. clink.argmatcher()
       :addflags({ "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
       :adddescriptions({ ["--json"] = "JSON instead of the text lines", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
@@ -562,12 +567,13 @@ clink.argmatcher("rtok")
           :addarg({
             "add" .. clink.argmatcher(),
             "claim" .. clink.argmatcher(),
+            "adopt" .. clink.argmatcher(),
             "remove" .. clink.argmatcher(),
             "list" .. clink.argmatcher(),
             "gc" .. clink.argmatcher(),
             "clean" .. clink.argmatcher()
           })
-          :adddescriptions({ ["add"] = "Create the worktree for a task: one location, one name, one locked owner; prints its path", ["claim"] = "Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours", ["remove"] = "Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees", ["list"] = "Every worktree and orphan with its owner, state, source and build-cache bytes", ["gc"] = "Remove merged, clean, idle worktrees with their branches; drop records of deleted ones", ["clean"] = "Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`" }),
+          :adddescriptions({ ["add"] = "Create the worktree for a task: one location, one name, one locked owner; prints its path", ["claim"] = "Bind an existing worktree to an agent: rewrites its lock only when unlocked or already yours", ["adopt"] = "Bind the worktree you are in (made by a host's own tool) to your agent. A worktree in a pool its host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only", ["remove"] = "Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when merged, release the claim; refuses dirty, foreign-locked or current worktrees", ["list"] = "Every worktree and orphan with its owner, state, source and build-cache bytes", ["gc"] = "Remove merged, clean, idle worktrees with their branches; drop records of deleted ones", ["clean"] = "Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`" }),
         "info" .. clink.argmatcher(),
         "agents" .. clink.argmatcher()
           :addarg({
