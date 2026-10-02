@@ -1248,4 +1248,64 @@ mod tests {
             Some(PreToolDecision::Deny { .. })
         ));
     }
+
+    /// T350: `~/.rtok/errors.log` showed `PreToolUse panicked: start byte index N is not a
+    /// char boundary` on `–…` / `⌘…` commands. Every input shape the guard inspects, with a
+    /// multi-byte char at every offset a byte-sliced helper could cut at, must not panic.
+    #[test]
+    fn non_ascii_input_never_panics_in_pre_or_post_tool() {
+        let cx = setup();
+        let words = [
+            "–",
+            "⌘",
+            "a–bc",
+            "⌘ab",
+            "x–",
+            "–x",
+            "é.exe",
+            "ab–.exe",
+            "cd –",
+            "cd ⌘ && ls",
+            "cd '⌘' && ls –",
+            "'⌘'",
+            "'–",
+            "rtok run -- '⌘'",
+            "rtok run -- –",
+            "ls –a | ⌘c",
+            "echo ⌘>–",
+            "git ⌘",
+            "/usr/bin/–",
+            "\\⌘\\é",
+        ];
+        for w in words {
+            let inputs = [
+                ("Bash", json!({ "command": w })),
+                ("Read", json!({ "file_path": w })),
+                ("Read", json!({ "path": w, "offset": w })),
+                ("Edit", json!({ "file_path": w })),
+                ("Write", json!({ "path": w })),
+                ("Grep", json!({ "pattern": w, "path": w })),
+                ("Glob", json!({ "pattern": w })),
+                ("Skill", json!({ "skill": w })),
+                ("Skill", json!({ "skill": format!("{w}:{w}") })),
+            ];
+            for (tool, input) in &inputs {
+                let _ = Guard.pre_tool(
+                    &PreToolUse {
+                        tool_name: tool,
+                        tool_input: input,
+                    },
+                    &Ctx::new(&cx),
+                );
+                let _ = Guard.post_tool(
+                    &PostToolUse {
+                        tool_name: tool,
+                        tool_input: input,
+                        tool_response: &json!({ "content": w }),
+                    },
+                    &Ctx::new(&cx),
+                );
+            }
+        }
+    }
 }
