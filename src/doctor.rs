@@ -23,6 +23,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 mod dupes;
+pub mod fix;
 pub mod hooks;
 pub mod probe;
 

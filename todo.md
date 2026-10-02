@@ -39,7 +39,6 @@
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
 - T331.4. Doctor: duplicate MCP entries
-- T331.5. Doctor `--fix` for broken hooks
 - T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
 - T331.7. Doctor: interactive checklist, web action, docs and property tests
 - T331.8. Doctor: hook files in TOML and other formats

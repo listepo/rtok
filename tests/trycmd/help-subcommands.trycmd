@@ -111,6 +111,12 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --instructions   Also run the instruction-file audit (T7.2)
       --json           JSON instead of the table
+      --fix            Remove the hooks whose script no longer exists; prints the diff, writes only
+                       with --yes
+      --yes            With --fix: write the changes (a copy goes to `_backup/` first)
+      --dry-run        With --fix --yes: print the diffs and write nothing
+      --only <ONLY>    With --fix: which problems to fix (only `broken-hooks` for now) [default:
+                       broken-hooks] [possible values: broken-hooks]
   -h, --help           Print help
 
 $ rtok info --help
