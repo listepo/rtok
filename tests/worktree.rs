@@ -998,3 +998,53 @@ fn mcp_worktree_tools_act_for_the_linked_agent() {
     );
     assert_eq!(inventory(&work).unwrap().len(), 2);
 }
+
+/// T286 PR 2: MCP `worktree_remove` for the linked agent: a merged clean worktree goes with
+/// its branch; an unmerged one is refused until `keep_branch`; another agent's lock and a
+/// call that names nothing are refused.
+#[test]
+fn mcp_worktree_remove_takes_only_the_linked_agent_s_clean_worktree() {
+    let tmp = rtok::testutil::tmp_dir("worktree-mcp-remove");
+    run(&tmp, &["init", "-q", "--bare", "origin.git"]);
+    run(&tmp, &["clone", "-q", "origin.git", "work"]);
+    let work = tmp.join("work");
+    commit(&work, "a.txt");
+    run(&work, &["push", "-q", "-u", "origin", "main"]);
+    run(&work, &["remote", "set-head", "origin", "main"]);
+    let (store, ids) = agents(&tmp, &["sess-other"]);
+    let claude = store.host_id("claude").unwrap().unwrap();
+    let cwd = work.canonicalize().unwrap();
+    let register = || {
+        store
+            .register_agent(claude, "sess-me", None, cwd.to_str(), None)
+            .unwrap()
+    };
+    let me = register();
+    let lock = |task: &str, agent: &str| format!("claude | {task} | 2026-10-03 | agent {agent}");
+    add(&work, "done", Some(&lock("t1", &me)));
+    add(&work, "open", Some(&lock("t2", &me)));
+    add(&work, "theirs", Some(&lock("t3", &ids[0])));
+    commit(&tmp.join("wt-done"), "done.txt");
+    commit(&tmp.join("wt-open"), "open.txt");
+    squash(&work, "t-done");
+    run(&work, &["push", "-q", "origin", "main"]);
+
+    let calls = [
+        ("worktree_remove", r#"{"task":"t1"}"#),
+        ("worktree_remove", r#"{"task":"t2"}"#),
+        ("worktree_remove", r#"{"task":"t2","keep_branch":true}"#),
+        ("worktree_remove", r#"{"task":"t3"}"#),
+        ("worktree_remove", "{}"),
+    ];
+    let got = mcp_session(&tmp, &work, || drop(register()), &calls);
+    let branch = |name: &str| !run(&work, &["branch", "--list", name]).is_empty();
+    assert!(!got[0].0, "{}", got[0].1);
+    assert!(got[0].1.contains("removed with its branch"), "{}", got[0].1);
+    assert!(!tmp.join("wt-done").exists() && !branch("t-done"));
+    assert!(got[1].0 && got[1].1.contains("not merged"), "{}", got[1].1);
+    assert!(!got[2].0, "{}", got[2].1);
+    assert!(!tmp.join("wt-open").exists() && branch("t-open"));
+    assert!(got[3].0 && got[3].1.contains("locked by"), "{}", got[3].1);
+    assert!(tmp.join("wt-theirs").exists());
+    assert!(got[4].0 && got[4].1.contains("required"), "{}", got[4].1);
+}

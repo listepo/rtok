@@ -1202,24 +1202,14 @@ pub fn run() -> Result<()> {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let store = crate::store::Store::open(&cfg.core.db_path).ok();
             let agent = claim::caller(store.as_ref(), agent.as_deref())?;
-            // No agent and no `--owner`: no name to hold a lock by, so only an unlocked one goes.
-            let owner = match (owner, &agent) {
-                (None, None) => None,
-                (owner, agent) => Some(claim::owner(owner, agent.as_ref(), store.as_ref())?),
-            };
-            let who = remove::Caller {
-                agent: agent.as_ref().map(|a| a.id.as_str()),
-                owner: owner.as_deref(),
-            };
             let cwd = std::env::current_dir()?;
-            let done = remove::run(&cwd, &target, &who, keep_branch)?;
-            let released = store.as_ref().map(|s| s.release_worktree_claim(&done.path));
-            if let Some(Err(e)) = released {
-                eprintln!(
-                    "{}",
-                    style::warn(&format!("warning: claim not released: {e:#}"))
-                );
-            }
+            let done = remove::for_agent(
+                store.as_ref(),
+                &cwd,
+                &target,
+                (agent.as_ref(), owner),
+                keep_branch,
+            )?;
             if json {
                 print_json(&done)?;
             } else {
