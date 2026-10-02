@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T69.3: planted / drifted / superseded recall bench. No network, no LLM.
 //!
 //! Metrics: `mem_search` hit rate in top-`search_limit` for a query built from the fact's

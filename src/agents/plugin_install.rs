@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Where each host keeps an installed rtok plugin on disk (T279 step 2, T279.1). Feeds
 //! [`super::plugin_version::read_installed`] — no network, no host CLI.
 

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Cline installer (`rtok agents install cline`, plan T96.1).
 //!
 //! Cline's CLI and VS Code extension both scan `~/Documents/Cline/Hooks`, so one

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Text transforms on untrusted content: terse prose compression (all intensities),
 //! `rtok expand` line ranges / grep context / head-tail cut, the managed memory block splice
 //! in agent instruction files, and the TOON table encoder over arbitrary JSON.

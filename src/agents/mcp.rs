@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Shared MCP config-entry core (T275, the start of it — full table-driven core lands in
 //! T277). `has_entry` is the read side every host's `installed()` uses to say whether its own
 //! config file really carries rtok's MCP server, instead of a raw `contains("\"rtok\"")` on the

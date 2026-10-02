@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `[log]` — rtok's own log (plan T24.0, decision D26).
 //!
 //! One rotating text file: the thing an operator reads and `rtok logs` prints. The bytes are

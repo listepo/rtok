@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T221: public-number lint. Every `N %` / `N MiB|KiB|GiB|TiB|MB|KB|GB` / `N ms` figure in
 //! `README.md`/`docs/**/*.md` must share its paragraph/table-row block with evidence:
 //! `research.md`, a `YYYY-MM-DD` date, a test/bench name, or prose naming a source ("X

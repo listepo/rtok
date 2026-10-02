@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Divan benches for the graph index: cold index + warm walk + warm symbol query.
 //!
 //! Tags vs LSP token/latency comparison (tool-output into context) lives in

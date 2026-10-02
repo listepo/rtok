@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Slint WASM client for `rtok dashboard`. Uses the browser WebSocket API (`web_sys`).
 //!
 //! Page tabs are [`PAGE_IDS`] — the same ids `rtok::web::model::pages()` offers (D23).

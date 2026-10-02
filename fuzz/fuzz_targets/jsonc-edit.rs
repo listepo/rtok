@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The JSONC surgical editor that installs rtok into host settings (Zed `context_servers`,
 //! VS Code `chat.pluginLocations`). Oracle: an edit of a file that parses must still parse,
 //! carry the entry it wrote, and a remove must leave a parseable file without it.

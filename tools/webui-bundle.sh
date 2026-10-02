@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Ivan Tugay
+# SPDX-License-Identifier: GPL-3.0-only
+# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 # Build the Slint WASM bundle into crates/rtok-webui/pkg — the directory `rtok web`
 # serves (T80) and build.rs compiles into the binary (T111). One script so `just web`
 # and .github/build-setup.yml cannot drift apart.

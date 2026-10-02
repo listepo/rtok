@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T88 + D21: the Devin plugin tree is one unit — a manifest, rtok's hooks and one MCP server,
 //! loaded by both the Devin CLI and Devin Desktop.
 

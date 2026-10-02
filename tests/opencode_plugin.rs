@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T47.3 + D21: the OpenCode host plugin is one bash filter beside one `mcp.rtok`, offered by
 //! `rtok agents install opencode` and, since OpenCode's own docs have no GitHub/subdir
 //! install, linked by default once OpenCode itself is detected (T164).

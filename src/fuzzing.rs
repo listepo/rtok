@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Entry points for the `fuzz/` cargo-fuzz targets, compiled only under `--cfg fuzzing`
 //! (set by `cargo fuzz`). They reach crate-private parsers without touching the disk, the
 //! environment or the log: the normal build never sees this module. Each function takes

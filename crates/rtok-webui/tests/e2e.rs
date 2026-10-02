@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! End-to-end tests for the Slint operator UI, through Slint's recommended
 //! headless backend (`i-slint-backend-testing`, `=`-pinned to `slint`).
 //!

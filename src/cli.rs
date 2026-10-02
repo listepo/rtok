@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Clap tree. `tests/config_coverage.rs` walks [`Cli::command`] (plan T12.4).
 
 use std::io::{self, IsTerminal, Read, Write};

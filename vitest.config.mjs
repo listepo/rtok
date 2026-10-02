@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // T111: vitest runs the TS host plugin tests. It is a mise tool, not a package dependency, so
 // this file imports nothing and the tests use the injected globals (`test`, `expect`, `vi`).
 

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Cursor installer (`rtok agents install cursor`) and field mapping (plan T10.1).
 //!
 //! Cursor shell stdin uses top-level `command` and `conversation_id`.

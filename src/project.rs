@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Project identity (T133): the checkout `cwd` belongs to, resolved so that a linked git
 //! worktree and its main checkout share one name — for notes (`memory`) and for the
 //! `sessions.project` every hook call attributes (T154).

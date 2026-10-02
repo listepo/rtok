@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Token estimator (plan T0.5): `chars / chars-per-token` per text class.
 //!
 //! Accuracy: a fixed chars-per-token heuristic, not calibrated against the Anthropic

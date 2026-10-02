@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! aider installer (`rtok agents install aider --proxy`, plan T48.7).
 //!
 //! aider is a terminal CLI with no MCP servers and no hook events, so the proxy is the

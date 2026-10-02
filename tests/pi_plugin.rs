@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T10.6 + D21: pi host plugin is one bash call path, no MCP, ketch if missing.
 //!
 //! Check: `rtok agents install pi --dry-run` names `plugins/pi` and

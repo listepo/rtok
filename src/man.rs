@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Man pages from the clap tree (T316): `rtok.1` plus one page per visible subcommand
 //! (`rtok-agents.1`, `rtok-agents-install.1`, …), each with a `SEE ALSO` to its parent and
 //! children. The same `Cli::command()` as `--help`, so there is no second source.

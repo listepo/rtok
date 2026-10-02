@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Arbitrary argv through the real clap tree: `rtok::cli::Cli::try_parse_from`, plus the
 //! error/help rendering a failed parse prints. Tokens are drawn mostly from the tree's own
 //! subcommand names, flags and possible values so the fuzzer gets past the first word.

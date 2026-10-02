@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! PreToolUse(Read) advice (plan T4.6): deny native Read of large files not just edited.
 
 use rtok_plugin_sdk::{Ctx, PreToolDecision, PreToolUse};

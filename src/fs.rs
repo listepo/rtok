@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Narrow FS surface for `read()` resolve + content (T56.5 / post-T56.4) and for the
 //! project resolver (T133): read a file as text, canonicalize, and a lexical path join.
 //!

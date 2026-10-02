@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! OpenAI Chat Completions wire (`POST /v1/chat/completions`, plan T11.2).
 
 use serde_json::{Map, Value};

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T8.8: recall and precision of `symbol` / `callers` against hand-labelled ground truth.
 //!
 //! The labels in `fixtures/graph_truth.toml` come from a plain-text scan of this repo, not from

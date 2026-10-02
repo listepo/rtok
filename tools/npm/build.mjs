@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Builds the npm tarballs into target/npm/dist: `rtok-cli` (the launcher, esbuild layout) plus one
 // package per platform with the native binary, rtok-hook and the plugins/ and skills/ trees
 // the binary resolves beside itself. Versions come from Cargo.toml.

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T16.3 (D19): OTLP/HTTP JSON encoding under the spec's JSON mapping rules — ids as lowercase
 //! hex, every int64 a decimal string, enums as integers. Pure: no I/O, no clock.
 

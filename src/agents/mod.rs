@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Agent hosts (`rtok agents install|remove|list`).
 //!
 //! Everything the hosts share — backup, the dry-run/idempotence write gate, `mcpServers`

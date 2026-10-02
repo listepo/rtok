@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T25.2: `rtok agents sessions` renders the operator model's Sessions page (T25.1) as a
 //! table. Against a fixture store — two live sessions across two hosts and one ended —
 //! this pins the Check: two rows by default, three with `--all`, the token columns sum to

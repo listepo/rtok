@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T22.3: `rtok report --format pdf` renders the same eight sections in the same
 //! order as `--format html` — asserted by walking both over one store — paged
 //! (a contents page plus content) with the chart labels embedded.

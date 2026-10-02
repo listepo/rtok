@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T15.11: `rtok stats` renders the D23 model. This file pins the command's output against a
 //! fixture store (two transcript sessions, `usage` rows on both APIs, one `Measurement`), so
 //! the move of the query into `src/web/model.rs` cannot change a printed number — and neither

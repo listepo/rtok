@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T16.7 (D19): cumulative sums from whole-table aggregates. No watermark: the same numbers
 //! `rtok stats` prints, re-posted each flush with a later timestamp. `rtok.tokens.saved` is
 //! not monotonic: an `expand` row is a negative saving, so a point can go down.

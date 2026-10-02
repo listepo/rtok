@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Structured YAGNI ladder — typed decisions instead of prompt-only “always minimum”.
 //!
 //! # Why a typed ladder, not only `modes/yagni.md`

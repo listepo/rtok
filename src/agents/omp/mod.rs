@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! oh my pi installer (`rtok agents install omp`, plan T92.2, D21).
 //!
 //! omp is a pi fork: its loader discovers a symlinked directory whose `package.json`

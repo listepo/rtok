@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T30.2 / Gate P30: same MCP names; tags miss the type-position fixture; LSP hits it.
 //!
 //! Skips the rust-analyzer / dart path when `lsp::on_path` is false (a real binary, not a

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T288: an agent's undelivered messages ride its next `UserPromptSubmit` / `PostToolUse`
 //! context. Each is framed by [`crate::render::agent_message_frame`] (T287), the batch is
 //! capped at `[agents] push_bytes`, and the text goes through the event's existing budgeted

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! VS Code Copilot Chat installer (`rtok agents install vscode`, plan T48.8, T117).
 //!
 //! GitHub Copilot in VS Code reads MCP servers from the user profile `mcp.json`

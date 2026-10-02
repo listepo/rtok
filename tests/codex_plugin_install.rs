@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T140 + D21: `rtok agents install codex` offers rtok's Codex plugin (`plugins/codex`) from
 //! the GitHub marketplace `listepo/rtok`, enabled by default once `codex` is on PATH — no flag
 //! needed, mirroring T139's Claude flow (a fake `codex` first on PATH records the calls).

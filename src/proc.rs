@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Child-process capture that never waits on a pipe's EOF: shared by `rtok run` (T235.1) and
 //! the host `--version` probe (T280).
 

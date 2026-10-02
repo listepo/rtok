@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok info` (plan T43): version, effective paths and disk usage in one place.
 //!
 //! `doctor` reports the host chain and `config show` reports every key, but neither

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T22.4: `rtok report --ai` renders the same document for a model — dense lines,
 //! stable `#id` anchors, toon tables, one token budget. This file pins the CLI end to
 //! end against a small fixture store: `--ai` is measurably smaller than `--format md`

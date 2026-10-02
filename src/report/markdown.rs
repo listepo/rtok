@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The Markdown rendering of [`Document`](super::Document) — tables, no charts (T22.1).
 //!
 //! It formats; it computes nothing (D24): every number is a model value, every section

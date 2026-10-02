@@ -1,3 +1,7 @@
+# Copyright (c) 2026 Ivan Tugay
+# SPDX-License-Identifier: GPL-3.0-only
+# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 """T183: unit tests for tools/publish_marketplace. No network, no real `gh` — every subprocess
 call goes through a fake. Run: `mise exec -- pytest tools/tests` from the repo root, or
 `just check` (wired into the `python` recipe).

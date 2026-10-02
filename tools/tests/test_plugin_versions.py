@@ -1,3 +1,7 @@
+# Copyright (c) 2026 Ivan Tugay
+# SPDX-License-Identifier: GPL-3.0-only
+# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 """T279: tests for tools/plugin-versions.sh, the one place that writes and checks every plugin
 manifest version and `.rtok-plugin-version` file. Run: `mise exec -- pytest tools/tests` from
 the repo root, or `just check` (wired into the `python` recipe).

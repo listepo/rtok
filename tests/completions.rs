@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T53.2: `rtok completions <shell>` renders every supported shell and `rtok man`
 //! prints a roff page. Snapshots stay out of here: the man page embeds the build
 //! version (git sha), and one shell's completions are snapshotted in

@@ -1,3 +1,7 @@
+# Copyright (c) 2026 Ivan Tugay
+# SPDX-License-Identifier: GPL-3.0-only
+# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 """Argument parsing, dispatch, and the `gh workflow run` trigger for
 `python -m publish_marketplace`. Every `gh` call goes through an injectable `runner` (defaults
 to `subprocess.run`) so tests can supply a fake and never touch the network or a real repo.

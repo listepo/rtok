@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T130: `SubagentStart` spawn brief. `research.md` §17.3(2) picked `SubagentStart`'s
 //! `additionalContext` over `PreToolUse`'s `updatedInput`, which
 //! <https://code.claude.com/docs/en/hooks> (checked 2026-09-22) documents as ignored by the

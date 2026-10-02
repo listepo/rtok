@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Shared JSONC-safe surgical editor (T79, T117): add, replace, or remove one string-keyed
 //! member of a top-level object in a settings file that must keep its comments and trailing
 //! commas intact. Zed's `context_servers.<name>` and VS Code's `chat.pluginLocations.<path>`

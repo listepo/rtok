@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `compress` — optional semantic shrink after the lossless `archive` lane (P28).
 //!
 //! On by default (`[plugins.compress] enabled`). In `proxy.mode = "compress"`, blocks

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Extra coverage for gaps the existing e2e files do not assert (new file only).
 //!
 //! Deliberately non-duplicative vs `tests/commands_e2e.rs` (bare unknown-id

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T285: `worktree_claims` — the agent (T282) each worktree is bound to. The git lock reason
 //! is the source of truth; these rows are the fast join `rtok worktree list` falls back on.
 

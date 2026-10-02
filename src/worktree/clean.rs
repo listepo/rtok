@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok worktree clean` (T152): delete idle tagged build caches and keep the worktrees.
 //! The one deletion in rtok that `expand` cannot undo, allowed because a directory
 //! carrying a valid `CACHEDIR.TAG` holds no source by definition and the next build

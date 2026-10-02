@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! pi installer (`rtok agents install pi`, plan T10.6, D21).
 //!
 //! pi philosophy is no MCP: the plugin owns the bash call path

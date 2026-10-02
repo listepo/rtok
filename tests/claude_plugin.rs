@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T115 + T139 + D21: `rtok agents install claude` installs `plugins/claude` through the official
 //! `claude plugin` commands, by default once `claude` is on PATH — no `--yes` needed — from the
 //! GitHub marketplace `listepo/rtok` (a fake `claude` first on PATH records the calls), and while

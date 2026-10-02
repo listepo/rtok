@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `mode=map` / `mode=signatures` via tree-sitter-tags (plan T4.3) or a line scan for
 //! Markdown (T68.8); `mode=stripped` via tree-sitter comment nodes (plan T50.3).
 

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! In-memory live view of plain-proxy traffic (when `proxy.enabled` / `core.enabled` is
 //! false). Nothing here is persisted: process exit clears it. TUI/web read it via
 //! [`snapshot`] (same process) or `GET /live` (cross-process).

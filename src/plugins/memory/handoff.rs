@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Off-by-default sub-agent handoff stub (plan T59.6) and the spawn-brief digest (T130).
 
 use rtok_plugin_sdk::{Class, Ctx, Measurement};

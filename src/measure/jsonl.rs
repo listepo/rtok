@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Claude Code transcript parser (plan T1.1).
 //!
 //! Port of the `scratchpad/token-research/measure_sessions.py` logic: one JSON object

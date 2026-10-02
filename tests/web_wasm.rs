@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T60.7: WASM bundle size gate for `rtok web`, and the checks that say *why* it grew.
 //!
 //! The artifact tests skip when `crates/rtok-webui/pkg` has not been built (CI builds it only

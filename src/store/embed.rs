@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Optional note embeddings (P29): deterministic hash vectors + cosine KNN in SQLite.
 //!
 //! Deviation from `memory/PLAN.md` v0.2: no sqlite-vec `vec0` — Diesel's bundled SQLite

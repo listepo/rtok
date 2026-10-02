@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T283 (D34): `RTOK_AGENT_ID`, `rtok agents whoami`, and the `CLAUDE_ENV_FILE` export —
 //! through the binary, over a temp `RTOK_HOME`/`HOME` (never the real state dir). The
 //! SessionStart injection's own wording and stability are `src/hooks/mod.rs` unit tests;

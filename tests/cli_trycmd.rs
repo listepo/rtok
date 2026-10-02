@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! trycmd CLI snapshots: full command-output fixtures in `tests/trycmd/*.toml`
 //! and literate `--help` cases in `tests/trycmd/*.trycmd`.
 //! Cases are hermetic by construction: `--help` / `--version` never load `Config`,

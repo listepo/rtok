@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Codex CLI session usage (plan T49.2). `~/.codex/sessions/**/*.jsonl` writes one
 //! `event_msg` line of `payload.type == "token_count"` per API request; its
 //! `last_token_usage` is that request's counters (`input_tokens` includes
