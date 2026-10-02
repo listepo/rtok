@@ -125,11 +125,7 @@ pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
     }
     let found = server.listed.iter().find(|t| t.def.name == name);
     let plugin = found.map(|t| t.plugin).unwrap_or("archive");
-    let args = if args.is_null() {
-        json!({})
-    } else {
-        args.clone()
-    };
+    let args = prepare_args(name, args);
     // Same required-field gate as `call_tool` (T213): a missing argument must not reach
     // `invoke` and become a handler-level default.
     let (text, ok) =
@@ -235,10 +231,36 @@ fn missing_required(schema: &Value, args: &Value) -> Option<String> {
             },
         };
         if !present {
-            return Some(format!("missing `{field}`"));
+            // Name what the call did send: a misspelt key (`query` for `pattern`) is then
+            // visible in the error instead of a guess (T353).
+            let got = args.as_object().map_or_else(String::new, |o| {
+                o.keys().map(String::as_str).collect::<Vec<_>>().join(", ")
+            });
+            let got = if got.is_empty() { "no arguments" } else { &got };
+            return Some(format!("missing `{field}` (got: {got})"));
         }
     }
     None
+}
+
+/// The arguments a tool call is validated and run with — the one place they are normalised
+/// (`call_tool` and the one-shot `call` both go through it): `null` becomes `{}`, and
+/// `search`'s `query` is accepted as `pattern` — the key agents most often send it under
+/// (T353). The advertised schema keeps `pattern` only; an alias is tolerated, not promoted.
+fn prepare_args(name: &str, args: &Value) -> Value {
+    let mut args = if args.is_null() {
+        json!({})
+    } else {
+        args.clone()
+    };
+    if name == "search"
+        && args.get("pattern").is_none_or(Value::is_null)
+        && let Some(obj) = args.as_object_mut()
+        && let Some(q) = obj.remove("query")
+    {
+        obj.insert("pattern".into(), q);
+    }
+    args
 }
 
 /// The one place `"unknown tool: <name>"` is worded — a name `invoke` never heard of and a
@@ -425,11 +447,7 @@ impl Server {
     fn call_tool(&self, name: &str, args: &Value) -> CallToolResult {
         let found = self.listed.iter().find(|t| t.def.name == name);
         let plugin = found.map(|t| t.plugin).unwrap_or("archive");
-        let args = if args.is_null() {
-            json!({})
-        } else {
-            args.clone()
-        };
+        let args = prepare_args(name, args);
         // A failure is an `isError` result with the same message text, not a success block
         // the model has to recognise by wording. A name the allow-list dropped never reaches
         // `invoke` — it must not run a tool the config says is off — but it fails with the
@@ -940,6 +958,43 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// T353: agents send `query` to `search`; it runs as `pattern`. Any other missing key
+    /// names what the call did send, so a misspelt argument is visible in the error.
+    #[cfg(feature = "read")]
+    #[test]
+    fn search_accepts_query_and_missing_keys_name_what_was_sent() {
+        let (mut cfg, dir) = tmp("mcp-query-alias");
+        let root = dir.join("src-tree");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("hits.txt"), "needle\n").unwrap();
+        cfg.plugins.read.allow_paths = vec![root.clone()];
+        let path = root.to_string_lossy();
+        let by_pattern = call(&cfg, "search", &json!({"pattern": "needle", "path": path})).unwrap();
+        let by_query = call(&cfg, "search", &json!({"query": "needle", "path": path})).unwrap();
+        assert_eq!(by_pattern, by_query);
+        assert!(by_query.contains("hits.txt"), "{by_query}");
+        // An explicit `pattern` wins over the alias.
+        let both = json!({"pattern": "needle", "query": "zzz", "path": path});
+        assert_eq!(call(&cfg, "search", &both).unwrap(), by_pattern);
+        let err = call(&cfg, "search", &json!({"path": path, "range": "1-80"})).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "invalid params: missing `pattern` (got: path, range)"
+        );
+        let err = call(&cfg, "search", &json!({})).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "invalid params: missing `pattern` (got: no arguments)"
+        );
+        // No alias elsewhere: `read` does not take `query`.
+        let err = call(&cfg, "read", &json!({"query": "x"})).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "invalid params: missing `path` (got: query)"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn one_shot_call_uses_the_same_invoke_as_tools_call() {
         let (cfg, dir) = tmp("oneshot");
@@ -1059,7 +1114,7 @@ mod tests {
         let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
         assert_eq!(v["result"]["isError"], true, "{v}");
         assert_eq!(
-            v["result"]["content"][0]["text"], "invalid params: missing `body`",
+            v["result"]["content"][0]["text"], "invalid params: missing `body` (got: title)",
             "{v}"
         );
         assert!(

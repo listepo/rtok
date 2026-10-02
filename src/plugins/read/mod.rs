@@ -99,7 +99,13 @@ pub(crate) fn read_with(
 ) -> Result<String> {
     let cfg = cx.plugin_config::<crate::config::Read>("read");
     let abs = resolve_with(fs, cwd, Path::new(path), &cfg.allow_paths)?;
-    let raw = fs.read_to_string(&abs)?;
+    // The bare io error (`No such file or directory (os error 2)`) never says which file; an
+    // agent reading several paths in one turn cannot tell which one failed (T353).
+    let raw = fs.read_to_string(&abs).map_err(|e| {
+        let msg = e.to_string();
+        let msg = msg.split(" (os error").next().unwrap_or(&msg);
+        anyhow::anyhow!("{msg}: {path}")
+    })?;
     let mode = if mode.is_empty() {
         cfg.default_mode.as_str()
     } else {
@@ -342,6 +348,29 @@ pub(crate) mod tests {
         assert_eq!(read(&cx, path, "lines", Some("-1")).unwrap(), "1:a");
         assert!(read(&cx, path, "lines", Some("x-y")).is_err());
         assert!(read(&cx, path, "full", Some("3-2")).is_err());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// A missing file or a directory fails naming the path, without the `(os error N)` tail.
+    #[test]
+    fn file_errors_name_the_path() {
+        let (cx, dir) = cx("file-errors");
+        let cx = Ctx::new(&cx);
+        // Canonical: a missing path is only matched lexically against the canonical root.
+        let canon = dir.canonicalize().unwrap();
+        let missing = canon.join("nope.rs");
+        let missing = missing.to_str().unwrap();
+        // The io wording is the OS's own (Windows: "The system cannot find …", "Access is
+        // denied."), so only the path suffix and the dropped tail are asserted.
+        let err = read(&cx, missing, "full", None).unwrap_err().to_string();
+        assert!(err.ends_with(&format!(": {missing}")), "{err}");
+        assert!(!err.contains("os error"), "{err}");
+        let sub = canon.join("sub");
+        fs::create_dir(&sub).unwrap();
+        let sub = sub.to_str().unwrap();
+        let err = read(&cx, sub, "map", None).unwrap_err().to_string();
+        assert!(err.ends_with(&format!(": {sub}")), "{err}");
+        assert!(!err.contains("os error"), "{err}");
         let _ = fs::remove_dir_all(dir);
     }
 
