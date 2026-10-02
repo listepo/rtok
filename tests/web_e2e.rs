@@ -216,3 +216,61 @@ async fn websocket_streams_snapshots_and_answers_commands() {
 
     ws.close(None).await.expect("close");
 }
+
+/// T331.12: the doctor fix over the real socket. A plan changes nothing; only `apply` writes,
+/// and it leaves the `_backup/` copy.
+#[cfg(unix)] // POSIX hook command paths
+#[tokio::test]
+async fn doctor_plans_without_writing_and_applies_on_confirm() {
+    let web = start("doctor").await;
+    let settings = web.home.join(".claude/settings.json");
+    std::fs::create_dir_all(settings.parent().unwrap()).expect("claude dir");
+    let broken = r#"{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "/nonexistent/old.sh"}]}]}}"#;
+    std::fs::write(&settings, broken).expect("settings");
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/ws", web.addr))
+        .await
+        .expect("ws connect");
+    let none = r#""selection":{"keep":[],"toggled":[]}"#;
+
+    ws.send(Message::text(format!(
+        r#"{{"doctor":{{"action":"plan",{none}}}}}"#
+    )))
+    .await
+    .expect("send plan");
+    let plan = next_of(&mut ws, "doctorplan").await;
+    let items = plan["plan"]["items"].as_array().expect("items");
+    assert_eq!(items.len(), 1, "{plan}");
+    assert_eq!(items[0]["kind"], "broken-hook");
+    assert_eq!(items[0]["selected"], true);
+    assert!(plan["plan"]["diff"].as_str().unwrap().contains("old.sh"));
+    assert_eq!(std::fs::read_to_string(&settings).unwrap(), broken);
+
+    ws.send(Message::text(format!(
+        r#"{{"doctor":{{"action":"apply",{none}}}}}"#
+    )))
+    .await
+    .expect("send apply");
+    let fixed = next_of(&mut ws, "doctorfixed").await;
+    assert_eq!(fixed["fixed"]["code"], 0, "{fixed}");
+    assert!(
+        !std::fs::read_to_string(&settings)
+            .unwrap()
+            .contains("old.sh")
+    );
+    // `Writer::backup` keeps the copy in a `_backup/` next to the file it replaces.
+    let backups = std::fs::read_dir(settings.parent().unwrap().join("_backup"))
+        .map(|d| d.count())
+        .unwrap_or(0);
+    assert!(backups > 0, "no backup copy was kept");
+
+    // A malformed doctor message is refused, not guessed at.
+    ws.send(Message::text(r#"{"doctor":{"action":"burn"}}"#))
+        .await
+        .expect("send bad");
+    let msg = next_of(&mut ws, "message").await;
+    assert!(
+        msg["text"].as_str().unwrap().contains("doctor needs"),
+        "{msg}"
+    );
+    ws.close(None).await.expect("close");
+}

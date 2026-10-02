@@ -11,6 +11,7 @@ use schemars::generate::SchemaSettings;
 use serde::{Deserialize, Serialize};
 
 use super::model::Snapshot;
+use crate::doctor::web::{Fixed, Plan, Selection};
 
 /// Committed schema, relative to the repository root.
 pub const SCHEMA_PATH: &str = "web/src/api/ws.schema.json";
@@ -23,6 +24,10 @@ pub enum ServerFrame {
     Message { text: String },
     /// The archived payload a client asked for with [`ClientMessage::Expand`].
     Expand { id: String, text: String },
+    /// The checklist of `rtok doctor --fix` and the diff of the selection (T331.12).
+    DoctorPlan { plan: Plan },
+    /// What a confirmed `doctor` apply did.
+    DoctorFixed { fixed: Fixed },
 }
 
 impl ServerFrame {
@@ -39,6 +44,24 @@ pub enum ClientMessage {
     Expand { expand: String },
     /// Flip an allowlisted boolean key (`plugins.<id>.enabled`).
     Set { set: SetRequest },
+    /// The `doctor --fix` checklist: plan it, or write it once the user confirmed.
+    Doctor { doctor: DoctorRequest },
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DoctorAction {
+    /// Return the items and the diff; nothing is written.
+    Plan,
+    /// Write the selection: the page sends this only after its confirmation.
+    Apply,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DoctorRequest {
+    pub action: DoctorAction,
+    #[serde(default)]
+    pub selection: Selection,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

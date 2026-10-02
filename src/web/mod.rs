@@ -32,7 +32,7 @@ use tower_http::services::ServeDir;
 
 use crate::config::{Config, validate};
 use crate::plugins::Registry;
-use protocol::{ClientMessage, ServerFrame};
+use protocol::{ClientMessage, DoctorAction, DoctorRequest, ServerFrame};
 
 const INDEX: &str = include_str!("index.html");
 
@@ -478,8 +478,12 @@ fn inbound(state: &DashState, text: &str) -> Option<String> {
             });
         }
         Ok(ClientMessage::Set { set }) => set,
+        Ok(ClientMessage::Doctor { doctor }) => return Some(doctor_reply(state, &doctor)),
         Err(_) if v.get("set").is_some() => {
             return Some(message_frame("set needs a string key and a bool value"));
+        }
+        Err(_) if v.get("doctor").is_some() => {
+            return Some(message_frame("doctor needs an action and a selection"));
         }
         Err(_) => return None,
     };
@@ -497,6 +501,33 @@ fn inbound(state: &DashState, text: &str) -> Option<String> {
         }
         Err(e) => Some(message_frame(&format!("config set {key}: {e:#}"))),
     }
+}
+
+/// T331.12: the `doctor --fix` checklist for the page. The upgrade's origin guard covers it like
+/// `set`; only `apply` writes, through the engine's backup and refusals.
+fn doctor_reply(state: &DashState, r: &DoctorRequest) -> String {
+    let cfg = state
+        .cfg
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let kinds = crate::doctor::fix::KINDS;
+    crate::doctor::fix::on_this_machine(|probes, w| {
+        let o = crate::doctor::fix::Opts {
+            keep: cfg.setup.backup_files as usize,
+            agent: None,
+            kinds: &kinds,
+        };
+        match r.action {
+            DoctorAction::Plan => ServerFrame::DoctorPlan {
+                plan: crate::doctor::web::plan(&cfg, probes, w, &o, &r.selection),
+            },
+            DoctorAction::Apply => ServerFrame::DoctorFixed {
+                fixed: crate::doctor::web::apply(&cfg, probes, w, &o, &r.selection),
+            },
+        }
+        .to_json()
+    })
 }
 
 /// `plugins.<id>.enabled` for a catalogue id (D23: Registry, not a second list).

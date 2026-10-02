@@ -6,6 +6,7 @@
 // offline e2e. Typed as `Snapshot`, so a schema change breaks `tsc` here instead of drifting.
 import type { Connect, Connection } from "./ws";
 import { call, plugin, stats } from "./sampleRows";
+import { mockMachine } from "./sampleDoctor";
 import type { Report, Snapshot } from "./snapshot.gen";
 
 const shellStats = {
@@ -261,6 +262,7 @@ export const isSampleRequested = (search: string): boolean =>
 
 export const connectSample: Connect = (handlers) => {
   let snapshot = structuredClone(sampleSnapshot);
+  const machine = mockMachine();
   let stopped = false;
   // Frames land on a microtask so callers can register a reply handler after `send`.
   const later = (fn: () => void) =>
@@ -281,6 +283,15 @@ export const connectSample: Connect = (handlers) => {
       if ("expand" in message) {
         const { expand: id } = message;
         later(() => handlers.onFrame({ type: "expand", id, text: `sample payload for ${id}` }));
+        return true;
+      }
+      if ("doctor" in message) {
+        const { action, selection } = message.doctor;
+        later(() =>
+          action === "plan"
+            ? handlers.onFrame({ type: "doctorplan", plan: machine.plan(selection) })
+            : handlers.onFrame({ type: "doctorfixed", fixed: machine.apply(selection) }),
+        );
         return true;
       }
       const { key, value } = message.set;

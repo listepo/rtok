@@ -42,7 +42,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T330 | todo | P2 | 4 | 0% | |
 | T331 | todo | P1 | 4 | 0% | |
 | T331.10 | todo | P2 | 2 | 0% | |
-| T331.12 | in progress | P2 | 2 | 0% | Claude Code / sonnet |
 | T332 | todo | research | 1 | 0% | |
 | T333 | todo | research | 1 | 0% | |
 | T334 | todo | research | 1 | 0% | |
@@ -1231,14 +1230,6 @@ Split (epic, too large for one PR: three detectors, a fix engine, an interactive
 Part of T331. T331.4 leaves rtok's own MCP server out of the duplicate check, because what to report depends on the T332 and T333 decisions (the T331 keep rule against D33/T275: a plugin serving MCP while a config entry also exists, and the Claude `plugin:rtok:rtok` namespacing). Once those are decided, include rtok's own entry (detected with `rtok_agent_sdk::runs_bin` and `agents::is_rtok_bin`, as T331.4 does to exclude it) in the detector and the keep recommendation of T331.4, with the decided rules. Depends on T331.4, T332 and T333.
 
 Check: the rtok scenarios of "Duplicate MCP entries" in T331 per host once T332 and T333 are decided; `just check`.
-
-### T331.12. Doctor: "Fix selected" on the web doctor page
-
-Part of T331. The web doctor page (T310.7) lists the fixable items of `rtok doctor --fix` with the same defaults as the terminal checklist (shared project files unselected), lets the user toggle them and change the kept copy of a duplicate, shows the diff per file, and writes only after a confirmation, through the same `doctor::fix` engine and its refusals. Depends on T331.7 and T310.7.
-
-Execution plan: (1) one fn for the shared-project-file rule and one for the default selection, in `doctor::checklist`, called by both the terminal and the web; `doctor::web` holds the stateless plan/apply over `fix::candidates`, `checklist::keep_copy`, `fix::removable` and `fix::fix_found`. (2) `/ws` gains a `doctor` client message (`plan` or `apply`, with the kept-copy swaps and the toggles relative to the defaults) and the server frames `doctor_plan` (items and the per-file diff) and `doctor_fixed` (the report); the origin guard of the upgrade covers it like `set`, a write needs the `apply` message, and the backup and refusals are the engine's. (3) Schema and `snapshot.gen.ts` regenerated. (4) SPA: `api.doctor`, a pure selection reducer, and the Fix selected panel on the Doctor page (toggle, keep copy, diff, confirm). (5) Tests: Rust on a mocked machine, Vitest for the reducer and the api, a Playwright (vitest browser) test for select, diff and confirm; `just check`.
-
-Check: the selection and refusal scenarios against the page's backend with a mocked machine; `just check`.
 
 ### T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 

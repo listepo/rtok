@@ -13,7 +13,7 @@ import {
     useQuery,
 } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
-import type { SetRequest, Snapshot } from "./snapshot.gen";
+import type { ClientMessage, Fixed, Plan, Selection, SetRequest, Snapshot } from "./snapshot.gen";
 import type { Connect, Connection, ConnectionState, Frame } from "./ws";
 
 export const snapshotKey = ["snapshot"] as const;
@@ -21,17 +21,29 @@ export const connectionKey = ["connection"] as const;
 export const messageKey = ["message"] as const;
 
 export const EXPAND_TIMEOUT_MS = 10_000;
+// A fix writes files and backs each one up first, so it gets longer than a read.
+export const DOCTOR_TIMEOUT_MS = 30_000;
 
 export interface Api {
     open(): void;
     close(): void;
     expand(id: string): Promise<string>;
     set(request: SetRequest): Promise<void>;
+    doctorPlan(selection: Selection): Promise<Plan>;
+    doctorApply(selection: Selection): Promise<Fixed>;
 }
 
 interface PendingExpand {
     id: string;
     resolve(text: string): void;
+    reject(error: Error): void;
+}
+
+// The server answers doctor requests in the order it received them, on one socket, so the
+// queue is matched by the kind of frame it waits for.
+interface PendingDoctor {
+    kind: "doctorplan" | "doctorfixed";
+    resolve(frame: Plan | Fixed): void;
     reject(error: Error): void;
 }
 
@@ -42,12 +54,50 @@ export function createApi(
 ): Api {
     let connection: Connection | null = null;
     let pending: PendingExpand[] = [];
+    let pendingDoctor: PendingDoctor[] = [];
 
     const rejectAll = (reason: string) => {
         const failed = pending;
         pending = [];
         for (const p of failed) p.reject(new Error(reason));
+        const failedDoctor = pendingDoctor;
+        pendingDoctor = [];
+        for (const p of failedDoctor) p.reject(new Error(reason));
     };
+
+    const settleDoctor = (kind: PendingDoctor["kind"], frame: Plan | Fixed) => {
+        const i = pendingDoctor.findIndex((p) => p.kind === kind);
+        if (i < 0) return;
+        const [entry] = pendingDoctor.splice(i, 1);
+        entry?.resolve(frame);
+    };
+
+    const askDoctor = <T extends Plan | Fixed>(
+        kind: PendingDoctor["kind"],
+        message: ClientMessage,
+    ) =>
+        new Promise<T>((resolve, reject) => {
+            const entry: PendingDoctor = {
+                kind,
+                resolve: (frame) => {
+                    clearTimeout(timer);
+                    resolve(frame as T);
+                },
+                reject: (error) => {
+                    clearTimeout(timer);
+                    reject(error);
+                },
+            };
+            const timer = setTimeout(() => {
+                pendingDoctor = pendingDoctor.filter((p) => p !== entry);
+                reject(new Error(`doctor ${kind} timed out`));
+            }, DOCTOR_TIMEOUT_MS);
+            pendingDoctor.push(entry);
+            if (!connection?.send(message)) {
+                pendingDoctor = pendingDoctor.filter((p) => p !== entry);
+                entry.reject(new Error("not connected"));
+            }
+        });
 
     const onFrame = (frame: Frame) => {
         switch (frame.type) {
@@ -67,6 +117,12 @@ export function createApi(
                 for (const p of done) p.resolve(frame.text);
                 return;
             }
+            case "doctorplan":
+                settleDoctor("doctorplan", frame.plan);
+                return;
+            case "doctorfixed":
+                settleDoctor("doctorfixed", frame.fixed);
+                return;
             case "message":
                 queryClient.setQueryData<string>(messageKey, frame.text);
                 // The server's refusals do not name the request they answer, so a message fails
@@ -115,6 +171,10 @@ export function createApi(
         async set(request) {
             if (!connection?.send({ set: request })) throw new Error("not connected");
         },
+        doctorPlan: (selection) =>
+            askDoctor<Plan>("doctorplan", { doctor: { action: "plan", selection } }),
+        doctorApply: (selection) =>
+            askDoctor<Fixed>("doctorfixed", { doctor: { action: "apply", selection } }),
     };
 }
 
@@ -154,6 +214,10 @@ export const useServerMessage = () => useQuery<string>(pushed(messageKey)).data;
 export function useSetMutation() {
     const api = useApi();
     return useMutation({ mutationFn: (request: SetRequest) => api.set(request) });
+}
+
+export function useDoctorApi(): Pick<Api, "doctorPlan" | "doctorApply"> {
+    return useApi();
 }
 
 export function useExpandMutation() {
