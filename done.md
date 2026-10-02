@@ -4652,6 +4652,18 @@ Result: `rtok doctor --fix` prints the diff of each file and writes nothing; `--
 
 Model: Claude Code / sonnet-5
 
+### T331.8. Doctor: hook files in TOML and other formats
+
+Part of T331. The T331.1 and T331.2 checks for the hosts whose hooks live outside JSON: Kimi (`config.toml` `[[hooks]]` blocks), CodeWhale (`[[hooks.hooks]]`), Codex (`config.toml`) and any other host whose installer writes hooks in TOML. Each shape maps to the same `Entry` (event, matcher, command, key path), read through the TOML library the project already uses, so the same classification applies and the entry path names the TOML table. Depends on T331.2.
+
+Check: one mocked scenario per TOML shape (broken, valid, unverified, an unparsable file reported and left alone); `just check`.
+
+Execution: `doctor::hooks::host_sources` also returns the `config.toml` of Kimi, CodeWhale and Codex (the three hosts with a documented TOML hook shape; any other host's TOML is not guessed at), tagged with a `Format`. `scan` parses a TOML file through `toml_edit` and the existing `agents::mcp::toml_item_to_json` (extended to convert arrays of tables) into the same JSON value and builds the same `Entry`, so `classify`, the duplicate check and the report are unchanged. Kimi `[[hooks]]` and CodeWhale `[[hooks.hooks]]` are flat `{event, matcher?, command}` lists (paths `hooks[i]`, `hooks.hooks[i]`); Codex's `[[hooks.<Event>]]` with `[[hooks.<Event>.hooks]]` has the settings.json shape and reuses `entries` (source: https://learn.chatgpt.com/docs/hooks, read 2026-10-03).
+
+Result: broken, suspect and unverified hooks of the three TOML hosts are reported like the JSON ones, an unparsable TOML is `unreadable-config` and left alone. None of them is fixable: `doctor --fix` edits JSONC only, so it names them as "TOML hook files are not edited yet" and writes nothing; a TOML editor for `--fix` is a later task.
+
+Model: Claude Code / sonnet-5
+
 ### T305. stats archive replay no longer double-counts short bodies
 
 `replay_ctt` (`src/measure/stats.rs`), which estimates what `rtok stats` calls `archive replay (estimate)` — the CTT the `archive` plugin (T5.3) leaves behind once a tool result ages past `keep_turns` — modelled the kept lines as `lines.iter().take(head_lines)` chained with `lines.iter().rev().take(tail_lines)`. When a result had fewer lines than `head_lines + tail_lines` (a single huge line, for example) the two slices overlapped, so `kept` counted those lines up to 2x and the estimate could land above not archiving at all. Fixed to mirror `archive::pointer`'s own guard: when `lines.len() <= head + tail`, sum each line once — through `archive::clip`, the same per-line truncation `pointer` applies — instead of taking overlapping head/tail slices; every shown line (head and tail too) goes through `archive::clip`, as `pointer` does. Also: the stats tests' `tempfile_dir` named directories by pid + nanos only, and macOS clocks tick in microseconds, so two parallel tests could share one directory (`compact_boundary_counts_once_per_event` failed intermittently); a counter now keeps them apart.
