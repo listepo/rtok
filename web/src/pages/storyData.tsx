@@ -1,4 +1,11 @@
 import type { Decorator } from "@storybook/react-vite";
+import {
+    createMemoryHistory,
+    createRootRoute,
+    createRouter,
+    RouterProvider,
+} from "@tanstack/react-router";
+import { useMemo, type ReactNode } from "react";
 import { DataProvider } from "../api/query";
 import type { Snapshot } from "../api/snapshot.gen";
 import type { Connect } from "../api/ws";
@@ -12,10 +19,29 @@ export const serve =
         return { send: () => true, close: () => {} };
     };
 
+// The panels link to other pages, so they need a router above them even when it has one route.
+function Harness({ connect, children }: { connect: Connect; children: ReactNode }) {
+    const router = useMemo(
+        () =>
+            createRouter({
+                routeTree: createRootRoute({ component: () => children }),
+                history: createMemoryHistory({ initialEntries: ["/"] }),
+            }),
+        // The story element is fixed for the life of the harness.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [],
+    );
+    return (
+        <DataProvider connect={connect}>
+            <RouterProvider router={router} />
+        </DataProvider>
+    );
+}
+
 export const withData =
     (connect: Connect): Decorator =>
     (Story) => (
-        <DataProvider connect={connect}>
+        <Harness connect={connect}>
             <Story />
-        </DataProvider>
+        </Harness>
     );
