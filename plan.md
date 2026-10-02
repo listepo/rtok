@@ -523,15 +523,21 @@ Execution (2026-10-03, Claude Code / sonnet-5): split into four PRs, each at mos
 
 ### T289.2. MCP `worktree_adopt`
 
-Done means: `worktree_adopt {path?, task?}` for the session's linked agent, same code path as the CLI (no agent or owner argument). Check: MCP e2e.
+Done means: `worktree_adopt {path?, task?}` for the session's linked agent, same code path as the CLI (no agent or owner argument).
+
+Check: MCP e2e.
 
 ### T289.3. Post-create scripts: `rtok agents install <host> --project` for Cursor, Kilo and Devin/Windsurf
 
-Done means: rtok's entry is written into `.cursor/worktrees.json` (`setup-worktree*`), `.kilo/setup-script` and Devin/Windsurf's `post_setup_worktree` hook config, our entry only and the rest of each file byte-for-byte (host-config rule), and removal takes it out; the entry runs `rtok worktree adopt`. Check: install/remove e2e per host that changes only our entry.
+Done means: rtok's entry is written into `.cursor/worktrees.json` (`setup-worktree*`), `.kilo/setup-script` and Devin/Windsurf's `post_setup_worktree` hook config, our entry only and the rest of each file byte-for-byte (host-config rule), and removal takes it out; the entry runs `rtok worktree adopt`.
+
+Check: install/remove e2e per host that changes only our entry.
 
 ### T289.4. Skill: adopt a host-made worktree on hosts without a post-create hook
 
-Done means: `skills/` tells the agent on Codex, Grok Build, MiMo, omp and Antigravity to call `worktree_adopt` when it finds itself in a host-made worktree. Check: the skill's gate tests.
+Done means: `skills/` tells the agent on Codex, Grok Build, MiMo, omp and Antigravity to call `worktree_adopt` when it finds itself in a host-made worktree.
+
+Check: the skill's gate tests.
 
 
 ### T290. Docs, skill and one cross-host test for agents and worktrees
