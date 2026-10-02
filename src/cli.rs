@@ -1165,13 +1165,8 @@ pub fn run() -> Result<()> {
             let id = (task.as_str(), slug.as_deref());
             let store = crate::store::Store::open(&cfg.core.db_path).ok();
             let agent = claim::caller(store.as_ref(), agent.as_deref())?;
-            let owner = claim::owner(owner, agent.as_ref(), store.as_ref())?;
-            let agent_id = agent.as_ref().map(|a| a.id.as_str());
             let cwd = std::env::current_dir()?;
-            let plan = crate::worktree::add::run(&cwd, root, id, (&owner, agent_id))?;
-            if let Some(agent) = agent_id {
-                claim::remember(store.as_ref(), &plan.path, agent, &plan.task);
-            }
+            let plan = claim::add(store.as_ref(), &cwd, root, id, agent.as_ref(), owner)?;
             println!("{}", plan.path.display());
         }
         Cmd::Worktree {
@@ -1230,16 +1225,13 @@ pub fn run() -> Result<()> {
             action: WorktreeCmd::List { json },
         } => {
             let mut rows = crate::worktree::list::rows(&std::env::current_dir()?)?;
-            // T154: ownership from the sessions the hooks recorded. The listing must not
-            // depend on the store — without one it prints without attribution.
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            if let Ok(store) = crate::store::Store::open(&cfg.core.db_path)
-                && let Ok(seen) = store.sessions_by_cwd()
-            {
-                crate::worktree::list::attribute(&mut rows, &seen);
-                // T285: the bound agent's host and state; a store error leaves the ids bare.
-                let _ = crate::worktree::list::bind(&mut rows, &store, &cfg.agents.idle);
-            }
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            crate::worktree::list::attribute_with_store(
+                &mut rows,
+                store.as_ref(),
+                &cfg.agents.idle,
+            );
             if json {
                 print_json(&rows)?;
             } else {
