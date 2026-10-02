@@ -6123,6 +6123,22 @@ Check result: new unit test `capture_returns_when_the_child_exits_though_a_grand
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
 
+### T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A command killed by SIGKILL (OOM killer, timeout) or SIGTERM comes back as `1`, not `128+signal` (137 / 143), so agents and scripts cannot tell "killed" from "failed" and OOM kills in test runs hide. On Unix `ExitStatus::code()` is `None` for a signal death and both sites map `None` to `1`: `src/plugins/cmd/run.rs:298` (`out.code.unwrap_or(1)`) and `src/mcp/wrap.rs:90` (`code().unwrap_or(1)`).
+
+Repro: `rtok run -- sh -c 'kill -TERM $$'; echo $?` and `rtok run -- sh -c 'kill -KILL $$'; echo $?` print `1`; plain `sh -c 'kill -TERM $$'; echo $?` prints `143`.
+
+Done when: one shared helper maps a Unix signal death (`ExitStatusExt::signal()`) to `128 + sig` where `code()` is `None`, used by both sites; Windows behaviour unchanged.
+
+Check: Unix-only tests for `rtok run` and the `rtok mcp --` wrap path get `143` for SIGTERM and `137` for SIGKILL, and a normal non-zero exit keeps its code; `just check`.
+
+
+Result (2026-10-03, Claude Code / sonnet-5): added `proc::exit_code` (`src/proc.rs`), which maps a Unix signal death (`ExitStatusExt::signal()`) to `128 + signal` and otherwise returns `code()`; `proc::capture` (the `rtok run` path) and `mcp::wrap::run` (the `rtok mcp --` path) both use it, so SIGTERM gives 143 and SIGKILL 137 at both sites, a normal non-zero exit keeps its code, and Windows is unchanged. Checked: new Unix-only tests (`proc::tests::capture_reports_128_plus_the_signal_of_a_killed_child`, `run_reports_128_plus_the_signal_for_a_killed_command` in `tests/commands_e2e.rs`, `a_server_killed_by_a_signal_exits_128_plus_the_signal` in `tests/mcp_wrap.rs`) each signal only their own `sh`; `just check` green (2143 tests run: 2143 passed, 6 skipped).
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
+
 ### T235.2. `rtok run` starts no login shell per call
 
 Load-incident context in `done.md` → T235.1.
@@ -7472,6 +7488,28 @@ Check: store unit tests (register is idempotent, sub-agent row, resolve prefix /
 Status: done 2026-09-27 (#439; hook bench p95 9.10 ms PreToolUse, 9.51 ms PostToolUse)
 Model: Claude Code / claude-opus-5-5
 
+### T358.1. `rtok agents usage --source rtok`: CLI, `[agents.usage]` config and store reads
+
+First slice of T358: scope is the T358.1 bullet under "Split when claiming" there; the spec text stays in T358.
+
+Moved out of the first slice (to keep it near 300 LOC), all to T358.2 unless noted: `--by agent|model`; the saved tokens / saved estimate columns and the `rtok saved` summary line (they come from the `measurements` ledger and are only needed once `both` exists); display names (`Claude Code`; this slice prints the host id); the JSON `skipped` field; flipping the `[agents.usage] source` default from `rtok` to `logs` (the default is `rtok` until logs exist). The store read groups by session, model and timestamp, not by quarter hour: Diesel 2.3 cannot `GROUP BY` a computed `ts / N` (the gap `Store::usage_by_model` documents), so the grain is the request; revisit if a large store makes it slow.
+
+Check: the items of T358's Check list that apply to `--source rtok` (fixture totals in text and JSON, unpriced warning, `--tz` and DST, match with `stats --price`, config rows); `just check`.
+
+Execution:
+
+1. `jiff` (already in the lock through env_logger) as a direct dependency for IANA zones with DST; row in `toolchain.md`.
+2. `[agents.usage]` in `src/config/mod.rs` (schema from the types), `config/default.toml` and `docs/config.md` rows.
+3. `Store::usage_slices` (Diesel, no raw SQL) in `src/store/mod.rs`; `src/agents/usage.rs` builds the report, reusing `row_cost` and `[stats.prices]` from `measure::stats` and the `render::table` helper.
+4. CLI: `rtok agents usage` in `src/cli.rs` with the `[agents.usage]` flag overlay.
+5. Gates: `tests/config_coverage.rs` (flag to key mapping), `tests/surface_parity.rs` (EXEMPT until T358.5), trycmd cases and regenerated goldens, README row.
+6. Verify with the `agents::usage` unit tests (golden text, JSON field names, zone and DST cases), then `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `rtok agents usage` now prints the T358 screen for what passed through rtok: header with the last day and zone, summary (tokens, estimated cost, sessions, daily rows), the unpriced warning, the per-agent table and monthly (or `--daily`) totals; `--json` carries the same rows with the four token legs, `--unpriced` lists the models without a price. Flags `--source`, `--host`, `--since`, `--until`, `--daily` / `--monthly`, `--tz` map to `[agents.usage]` (`source`, `hosts`, `since`, `until`, `period`, `tz`), with `default.toml` and `docs/config.md` rows. `Store::usage_slices` reads the `usage` rows through Diesel; `src/agents/usage.rs` buckets them by day and month in `--tz` with `jiff` (DST-aware, new direct dependency, already in the lock) and prices them through `measure::stats::row_cost` and `[stats.prices]`, with provider prefix and date suffix stripped before the lookup. Checked: seven `agents::usage` unit tests (golden screen text, JSON field names, a request across UTC midnight, month edges before and after the Kyiv DST change, host and window filters, total equal to the `stats --price` arithmetic), trycmd cases for the empty store and `--help`, and the `config_coverage` and `surface_parity` gates (`agents usage` is `EXEMPT` until T358.5 adds its page). The cut-out parts are recorded in the T358.1 card above and landed in the T358.2 card.
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
+
 ### T325. Bash rewrite keeps `cd` in the host shell; shell-state builtins stay unwrapped
 
 Found by a bug-hunt pass over `src/plugins/cmd/hook.rs`. The PreToolUse rewrite turned `cd crates/x && cargo test` into `rtok run -- 'cd crates/x && cargo test'`, so the `cd` ran in `rtok run`'s child shell. Hosts that keep the shell's cwd between Bash calls (Claude Code) lost it: the next call ran in the old directory. `export`, `source`, `unset`, `alias`, `pushd`/`popd` had the same problem.
@@ -7503,6 +7541,18 @@ Check: `an_empty_rtok_home_falls_back_to_the_user_home`, `a_dotenv_directory_doe
 
 Status: done 2026-10-01
 Model: Claude Code / sonnet (reviewed by Claude Code / claude-opus-5-5)
+
+### T362. `rtok config validate` fails with ENOENT on a fresh install
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). The first command the reference file header tells a new user to run fails with a raw OS error, while the failed run still leaves `config.toml` behind, so a second run passes. `ConfigCmd::Validate` (`src/cli.rs:974`) calls `validate::issues(&path)`, which reads the file (`src/config/validate.rs:16`) without the `Config::ensure_user_file` step that every other subcommand gets through `Config::load_with`.
+
+Repro: `mkdir /tmp/h1 && HOME=/tmp/h1 rtok config validate; echo $?` → `Error: /tmp/h1/.rtok/config.toml … No such file or directory (os error 2)`, exit 1; the same command again prints `ok`, exit 0.
+
+Done when: with no explicit path, `config validate` first calls `Config::ensure_user_file(&home, config_file.as_deref())` (the default file is created as `load_with` does) and prints `ok …/config.toml` on the first run; an explicit missing path still errors with its name.
+
+Check: a trycmd or `tests/` case on an empty temp `HOME` gets `ok` and exit 0 on the first `config validate`, and an explicit missing path still exits non-zero; `just check`.
+
+**Result (2026-10-03, Claude Code / sonnet-5):** `ConfigCmd::Validate` (`src/cli.rs`) calls `Config::ensure_user_file(&home, config_file.as_deref())` when no path argument is given, the same call `load_with` makes, so the first `config validate` on an empty home creates the default file and prints `ok <home>/config.toml`. A path typed as the argument is not created: a missing one still fails naming it, and `--config`/`RTOK_CONFIG` stay untouched because `ensure_user_file` skips them. The rule tables in `src/config/validate.rs` are not touched. Checked by `config_validate_creates_the_default_file_but_not_an_explicit_one` in `tests/commands_e2e.rs` (empty temp HOME: `ok`, exit 0, file created; explicit missing path exits non-zero naming it) and `just check`.
 
 ### T349. Hooks never reach the fast client: ketch links `rtok` but not `rtok-hook`
 

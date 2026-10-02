@@ -185,6 +185,22 @@ fn run_echo_prints_its_output() {
     let _ = fs::remove_dir_all(&home);
 }
 
+/// T366: a command killed by a signal exits `128 + signal` like a shell, not `1`; a plain
+/// non-zero exit keeps its code. The `kill` targets the test's own `sh` (`$$`).
+#[cfg(unix)]
+#[test]
+fn run_reports_128_plus_the_signal_for_a_killed_command() {
+    let home = tmp("signal");
+    for (script, code) in [
+        ("kill -TERM $$", 143),
+        ("kill -KILL $$", 137),
+        ("exit 7", 7),
+    ] {
+        cmd(&["run", "sh", "-c", script], &home).assert().code(code);
+    }
+    let _ = fs::remove_dir_all(&home);
+}
+
 #[test]
 fn run_long_output_then_expand_round_trips() {
     let home = tmp("expand");
@@ -318,4 +334,35 @@ fn info_counts_error_lines_and_json_parses() {
     assert_eq!(v["otel"]["enabled"], false);
     assert!(v["db"]["bytes"].is_number(), "{v}");
     let _ = fs::remove_dir_all(&home);
+}
+
+/// T362: the first `config validate` on an empty HOME creates the default file like every other
+/// subcommand, while a path the user typed must exist.
+#[test]
+fn config_validate_creates_the_default_file_but_not_an_explicit_one() {
+    let home = tmp("config-validate-fresh");
+    let out = String::from_utf8_lossy(
+        &cmd(&["config", "validate"], &home)
+            .env_remove("RTOK_CONFIG")
+            .assert()
+            .success()
+            .get_output()
+            .stdout,
+    )
+    .into_owned();
+    assert!(
+        out.starts_with("ok ") && out.contains("config.toml"),
+        "{out}"
+    );
+    assert!(home.join("config.toml").exists());
+
+    let missing = home.join("nope.toml");
+    let missing = missing.to_str().unwrap();
+    let out = cmd(&["config", "validate", missing], &home)
+        .env_remove("RTOK_CONFIG")
+        .assert()
+        .failure()
+        .get_output()
+        .clone();
+    assert!(String::from_utf8_lossy(&out.stderr).contains(missing));
 }
