@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Shared proxy-under-test harness (moved out of `tests/proxy.rs` T5.1 so `proxy_bench.rs`
 //! can spin up the same real proxy against a fake upstream without duplicating it).
 

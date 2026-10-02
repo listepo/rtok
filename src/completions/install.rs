@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok completions [<shell>] --install | --uninstall` (T318): the script goes to the shell's
 //! standard per-user location. PowerShell also gets one dot-source line in `$PROFILE`; only
 //! that line is added or removed, the rest of the profile stays byte-for-byte.

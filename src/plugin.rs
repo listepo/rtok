@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The plugin contract (plan §1, T0.4). Every token-reduction method implements [`Plugin`].
 //!
 //! The contract itself lives in the published `rtok-plugin-sdk` crate (D25) and is re-exported

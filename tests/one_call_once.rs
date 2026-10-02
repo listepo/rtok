@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T245 + D3: one tool call is processed once, however many hook events reach rtok for it — a
 //! host that fires two events for one call (Cursor: `postToolUse` and `afterMCPExecution`), or
 //! one event delivered twice (Claude Code with both the plugin's hooks and leftover

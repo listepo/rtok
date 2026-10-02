@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! A fake language server for T142's LSP-orphan tests (unix-only): a script named
 //! `clangd`, first on `PATH`. It answers `--version` (the readiness probe in
 //! `lsp::on_path`) with exit 0, and in server mode speaks just enough LSP over stdio

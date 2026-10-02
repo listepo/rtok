@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T150: the worktree inventory against a real repository — a squash-merged branch, a
 //! dirty worktree locked by another owner, and a record whose directory was deleted.
 
