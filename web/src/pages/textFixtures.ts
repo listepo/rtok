@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Text and skills fixtures for the pages whose /ws field is a Rust-rendered text blob. The
 // line shapes follow the producers in src/web/model.rs; the values are made up.
 import type { SkillPageRow } from "../api/snapshot.gen";
