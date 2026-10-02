@@ -109,6 +109,7 @@ Project programs and direct packages from the manifests.
 | libfuzzer-sys | local | https://crates.io/crates/libfuzzer-sys | `fuzz/`: libFuzzer runtime for the cargo-fuzz targets |
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | Rust dependency |
 | log | local | https://crates.io/crates/log | T225: logging facade env_logger drains; D26 lines are mirrored into it |
+| mime_guess | local | https://crates.io/crates/mime_guess | Content-Type for the SPA files `rtok web` serves |
 | notify | local | https://crates.io/crates/notify | Rust dependency |
 | owo-colors | local | https://crates.io/crates/owo-colors | Rust dependency |
 | pathdiff | local | https://crates.io/crates/pathdiff | Relative path between two paths |
@@ -118,6 +119,7 @@ Project programs and direct packages from the manifests.
 | reqwest | local | https://crates.io/crates/reqwest | HTTP |
 | rmcp | local | https://crates.io/crates/rmcp | Rust dependency |
 | rstest | local | https://crates.io/crates/rstest | Rust dependency |
+| rust-embed | local | https://crates.io/crates/rust-embed | Embeds the built SPA (`web/dist`) in the binary in every profile; memory-serve reads disk in debug builds and has no run-time override, include_dir has no media types or digests |
 | rustix | local | https://crates.io/crates/rustix | Rust dependency |
 | rustls | local | https://crates.io/crates/rustls | Preconfigured webpki TLS client config (T53.3) |
 | rustls-pemfile | local | https://crates.io/crates/rustls-pemfile | `SSL_CERT_FILE` bundle parsing (T53.3) |
@@ -131,7 +133,6 @@ Project programs and direct packages from the manifests.
 | slint-build | local | https://crates.io/crates/slint-build | Rust dependency |
 | tokio | local | https://crates.io/crates/tokio | Async runtime |
 | toml_edit | local | https://crates.io/crates/toml_edit | Rust dependency |
-| tower-http | local | https://crates.io/crates/tower-http | Rust dependency |
 | tree-sitter | local | https://crates.io/crates/tree-sitter | Rust dependency |
 | tree-sitter-c | local | https://crates.io/crates/tree-sitter-c | Rust dependency |
 | tree-sitter-c-sharp | local | https://crates.io/crates/tree-sitter-c-sharp | C# grammar tags (T52.2) |

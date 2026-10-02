@@ -1,7 +1,8 @@
-//! End to end: the real `rtok web` binary on a real port — the page, the bundle it
-//! loads (embedded since T111) and a real WebSocket client on `/ws`. `tests/web.rs`
-//! drives the router in-process; this is what a user's browser sees.
+//! End to end: the real `rtok web` binary on a real port — the SPA it embeds (T310.9), the
+//! `RTOK_WEB_DIST` override and a real WebSocket client on `/ws`. `tests/web.rs` drives the
+//! router in-process; this is what a user's browser sees.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -34,15 +35,26 @@ fn free_port() -> u16 {
 /// `rtok web` with `HOME`/`RTOK_HOME` in a temp dir, so the snapshot never reads this
 /// machine's `~/.claude` (T74) and the `set` below writes a throwaway config.
 async fn start(label: &str) -> Web {
+    start_with(label, None).await
+}
+
+/// `dist` is the `RTOK_WEB_DIST` value, or `None` for the embedded SPA.
+async fn start_with(label: &str, dist: Option<&OsStr>) -> Web {
     let home = std::env::temp_dir().join(format!("rtok-web-e2e-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&home).expect("home");
     let port = free_port().to_string();
-    let child = Command::new(env!("CARGO_BIN_EXE_rtok"))
-        .args(["web", "--host", "127.0.0.1", "--port", &port])
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_rtok"));
+    cmd.args(["web", "--host", "127.0.0.1", "--port", &port])
         .env("RTOK_HOME", &home)
         .env("HOME", &home)
-        .env_remove("RTOK_WEB_PKG")
+        .env_remove("RTOK_WEB_DIST");
+    if let Some(dist) = dist {
+        cmd.env("RTOK_WEB_DIST", dist);
+    }
+    // `home` is the cwd, so nothing here (no `web/dist`, no `dist/` beside the binary) can feed
+    // the page except what the binary embeds.
+    let child = cmd
         .current_dir(&home)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -65,17 +77,26 @@ async fn start(label: &str) -> Web {
     }
 }
 
-fn bundle(name: &str) -> Option<Vec<u8>> {
+fn built(rel: &str) -> Option<Vec<u8>> {
     std::fs::read(
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("crates/rtok-webui/pkg")
-            .join(name),
+            .join("web/dist")
+            .join(rel),
     )
     .ok()
 }
 
+/// The first `/assets/<file>` URL the page references with the given extension.
+fn asset_url(html: &str, ext: &str) -> String {
+    html.match_indices("/assets/")
+        .map(|(i, _)| &html[i..i + html[i..].find('"').expect("closing quote")])
+        .find(|url| url.ends_with(ext))
+        .unwrap_or_else(|| panic!("no {ext} asset in the page"))
+        .to_string()
+}
+
 #[tokio::test]
-async fn web_serves_the_page_and_its_bundle() {
+async fn web_serves_the_embedded_spa_with_no_dist_on_disk() {
     let web = start("http").await;
     let base = format!("http://{}", web.addr);
 
@@ -90,21 +111,32 @@ async fn web_serves_the_page_and_its_bundle() {
 
     let html = reqwest::get(format!("{base}/")).await.expect("index");
     assert_eq!(html.status(), 200);
+    assert!(html.headers().contains_key("content-security-policy"));
     let html = html.text().await.expect("html");
     // The page body is server-controlled input: keep it out of the assert message so a failure
     // cannot inject forged lines into the test log.
-    assert!(
-        html.contains("./pkg/rtok_webui.js"),
-        "index page does not reference ./pkg/rtok_webui.js"
-    );
-
-    let Some(wasm) = bundle("rtok_webui_bg.wasm") else {
-        eprintln!("skip bundle checks: built without a bundle — run `just web-bundle`");
+    let Some(index) = built("index.html") else {
+        eprintln!("skip asset checks: built without web/dist — run `just spa-build`");
+        assert!(
+            html.contains("just web"),
+            "placeholder does not say how to build"
+        );
         return;
     };
-    let js = reqwest::get(format!("{base}/pkg/rtok_webui.js"))
+    assert_eq!(
+        html.as_bytes(),
+        index.as_slice(),
+        "index != web/dist/index.html"
+    );
+
+    // A deep link is the SPA's, not a 404 — a reload on /#/plugins never leaves the page.
+    let deep = reqwest::get(format!("{base}/plugins"))
         .await
-        .expect("js");
+        .expect("deep link");
+    assert_eq!(deep.status(), 200);
+
+    let js_url = asset_url(&html, ".js");
+    let js = reqwest::get(format!("{base}{js_url}")).await.expect("js");
     assert_eq!(js.status(), 200);
     assert!(
         js.headers()["content-type"]
@@ -112,13 +144,50 @@ async fn web_serves_the_page_and_its_bundle() {
             .unwrap()
             .contains("javascript")
     );
-    let res = reqwest::get(format!("{base}/pkg/rtok_webui_bg.wasm"))
+    assert!(
+        js.headers()["cache-control"]
+            .to_str()
+            .unwrap()
+            .contains("immutable")
+    );
+    let raw = built(js_url.trim_start_matches('/')).expect("js in dist");
+    assert_eq!(js.bytes().await.expect("body").as_ref(), raw.as_slice());
+
+    // Precompressed: the brotli file in dist/ is what goes out, byte for byte.
+    let br = reqwest::Client::new()
+        .get(format!("{base}{js_url}"))
+        .header("accept-encoding", "br")
+        .send()
         .await
-        .expect("wasm");
-    assert_eq!(res.status(), 200);
-    // `WebAssembly.instantiateStreaming` refuses any other media type.
-    assert_eq!(res.headers()["content-type"], "application/wasm");
-    assert_eq!(res.bytes().await.expect("body").as_ref(), wasm.as_slice());
+        .expect("br");
+    assert_eq!(br.headers()["content-encoding"], "br");
+    let raw_br = built(&format!("{}.br", js_url.trim_start_matches('/'))).expect("br in dist");
+    assert_eq!(br.bytes().await.expect("body").as_ref(), raw_br.as_slice());
+}
+
+#[tokio::test]
+async fn rtok_web_dist_overrides_the_embedded_spa() {
+    let dist = std::env::temp_dir().join(format!("rtok-web-e2e-dist-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dist);
+    std::fs::create_dir_all(&dist).expect("dist");
+    std::fs::write(dist.join("index.html"), "<!doctype html>OVERRIDE-MARKER").expect("index");
+    let web = start_with("override", Some(dist.as_os_str())).await;
+    let html = reqwest::get(format!("http://{}/", web.addr))
+        .await
+        .expect("index")
+        .text()
+        .await
+        .expect("html");
+    assert!(
+        html.contains("OVERRIDE-MARKER"),
+        "RTOK_WEB_DIST was ignored"
+    );
+    // The API is not the override's business.
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/ws", web.addr))
+        .await
+        .expect("ws connect");
+    assert_eq!(next_json(&mut ws).await["type"], "snapshot");
+    let _ = std::fs::remove_dir_all(&dist);
 }
 
 type Ws =
