@@ -41,7 +41,6 @@
 - T329.9. Graph backend `auto`: LSP first, tree-sitter second, chosen per project and language
 - T329.10. Graph text-search backend (rg/grep) including `ssh://` roots
 - T329.11. Graph capability cache: one probe per project until the process restarts
-- T329.13. Graph page level 1: 3D projects overview (Three.js, 2D fallback)
 - T329.14. Graph page level 2: drill-down into one project
 - T329.15. Graph page: two-part UI with the read-only live graph and live metrics
 - T329.16. Graph export: PNG, SVG, JSON, `rtok graph export`, MCP `graph_export`

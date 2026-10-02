@@ -47,7 +47,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T329.9 | todo | P2 | 4 | 0% | |
 | T329.10 | todo | P3 | 3 | 0% | |
 | T329.11 | todo | P2 | 3 | 0% | |
-| T329.13 | in progress | P2 | 4 | 0% | Claude Code / sonnet |
 | T329.14 | todo | P2 | 4 | 0% | |
 | T329.15 | todo | P3 | 5 | 0% | |
 | T329.16 | todo | P3 | 3 | 0% | |
@@ -1004,21 +1003,6 @@ Check: a project in a language with no grammar answers from text search, tagged 
 T329 §6b: an in-memory per-project (and language) record of which mode works, single-flight first probes, downgrade once on failure, cleared for the affected projects when `backend` config changes, shown by `rtok graph projects --json` and the page. T337 (never re-probe vs alerts and health) must be answered first. Depends on T329.9.
 
 Check: a test counts probes, 100 requests after the first run zero lookups or spawns; restarting picks up a newly installed server; a `backend` change re-checks only affected projects; concurrent first requests run one check; `just check`.
-
-### T329.13. Graph page level 1: 3D projects overview (Three.js, 2D fallback)
-
-T329 §8a level 1 and the rendering section: node per project, edges per link (dashed auto, solid manual, thickness by cross-project references), scope emphasis, node menu, filter, clustered layout above about 50 projects, 3D with Three.js (pick the library, record it and its bundle size in `toolchain.md`) with the 2D fallback and toggle, layout in a web worker, disposal on leaving the page, list view for accessibility. Depends on T329.12.
-
-Execution plan (one PR, commits by concern; no new snapshot field, the `projects` rows T329.12 added are the only data path):
-
-1. Library: `three` for the scene (orbit controls and fat lines from its own `examples/jsm`) and `d3-force-3d` for the layout inside a web worker, because `3d-force-graph` runs its simulation on the main thread. Both pinned, both lazy-loaded so the page's first bundle does not grow; sizes and the reason go to `toolchain.md`.
-2. Mapping and layout (`web/src/pages/graph3d/scene.ts`, `layout.ts`, `layout.worker.ts`): rows to nodes and edges (colour per root, radius by symbol count, hollow when missing, dashed auto vs solid manual, constant edge width because no cross-project reference counts exist in the snapshot yet), the cycle-safe scope, the filter, a clustered layout by origin above 50 projects; the worker settles and stops. Vitest without WebGL.
-3. 3D view (`Scene3D.tsx`): renderer, orbit camera, picking, labels, fly-to (off under `prefers-reduced-motion`), fit and reset, context loss falls back to 2D, full disposal on unmount.
-4. 2D and list (`Scene2D.tsx`, `ProjectList.tsx`): the same positions as SVG, and an accessible list with links and scope.
-5. Page (`ProjectsOverview.tsx` in `Graph.tsx`): counters, filter, scope-only switch, 3D/2D/list toggle kept in `localStorage`, WebGL notice, node menu with what the protocol offers today (select, fly to).
-6. Playwright-driven checks run as Storybook play functions under Vitest browser mode (the repo's only Playwright harness): non-empty software-WebGL canvas, click selects, `getContext` blocked shows the 2D fallback and notice. Local run with `SPA_BROWSER_CHANNEL=chrome`.
-
-Check: Vitest for the data-to-scene mapping without WebGL; Playwright with software WebGL sees a non-empty canvas, selects a node by click and shows the 2D fallback and notice with WebGL off; the 2D/3D choice survives a reload; `just check`.
 
 ### T329.14. Graph page level 2: drill-down into one project
 
