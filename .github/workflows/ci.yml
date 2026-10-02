@@ -112,6 +112,9 @@ jobs:
           path: target/vitest
           key: vitest-${{ runner.os }}-${{ hashFiles('mise.toml', 'vitest.config.mjs', 'plugins/**/*.ts') }}
           restore-keys: vitest-${{ runner.os }}-
+      # T310.9: build.rs embeds web/dist, so build the SPA before cargo; without it the binary
+      # carries the "UI not built" page and the SPA-serving tests only see the placeholder.
+      - run: just spa-install spa-build
       - run: just test
       - run: just example
       - if: failure() && github.event_name == 'pull_request'

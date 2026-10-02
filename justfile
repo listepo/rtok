@@ -68,8 +68,11 @@ spa-install:
 spa-dev:
     {{npm}} --prefix web run dev
 
+# `touch build.rs`: build.rs only watches web/dist once it exists, so a binary compiled before the
+# first SPA build (the placeholder) would otherwise keep the placeholder (T310.9).
 spa-build:
     {{npm}} --prefix web run build
+    touch build.rs
 
 spa-typecheck:
     {{npm}} --prefix web run typecheck
@@ -77,6 +80,15 @@ spa-typecheck:
 # T310.3: Vitest for web/src (the root vitest.config.mjs only covers plugins/).
 spa-test:
     {{npm}} --prefix web run test
+
+# T310.5: every story as a Vitest browser test (render, play function, axe). Needs Chromium
+# (`npx playwright install chromium` in web/, or SPA_BROWSER_CHANNEL=chrome).
+spa-stories:
+    {{npm}} --prefix web run test:stories
+
+# T310.5: static Storybook build of the UI kit.
+spa-storybook:
+    {{npm}} --prefix web run build-storybook
 
 # T183: tools/publish_marketplace's own test suite (no network, no real `gh`).
 python:
@@ -185,12 +197,15 @@ site:
 site-serve:
     {{hugo}} server --buildDrafts
 
-# Slint WASM UI, then API+UI on host:port (T60.7 profile + wasm-opt; T81 shares the script with CI)
-web host="127.0.0.1" port="3333": web-bundle
-    {{cargo}} run -q -- web --host {{host}} --port {{port}}
+# T310.9: build the SPA, then API+UI on host:port. `RTOK_WEB_DIST` makes `rtok web` read
+# web/dist at run time, so the UI is the one just built even when the binary was compiled earlier
+# without it (build.rs embeds a placeholder then).
+web host="127.0.0.1" port="3333":
+    [ -d web/node_modules ] || {{npm}} --prefix web ci
+    {{npm}} --prefix web run build
+    RTOK_WEB_DIST=web/dist {{cargo}} run -q -- web --host {{host}} --port {{port}}
 
-# Just the WASM bundle `rtok web` serves and the release archive carries (T81).
-# Fails open without wasm-pack; CI runs the same script with --require.
+# The Slint WASM bundle; nothing embeds or serves it since T310.9 and T310.12 deletes it.
 web-bundle:
     tools/webui-bundle.sh --compress
 
