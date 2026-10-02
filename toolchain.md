@@ -73,6 +73,8 @@ Project programs and direct packages from the manifests.
 | @vitest/browser | local | https://github.com/vitest-dev/vitest | T310.5: browser mode for the story tests |
 | @vitest/browser-playwright | local | https://github.com/vitest-dev/vitest | T310.5: Playwright provider for browser mode |
 | playwright | local | https://github.com/microsoft/playwright | T310.5: drives Chromium for the story tests |
+| @playwright/test | local | https://github.com/microsoft/playwright | T310.10: runner for the e2e suite against the real `rtok web` binary (`just spa-e2e`) |
+| @types/node | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.10: Node types for the e2e fixture (`node:child_process`, `node:fs`) |
 | @testing-library/react | local | https://github.com/testing-library/react-testing-library | T310.4: renders the shell and routes in Vitest |
 | @testing-library/dom | local | https://github.com/testing-library/dom-testing-library | T310.4: peer of @testing-library/react (queries, events) |
 | happy-dom | local | https://github.com/capricorn86/happy-dom | T310.4: DOM for component tests (`// @vitest-environment happy-dom`, faster than jsdom) |
