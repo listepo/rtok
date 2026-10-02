@@ -18,8 +18,8 @@ Project programs and direct packages from the manifests.
 | go | mise | hugo resolves the hextra theme as a Go module (site/go.mod) | https://github.com/golang/go |
 | hugo | mise | Documentation site | https://github.com/gohugoio/hugo |
 | just | mise | Command recipes | https://github.com/casey/just |
-| ketch | see its README | Installs dunnage | https://github.com/pyrlyn/ketch |
-| dunnage | ketch | `just test` / `just test-changed` end with a lossless cleanup of `target/` (T236) | https://github.com/listepo/dunnage |
+| ketch | see its README | Installs swarfr | https://github.com/pyrlyn/ketch |
+| swarfr | ketch | `just test` / `just test-changed` end with a lossless cleanup of `target/` (T236) | https://github.com/listepo/swarfr |
 | tailspin | mise (`ubi:bensadeh/tailspin`) | `just logs` (T225): `tspin` highlights `~/.rtok/logs/rtok.log` and the `RUST_LOG` stderr stream; a viewer, not a logger | https://github.com/bensadeh/tailspin |
 | node | mise | jscpd, oxlint, oxfmt and vitest run on it; nothing in the binary does. Its `npm` packs and publishes the npm package (`just npm-build` / `just npm-publish`) | https://github.com/nodejs/node |
 | gh | brew | `just npm-build --release vX.Y.Z` downloads the dist Release archives | https://github.com/cli/cli |
@@ -45,7 +45,7 @@ Project programs and direct packages from the manifests.
 
 | Package | Where | Source | Why here |
 | --- | --- | --- | --- |
-| dunnage | global | https://github.com/listepo/dunnage | Lossless `target/` cleanup after tests |
+| swarfr | global | https://github.com/listepo/swarfr | Lossless `target/` cleanup after tests |
 
 ## npm (web/)
 

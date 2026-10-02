@@ -81,14 +81,14 @@ python:
 # --workspace so `rtok-plugin-sdk` (the published contract, D25) is in the same gate.
 # `-j` is the number of concurrent test threads; heavy tests in .config/nextest.toml
 # reserve `num-test-threads`, which is this value.
-test: && dunnage
+test: && swarfr
     {{cargo}} nextest run --workspace --test-threads {{cpus}}
 
 # T301: `just test` under coverage (cargo-llvm-cov). Writes coverage/lcov.info (SonarCloud
 # reads it) and prints a per-file summary. Slower than `just test` and not part of `just
 # check`. Extra args go to nextest, e.g. `just test-cov -E 'test(formatters)'`.
 [positional-arguments]
-test-cov *args: && dunnage
+test-cov *args: && swarfr
     mise exec -- rustup component add llvm-tools-preview
     mkdir -p coverage
     {{cargo}} llvm-cov nextest --workspace --test-threads {{cpus}} --lcov --output-path coverage/lcov.info "$@"
@@ -98,16 +98,16 @@ test-cov *args: && dunnage
 # filters after the build, so the saving comes from cargo target selection (`--test <name>`);
 # tools/test-changed.sh maps the diff onto it. Selection is by name, so this is an
 # accelerator, not a coverage proof — `just check` stays the gate before a commit.
-test-changed rev="HEAD": && dunnage
+test-changed rev="HEAD": && swarfr
     NEXTEST_TEST_THREADS="{{cpus}}" CARGO="{{cargo}}" tools/test-changed.sh {{rev}}
 
 # T236: lossless cleanup of ./target after tests (compress + dedupe); never deletes.
-# A no-op without dunnage (`ketch install dunnage`) or before the first build.
-dunnage:
+# A no-op without swarfr (`ketch install swarfr`) or before the first build.
+swarfr:
     #!/usr/bin/env sh
-    command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
+    command -v swarfr >/dev/null || { echo "swarfr not found; install it with: ketch install swarfr"; exit 0; }
     [ -d target ] || exit 0
-    dunnage run target || test $? -eq 2
+    swarfr run target || test $? -eq 2
 
 # T0.4: one plugin feature must build alone
 build-min:
