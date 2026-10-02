@@ -18,6 +18,9 @@ import { Services } from "./pages/Services";
 import { Skills } from "./pages/Skills";
 import { Stats } from "./pages/Stats";
 import { Worktrees } from "./pages/Worktrees";
+import { Doctor } from "./pages/Doctor";
+import { Logs } from "./pages/Logs";
+import { Sessions } from "./pages/Sessions";
 import { PAGES, type Page } from "./pages";
 import { NotFound, Shell } from "./Shell";
 import { Empty, Loading } from "./states";
@@ -42,6 +45,9 @@ function PagePlaceholder({ page }: { page: Page }) {
 // Pages that have a real screen; the rest keep the placeholder until their task lands.
 const screens: Partial<Record<Page["id"], RouteComponent>> = {
     overview: Overview,
+    sessions: Sessions,
+    doctor: Doctor,
+    logs: Logs,
     plugins: Plugins,
     calls: Calls,
     skills: Skills,

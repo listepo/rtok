@@ -32,8 +32,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
 | T310 | todo | P1 | 5 | 0% | |
-| T310.7 | todo | P2 | 3 | 0% | |
-| T310.11 | todo | P2 | 3 | 0% | |
 | T310.12 | todo | P2 | 3 | 0% | |
 | T329 | todo | P2 | 5 | 0% | |
 | T330 | todo | P2 | 4 | 0% | |
@@ -599,16 +597,6 @@ Done when: `rtok web` serves the SPA from the binary, every page of `model::page
 
 Check: `rtok web` from a release build shows every page of `model::pages()` from the embedded SPA; no `slint`/`rtok-webui` left in the tree; `just check` and the SPA CI job green.
 
-### T310.7. Pages: sessions, doctor, logs
-
-Check: each page matches `design/html/admin/<page>.html` in dark and light at 375 and 1280 px on sample data; stories and Vitest for page logic.
-
-
-### T310.11. CI job for the SPA
-
-One CI job: `npm ci`, typecheck, oxlint/oxfmt, Vitest, Storybook tests, Playwright, `vite build`; cache npm and Playwright browsers.
-
-Check: the job is green on a PR and goes red when a Vitest, Storybook or Playwright test is broken on purpose.
 
 ### T310.12. Delete Slint, the WASM build and the HTML design
 

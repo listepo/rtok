@@ -9,7 +9,7 @@ import { Pill } from "../ui/Pill";
 import { Search } from "../ui/Search";
 import { compact, fmt, hms, iso } from "./format";
 import { tokensOf } from "./model";
-import { Count, Kv, Split, Toolbar, WithSnapshot } from "./parts";
+import { Count, Kv, Split, SurfacePill, Toolbar, WithSnapshot } from "./parts";
 
 const SURFACES = ["all", "hook", "mcp", "proxy"] as const;
 const RESULTS = ["any", "ok", "failed"] as const;
@@ -24,11 +24,6 @@ export function matchesCall(c: CallRow, surface: Surface, result: Result, query:
         (!q || [c.name, c.plugin, c.session, c.kind, c.model].join(" ").toLowerCase().includes(q))
     );
 }
-
-const surfaceTone = { hook: "info", mcp: "ok", proxy: "warn" } as const;
-const SurfacePill = ({ surface }: { surface: string }) => (
-    <Pill tone={surfaceTone[surface as keyof typeof surfaceTone] ?? "muted"}>{surface}</Pill>
-);
 
 const columns: Column<CallRow>[] = [
     {

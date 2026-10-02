@@ -221,3 +221,43 @@ export function overview(snap: Snapshot) {
     recent: recentSessions(snap.sessions),
   };
 }
+
+export function matchesSession(s: SessionTotals, liveOnly: boolean, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  return (
+    (!liveOnly || s.ended_at == null) &&
+    (!q || [s.id, s.host, s.model, s.project, s.provider].join(" ").toLowerCase().includes(q))
+  );
+}
+
+export interface LogLine {
+  /** Position in the frame, which is newest first; the page shows it as the line number. */
+  i: number;
+  raw: string;
+  ts: string;
+  level: string;
+  source: string;
+  name: string;
+  msg: string;
+}
+
+const LOG_RE = /^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) (\S+) ([^/\s]+)\/([^:]+): (.*)$/;
+
+/** A line that is not in the `ts LEVEL source/name: msg` shape is kept whole, as info. */
+export function parseLog(raw: string, i: number): LogLine {
+  const m = LOG_RE.exec(raw);
+  if (!m) return { i, raw, ts: "", level: "info", source: "", name: "", msg: raw };
+  const [, ts = "", level = "info", source = "", name = "", msg = ""] = m;
+  return { i, raw, ts, level: level.toLowerCase(), source, name, msg };
+}
+
+export const LEVELS = ["all", "info", "warn", "error"] as const;
+export type Level = (typeof LEVELS)[number];
+
+export function matchesLog(l: LogLine, level: Level, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  return (level === "all" || l.level === level) && (!q || l.raw.toLowerCase().includes(q));
+}
+
+/** The modules a host row is checked for, in the order the design lists them. */
+export const MODULES = ["hooks", "mcp", "proxy", "plugin"] as const;

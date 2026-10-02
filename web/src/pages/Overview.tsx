@@ -9,7 +9,7 @@ import { Sparkline } from "../ui/Sparkline";
 import { compact, fmt, pct } from "./format";
 import { overview } from "./model";
 import { CallsPanel, DoctorPanel, SessionsPanel } from "./OverviewPanels";
-import { PanelLink, WithSnapshot } from "./parts";
+import { PanelLink, TokenMix, tokenTotal, WithSnapshot } from "./parts";
 
 type Saving = ReturnType<typeof overview>["measured"][number];
 
@@ -56,16 +56,6 @@ function OverviewBody({ snap }: { snap: Parameters<typeof overview>[0] }) {
     const u = o.usage;
     const max = Math.max(1, ...o.measured.map((m) => m.saved));
     const columns = useMemo(() => savingColumns(max), [max]);
-    const mix: [string, number, string][] = [
-        ["input", u.input, "bg-accent-fg"],
-        ["cache create", u.cache_create, "bg-accent-fg/60"],
-        ["cache read", u.cache_read, "bg-accent-fg/30"],
-        ["output", u.output, "bg-delta"],
-    ];
-    const mixTotal = Math.max(
-        1,
-        mix.reduce((s, m) => s + m[1], 0),
-    );
     const kpis: ReactNode[] = [
         <Kpi
             key="in"
@@ -163,30 +153,10 @@ function OverviewBody({ snap }: { snap: Parameters<typeof overview>[0] }) {
                 <CallsPanel o={o} calls={snap.calls.length} />
                 <Panel
                     title="token mix"
-                    hint={`${fmt(mixTotal)} tokens in the ledger window`}
+                    hint={`${fmt(tokenTotal(u))} tokens in the ledger window`}
                     className="xl:col-span-4"
                 >
-                    <div
-                        role="img"
-                        aria-label={mix.map(([k, v]) => `${k} ${pct(v / mixTotal, 0)}`).join(", ")}
-                        className="flex h-2 overflow-hidden rounded-full bg-surface-3"
-                    >
-                        {mix.map(([k, v, cls]) => (
-                            <div
-                                key={k}
-                                className={cls}
-                                style={{ width: `${(v / mixTotal) * 100}%` }}
-                            />
-                        ))}
-                    </div>
-                    <ul className="flex flex-wrap gap-x-4 gap-y-1 text-2xs text-fg-muted">
-                        {mix.map(([k, v, cls]) => (
-                            <li key={k} className="flex items-center gap-1.5">
-                                <span aria-hidden="true" className={`size-2 rounded-full ${cls}`} />
-                                {k} {compact(v)}
-                            </li>
-                        ))}
-                    </ul>
+                    <TokenMix tokens={u} />
                 </Panel>
                 <Panel
                     title="savings by plugin"
