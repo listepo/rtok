@@ -150,7 +150,7 @@ enum Cmd {
         /// JSON instead of the table
         #[arg(long, conflicts_with = "fix")]
         json: bool,
-        /// Remove broken hooks and the extra copies of duplicate hooks and MCP entries; prints the diff, writes only with --yes
+        /// Clean up broken hooks and duplicate hooks and MCP entries: a terminal gets a checklist, a pipe the diff; --yes writes without asking
         #[arg(long)]
         fix: bool,
         /// With --fix: write the changes (a copy goes to `_backup/` first)
@@ -1191,7 +1191,11 @@ pub fn run() -> Result<()> {
             } else {
                 only.iter().map(|c| c.kind()).collect()
             };
-            let (text, code) = crate::doctor::fix::run(&cfg, yes && !dry_run, agent, &kinds);
+            // A terminal and no `--yes`: the user picks what goes. Pipes and CI keep the dry run.
+            let mut terminal = crate::doctor::checklist::Terminal;
+            let ask = (!yes && io::stdin().is_terminal() && io::stdout().is_terminal())
+                .then_some(&mut terminal as &mut dyn crate::doctor::checklist::Prompt);
+            let (text, code) = crate::doctor::fix::run(&cfg, yes && !dry_run, agent, &kinds, ask);
             print!("{text}");
             if code != 0 {
                 std::process::exit(code);

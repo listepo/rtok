@@ -14,6 +14,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use super::checklist::{self, Choice, Prompt};
 use super::hooks::{self, Probes, Problem, entries};
 use super::mcp_dupes::{self, Loc};
 use super::mcp_fix;
@@ -207,6 +208,19 @@ pub fn fix_broken(cfg: &Config, p: &Probes, w: &dyn Writer, apply: bool, keep: u
     fix_for(cfg, p, w, apply, keep, None, &KINDS[..1])
 }
 
+/// What a run selects: how many backup generations to keep per file, one host (`--agent`;
+/// `None` is every host) and the kinds of finding.
+pub struct Opts<'a> {
+    pub keep: usize,
+    pub agent: Option<&'a str>,
+    pub kinds: &'a [&'a str],
+}
+
+/// A finding that `--fix` removes unless the user's selection says otherwise.
+pub fn removable(x: &Problem, kinds: &[&str]) -> bool {
+    wanted(x, kinds) && x.fixable && !is_rtok_own(&x.command)
+}
+
 /// [`fix_broken`] for the `kinds` selected and one host's entries (`--agent`); `None` is every
 /// host.
 pub fn fix_for(
@@ -218,15 +232,37 @@ pub fn fix_for(
     agent: Option<&str>,
     kinds: &[&str],
 ) -> FixReport {
+    let opts = Opts { keep, agent, kinds };
+    let found = findings(cfg, p, agent);
+    fix_found(cfg, p, w, apply, &opts, found, &BTreeSet::new())
+}
+
+/// The findings `--fix` starts from, for the checklist to show and change.
+pub fn candidates(cfg: &Config, p: &Probes, agent: Option<&str>) -> Vec<Problem> {
+    findings(cfg, p, agent)
+}
+
+/// [`fix_for`] over `found`, without the entries whose `(source, path)` is in `skip` (what the
+/// user deselected in the checklist).
+pub fn fix_found(
+    cfg: &Config,
+    p: &Probes,
+    w: &dyn Writer,
+    apply: bool,
+    o: &Opts,
+    found: Vec<Problem>,
+    skip: &BTreeSet<(String, String)>,
+) -> FixReport {
+    let (keep, agent, kinds) = (o.keep, o.agent, o.kinds);
     let mut report = FixReport::default();
     let mut by_file: Vec<(String, Vec<Problem>)> = Vec::new();
-    let found = findings(cfg, p, agent);
     // A copy that goes as broken must not be the one kept: the extras then stay, so a hook
     // is never removed from every file at once because it was a duplicate.
     let at = |x: &Problem| (x.source.clone(), x.path.clone());
     let broken: BTreeSet<_> = found
         .iter()
         .filter(|x| x.kind == "broken-hook" && x.fixable && kinds.contains(&x.kind))
+        .filter(|x| !skip.contains(&at(x)))
         .map(at)
         .collect();
     let lost: BTreeSet<_> = found
@@ -235,7 +271,8 @@ pub fn fix_for(
         .filter_map(|x| x.group)
         .collect();
     let mut taken = BTreeSet::new();
-    for problem in found.iter().filter(|x| wanted(x, kinds)).cloned() {
+    let chosen = |x: &&Problem| wanted(x, kinds) && !skip.contains(&at(x));
+    for problem in found.iter().filter(chosen).cloned() {
         if problem.kind == "duplicate-hook" && problem.group.is_some_and(|g| lost.contains(&g)) {
             continue;
         }
@@ -394,23 +431,75 @@ pub fn render(r: &FixReport, apply: bool) -> String {
     out
 }
 
-/// `--fix` against this machine: the report text and the exit code.
-pub fn run(cfg: &Config, apply: bool, agent: Option<&str>, kinds: &[&str]) -> (String, i32) {
+/// `--fix` against this machine: the report text and the exit code. With a `prompt` and no
+/// `--yes` the user picks what goes, in the checklist.
+pub fn run(
+    cfg: &Config,
+    apply: bool,
+    agent: Option<&str>,
+    kinds: &[&str],
+    prompt: Option<&mut dyn Prompt>,
+) -> (String, i32) {
     let probes = Probes {
         fs: &super::probe::RealFs,
         env: &super::probe::RealEnv,
         which: &super::probe::RealWhich,
     };
-    let r = fix_for(
-        cfg,
-        &probes,
-        &super::probe::RealWriter,
-        apply,
-        cfg.setup.backup_files as usize,
+    let w = &super::probe::RealWriter;
+    let o = Opts {
+        keep: cfg.setup.backup_files as usize,
         agent,
         kinds,
-    );
-    (render(&r, apply), r.exit_code())
+    };
+    match prompt.filter(|_| !apply) {
+        Some(prompt) => interactive(cfg, &probes, w, &o, prompt),
+        None => {
+            let r = fix_for(cfg, &probes, w, apply, o.keep, agent, kinds);
+            (render(&r, apply), r.exit_code())
+        }
+    }
+}
+
+/// The checklist, then the write of what the user confirmed. Cancelling writes nothing.
+pub fn interactive(
+    cfg: &Config,
+    p: &Probes,
+    w: &dyn Writer,
+    o: &Opts,
+    prompt: &mut dyn Prompt,
+) -> (String, i32) {
+    let mut found = candidates(cfg, p, o.agent);
+    let (cwd, home) = (p.env.cwd(), p.env.home());
+    // A project's shared file reaches teammates; its `.local` files and the user's own do not.
+    let shared = |x: &Problem| {
+        let path = Path::new(&x.source);
+        cwd.as_deref().is_some_and(|c| {
+            path.starts_with(c)
+                && home.as_deref() != Some(c)
+                && !path
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().contains(".local"))
+        })
+    };
+    if !found.iter().any(|x| removable(x, o.kinds)) {
+        let r = fix_found(cfg, p, w, false, o, found, &BTreeSet::new());
+        return (render(&r, false), 0);
+    }
+    let preview = |all: &[Problem], skip: &BTreeSet<(String, String)>| {
+        let plan = fix_found(cfg, p, w, false, o, all.to_vec(), skip);
+        let shown = plan.files.iter().map(|f| match &f.outcome {
+            Outcome::Skipped(why) => format!("{}: skipped: {why}\n", f.source.display()),
+            _ => f.diff.clone(),
+        });
+        shown.collect::<String>()
+    };
+    match checklist::run(&mut found, o.kinds, &shared, &preview, prompt) {
+        Choice::Cancel => ("cancelled: nothing was written\n".into(), 0),
+        Choice::Apply(skip) => {
+            let r = fix_found(cfg, p, w, true, o, found, &skip);
+            (render(&r, true), r.exit_code())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -673,6 +762,185 @@ mod tests {
         let r = fix_all(&m, true, &KINDS);
         assert_eq!(r.files[0].outcome, Outcome::Written, "{r:?}");
         assert_eq!(text(&m, "/h/.codex/config.toml"), format!("{head}{tail}"));
+    }
+
+    /// Answers read from a script; every screen shown is kept.
+    struct Script {
+        answers: std::vec::IntoIter<String>,
+        screens: Vec<String>,
+    }
+
+    impl Script {
+        fn new(answers: &[&str]) -> Self {
+            Script {
+                answers: answers
+                    .iter()
+                    .map(|a| a.to_string())
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+                screens: Vec::new(),
+            }
+        }
+    }
+
+    impl Prompt for Script {
+        fn ask(&mut self, screen: &str) -> Option<String> {
+            self.screens.push(screen.into());
+            self.answers.next()
+        }
+    }
+
+    fn pick(m: &Machine, answers: &[&str]) -> (String, Script) {
+        let probes = Probes {
+            fs: m,
+            env: m,
+            which: m,
+        };
+        let o = Opts {
+            keep: 3,
+            agent: None,
+            kinds: &KINDS,
+        };
+        let mut script = Script::new(answers);
+        let (text, _) = interactive(&cfg(), &probes, m, &o, &mut script);
+        (text, script)
+    }
+
+    const BROKEN: &str =
+        r#"{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "/h/gone/old.sh"}]}]}}"#;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_shared_project_file_starts_unselected_and_the_rest_is_written_after_confirmation() {
+        let m = machine(BROKEN);
+        put(&m, "/proj/.claude/settings.json", BROKEN);
+        let (text, script) = pick(&m, &["y", "y"]);
+        assert!(
+            script.screens[0].contains("[x] broken hook Stop"),
+            "{}",
+            script.screens[0]
+        );
+        assert!(script.screens[0].contains("(shared project file)"));
+        assert!(script.screens[0].contains("[ ] broken hook Stop"));
+        assert!(
+            script.screens[1].contains("Write 1 change(s)? [y/N] "),
+            "{}",
+            script.screens[1]
+        );
+        assert!(
+            script.screens[1].contains("--- a/"),
+            "the diff is shown first"
+        );
+        assert!(text.contains("1 entry removed"), "{text}");
+        assert!(!text_of(&m, SETTINGS).contains("old.sh"));
+        assert_eq!(text_of(&m, "/proj/.claude/settings.json"), BROKEN);
+    }
+
+    fn text_of(m: &Machine, path: &str) -> String {
+        text(m, path)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn toggling_deselects_and_nothing_is_written_until_the_last_yes() {
+        let m = machine(BROKEN);
+        for answers in [
+            &["1", "y"][..],
+            &["q"],
+            &[],
+            &["y", "n", "q"],
+            &["x", "9", "k 1", "q"],
+        ] {
+            let (text, _) = pick(&m, answers);
+            assert!(
+                text.starts_with("cancelled") || text.is_empty(),
+                "{answers:?}: {text}"
+            );
+            assert_eq!(text_of(&m, SETTINGS), BROKEN, "{answers:?}");
+        }
+        assert!(m.backups.borrow().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn k_keeps_the_chosen_copy_and_removes_the_other() {
+        let m = machine(USER_DUP);
+        put(&m, "/proj/.claude/settings.json", PROJECT_DUP);
+        // Item 1 is the user's extra copy. Keeping it turns the shared project copy into the
+        // extra one, which starts unselected: toggle it on.
+        let (text, script) = pick(&m, &["k 1", "1", "y", "y"]);
+        assert!(
+            script.screens[1].contains("[ ] extra hook Stop"),
+            "{}",
+            script.screens[1]
+        );
+        assert!(text.contains("1 entry removed"), "{text}");
+        assert!(text_of(&m, SETTINGS).contains("/h/.claude/settings.json"));
+        assert!(!text_of(&m, "/proj/.claude/settings.json").contains("Stop"));
+    }
+
+    #[test]
+    fn a_kept_copy_that_is_not_the_users_cannot_be_swapped_out() {
+        let copy = |keep, fixable, detail: &str| Problem {
+            kind: "duplicate-hook",
+            agent: "claude",
+            source: format!("/f{keep}"),
+            path: "p".into(),
+            event: "Stop".into(),
+            matcher: None,
+            command: "c".into(),
+            detail: detail.into(),
+            fixable,
+            group: Some(0),
+            keep,
+        };
+        let mut plugin_kept = vec![
+            copy(true, false, "runs 2 times; keep this copy (x)"),
+            copy(false, true, "runs 2 times; an extra copy"),
+        ];
+        assert!(checklist::keep_copy(&mut plugin_kept, 1).is_err());
+        let mut shadowed = vec![
+            copy(true, true, "`a` is defined 2 times; the host uses this one"),
+            copy(
+                false,
+                true,
+                "`a` is defined 2 times; unused, overridden by another scope",
+            ),
+        ];
+        assert!(checklist::keep_copy(&mut shadowed, 1).is_err());
+        let mut broken = vec![Problem {
+            kind: "broken-hook",
+            ..copy(false, true, "gone")
+        }];
+        assert!(checklist::keep_copy(&mut broken, 0).is_err());
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+        /// Whatever the user types, a duplicate never loses its last copy and an unrelated
+        /// hook never moves.
+        #[test]
+        fn no_answers_remove_the_last_copy_or_an_unrelated_hook(
+            answers in prop::collection::vec(
+                prop::sample::select(vec!["1", "2", "3", "k 1", "k 2", "k 3", "d", "y", "n", "q", "k 9", "?"]),
+                0..14,
+            )
+        ) {
+            let hook = r#"{"type": "command", "command": "/h/.claude/settings.json"}"#;
+            let other = r#"{"type": "command", "command": "/h/.claude/other.sh"}"#;
+            let m = machine(&format!(r#"{{"hooks": {{"Stop": [{{"hooks": [{hook}, {other}]}}]}}}}"#));
+            put(&m, "/h/.claude/other.sh", "#!/bin/sh\n");
+            let dup = format!(r#"{{"hooks": {{"Stop": [{{"hooks": [{hook}]}}]}}}}"#);
+            put(&m, "/proj/.claude/settings.json", &dup);
+            put(&m, "/proj/.claude/settings.local.json", &dup);
+            pick(&m, &answers);
+            let all: String = [SETTINGS, "/proj/.claude/settings.json", "/proj/.claude/settings.local.json"]
+                .iter()
+                .map(|f| text(&m, f))
+                .collect();
+            prop_assert!(all.matches("\"/h/.claude/settings.json\"").count() >= 1);
+            prop_assert!(text(&m, SETTINGS).contains("other.sh"));
+        }
     }
 
     #[cfg(unix)]

@@ -165,6 +165,7 @@ divan = "0.1" # divan benches in benches/ (default harness for new benches)
 httpmock = "0.8" # mock Anthropic/OpenAI upstreams for proxy tests (T5.0)
 insta = "1" # snapshot tests for stable text output
 proptest = "1" # T331.5: byte-for-byte guarantee of `doctor --fix` edits over generated JSONC (doctor/fix.rs)
+portable-pty = "0.9" # T331.7: drives the `doctor --fix` checklist on a real pseudo-terminal (tests/doctor_checklist_pty.rs)
 rstest = "0.27.0" # parameterized unit tests; #[rstest] instead of #[test] (T36.5)
 trycmd = "1.2.1" # full CLI command-output fixtures in tests/trycmd/
 tokio-tungstenite = "0.30" # real WebSocket client for the `rtok web` e2e (tests/web_e2e.rs); already in the tree via axum "ws"

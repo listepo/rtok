@@ -12,7 +12,7 @@
 //! user, research.md section 25): the overridden entry is reported as unused. A server a file
 //! marks disabled is not running and not compared. Env values take part in the comparison and are
 //! never printed. rtok's own entry waits for T332/T333 and is neither compared nor reported.
-//! An extra or unused copy is fixable (T331.6); the kept and the used one never are.
+//! Every copy is fixable (T331.6): `--fix` removes the ones that are not kept or used.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -265,7 +265,7 @@ fn problem(s: &Srv, kind: &'static str, group: u32, keep: bool, detail: String) 
         matcher: None,
         command: s.shown.clone(),
         detail,
-        fixable: kind == "duplicate-mcp" && !keep,
+        fixable: kind == "duplicate-mcp",
         group: Some(group),
         keep,
     }
@@ -570,8 +570,7 @@ mod tests {
         );
         assert!(found[1].path.starts_with("projects./proj.mcpServers"));
         assert!(found[0].detail.contains("unused"), "{}", found[0].detail);
-        // Only the entries the host does not use may go.
-        assert!(found.iter().all(|p| p.fixable != p.keep));
+        assert!(found.iter().all(|p| p.fixable));
     }
 
     #[cfg(unix)]
