@@ -372,3 +372,34 @@ fn graph_index_rejects_a_file_path_and_still_indexes_a_project() {
     let out = ok(&["graph", "index", project.to_str().unwrap()], &home);
     assert!(out.contains("indexed 1 files"), "{out}");
 }
+
+/// T362: the first `config validate` on an empty HOME creates the default file like every other
+/// subcommand, while a path the user typed must exist.
+#[test]
+fn config_validate_creates_the_default_file_but_not_an_explicit_one() {
+    let home = tmp("config-validate-fresh");
+    let out = String::from_utf8_lossy(
+        &cmd(&["config", "validate"], &home)
+            .env_remove("RTOK_CONFIG")
+            .assert()
+            .success()
+            .get_output()
+            .stdout,
+    )
+    .into_owned();
+    assert!(
+        out.starts_with("ok ") && out.contains("config.toml"),
+        "{out}"
+    );
+    assert!(home.join("config.toml").exists());
+
+    let missing = home.join("nope.toml");
+    let missing = missing.to_str().unwrap();
+    let out = cmd(&["config", "validate", missing], &home)
+        .env_remove("RTOK_CONFIG")
+        .assert()
+        .failure()
+        .get_output()
+        .clone();
+    assert!(String::from_utf8_lossy(&out.stderr).contains(missing));
+}

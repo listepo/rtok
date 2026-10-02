@@ -60,13 +60,16 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T345 | todo | research | 1 | 0% | |
 | T346 | todo | research | 1 | 0% | |
 | T359 | todo | P1 | 2 | 0% | |
-| T362 | todo | P3 | 1 | 0% | |
 | T364 | todo | P3 | 2 | 0% | |
 | T365 | todo | P3 | 3 | 0% | |
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
 | T356 | in progress | P1 | 2 | 5% | Claude Code / claude-opus-5-5 |
 | T358 | todo | P2 | 4 | 0% | |
+| T358.2 | todo | P2 | 3 | 0% | |
+| T358.3 | todo | P2 | 4 | 0% | |
+| T358.4 | todo | P2 | 3 | 0% | |
+| T358.5 | todo | P2 | 3 | 0% | |
 
 
 
@@ -1400,16 +1403,6 @@ Done when: the reference block closes with a bare ```` ``` ```` before the seman
 
 Check: a new docs-structure test fails on `main` @ `aecab806` (h2 → h4 at `[proxy.flex]`) and passes after the fix; `config_coverage` and `public_numbers` stay green; `just check`.
 
-### T362. `rtok config validate` fails with ENOENT on a fresh install
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). The first command the reference file header tells a new user to run fails with a raw OS error, while the failed run still leaves `config.toml` behind, so a second run passes. `ConfigCmd::Validate` (`src/cli.rs:974`) calls `validate::issues(&path)`, which reads the file (`src/config/validate.rs:16`) without the `Config::ensure_user_file` step that every other subcommand gets through `Config::load_with`.
-
-Repro: `mkdir /tmp/h1 && HOME=/tmp/h1 rtok config validate; echo $?` → `Error: /tmp/h1/.rtok/config.toml … No such file or directory (os error 2)`, exit 1; the same command again prints `ok`, exit 0.
-
-Done when: with no explicit path, `config validate` first calls `Config::ensure_user_file(&home, config_file.as_deref())` (the default file is created as `load_with` does) and prints `ok …/config.toml` on the first run; an explicit missing path still errors with its name.
-
-Check: a trycmd or `tests/` case on an empty temp `HOME` gets `ok` and exit 0 on the first `config validate`, and an explicit missing path still exits non-zero; `just check`.
-
 ### T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
 
 Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). `stats.since = "7x"` passes `config set` and `config validate`; then `rtok stats` fails with `Error: bad --since unit in 7x`, `rtok report` silently falls back to 30 days, `doctor` silently skips its check (`.ok()?` in `src/doctor.rs`), and the web/TUI model returns the error (`?` in `src/web/model.rs`). `src/config/validate.rs` has no rule for `stats.since`; the only parser, `measure::stats::parse_since` (`src/measure/stats.rs:799,803`), hard-codes `--since` in its messages.
@@ -1577,6 +1570,30 @@ Check: every item below passes.
 - `--source rtok` on a store fixture matches `rtok stats --price` totals for the same rows; `both` coverage is through-rtok ÷ logs.
 - `rtok config validate` accepts every new key; each has its `default.toml` row and `docs/config.md` row; `just check` green.
 - The screenshot's layout (summary, warning, per-agent table, monthly totals) is what `rtok agents usage` prints for the fixture.
+
+### T358.2. `rtok agents usage --source logs|both` for Claude Code and Codex
+
+Scope: the T358.2 bullet under "Split when claiming" in T358, plus what T358.1 moved here (see its card): `--by agent|model`, the saved columns and `rtok saved` line, display names, the JSON `skipped` field, and the `source` default flip to `logs`.
+
+Check: the T358 Check items for `logs` and `both` on fixture homes for Claude Code and Codex; `just check`.
+
+### T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
+
+Scope: the T358.3 bullet under "Split when claiming" in T358.
+
+Check: one fixture per host pins its totals; each reader was run against that host's real files once; `just check`.
+
+### T358.4. `rtok agents usage` readers: Grok, ZCode, Kimi, pi, Antigravity
+
+Scope: the T358.4 bullet under "Split when claiming" in T358.
+
+Check: one fixture per host pins its totals; `unsupported` hosts are listed in `docs/agents.md`; `just check`.
+
+### T358.5. The Usage page on `rtok web` and `rtok tui`
+
+Scope: the T358.5 bullet under "Split when claiming" in T358. T358.1 lists `agents usage` in `EXEMPT` in `tests/surface_parity.rs` with this task as the reason; this task moves it to `COMMAND_PAGES`.
+
+Check: `surface_parity` passes with `agents usage` in `COMMAND_PAGES`; the page shows the CLI's rows on web and tui; `just check`.
 
 ## Reference
 
