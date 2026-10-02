@@ -112,6 +112,7 @@ Project programs and direct packages from the manifests.
 | semver | local | https://crates.io/crates/semver | T279: plugin version compare + `.rtok-plugin-version` (de)serialization |
 | serde | local | https://crates.io/crates/serde | Serialization |
 | schemars | local | https://github.com/GREsau/schemars | T310.2: JSON Schema of the `/ws` protocol, committed as `web/src/api/ws.schema.json` |
+| shlex | local | https://github.com/comex/rust-shlex | T331.1: POSIX word splitting of a hook command in `rtok doctor` |
 | serde_json | local | https://crates.io/crates/serde_json | JSON |
 | sha2 | local | https://crates.io/crates/sha2 | Rust dependency |
 | similar | local | https://crates.io/crates/similar | Rust dependency |

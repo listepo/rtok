@@ -2,8 +2,9 @@ bin.name = "rtok"
 args = "--config tests/trycmd/input/json-readers.toml doctor"
 stdout = """
 hooks 0
+hooks check none found
 mcp
-  rtok ([..] tools, ~[..] desc tokens) [..]
+  rtok (15 tools, ~274 desc tokens) [CWD]/target/debug/rtok
 proxy 
 proxy openai 
 BASH_MAX_OUTPUT_LENGTH (unset)
@@ -104,7 +105,6 @@ agents
     − hooks   not supported: the GitHub Copilot app does not document hooks; the shared hooks/rtok.json is written for the CLI
     ✗ mcp     not installed
     − proxy   not supported: Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy
-    − plugin  not supported: the GitHub Copilot app does not document plugin installs; `copilot plugin` serves the CLI
 ...
 """
 

@@ -44,6 +44,12 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T329 | todo | P2 | 5 | 0% | |
 | T330 | todo | P2 | 4 | 0% | |
 | T331 | todo | P1 | 4 | 0% | |
+| T331.2 | todo | P1 | 3 | 0% | |
+| T331.3 | todo | P1 | 3 | 0% | |
+| T331.4 | todo | P1 | 4 | 0% | |
+| T331.5 | todo | P1 | 4 | 0% | |
+| T331.6 | todo | P1 | 4 | 0% | |
+| T331.7 | todo | P2 | 3 | 0% | |
 | T332 | todo | research | 1 | 0% | |
 | T333 | todo | research | 1 | 0% | |
 | T334 | todo | research | 1 | 0% | |
@@ -1258,6 +1264,44 @@ Dependencies: host adapters and config maps (`research.md`), JSONC/TOML editors,
 - **Combined case:** a world with broken hooks, duplicate hooks and duplicate MCP entries across several hosts at once; after `--fix --yes`, re-running doctor reports zero fixable problems and every valid entry is still present.
 
 Check: all of the above pass on Linux, macOS and Windows CI; the "no real paths" guard test passes; `just check`.
+
+Split (epic, too large for one PR: three detectors, a fix engine, an interactive UI, ~15 host config shapes; each part ships read-only value or a tested edit and is one PR). Order: T331.1 broken hooks (read-only, the injected `Fs`/`Env`/`Which` seam every later part reuses), T331.2 hook sources of the other hosts and plugins, T331.3 duplicate hooks, T331.4 duplicate MCP entries, T331.5 `--fix` for broken hooks (the edit/backup/race engine), T331.6 `--fix` for duplicates, T331.7 interactive checklist, web doctor action, docs and the property/pty tests. T331.4 and T331.6 touch rtok's own MCP entry and wait for the T332 and T333 decisions; everything else does not depend on them.
+
+### T331.2. Doctor: hook sources of the other hosts and of plugins
+
+Part of T331. The T331.1 checks for the hosts whose hook files are mapped in `research.md` and the host adapters (Cursor `hooks.json`, Codex, Gemini, Kimi and the rest that take hooks), plus installed Claude plugins' `hooks/hooks.json` with `${CLAUDE_PLUGIN_ROOT}` resolved against the plugin's install dir (an entry left behind by an uninstalled plugin is broken), Windows `PATHEXT`, and `--agent <host>`. Depends on T331.1.
+
+Check: the T331.1 scenarios per host shape and the plugin-root cases on mocks; `just check`.
+
+### T331.3. Doctor: duplicate hooks
+
+Part of T331. Section 2 of T331: effective set per agent, normalization, the "not duplicates" cases, the keep recommendation, the report and `problems[]` entries with `keep`. Report only. Depends on T331.1 and T331.2.
+
+Check: the "Duplicate hooks across configs" and "Not duplicates" scenarios of T331; `just check`.
+
+### T331.4. Doctor: duplicate MCP entries
+
+Part of T331. Section 3 of T331: same name in two loaded sources, different names with the same launch, normalization (PATH and symlink resolution, `npx pkg@x`, URL case and trailing slash, env values never printed), the not-duplicates cases and the keep recommendation. Report only. rtok's own server follows the T332 and T333 decisions, not a guess. Depends on T331.1, T332 and T333.
+
+Check: the "Duplicate MCP entries" and "MCP that must not be called duplicate" scenarios of T331; `just check`.
+
+### T331.5. Doctor `--fix` for broken hooks
+
+Part of T331. The edit engine of section 4 for the `broken-hook` class only: `--fix`, `--yes`, `--only broken-hooks`, `--dry-run` with diffs, a minimal JSONC edit that drops the entry and its empty group and event key and keeps everything else byte for byte, `_backup` generations (T249) with the path printed, the changed-since-check skip, per-file failure reporting with exit code 1, the re-check summary, and the refusals (valid, suspect, unverified hooks and managed files are never removed). Depends on T331.1.
+
+Check: the "User selecting cleanup", "Refusing to delete valid hooks and entries" and "Failure and race cases" scenarios for broken hooks, golden files byte for byte; `just check`.
+
+### T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
+
+Part of T331. Extends the T331.5 engine to the extra copies of T331.3 and T331.4: keep rules, choosing another copy, never the last copy, TOML `[mcp_servers.<name>]` removal, never a plugin's own files or a managed file. Depends on T331.3, T331.4 and T331.5.
+
+Check: the duplicate scenarios of "User selecting cleanup" and the combined case; `just check`.
+
+### T331.7. Doctor: interactive checklist, web action, docs and property tests
+
+Part of T331. The terminal checklist with the injected `Prompt` trait (pre-unselected project files, toggles, change the kept copy, per-file diff, confirmation), the "Fix selected" action on the web doctor page (T310.7), `docs/agents.md` and the help text with `docs/ru/` and `docs/uk/`, the `proptest` invariants and the pseudo-terminal test. Depends on T331.6 and T310.7.
+
+Check: the scripted-prompt scenarios, the property tests, the pty test; `just check`.
 
 ### T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 

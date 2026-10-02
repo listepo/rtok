@@ -38,6 +38,12 @@
 - T329. Graph page: project selector, auto-added projects and linked projects
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
+- T331.2. Doctor: hook sources of the other hosts and of plugins
+- T331.3. Doctor: duplicate hooks
+- T331.4. Doctor: duplicate MCP entries
+- T331.5. Doctor `--fix` for broken hooks
+- T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
+- T331.7. Doctor: interactive checklist, web action, docs and property tests
 - T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 - T333. Investigate: T271 desktop-entry sweep vs D33/T275
 - T334. Investigate: graph default backend: T329 `auto` (LSP first, fallback) vs graph PLAN.md P30 decisions
