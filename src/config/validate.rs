@@ -238,7 +238,19 @@ fn check_table(
 }
 
 /// String keys that take one of a fixed set of values (`rtok config validate` names the set).
-const CHOICES: &[(&str, &[&str])] = &[("log.tspin", &["auto", "always", "off"])];
+const CHOICES: &[(&str, &[&str])] = &[
+    ("log.tspin", &["auto", "always", "off"]),
+    // Any other value turns the semantic tier on with the placeholder hash embedding
+    // (`proxy::semantic_cache`); `"hash"` is the only backend until P29 ships real ones.
+    ("plugins.proxy.semantic_cache.embed_backend", &["hash"]),
+];
+
+/// Float keys limited to `(0, 1]`: `threshold <= 0` makes every cached entry a semantic hit,
+/// and a `delta_max_ratio` outside the range disables deltas or sends diffs above the file.
+const UNIT_RATIO_KEYS: &[&str] = &[
+    "plugins.proxy.semantic_cache.threshold",
+    "plugins.read.delta_max_ratio",
+];
 
 fn check_leaf(
     path: &Path,
@@ -307,6 +319,15 @@ fn check_leaf(
         }
         FigValue::Array(..) => {}
         _ => {}
+    }
+    // Integers are valid for a float key (`threshold = 1`), so range-check both.
+    if UNIT_RATIO_KEYS.contains(&dotted)
+        && let Some(x) = item
+            .as_float()
+            .or_else(|| item.as_integer().map(|n| n as f64))
+        && !(x > 0.0 && x <= 1.0)
+    {
+        errors.push(format!("{at}: {dotted} must be in (0, 1]"));
     }
     if let Some(n) = item.as_integer() {
         match dotted {
@@ -553,6 +574,64 @@ mod tests {
         set(&home, "plugins.cmd.enabled", "false", false).unwrap();
         let cfg = Config::load_from(&home).unwrap();
         assert!(!cfg.plugin_enabled("cmd", true));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// T363: the `(0, 1]` float keys and the `embed_backend` set go through the one rule table,
+    /// for `validate` and for `set` alike.
+    #[test]
+    fn unit_ratio_keys_and_embed_backend_are_range_checked() {
+        let dir = tmp("ratio");
+        let path = dir.join("c.toml");
+        let cases = [
+            ("plugins.proxy.semantic_cache", "threshold", "-1"),
+            ("plugins.proxy.semantic_cache", "threshold", "0"),
+            ("plugins.proxy.semantic_cache", "threshold", "5"),
+            ("plugins.proxy.semantic_cache", "threshold", "1.5"),
+            ("plugins.read", "delta_max_ratio", "-3"),
+            ("plugins.read", "delta_max_ratio", "0.0"),
+            (
+                "plugins.proxy.semantic_cache",
+                "embed_backend",
+                "\"openai\"",
+            ),
+        ];
+        for (table, key, bad) in cases {
+            std::fs::write(&path, format!("[{table}]\n{key} = {bad}\n")).unwrap();
+            let errs = issues(&path).unwrap();
+            assert!(
+                errs.iter().any(|e| e.contains(key)),
+                "{key} = {bad}: {errs:?}"
+            );
+        }
+        for (table, key, ok) in [
+            ("plugins.proxy.semantic_cache", "threshold", "0.99"),
+            ("plugins.proxy.semantic_cache", "threshold", "1"),
+            ("plugins.read", "delta_max_ratio", "0.6"),
+            ("plugins.proxy.semantic_cache", "embed_backend", "\"hash\""),
+        ] {
+            std::fs::write(&path, format!("[{table}]\n{key} = {ok}\n")).unwrap();
+            assert!(issues(&path).unwrap().is_empty(), "{key} = {ok}");
+        }
+
+        let home = tmp("ratio-set");
+        Config::init(&home, false).unwrap();
+        let before = std::fs::read_to_string(Config::path_for(&home)).unwrap();
+        for (key, bad) in [
+            ("plugins.proxy.semantic_cache.threshold", "-1"),
+            ("plugins.proxy.semantic_cache.threshold", "0"),
+            ("plugins.proxy.semantic_cache.threshold", "5"),
+            ("plugins.read.delta_max_ratio", "-3"),
+            ("plugins.proxy.semantic_cache.embed_backend", "openai"),
+        ] {
+            assert!(set(&home, key, bad, false).is_err(), "{key} = {bad}");
+        }
+        assert_eq!(
+            std::fs::read_to_string(Config::path_for(&home)).unwrap(),
+            before,
+            "a refused set leaves the file unchanged"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&home);
     }
 
