@@ -56,7 +56,6 @@
 - T346. Investigate: D27 "writing commands stay CLI-only" vs web write actions
 - T347. Investigate: D16 "one task = one PR" vs multi-PR execution plans
 - T348. Investigate: `--agent` means an agent id, a host, or both
-- T320. Fix the proxy usage/tokens test race
 - T349. Hooks never reach the fast client: ketch links `rtok` but not `rtok-hook`
 - T350. Guard `PreToolUse` panics on a non-ASCII command
 - T351. MCP refuses paths in sibling worktrees of the same repository
