@@ -22,7 +22,6 @@
 - T283.3. MCP link rule (b): the nearest common host ancestor pid
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T289.3. Post-create scripts: `rtok agents install <host> --project` for Cursor, Kilo and Devin/Windsurf
-- T290. Docs, skill and one cross-host test for agents and worktrees
 - T310. React SPA replaces the Slint web UI (epic)
 - T310.5. UI kit + Storybook
 - T310.6. Pages: overview, plugins (toggle), calls (expand)

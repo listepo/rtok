@@ -7624,6 +7624,22 @@ Check: the skill's gate tests.
 
 Result (2026-10-03, Claude Code / sonnet-5): `skills/worktrees/SKILL.md` names the hosts whose own worktrees an agent binds (Cursor, Codex, Kilo, Devin, Grok Build, MiMo, omp, Antigravity) with MCP `worktree_adopt` or `rtok worktree adopt --task`, and the skill's list line mentions `origin`. The skill body had to stay under its 2048-byte limit, so the surrounding prose was tightened. The command-and-flag gate in `tests/skill.rs` now requires `rtok worktree adopt`.
 
+### T290. Docs, skill and one cross-host test for agents and worktrees
+
+Depends on T282–T289 (lands last; T159 may land after it and adds its own rows).
+
+Plan:
+1. Worktree `_worktrees/rtok-T290`.
+2. `docs/agents-and-worktrees.md`: agent ids (D34), how an agent learns its id, `rtok agents sessions/show/status/send/inbox`, `rtok worktree add/list/remove/adopt/claim/gc/clean`, the MCP tools, per-host table (hooks, push vs pull messages, native worktrees: redirected / adopted / skill only), security note on messages. Links from `README.md` and `docs/config.md` (`[agents]` keys).
+3. `skills/worktrees/SKILL.md` and `skills/rtok`: use `worktree_add` / `worktree_remove` / `worktree_adopt`, report the agent id, check `agent_inbox`; keep under the skill budget.
+4. `tests/agents_worktrees.rs`: table-driven over every host in `src/agents/*` with fakes only (`RTOK_HOST_SANDBOX`, T280): fake session start (hook payload or MCP initialize, per the host's surface) → agent registered → `worktree_add` → `worktree list` shows the id → `agent_send` from a second fake agent → inbox / push → `worktree_remove`. Every host must produce the same worktree path rule, lock format and list row.
+
+Check: `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where host tables change; the new test green on macOS, Linux and Windows CI; `just check`.
+
+Execution (2026-10-03, Claude Code / sonnet-5): one PR stacked on T289.4 (#690). The shared git helpers of `tests/worktree.rs` moved to `tests/common/git.rs` and `tests/common/mcp.rs` gained `session_as(host, …)`, so the new test reuses them. The post-create scripts (T289.3) are not built, so the doc marks those cells pending and the test adopts through `worktree_adopt` only.
+
+Result (2026-10-03, Claude Code / sonnet-5): `docs/agents-and-worktrees.md` (agent id and how a session learns it, the `agents` and `worktree` commands with their MCP tools, messages and their security note, worktrees a host makes itself, a per-host table of all 22 hosts), linked from `README.md` and `docs/config.md`. `skills/rtok` gained an agents section (agent id, `agent_inbox`) and `skills/worktrees` names `worktree_add`, `worktree_adopt` and `worktree_remove` and the agent id, both inside the 2048-byte body limit. `tests/agents_worktrees.rs` walks every host in `agents::HOSTS` with fakes only (a scratch `$HOME`, a scratch repository, `rtok hook` stdin for a host that can carry hooks, the MCP process's own row for one that cannot): agent registered, `worktree_add`, `worktree_adopt` of a Cursor-pool worktree, `worktree_list`, `agent_send` to a second agent, `worktree_remove` of both, then the peer's inbox and its reply. All hosts must produce the same path, branch, lock owner and list rows; a second test checks the doc's host table and Hooks column against the code. `tests/host_docs.rs` and `tests/agents_doc.rs` needed no regeneration, since no host table changed.
+
 ### T358.1. `rtok agents usage --source rtok`: CLI, `[agents.usage]` config and store reads
 
 First slice of T358: scope is the T358.1 bullet under "Split when claiming" there; the spec text stays in T358.

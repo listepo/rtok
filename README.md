@@ -353,6 +353,8 @@ Batch, Flex, and model routing on the proxy (pass-through vs rewrite, what is pl
 | `rtok memory revise <id> --title <t> --body <b>` | save a replacement note and retire the old one |
 | `rtok otel flush` / `status` | export the ledgers over OTLP, or report the watermarks |
 
+Agent ids, messages between agents and how worktrees bind to them on every host: [docs/agents-and-worktrees.md](docs/agents-and-worktrees.md).
+
 ## Plugins
 
 | Plugin | Surface | What it does |

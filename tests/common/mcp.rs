@@ -16,9 +16,20 @@ pub fn session(
     hooks_fire: impl FnOnce(),
     calls: &[(&str, &str)],
 ) -> Vec<(bool, String)> {
+    session_as("claude", home, cwd, hooks_fire, calls)
+}
+
+/// [`session`] as `rtok mcp --host <host>`.
+pub fn session_as(
+    host: &str,
+    home: &Path,
+    cwd: &Path,
+    hooks_fire: impl FnOnce(),
+    calls: &[(&str, &str)],
+) -> Vec<(bool, String)> {
     use std::io::{BufRead as _, Write as _};
     let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
-        .args(["mcp", "--host", "claude"])
+        .args(["mcp", "--host", host])
         .current_dir(cwd)
         .env("HOME", home)
         .env_remove("RTOK_AGENT_ID")

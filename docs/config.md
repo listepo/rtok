@@ -101,7 +101,7 @@ host      = "claude"                  # claude | cursor | copilot | devin | clin
 max_ms    = 10                        # soft budget; over it, the event is logged as slow
 fail_open = true                      # any error → `{}` and exit 0; false only for debugging
 
-[agents]                              # the rtok agent registry (T282, D34)
+[agents]                              # the rtok agent registry (T282, D34); see agents-and-worktrees.md
 enabled    = true                     # false = hooks skip agent register/touch/end and message push (session bookkeeping is unaffected)
 idle       = "30m"                    # `live()`'s window: no `ended_at` and `last_seen` within this of now
 push_bytes = 1024                     # framed messages pushed per UserPromptSubmit/PostToolUse; the rest → "and N more" (T288)

@@ -10,32 +10,9 @@ use std::process::Command;
 
 mod common;
 
+use common::git::{commit, run};
+
 use rtok::worktree::{Entry, State, git, inventory};
-
-fn run(dir: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
-        .args([
-            "-c",
-            "commit.gpgsign=false",
-            "-c",
-            "init.defaultBranch=main",
-        ])
-        .args(args)
-        .output()
-        .expect("git runs");
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(out.status.success(), "git {args:?}: {err}");
-    String::from_utf8_lossy(&out.stdout).into_owned()
-}
-
-fn commit(dir: &Path, file: &str) {
-    std::fs::write(dir.join(file), file).unwrap();
-    run(dir, &["add", file]);
-    run(dir, &["commit", "-q", "-m", file]);
-}
 
 fn find<'a>(entries: &'a [Entry], name: &str) -> &'a Entry {
     let found = entries.iter().find(|e| e.record.path.ends_with(name));
