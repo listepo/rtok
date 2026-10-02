@@ -111,6 +111,8 @@ const ALLOW_KEYS: &[&str] = &[
     // listing and a one-shot exit status, not stored settings.
     "setup.check",
     "setup.exit_code",
+    // `agents usage --unpriced` (T358.1): which view one call prints, not a stored setting.
+    "agents.usage.unpriced",
 ];
 
 #[test]
@@ -179,6 +181,13 @@ fn config_key(path: &[&str], long: &str) -> String {
         // `rtok agents junk clear` (T182): its own namespace — never `[setup]`, whose
         // `yes` confirms an unrelated destructive action (`agents install --replace`).
         ["agents", "junk", ..] => format!("junk.{name}"),
+        // `rtok agents usage` (T358.1): its own `[agents.usage]` table. `--host` is the `hosts`
+        // list; `--daily` / `--monthly` both set `period`.
+        ["agents", "usage"] => match name {
+            "host" => "agents.usage.hosts".into(),
+            "daily" | "monthly" => "agents.usage.period".into(),
+            other => format!("agents.usage.{other}"),
+        },
         // `rtok agents install|remove` keeps the `[setup]` table it had as `rtok setup`.
         ["agents", ..] => format!("setup.{name}"),
         // `rtok dashboard` is the hidden deprecated spelling of `rtok web`; one table, `[web]`.
