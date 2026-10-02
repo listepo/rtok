@@ -121,6 +121,17 @@ impl Store {
         Ok(rows)
     }
 
+    /// T284: how many unread messages each agent has, in one grouped query; an agent with none
+    /// is absent.
+    pub fn unread_counts(&self) -> Result<std::collections::HashMap<String, i64>> {
+        let rows: Vec<(String, i64)> = messages::table
+            .filter(messages::read_at.is_null())
+            .group_by(messages::to_agent)
+            .select((messages::to_agent, diesel::dsl::count_star()))
+            .load(&mut *self.lock()?)?;
+        Ok(rows.into_iter().collect())
+    }
+
     /// T288: agent `to`'s messages no hook has pushed yet, in send order — one query on the
     /// `messages_to_agent` index. Stamps nothing: the hook marks only what it pushed.
     pub fn undelivered(&self, to: &str) -> Result<Vec<Message>> {

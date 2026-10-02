@@ -7552,6 +7552,27 @@ Execution, PR 2 (2026-10-03, Claude Code / sonnet-5): on top of T286 PR 2. (1) `
 
 Result (2026-10-03, Claude Code / sonnet-5): PR 1 is #472, PR 2 is this one. MCP `agent_send` and `agent_inbox` work for the linked agent only: nothing names the sender or the inbox owner. A message is delivered framed, as the CLI frames it, and read once. Two deviations from the card: `agent_inbox` defaults `unread_only` to true (a limited page of the oldest messages would otherwise be old read ones), and `limit` defaults to 20, at most 100. About 79 more description tokens in the MCP listing. Stacks on #680 (T286 PR 2).
 
+### T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
+
+Depends on T282, T283. `rtok agents sessions` (`src/cli.rs:579`) already lists sessions with host, model and tokens; it gains the agent id, where the agent works and what it is doing, instead of a second listing command (no duplicated logic).
+
+Plan:
+1. Worktree `_worktrees/rtok-T284`.
+2. `rtok agents sessions`: new columns `agent` (8-hex short id), `worktree` (claimed worktree name from T285 when present, else the cwd relative to the project), `activity`, `seen` (e.g. `12s ago`), `state` (`live`, `idle`, `ended`); sub-agents indented under their parent; `--json` carries the full id and paths. Default shows live and idle; `--all` adds ended.
+3. `rtok agents show <id-prefix> [--json]`: host, model, full id, host session id, parent and sub-agents, cwd, claimed worktrees with branch and state (T285), task id (from the worktree lock), last activity, the agent's own status text, unread message count (T287), started / last seen.
+4. `rtok agents status "<text>"` and MCP tool `agent_status_set {text}`: the agent says what it is busy with (≤ 120 chars, plain text); shown in `sessions` and `show`.
+5. MCP tools `agents_list {all?}` and `agent_show {id}` returning the same JSON as the CLI (one model function behind both, like `web::model` for `rtok web`/`rtok tui`).
+6. `rtok web`/`rtok tui` session views read the same model; showing the new fields there is out of scope unless free.
+
+Check: model unit tests over a seeded store (live, idle, ended, sub-agent nesting, prefix lookup); trycmd for `sessions`, `show`, `status`; MCP e2e with a fake client; `surface_parity`, `config_coverage`; `just check`.
+
+Execution (2026-09-27): two PRs. PR 1, cut on top of T283 PR 1 (#449): one model function over the store; `agents sessions` gains `agent`, `worktree` (cwd relative to the project until T285 lands), `activity`, `seen`, `state`, sub-agent nesting and `--all`; `agents show <id-prefix> [--json]`; `agents status "<text>"`; model unit tests on a seeded store and trycmd. PR 2, after T283 PR 2 and T285: MCP `agents_list` / `agent_show` / `agent_status_set`, the claimed-worktree and unread-message fields.
+Progress (2026-09-28): PR 1 is #470 (`agents sessions` columns, `agents show`, `agents status`, web model). Left: PR 2, the MCP tools (after T283 PR 2 and T285).
+
+Execution, PR 2 (2026-10-03, Claude Code / sonnet-5): on top of T287 PR 2. (1) `AgentView` gains `worktrees` (open claims) and `unread`, filled by one `enrich` pass (two queries for a whole listing, `Store::unread_counts` is one grouped query); the claimed worktree's directory name replaces the cwd label in `worktree`; `agents show` prints `claimed` and `unread`. (2) `src/mcp/agents.rs`: `agents_list {all?}` and `agent_show {id}` return the CLI's `--json` from the same model functions; `agent_status_set {text}` sets the linked agent's own status through the CLI's `set_status` (the agent is the session's link, never an argument). (3) Unit test for `enrich`, e2e through a real `rtok mcp`.
+
+Result (2026-10-03, Claude Code / sonnet-5): PR 1 is #470, PR 2 is this one. MCP `agents_list`, `agent_show` and `agent_status_set` return what the CLI returns, now with claimed worktrees and unread message counts (also in `agents sessions --json`, `agents show` and its `--json`). A status of at most 120 chars is set only for the caller; blank text clears it (an empty string never reaches the tool, the server rejects a required argument that is empty). `rtok web` and `rtok tui` keep reading `session_views` without the two fields, as the card says. About 95 more description tokens in the MCP listing. Stacks on #681 (T287 PR 2).
+
 ### T358.1. `rtok agents usage --source rtok`: CLI, `[agents.usage]` config and store reads
 
 First slice of T358: scope is the T358.1 bullet under "Split when claiming" there; the spec text stays in T358.

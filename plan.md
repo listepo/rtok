@@ -26,7 +26,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T283 | in progress | P1 | 3 | 60% | Claude Code / sonnet-5 |
 | T283.2 | todo | P1 | 2 | 0% | |
 | T283.3 | todo | P1 | 3 | 0% | |
-| T284 | in progress | P1 | 3 | 50% | Claude Code / claude-opus-5-5 |
 | T288 | in progress | P2 | 3 | 40% | Claude Code / claude-opus-5-5 |
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
@@ -502,23 +501,6 @@ Check: each host's install/remove test shows `mcp --host <id>` in the written en
 PR 2 of T283, part 3. The hook wire request (`crates/rtok-hook`, `src/hooks/resident.rs`: `version, fingerprint, event, host, cwd, stdin`) carries no pid, and the resident hook process is not the host's child, so a hook cannot record its own ancestry today. Add the client's parent pid to the request (protocol version bump), store it on the agent row (migration), record it on registration, and let `link.rs` match it against the `rtok mcp` process's ancestor chain (nearest first; two agents behind one ancestor are ambiguous). Doc-derived like the rest of the rule order; the T281 probe confirms it per host.
 
 Check: wire round-trip test; store test; `link.rs` test with a seeded agent row and a fake ancestor chain; hook latency stays inside the 10 ms budget; `just check`.
-
-### T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
-
-Depends on T282, T283. `rtok agents sessions` (`src/cli.rs:579`) already lists sessions with host, model and tokens; it gains the agent id, where the agent works and what it is doing, instead of a second listing command (no duplicated logic).
-
-Plan:
-1. Worktree `_worktrees/rtok-T284`.
-2. `rtok agents sessions`: new columns `agent` (8-hex short id), `worktree` (claimed worktree name from T285 when present, else the cwd relative to the project), `activity`, `seen` (e.g. `12s ago`), `state` (`live`, `idle`, `ended`); sub-agents indented under their parent; `--json` carries the full id and paths. Default shows live and idle; `--all` adds ended.
-3. `rtok agents show <id-prefix> [--json]`: host, model, full id, host session id, parent and sub-agents, cwd, claimed worktrees with branch and state (T285), task id (from the worktree lock), last activity, the agent's own status text, unread message count (T287), started / last seen.
-4. `rtok agents status "<text>"` and MCP tool `agent_status_set {text}`: the agent says what it is busy with (≤ 120 chars, plain text); shown in `sessions` and `show`.
-5. MCP tools `agents_list {all?}` and `agent_show {id}` returning the same JSON as the CLI (one model function behind both, like `web::model` for `rtok web`/`rtok tui`).
-6. `rtok web`/`rtok tui` session views read the same model; showing the new fields there is out of scope unless free.
-
-Check: model unit tests over a seeded store (live, idle, ended, sub-agent nesting, prefix lookup); trycmd for `sessions`, `show`, `status`; MCP e2e with a fake client; `surface_parity`, `config_coverage`; `just check`.
-
-Execution (2026-09-27): two PRs. PR 1, cut on top of T283 PR 1 (#449): one model function over the store; `agents sessions` gains `agent`, `worktree` (cwd relative to the project until T285 lands), `activity`, `seen`, `state`, sub-agent nesting and `--all`; `agents show <id-prefix> [--json]`; `agents status "<text>"`; model unit tests on a seeded store and trycmd. PR 2, after T283 PR 2 and T285: MCP `agents_list` / `agent_show` / `agent_status_set`, the claimed-worktree and unread-message fields.
-Progress (2026-09-28): PR 1 is #470 (`agents sessions` columns, `agents show`, `agents status`, web model). Left: PR 2, the MCP tools (after T283 PR 2 and T285).
 
 ### T288. Push unread messages to hooked agents
 

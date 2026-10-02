@@ -22,6 +22,7 @@ pub mod wrap;
 
 pub mod ping;
 
+mod agents;
 mod messages;
 mod worktrees;
 
@@ -372,6 +373,18 @@ impl Server {
                 plugin: "mcp",
                 def: messages::inbox_def(),
             },
+            Listed {
+                plugin: "mcp",
+                def: agents::list_def(),
+            },
+            Listed {
+                plugin: "mcp",
+                def: agents::show_def(),
+            },
+            Listed {
+                plugin: "mcp",
+                def: agents::status_def(),
+            },
         ];
         let builtin: Vec<&str> = crate::plugins::all()
             .iter()
@@ -460,6 +473,11 @@ impl Server {
             "agent_inbox" => self
                 .agent()
                 .and_then(|(agent, _)| messages::inbox(&self.cx, &agent, args)),
+            "agents_list" => agents::list(&self.cx, args),
+            "agent_show" => agents::show(&self.cx, args),
+            "agent_status_set" => self
+                .agent()
+                .and_then(|(agent, _)| agents::set_status(&self.cx, &agent, args)),
             "worktree_list" => worktrees::list(&self.cx),
             _ => return invoke_text(&self.cx, name, args),
         };
