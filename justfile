@@ -79,7 +79,7 @@ spa-test:
     {{npm}} --prefix web run test
 
 # T310.5: every story as a Vitest browser test (render, play function, axe). Needs Chromium
-# (`npx playwright install chromium` in web/, or RTOK_BROWSER_CHANNEL=chrome).
+# (`npx playwright install chromium` in web/, or SPA_BROWSER_CHANNEL=chrome).
 spa-stories:
     {{npm}} --prefix web run test:stories
 

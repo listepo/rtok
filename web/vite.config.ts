@@ -27,7 +27,7 @@ export default defineConfig({
       },
       {
         // Every story is a browser test (render, play function, axe). Needs Chromium:
-        // `npx playwright install chromium`, or RTOK_BROWSER_CHANNEL=chrome for the system one.
+        // `npx playwright install chromium`, or SPA_BROWSER_CHANNEL=chrome for the system one.
         extends: true,
         plugins: [storybookTest({ configDir: ".storybook" })],
         test: {
@@ -37,7 +37,7 @@ export default defineConfig({
             enabled: true,
             headless: true,
             provider: playwright({
-              launchOptions: { channel: process.env["RTOK_BROWSER_CHANNEL"] || undefined },
+              launchOptions: { channel: process.env["SPA_BROWSER_CHANNEL"] || undefined },
             }),
             instances: [{ browser: "chromium" }],
           },
