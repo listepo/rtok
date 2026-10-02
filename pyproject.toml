@@ -12,7 +12,7 @@ name = "rtok-cli"
 description = "Token-reduction CLI for AI coding agents: hooks, MCP server and API proxy with pluggable methods"
 readme = "README.md"
 requires-python = ">=3.8"
-license = "GPL-3.0-only OR LicenseRef-Royalty-Free OR LicenseRef-Commercial"
+license = "GPL-3.0-or-later OR LicenseRef-Royalty-Free OR LicenseRef-Commercial"
 license-files = ["LICENSE", "LICENSE-ROYALTY-FREE.md", "PRICING.md"]
 keywords = ["rtok", "llm", "tokens", "mcp", "agents", "cli"]
 classifiers = [

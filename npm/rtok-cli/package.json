@@ -10,7 +10,7 @@
     "url": "git+https://github.com/listepo/rtok.git",
     "directory": "npm/rtok-cli"
   },
-  "license": "(GPL-3.0-only OR LicenseRef-Royalty-Free OR LicenseRef-Commercial)",
+  "license": "(GPL-3.0-or-later OR LicenseRef-Royalty-Free OR LicenseRef-Commercial)",
   "bin": {
     "rtok": "bin/rtok",
     "rtok-cli": "bin/rtok"
