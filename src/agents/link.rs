@@ -11,8 +11,11 @@
 //!
 //! 1. the host's own session-id env var in this process ([`SESSION_ENV`]);
 //! 2. the nearest common host ancestor pid (T283.3, not wired yet);
-//! 3. the host's live agents in this cwd: one is the link, two or more are ambiguous and
-//!    bind nothing (a wrong link would route another agent's messages here).
+//! 3. the host's live agents in this cwd that were seen since this process started: one is
+//!    the link, two or more are ambiguous and bind nothing (a wrong link would route another
+//!    agent's messages here). A row not touched since the process started cannot be this
+//!    session's, so an ended session's row is never linked to its successor. This rule is
+//!    re-run on every call, never cached (see [`Rule::is_stable`]).
 //!
 //! A host without hooks never writes a row, so its MCP process registers its own.
 
@@ -42,6 +45,14 @@ impl Rule {
             Rule::Own => "own",
         }
     }
+
+    /// Whether a link from this rule may be remembered for the life of the process. `Env` names
+    /// the session itself and `Own` is this process's own row; `Cwd` is a guess from who else
+    /// is in the directory, and a second session that starts there later makes it ambiguous,
+    /// so it is re-run on every call and never sticks to the first match.
+    pub fn is_stable(self) -> bool {
+        !matches!(self, Rule::Cwd)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +77,10 @@ pub struct Caller<'a> {
     pub own_session: &'a str,
     /// `[agents] idle`: how recently a row must have been seen to count as live.
     pub idle: &'a str,
+    /// Unix seconds when this MCP process started. A cwd candidate must have been seen at or
+    /// after it: the session this process serves has fired a hook since the host launched it,
+    /// while a row nobody touched since belongs to an earlier or other session in that cwd.
+    pub since: i64,
 }
 
 /// True when no variant of `host` can have a hook installed, so only the MCP process can
@@ -97,6 +112,7 @@ pub fn resolve(store: &Store, who: &Caller, env: impl Fn(&str) -> Option<String>
             .into_iter()
             .filter(|a| a.host_id == who.host_id && a.parent_key.is_empty())
             .filter(|a| a.cwd.as_deref() == Some(cwd))
+            .filter(|a| a.last_seen >= who.since)
             .map(|a| a.id)
             .collect();
         match ids.len() {
@@ -134,6 +150,7 @@ mod tests {
             cwd,
             own_session: "mcp-1",
             idle: "30m",
+            since: 0,
         }
     }
 
@@ -249,5 +266,67 @@ mod tests {
     fn a_host_with_hooks_registers_nothing_itself() {
         assert!(!hookless("claude"));
         assert!(!hookless("no-such-host"));
+    }
+
+    /// A row last touched `ago` seconds before now, so a test places it before or after a
+    /// process start without sleeping.
+    fn seen(store: &Store, who: &Caller, session: &str, ago: i64) -> String {
+        let id = store
+            .register_agent(who.host_id, session, None, who.cwd, None)
+            .unwrap();
+        store
+            .set_agent_last_seen(&id, crate::log::now() as i64 - ago)
+            .unwrap();
+        id
+    }
+
+    fn started_100s_ago<'a>(store: &Store) -> Caller<'a> {
+        Caller {
+            since: crate::log::now() as i64 - 100,
+            ..caller("claude", store, Some("/r"))
+        }
+    }
+
+    #[test]
+    fn an_agent_not_seen_since_the_process_started_does_not_link() {
+        let store = Store::open_in_memory().unwrap();
+        let who = started_100s_ago(&store);
+        // The ended session A, still inside `[agents] idle`: not this process's session.
+        seen(&store, &who, "a", 500);
+        assert_eq!(resolve(&store, &who, no_env).unwrap(), Link::None);
+    }
+
+    #[test]
+    fn only_the_agent_seen_since_the_start_links() {
+        let store = Store::open_in_memory().unwrap();
+        let who = started_100s_ago(&store);
+        seen(&store, &who, "a", 500);
+        let b = seen(&store, &who, "b", 10);
+        assert_eq!(
+            resolve(&store, &who, no_env).unwrap(),
+            Link::Linked {
+                id: b,
+                rule: Rule::Cwd
+            }
+        );
+    }
+
+    #[test]
+    fn two_agents_seen_since_the_start_are_ambiguous() {
+        let store = Store::open_in_memory().unwrap();
+        let who = started_100s_ago(&store);
+        seen(&store, &who, "stale", 500);
+        let mut want = vec![seen(&store, &who, "a", 20), seen(&store, &who, "b", 10)];
+        want.sort();
+        assert_eq!(
+            resolve(&store, &who, no_env).unwrap(),
+            Link::Ambiguous(want)
+        );
+    }
+
+    #[test]
+    fn only_a_cwd_link_is_unstable() {
+        assert!(Rule::Env.is_stable() && Rule::Own.is_stable());
+        assert!(!Rule::Cwd.is_stable());
     }
 }

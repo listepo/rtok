@@ -314,9 +314,12 @@ struct Server {
     listed: Vec<Listed>,
     /// T263: `initialize` declared `capabilities.roots`.
     roots_capable: AtomicBool,
-    /// T283.1: the agent this process serves, cached once a rule links it. Hooks may register
-    /// the row after the host started this process, so an unlinked state is retried.
+    /// T283.1: the agent this process serves, cached once a stable rule links it (`Env`, `Own`;
+    /// see `link::Rule::is_stable`). Hooks may register the row after the host started this
+    /// process, so an unlinked or cwd-linked state is re-evaluated on every call.
     agent: Mutex<Option<(String, link::Rule)>>,
+    /// Unix seconds this process started: a cwd candidate must have been seen since.
+    started: i64,
 }
 
 impl Server {
@@ -377,6 +380,7 @@ impl Server {
             listed,
             roots_capable: AtomicBool::new(false),
             agent: Mutex::new(None),
+            started: crate::log::now() as i64,
         })
     }
 
@@ -398,12 +402,16 @@ impl Server {
             cwd: cwd.as_deref().and_then(std::path::Path::to_str),
             own_session: &cx.session,
             idle: &cx.config.agents.idle,
+            since: self.started,
         };
         let found = link::resolve(&cx.store, &who, |k| std::env::var(k).ok()).unwrap_or_else(|e| {
             cx.log("warn", "mcp", "link", &format!("agent link failed: {e:#}"));
             link::Link::None
         });
+        // A cwd link is a guess from who else is in the directory; a second session that starts
+        // there later makes it ambiguous, so only a stable rule is remembered.
         if let link::Link::Linked { id, rule } = &found
+            && rule.is_stable()
             && let Ok(mut g) = self.agent.lock()
         {
             *g = Some((id.clone(), *rule));
@@ -1315,6 +1323,54 @@ mod tests {
         }
         let (is_err, text) = whoami_over_rpc(&server);
         assert!(is_err && text.starts_with("ambiguous: agents "), "{text}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn whoami_ignores_a_session_that_ended_before_this_process_started() {
+        let (mut cfg, dir) = tmp("whoami-stale");
+        cfg.hook.host = "claude".into();
+        let mut server = Server::new(&cfg).unwrap();
+        server.started = crate::log::now() as i64 - 100;
+        let host = server.cx.host_id().unwrap();
+        // Session A in this cwd ended minutes ago, still inside `[agents] idle`; B's hook has
+        // not written its row yet, so A must not be taken for B.
+        let a = server
+            .cx
+            .store
+            .register_agent(host, "sess-a", None, Some(&cwd_string()), None)
+            .unwrap();
+        server
+            .cx
+            .store
+            .set_agent_last_seen(&a, crate::log::now() as i64 - 500)
+            .unwrap();
+        let (is_err, text) = whoami_over_rpc(&server);
+        assert!(is_err && text == "not linked to an agent session", "{text}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_cwd_link_is_reevaluated_when_a_second_session_appears() {
+        let (mut cfg, dir) = tmp("whoami-reeval");
+        cfg.hook.host = "claude".into();
+        let server = Server::new(&cfg).unwrap();
+        let host = server.cx.host_id().unwrap();
+        server
+            .cx
+            .store
+            .register_agent(host, "sess-a", None, Some(&cwd_string()), None)
+            .unwrap();
+        let (is_err, text) = whoami_over_rpc(&server);
+        assert!(!is_err, "{text}");
+        server
+            .cx
+            .store
+            .register_agent(host, "sess-b", None, Some(&cwd_string()), None)
+            .unwrap();
+        let call = r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"whoami","arguments":{}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(call).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], true, "{v}");
         let _ = fs::remove_dir_all(dir);
     }
 
