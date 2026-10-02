@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The HTML rendering of [`Document`](super::Document) (T22.2): the same eight sections
 //! in the same order, one self-contained file — inline CSS, inline SVG charts, no network
 //! fetch, openable from a `file://` URL. It formats; it computes nothing (D24).

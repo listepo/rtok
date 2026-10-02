@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The host-plugin offer, declared once (T77, D21).
 //!
 //! A host plugin is four values — where it comes from in this repo, where it lands under the

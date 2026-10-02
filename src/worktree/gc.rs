@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok worktree gc` (T153): remove finished worktrees and their merged branches, and
 //! drop the records of worktrees whose directory is already gone. [`decide`] is pure;
 //! [`run`] applies one verdict at a time and never forces anything.

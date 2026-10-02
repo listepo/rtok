@@ -376,6 +376,18 @@ Follow-up to T225, creator request 2026-09-23. `rtok logs` coloured lines itself
 
 Check: `tests/logs.rs` (`tspin_always_pipes_the_numbered_rows_through_the_viewer_on_path` with a fake `tspin` first on `PATH`, `tspin_auto_and_off_keep_the_builtin_rendering_on_a_pipe`), `config::validate` test for the value set, `tests/trycmd/config-init.toml` re-blessed, `just check`.
 
+### T363. `config validate` / `config set` accept out-of-range float keys and any `embed_backend`
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). `plugins.proxy.semantic_cache.threshold` is a cosine-similarity floor, yet `-1`, `0` or `5` pass `config set` and `config validate`; at `threshold <= 0` every in-scope cached entry inside the TTL matches, so the proxy serves an earlier, unrelated response. `plugins.proxy.semantic_cache.embed_backend` takes any string; the docs say only `"hash"` exists until P29, but a typo or `"openai"` turns the semantic tier on (`!= "hash"`) with the placeholder hash embedding. `plugins.read.delta_max_ratio = -3` is accepted too (silently disables deltas; above 1 sends diffs larger than the file). The range rules in `src/config/validate.rs` cover integers only and the enum rules do not list these keys; use sites are `src/proxy/semantic_cache.rs` and `src/plugins/read/cache.rs`.
+
+Repro: `rtok config set -- plugins.proxy.semantic_cache.threshold -1`, `rtok config set plugins.proxy.semantic_cache.embed_backend openai`, `rtok config set -- plugins.read.delta_max_ratio -3`, then `rtok config validate` — every step succeeds and validate prints `ok`.
+
+Done when: float range rules (`as_float()`) reject `threshold` and `delta_max_ratio` outside `(0, 1]`, and an enum rule limits `embed_backend` to the supported set; `config set` rejects them through the same rules (one rule table, no second copy).
+
+Check: new negative cases in the validate tests for all three keys (`-1`, `0`, `5`, `-3`, `openai`) plus the accepted defaults; `config set` of each bad value exits non-zero and leaves the file unchanged; `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `src/config/validate.rs` gains `UNIT_RATIO_KEYS` (`plugins.proxy.semantic_cache.threshold`, `plugins.read.delta_max_ratio`), checked as `(0, 1]` for floats and integers alike (NaN, 0, negatives and values above 1 are rejected), and `plugins.proxy.semantic_cache.embed_backend` joins `CHOICES` with the only supported value `hash`. `config set` already re-runs `issues_in` on the edited text, so it uses the same table and a refused value leaves the file untouched. Checked: new test `unit_ratio_keys_and_embed_backend_are_range_checked` (`-1`, `0`, `5`, `1.5`, `-3`, `0.0`, `openai` rejected by validate; `-1`, `0`, `5`, `-3`, `openai` rejected by `set` with the file byte-identical; `0.99`, `1`, `0.6`, `hash` accepted), `cargo test --lib config::validate` 16 passed, `just check`.
+
 ### T225. Debug log on stderr: `log` + `env_logger` behind `RUST_LOG`, tailspin viewer
 
 Creator request 2026-09-23: add env_logger for debugging, configurable; add tailspin, or replace env_logger if it is worse. Tailspin is a log highlighter (`tspin`), not a logger, so both went in. `crate::log::init_stderr` (first thing in `cli::run`) installs env_logger with the filter defaulting to `off`, so nothing changes on stderr until `RUST_LOG` is set; `RUST_LOG` rather than `RTOK_LOG` because the config env layer owns `RTOK_<SECTION>_<KEY>` and `RTOK_LOG` would shadow the `[log]` table. `cli::run` logs argv at debug; every D26 line is mirrored to the facade (target `rtok::log`) before the `[log] level` gate, so the file keeps its level while stderr shows what `RUST_LOG` asks for. Tailspin is pinned in `mise.toml` (`ubi:bensadeh/tailspin`); `just logs [flags]` opens `~/.rtok/logs/rtok.log` in it. Docs: `docs/config.md` → "Debug log (`RUST_LOG`)".
@@ -847,7 +859,7 @@ Check: each page matches `design/html/admin/<page>.html` in dark and light at 37
 
 Execution: `web/src/pages/` holds `format.ts` and `model.ts` (pure derivations: measured plugins ranked by saving, token totals, cache hit, p95, live sessions), `parts.tsx` (snapshot gate, toolbar, split layout, key/value list) and one component per page; `router.tsx` maps the three ids to them and keeps the placeholder for the rest. Plugins toggle through `useSetMutation` on `plugins.<id>.enabled`, calls expand through `useExpandMutation`.
 
-Result (2026-10-03, Claude Code / sonnet-5): overview shows eight KPIs, the savings-by-plugin table with share bars, the token mix and usage alerts; plugins has the all/enabled/disabled/saves-tokens filters, search, a keyboard-reachable switch per row and a detail panel with the server's message; calls has surface and result chips, a virtualized newest-first table, a detail panel (error, ref id) and an expand button that shows the archived output with a filter. Checked in a browser on `?sample` in dark at 1280 px (toggle flips and the detail switch follows, expand shows `sample payload for sample-archive-id`) and in light and dark at 375 px. The round-trip is verified against `connectSample`, which implements the `/ws` contract (set `plugins.<id>.enabled`, expand, refusal of other keys), in Vitest and a story; the Rust `rtok web` does not serve the SPA until T310.9, so it was not run against the real server. Not done: the overview's calls-over-time chart, doctor card, recent sessions and the mini bar and bitset visuals; the sample source has only 2 plugins and 2 calls, so data variety is covered by fixtures in tests and stories, not on `?sample`.
+Result (2026-10-03, Claude Code / sonnet-5): overview shows eight KPIs, the savings-by-plugin table with share bars, the token mix and usage alerts; plugins has the all/enabled/disabled/saves-tokens filters, search, a keyboard-reachable switch per row and a detail panel with the server's message; calls has surface and result chips, a virtualized newest-first table, a detail panel (error, ref id) and an expand button that shows the archived output with a filter. Checked in a browser on `?sample` in dark at 1280 px (toggle flips and the detail switch follows, expand shows `sample payload for sample-archive-id`) and in light and dark at 375 px. The round-trip is verified against `connectSample`, which implements the `/ws` contract (set `plugins.<id>.enabled`, expand, refusal of other keys), in Vitest and a story; the Rust `rtok web` does not serve the SPA until T310.9, so it was not run against the real server. The overview also draws the calls-over-time chart (24 buckets from `calls[].ts`, so it covers only the last ledger rows the frame carries), the doctor card (pass/warn/fail counts and the open checks derived from `doctor`, which has no verdict field; a null `doctor` shows a failed probe), the recent sessions and the mini-bar, session-sparkline and plugin-bitset marks on the KPIs; every one of them reads a field the snapshot already carries. `?sample` now serves 6 plugins, 14 calls on all three surfaces with one failure, 3 sessions on 2 hosts, a doctor report and log lines. Not done on the overview: the integrations panel (the agents matrix) and the logs tail, which belong to the hosts and logs pages, and the per-turn context area chart under the token mix.
 
 ### T310.9. Serve the SPA from `rtok web`
 
@@ -6136,6 +6148,22 @@ Check result: new unit test `capture_returns_when_the_child_exits_though_a_grand
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+
+### T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A command killed by SIGKILL (OOM killer, timeout) or SIGTERM comes back as `1`, not `128+signal` (137 / 143), so agents and scripts cannot tell "killed" from "failed" and OOM kills in test runs hide. On Unix `ExitStatus::code()` is `None` for a signal death and both sites map `None` to `1`: `src/plugins/cmd/run.rs:298` (`out.code.unwrap_or(1)`) and `src/mcp/wrap.rs:90` (`code().unwrap_or(1)`).
+
+Repro: `rtok run -- sh -c 'kill -TERM $$'; echo $?` and `rtok run -- sh -c 'kill -KILL $$'; echo $?` print `1`; plain `sh -c 'kill -TERM $$'; echo $?` prints `143`.
+
+Done when: one shared helper maps a Unix signal death (`ExitStatusExt::signal()`) to `128 + sig` where `code()` is `None`, used by both sites; Windows behaviour unchanged.
+
+Check: Unix-only tests for `rtok run` and the `rtok mcp --` wrap path get `143` for SIGTERM and `137` for SIGKILL, and a normal non-zero exit keeps its code; `just check`.
+
+
+Result (2026-10-03, Claude Code / sonnet-5): added `proc::exit_code` (`src/proc.rs`), which maps a Unix signal death (`ExitStatusExt::signal()`) to `128 + signal` and otherwise returns `code()`; `proc::capture` (the `rtok run` path) and `mcp::wrap::run` (the `rtok mcp --` path) both use it, so SIGTERM gives 143 and SIGKILL 137 at both sites, a normal non-zero exit keeps its code, and Windows is unchanged. Checked: new Unix-only tests (`proc::tests::capture_reports_128_plus_the_signal_of_a_killed_child`, `run_reports_128_plus_the_signal_for_a_killed_command` in `tests/commands_e2e.rs`, `a_server_killed_by_a_signal_exits_128_plus_the_signal` in `tests/mcp_wrap.rs`) each signal only their own `sh`; `just check` green (2143 tests run: 2143 passed, 6 skipped).
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
 
 ### T235.2. `rtok run` starts no login shell per call
 

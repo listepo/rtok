@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Number and time formatting shared by the pages; ported from admin.js in design/html.
 const nf = new Intl.NumberFormat("en-US");
 
@@ -25,3 +29,15 @@ export function hms(ts: number): string {
 }
 
 export const iso = (ts: number): string => new Date(ts * 1000).toISOString().replace(".000", "");
+
+/** Hour and minute of a unix-seconds timestamp, for chart axes. */
+export const hm = (ts: number): string => hms(ts).slice(0, 5);
+
+/** "5m ago" style age; `now` is a parameter so tests do not depend on the clock. */
+export function ago(ts: number, now: number): string {
+  const s = Math.max(0, now - ts);
+  if (s < 60) return `${Math.floor(s)}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}

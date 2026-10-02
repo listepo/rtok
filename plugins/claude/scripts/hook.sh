@@ -1,4 +1,8 @@
 #!/bin/sh
+# Copyright (c) 2026 Ivan Tugay
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 # rtok hook launcher for the Claude Code plugin (D21: fail open with the ketch hint).
 # The desktop Code tab may start without a shell PATH, so the binary is resolved by hand.
 for bin in "$(command -v rtok 2>/dev/null)" "$HOME/.ketch/bin/rtok" \

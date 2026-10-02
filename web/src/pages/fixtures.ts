@@ -1,52 +1,16 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // A fuller snapshot than `sampleSnapshot` for page stories and tests: several plugins in
 // every state, calls on all three surfaces including a failure, and an archive handle.
 import { sampleSnapshot } from "../api/sample";
-import type { CallRow, PluginPage, Snapshot } from "../api/snapshot.gen";
+import { call as baseCall, plugin, stats } from "../api/sampleRows";
+import type { CallRow, Snapshot } from "../api/snapshot.gen";
 
-const plugin = (id: string, over: Partial<PluginPage> = {}): PluginPage => ({
-  enabled: true,
-  fields: [],
-  id,
-  saves_tokens: true,
-  stats: null,
-  summary: `${id} plugin`,
-  surfaces: ["hook"],
-  title: id[0]?.toUpperCase() + id.slice(1),
-  ...over,
-});
-
-const stats = (before: number, after: number, rows: number) => ({
-  cache_create: 0,
-  cache_read: 0,
-  est_before: before,
-  est_after: after,
-  input: before,
-  output: after,
-  rows,
-});
-
-const call = (id: number, over: Partial<CallRow>): CallRow => ({
-  api: null,
-  cache_create: null,
-  cache_read: null,
-  error: null,
-  host: "claude-code",
-  id,
-  input: null,
-  kind: "hook",
-  model: null,
-  ms: 5,
-  name: "PostToolUse",
-  ok: 1,
-  output: null,
-  parent_id: null,
-  plugin: "shell",
-  provider: null,
-  session: "3f9a2c1e-0000",
-  surface: "hook",
-  ts: 1_790_000_000 + id * 30,
-  ...over,
-});
+// The tests and stories below quote this session id.
+const call = (id: number, over: Partial<CallRow>): CallRow =>
+  baseCall(id, { session: "3f9a2c1e-0000", ...over });
 
 export const richSnapshot: Snapshot = {
   ...sampleSnapshot,
@@ -98,9 +62,9 @@ export const richSnapshot: Snapshot = {
     turns: [4_000, 6_500, 9_000, 8_000, 12_000, 15_000, 11_000],
   },
   sessions: [
-    ...sampleSnapshot.sessions,
+    ...sampleSnapshot.sessions.filter((s) => s.id === "sample-session"),
     {
-      ...(sampleSnapshot.sessions[0] as Snapshot["sessions"][number]),
+      ...(sampleSnapshot.sessions[1] as Snapshot["sessions"][number]),
       id: "old",
       ended_at: 1_790_000_050,
       host: "codex",

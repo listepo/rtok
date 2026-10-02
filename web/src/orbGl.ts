@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Background orb, ported from design/html/js/orb.js: one WebGL fragment shader at half
 // resolution and ~30 fps, painted behind the glass panels at low opacity.
 const FPS = 30;

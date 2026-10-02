@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T142: `rtok mcp --call` used to never shut the cached LSP session down, unlike `run()`
 //! (which shuts it down at stdin EOF) — every `--call` of a graph tool under
 //! `graph.backend = "lsp"` left rust-analyzer/clangd/… running as an orphan after `rtok`

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T137: what an `image` content block costs. Pixel size comes from the PNG `IHDR` or the
 //! JPEG `SOF` header (fixed-offset parse, no image dependency); tokens follow the provider's
 //! published formula.
