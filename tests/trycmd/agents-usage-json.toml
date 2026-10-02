@@ -1,5 +1,5 @@
 bin.name = "rtok"
-args = "--config tests/trycmd/input/json-readers.toml agents usage --json --tz UTC"
+args = "--config tests/trycmd/input/json-readers.toml agents usage --source rtok --json --tz UTC"
 stdout = """
 {
   "source": "rtok",
