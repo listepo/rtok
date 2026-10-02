@@ -530,6 +530,16 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         }
         "SessionStart" => {
             write_agent_env_file(agent.as_deref());
+            // T329.6: one upsert beside `register_agent`'s; a locked store only skips it.
+            if cx.config.plugins.graph.auto_add_projects
+                && let Some(cwd) = cx.cwd.as_deref()
+            {
+                let _ = cx.store.auto_add_project(
+                    std::path::Path::new(cwd),
+                    crate::store::Origin::Session,
+                    None,
+                );
+            }
             inject_event(input, cx, &registry, agent.as_deref())
         }
         "UserPromptSubmit" | "PostCompact" | "SubagentStart" => {

@@ -2047,6 +2047,19 @@ Deviations: the card's "last error" index status is not shown, because nothing r
 Status: done 2026-10-03 · Model: Claude Code / sonnet-5
 
 
+## T329.6 — Auto-adding projects rtok sees in use (sessions, worktrees, graph MCP calls) and its config keys
+
+T329 §4a. With `[plugins.graph] auto_add_projects = true` (the default) a directory joins the project registry when a hooked session starts in it (origin `session`), when `rtok worktree add` creates a worktree or `rtok worktree adopt` / `claim` binds one, CLI or MCP (origin `worktree`, named by its branch), and when a graph MCP call runs in it (origin `mcp`). Off, the registry changes only through the CLI. The key is in the config schema and `docs/config.md`.
+
+Execution: `Store::auto_add_project` (`src/store/projects.rs`) wraps `register_project`, so the canonical dedup and the first-origin rule are unchanged. It skips a path that is not a directory, `/` and `$HOME` (`fs::is_unwalkable_root`), and names only the row it just created, so a manual add or a rename is never overwritten. The hook calls it on `SessionStart` only, as one best-effort upsert beside `register_agent`: a locked store skips it and the hook still exits as before, so there is no new queue. The MCP arm in `src/mcp.rs` calls it before `graph::call`. `claim::add` and `claim::bind` (the one path of the CLI and MCP) take an `auto_add` flag and call a private `register_project`; `Adopted` carries the branch for the name (not serialized).
+
+Check: `tests/project_auto_add.rs` (a session, a graph MCP call, and `worktree add` plus `adopt` each register with the key on and not with it off; worktrees are named by branch), `store::projects::tests::auto_add_skips_unwalkable_roots_and_never_renames_a_known_project`, `tests/latency.rs` `SessionStart` p95 under 10 ms with a real cwd (release only, as the other gates); `just check`.
+
+Deviations: the card asked for a deferred write; the hook already writes inline in the same way (`register_agent`), so registration is that one best-effort upsert rather than a hand-off. Hooks other than `SessionStart` do not register, to keep the per-event cost unchanged. The card's "stay out of `adopt`" line is obsolete: T289 is done and `adopt` registers through `claim::bind`.
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet-5
+
+
 ## T48.7 — aider host
 
 **T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`

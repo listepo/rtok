@@ -80,6 +80,7 @@ plugins.cmd.rules_dir = ~/.rtok/rules.d
 plugins.cmd.shell = 
 plugins.cmd.trailer_min_lines = 40
 plugins.compress.enabled = true
+plugins.graph.auto_add_projects = true
 plugins.graph.auto_index = true
 plugins.graph.backend = tags
 plugins.graph.body_lines = 40

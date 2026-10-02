@@ -132,6 +132,21 @@ impl Store {
             .into())
     }
 
+    /// T329.6: register a directory rtok saw in use (`[plugins.graph] auto_add_projects`). The
+    /// filesystem root, `$HOME` and a path that is not a directory are skipped, as no index may
+    /// use them as a root. `name` (a worktree's branch) labels only the row this call created,
+    /// so a rename or a manual add of the same root is never overwritten.
+    pub fn auto_add_project(&self, path: &Path, origin: Origin, name: Option<&str>) -> Result<()> {
+        if !path.is_dir() || crate::fs::is_unwalkable_root(path, std::env::home_dir().as_deref()) {
+            return Ok(());
+        }
+        let project = self.register_project(path, origin)?;
+        if project.origin == origin && project.name.is_none() {
+            self.rename_project(project.id, name)?;
+        }
+        Ok(())
+    }
+
     pub fn projects(&self) -> Result<Vec<Project>> {
         let mut conn = self.lock()?;
         let rows: Vec<Row> = projects::table.order(projects::id).load(&mut *conn)?;
@@ -288,6 +303,41 @@ mod tests {
         }
         store.set_extractor_fingerprint(root, "fp").unwrap();
         store.mark_symbols_stale_in(root, "stale.rs").unwrap();
+    }
+
+    #[test]
+    fn auto_add_skips_unwalkable_roots_and_never_renames_a_known_project() {
+        let dir = Dir::new("auto-add");
+        let store = Store::open_in_memory().unwrap();
+        store
+            .auto_add_project(Path::new("/"), Origin::Session, None)
+            .unwrap();
+        store
+            .auto_add_project(&dir.0.join("gone"), Origin::Session, None)
+            .unwrap();
+        assert!(store.projects().unwrap().is_empty());
+
+        let manual = store
+            .register_project(&dir.sub("a"), Origin::Manual)
+            .unwrap();
+        store
+            .auto_add_project(&dir.sub("a"), Origin::Worktree, Some("br"))
+            .unwrap();
+        assert_eq!(store.project(manual.id).unwrap().unwrap().name, None);
+
+        store
+            .auto_add_project(&dir.sub("b"), Origin::Worktree, Some("br"))
+            .unwrap();
+        let b = store.project_by_root(&dir.sub("b")).unwrap().unwrap();
+        assert_eq!((b.origin, b.display_name()), (Origin::Worktree, "br"));
+        store.rename_project(b.id, Some("mine")).unwrap();
+        store
+            .auto_add_project(&dir.sub("b"), Origin::Worktree, Some("br"))
+            .unwrap();
+        assert_eq!(
+            store.project(b.id).unwrap().unwrap().name.as_deref(),
+            Some("mine")
+        );
     }
 
     #[test]

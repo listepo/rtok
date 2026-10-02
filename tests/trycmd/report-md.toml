@@ -127,6 +127,7 @@ Every effective key with its origin — the `config show --sources` page.
 | plugins.cmd.shell |  | default |
 | plugins.cmd.trailer_min_lines | 40 | default |
 | plugins.compress.enabled | true | default |
+| plugins.graph.auto_add_projects | true | default |
 | plugins.graph.auto_index | true | default |
 | plugins.graph.backend | tags | default |
 | plugins.graph.body_lines | 40 | default |
@@ -276,7 +277,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-230 keys.
+231 keys.
 
 ## Doctor
 

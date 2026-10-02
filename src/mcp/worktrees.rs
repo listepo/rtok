@@ -66,6 +66,7 @@ pub fn add(cx: &Runtime, agent: &AgentDetail, args: &Value) -> Result<String> {
         (task, arg(args, "slug")),
         Some(agent),
         None,
+        cx.config.plugins.graph.auto_add_projects,
     )?;
     Ok(json!({
         "path": plan.path,
@@ -82,7 +83,16 @@ pub fn adopt(cx: &Runtime, agent: &AgentDetail, args: &Value) -> Result<String> 
         Some(path) => std::env::current_dir()?.join(path),
         None => std::env::current_dir()?,
     };
-    let done = claim::bind(Some(&cx.store), &path, agent, None, arg(args, "task"), true)?;
+    let task = arg(args, "task");
+    let done = claim::bind(
+        Some(&cx.store),
+        &path,
+        agent,
+        None,
+        task,
+        true,
+        cx.config.plugins.graph.auto_add_projects,
+    )?;
     Ok(serde_json::to_string(&done)?)
 }
 

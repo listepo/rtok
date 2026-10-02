@@ -40,7 +40,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T329.3 | todo | P2 | 3 | 0% | |
 | T329.4 | todo | P2 | 4 | 0% | |
 | T329.5 | todo | P2 | 3 | 0% | |
-| T329.6 | todo | P2 | 3 | 0% | |
 | T329.7 | todo | P2 | 4 | 0% | |
 | T329.8 | todo | P2 | 3 | 0% | |
 | T329.9 | todo | P2 | 4 | 0% | |
@@ -575,7 +574,7 @@ Ivan, 2026-10-01: in the web UI's graph tab, the graph is built for a project th
 
 Today the graph plugin (`src/plugins/graph/`) always works on one root: the process's current directory. The index is keyed by that root (`index::canon(root)` in `src/store/symbols.rs`), and the MCP tools `symbol`, `callers`, `impact`, `outline` and `explore`, plus `dead` and `affected`, only see that root. The graph page shows the same single root (`root .`). There is no way to pick another project and no way to follow a call into a dependency's source.
 
-Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.19 in dependency order (T329.1 and T329.2 are already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
+Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.19 in dependency order (T329.1, T329.2 and T329.6 are already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
 
 #### Terms
 
@@ -907,12 +906,6 @@ Check: fixture repos from the T329 Check list; `callers` of a function in C retu
 T329 §6 (second half): `dead` over the scope (a symbol in B used only from A is not dead while A links B, still reported per project), `affected` reading `git diff` in every git project of the scope, caps and token budgets applied to the whole answer, `watch` updating every project in the scope. Depends on T329.4.
 
 Check: `dead` over A's scope spares B's function only A calls, selecting B alone reports it; `affected` maps per project; an MCP reply stays under the cap with three linked projects; an edit in C updates its index under `watch`; `just check`.
-
-### T329.6. Auto-adding projects rtok sees in use (sessions, worktrees, graph MCP calls) and its config keys
-
-T329 §4a: register the cwd of a hooked agent session, a worktree created or adopted through `rtok worktree` (T285, T289; display name shows the branch) and the root of any graph MCP call, origin `session|worktree|mcp`. Adds `[plugins.graph] auto_add_projects = true` to the config schema and `docs/config.md`. The hook path stays within its 10 ms budget (the registration is a deferred write). T289 is owned by another agent; stay out of `adopt`. Depends on T329.1.
-
-Check: a session in a new directory registers it with `auto_add_projects` on and does not with it off; a worktree shows its branch as the name; the hook still exits within 10 ms; `just check`.
 
 ### T329.7. Reference discovery from manifests (Cargo, npm, Go, Python, submodules)
 
