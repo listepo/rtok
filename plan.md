@@ -59,7 +59,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T344 | todo | research | 1 | 0% | |
 | T345 | todo | research | 1 | 0% | |
 | T346 | todo | research | 1 | 0% | |
-| T359 | in progress | P1 | 2 | 0% | Claude Code / sonnet-5 |
 | T362 | todo | P3 | 1 | 0% | |
 | T364 | todo | P3 | 2 | 0% | |
 | T365 | todo | P3 | 3 | 0% | |
@@ -1390,18 +1389,6 @@ In the plan, D34 (plan.md@966f067 line 710) makes the agent id a UUID accepted b
 Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
 
 Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
-
-### T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). The "Reference file" fence opened at `docs/config.md:67` (```` ```toml ````) is not closed before `#### [plugins.proxy.semantic_cache]` (`:338`); the ```` ```toml ```` at `:355` cannot close a fence (a closer has no info string). In any CommonMark renderer (markdown-it 14, GitHub, the landing site) the semantic-cache heading, table and example render as code, the rest of the reference file renders as loose prose, and `### [proxy.batch] / [proxy.flex] / [proxy.routing]` plus `#### [proxy.batch]` land in a stray code block. The first heading after `## Reference file` becomes `#### [proxy.flex]` (`:448`), so the `pyrlyn/landing` `check:seo` step fails with `heading skips a level: h2 → h4 ("[proxy.flex]")` and blocks Pages deploys for every synced product. Origin: `2af52d66` (T31.1) put the semantic-cache prose inside the fence; `fb214cf9` added the `[proxy.*]` sections it now swallows. The raw fence count stays even, so counting backticks misses it.
-
-Repro: `awk '/^[ \t]*```/{print NR": "$0}' docs/config.md` (the fence at 67 is followed by ```` ```toml ```` at 355); parse the file with markdown-it and list fences and headings.
-
-Done when: the reference block closes with a bare ```` ``` ```` before the semantic-cache section; that section (heading, table, example) sits outside the reference file under a `###` (or is dropped from the reference, since `config/default.toml`, which the reference mirrors, has no such table); the rest of the reference reopens as ```` ```toml ````; no heading level is skipped. A test parses every `docs/**/*.md` with a CommonMark parser (no Markdown parser is in `Cargo.lock` today: `pulldown-cmark` as a dev-dependency with a one-line reason and a `toolchain.md` row) and fails on unclosed/mis-nested fences and heading-level skips. English-only change: rtok has no `docs/ru` / `docs/uk` mirror.
-
-Check: a new docs-structure test fails on `main` @ `aecab806` (h2 → h4 at `[proxy.flex]`) and passes after the fix; `config_coverage` and `public_numbers` stay green; `just check`.
-
-Execution: (1) `docs/config.md` on `main` already closes the reference fence at the semantic-cache section (#635, `39f4d9b8`), so no docs edit remains; confirm with the parser. (2) `tests/docs_structure.rs`: `pulldown-cmark` (dev-dependency) over `README.md` and `docs/**/*.md`, reporting a fence never closed, a fence opened inside another, and a heading that skips a level. (3) `markdown_targets` moves from `tests/public_numbers.rs` into `tests/common/mod.rs` so both lints walk the same files. (4) Fail first: run the test against `docs/config.md` from `aecab806`, then restore it. (5) `toolchain.md` row; `rust.md` already lists `pulldown-cmark`. (6) Gates: `docs_structure`, `config_coverage`, `public_numbers`, `just check`.
 
 ### T362. `rtok config validate` fails with ENOENT on a fresh install
 

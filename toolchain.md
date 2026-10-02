@@ -135,6 +135,7 @@ Project programs and direct packages from the manifests.
 | tree-sitter-tags | local | https://crates.io/crates/tree-sitter-tags | Rust dependency |
 | tree-sitter-typescript | local | https://crates.io/crates/tree-sitter-typescript | Rust dependency |
 | trycmd | local | https://crates.io/crates/trycmd | Full CLI command-output fixtures in tests/trycmd/ |
+| pulldown-cmark | local (dev) | https://crates.io/crates/pulldown-cmark | CommonMark parse of README and docs in tests/docs_structure.rs: unclosed fences, skipped heading levels (T359) |
 | tokio-tungstenite | local | https://crates.io/crates/tokio-tungstenite | WebSocket client for the `rtok web` e2e (tests/web_e2e.rs) |
 | url | local | https://crates.io/crates/url | `file://` MCP roots → path (T263) |
 | uuid | local | https://crates.io/crates/uuid | T282: random UUIDv4 rtok agent id (D34); already in the lock as a transitive dep |
