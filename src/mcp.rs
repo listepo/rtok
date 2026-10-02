@@ -89,13 +89,18 @@ pub fn run(cfg: &Config) -> Result<()> {
             }
         }
         // T329.8: register, link and index what the project's manifests reference, off the
-        // request path so `initialize` and the first tool call are not delayed.
+        // request path so `initialize` and the first tool call are not delayed. Detached with its
+        // own connection: EOF must not wait for up to `max_auto_projects` indexes, and a cut-off
+        // index is only pending files the next run picks up.
         #[cfg(feature = "graph")]
         if let Ok(root) = std::env::current_dir() {
-            let cx = &server.cx;
-            s.spawn(move || {
-                let followed = crate::plugins::graph::follow::refresh(cx, &root);
-                crate::plugins::graph::follow::index_new(cx, &followed);
+            let cfg = cfg.clone();
+            std::thread::spawn(move || {
+                let Ok(cx) = crate::plugin::Runtime::open(cfg, "graph-refs") else {
+                    return;
+                };
+                let followed = crate::plugins::graph::follow::refresh(&cx, &root);
+                crate::plugins::graph::follow::index_new(&cx, &followed);
             });
         }
         let res: Result<()> = (|| {
