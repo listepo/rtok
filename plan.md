@@ -24,7 +24,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T279.1 | todo | P2 | 2 | 0% | |
 | T281 | in progress | P1 | 3 | 70% | Claude Code / claude-opus-5-5 |
 | T283 | in progress | P1 | 3 | 60% | Claude Code / sonnet-5 |
-| T283.1 | in progress | P1 | 3 | 0% | Claude Code / sonnet-5 |
 | T283.2 | todo | P1 | 2 | 0% | |
 | T283.3 | todo | P1 | 3 | 0% | |
 | T284 | in progress | P1 | 3 | 50% | Claude Code / claude-opus-5-5 |
@@ -495,16 +494,6 @@ Check: hook fixture test: SessionStart output carries the line and it is identic
 Execution (2026-09-27): two PRs. PR 1, cut on top of T282's branch until #439 merges: the SessionStart line (step 2) inside the injection budget; `RTOK_AGENT_ID` through `CLAUDE_ENV_FILE` (step 3, cited from the Claude Code hooks docs); `rtok agents whoami [--json]` from `RTOK_AGENT_ID` (step 5); tests: hook fixture byte-stable but for the id, `enabled = false` prints nothing, trycmd, `surface_parity`, `config_coverage`, man page. PR 2, after T281's rules and T275's per-host PRs land: `rtok mcp` resolves its agent at `initialize`, `--host <id>` in every host's MCP entry, hook-less hosts register through MCP, MCP tool `whoami`; MCP e2e with a fake client.
 Progress (2026-09-28): PR 1 merged (#449): SessionStart line, `RTOK_AGENT_ID`, `rtok agents whoami` (host session id only in `--json`). Left: PR 2, the MCP link at `initialize` after T281's probe.
 Progress (2026-10-03): PR 2 is split into T283.1 (resolve the link, MCP `whoami`, `rtok mcp --host`), T283.2 (`--host` in every host's MCP entry) and T283.3 (the ancestor-pid rule, which needs the hook wire request to carry a pid). The link rule is derived from `research.md` §26's vendor docs and spawn code; the T281 live probe only confirms it.
-
-### T283.1. MCP agent link: `rtok mcp --host`, the doc-derived link rule, MCP `whoami`
-
-PR 2 of T283, part 1. The link rule is **derived from the vendor docs and open-source spawn code of `research.md` §26, not from a live run**; the T281 probe (the creator's manual sessions) only confirms it, and a probe row that disagrees changes the rule for that host. Rule order: (a) the host's session-id env var in the `rtok mcp` process (only Grok Build has one that reaches an MCP child: `GROK_SESSION_ID`); (b) the nearest common host ancestor pid shared by hook processes and the MCP process (T283.3); (c) cwd plus host, with the live agents of that host in that cwd; one match links, two or more are **ambiguous** and bind nothing. A hook-less host (`Agent::support(_, "hook")` is `No` for every variant) registers its own agent row from the MCP process.
-
-Done when: `rtok mcp --host <id>` sets `[hook] host` for the process; `src/agents/link.rs` resolves `Link { id, rule }` (`env`, `cwd`) or `Ambiguous { candidates }` or nothing, from the store, the host slug, the env and the cwd; the server resolves at `initialize` and again on demand until it is linked (hooks may fire after the MCP process starts), caching a link only; MCP tool `whoami` returns `{id, short, host, host_session, cwd, rule, ambiguous?, worktrees}` or the plain text `not linked to an agent session`; `research.md` §26 and this card say the rule is doc-derived.
-
-Check: `link.rs` unit tests over a seeded store (env rule, cwd single, cwd ambiguous, no match, ended agents ignored, other host ignored); MCP e2e with a fake client: `initialize` then `tools/call whoami` returns the registered agent; a hook-less fake host registers through MCP alone; `surface_parity`, `config_coverage`, man page; touched test binaries.
-
-Execution (2026-10-03): (1) `src/agents/link.rs`: a pure `resolve(store, host_slug, env, cwd)` returning the rule that matched or the ambiguous candidate list, plus `register_own` for hook-less hosts; the env-var rule table starts with `grok` / `GROK_SESSION_ID`. (2) `rtok mcp --host <id>` overlays `[hook] host` in `cli.rs`. (3) `Server` keeps the resolved agent in a `Mutex<Option<..>>`: tried at `initialize`, retried by `whoami` until linked; `whoami` is built-in beside `ping`, always listed. (4) `research.md` §26 gets one sentence that the rule is doc-derived and the probe only confirms it. (5) Tests as in Check; `surface_parity`/`config_coverage` only if a gate fires. Touched test binaries only while disk is tight.
 
 ### T283.2. `--host <id>` in every host's MCP entry
 

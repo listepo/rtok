@@ -7,8 +7,8 @@
 //! A one-shot `tools/list` (the Check) is accepted without `initialize`.
 
 use std::io::{BufRead, Read, Write};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, bail};
 use rmcp::model::{
@@ -22,6 +22,7 @@ pub mod wrap;
 
 pub mod ping;
 
+use crate::agents::link;
 use crate::config::Config;
 use crate::plugin::{Runtime, ToolDef};
 use crate::plugins::Registry;
@@ -40,6 +41,14 @@ fn ping_def() -> ToolDef {
         name: "ping",
         description: "Alive check. Returns MCP <agent> жив for the host display name.",
         input_schema: json!({"type":"object","properties":{"agent":{"type":"string"}},"required":["agent"]}),
+    }
+}
+
+fn whoami_def() -> ToolDef {
+    ToolDef {
+        name: "whoami",
+        description: "This session's rtok agent: id, short id, host, host session, cwd, how it was linked, claimed worktrees. An error when no agent is linked yet.",
+        input_schema: json!({"type":"object","properties":{}}),
     }
 }
 
@@ -132,7 +141,7 @@ pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
         if let Some(msg) = found.and_then(|t| missing_required(&t.def.input_schema, &args)) {
             (format!("invalid params: {msg}"), false)
         } else {
-            invoke_text(&server.cx, name, &args)
+            server.invoke_text(name, &args)
         };
     let _ = record(&server.cx, plugin, name, &args, &text);
     if ok { Ok(text) } else { bail!("{text}") }
@@ -305,6 +314,9 @@ struct Server {
     listed: Vec<Listed>,
     /// T263: `initialize` declared `capabilities.roots`.
     roots_capable: AtomicBool,
+    /// T283.1: the agent this process serves, cached once a rule links it. Hooks may register
+    /// the row after the host started this process, so an unlinked state is retried.
+    agent: Mutex<Option<(String, link::Rule)>>,
 }
 
 impl Server {
@@ -326,6 +338,11 @@ impl Server {
             Listed {
                 plugin: "mcp",
                 def: ping_def(),
+            },
+            // The agent link is the process's own state, so like `ping` it is not a plugin tool.
+            Listed {
+                plugin: "mcp",
+                def: whoami_def(),
             },
         ];
         let builtin: Vec<&str> = crate::plugins::all()
@@ -351,6 +368,7 @@ impl Server {
             listed.retain(|t| {
                 t.def.name == "expand"
                     || t.def.name == "ping"
+                    || t.def.name == "whoami"
                     || cfg.mcp.tools.iter().any(|n| n.as_str() == t.def.name)
             });
         }
@@ -358,7 +376,88 @@ impl Server {
             cx,
             listed,
             roots_capable: AtomicBool::new(false),
+            agent: Mutex::new(None),
         })
+    }
+
+    /// The agent this process serves: the cached link, else one attempt at the rules of
+    /// [`link::resolve`]. A store error or a disabled registry reads as not linked, never as a
+    /// failed request (fail open).
+    fn link(&self) -> link::Link {
+        if let Some((id, rule)) = self.agent.lock().ok().and_then(|g| g.clone()) {
+            return link::Link::Linked { id, rule };
+        }
+        let cx = &self.cx;
+        let (Some(host_id), true) = (cx.host_id(), cx.config.agents.enabled) else {
+            return link::Link::None;
+        };
+        let cwd = std::env::current_dir().ok();
+        let who = link::Caller {
+            host: &cx.config.hook.host,
+            host_id,
+            cwd: cwd.as_deref().and_then(std::path::Path::to_str),
+            own_session: &cx.session,
+            idle: &cx.config.agents.idle,
+        };
+        let found = link::resolve(&cx.store, &who, |k| std::env::var(k).ok()).unwrap_or_else(|e| {
+            cx.log("warn", "mcp", "link", &format!("agent link failed: {e:#}"));
+            link::Link::None
+        });
+        if let link::Link::Linked { id, rule } = &found
+            && let Ok(mut g) = self.agent.lock()
+        {
+            *g = Some((id.clone(), *rule));
+        }
+        found
+    }
+
+    /// `invoke` plus the tools that need this process's own state.
+    fn invoke_text(&self, name: &str, args: &Value) -> (String, bool) {
+        if name == "whoami" {
+            return match self.whoami() {
+                Ok(t) => (t, true),
+                Err(e) => (e.to_string(), false),
+            };
+        }
+        invoke_text(&self.cx, name, args)
+    }
+
+    fn whoami(&self) -> Result<String> {
+        let (id, rule) = match self.link() {
+            link::Link::Linked { id, rule } => (id, rule),
+            link::Link::Ambiguous(ids) => {
+                let short: Vec<String> = ids
+                    .iter()
+                    .map(|i| i.chars().take(8).collect::<String>())
+                    .collect();
+                bail!(
+                    "ambiguous: agents {} share this cwd; use RTOK_AGENT_ID",
+                    short.join(", ")
+                );
+            }
+            link::Link::None => bail!("not linked to an agent session"),
+        };
+        let Some(d) = self.cx.store.agent_detail(&id)? else {
+            bail!("not linked to an agent session");
+        };
+        let worktrees: Vec<String> = self
+            .cx
+            .store
+            .open_worktree_claims()?
+            .into_iter()
+            .filter(|(_, agent)| *agent == id)
+            .map(|(path, _)| path)
+            .collect();
+        Ok(json!({
+            "id": d.id,
+            "short": d.short,
+            "host": d.host,
+            "host_session": d.host_session_id,
+            "cwd": d.cwd,
+            "rule": rule.as_str(),
+            "worktrees": worktrees,
+        })
+        .to_string())
     }
 
     fn tools(&self) -> Vec<Tool> {
@@ -423,6 +522,8 @@ impl Server {
                 if !req["params"]["capabilities"]["roots"].is_null() {
                     self.roots_capable.store(true, Ordering::Relaxed);
                 }
+                // T283.1: a first attempt now; `whoami` retries while hooks have not registered.
+                let _ = self.link();
                 // Default `Implementation` still comes from rmcp's build env (`name: "rmcp"`).
                 // 3.x types are non_exhaustive; construct via the public builders.
                 let version = negotiate_protocol_version(&req["params"]["protocolVersion"]);
@@ -468,7 +569,7 @@ impl Server {
         } else if let Some(msg) = found.and_then(|t| missing_required(&t.def.input_schema, &args)) {
             (format!("invalid params: {msg}"), false)
         } else {
-            invoke_text(&self.cx, name, &args)
+            self.invoke_text(name, &args)
         };
         let _ = record(&self.cx, plugin, name, &args, &text);
         if !ok {
@@ -915,7 +1016,7 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// T192: `cfg.mcp.tools` allow-list filters listing and calls; `expand` and `ping` stay
+    /// T192: `cfg.mcp.tools` allow-list filters listing and calls; `expand`, `ping` and `whoami` stay
     /// listed unconditionally (`expand` is D4 losslessness, `ping` is the liveness check).
     #[test]
     fn tools_allow_list_filters_listing_and_calls() {
@@ -924,7 +1025,7 @@ mod tests {
         let server = Server::new(&cfg).unwrap();
         let mut names: Vec<String> = server.tools().iter().map(|t| t.name.to_string()).collect();
         names.sort();
-        assert_eq!(names, ["expand", "ping", "read"]);
+        assert_eq!(names, ["expand", "ping", "read", "whoami"]);
         let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"pattern":"x"}}}"#;
         let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
         assert_eq!(v["result"]["isError"], true, "{v}");
@@ -1132,6 +1233,112 @@ mod tests {
             server.cx.store.note_bodies().unwrap().is_empty(),
             "notes table must stay empty"
         );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T283.1: `initialize` then `whoami` through the server's own JSON-RPC path, as a host
+    /// would; `(isError, text)` of the answer.
+    fn whoami_over_rpc(server: &Server) -> (bool, String) {
+        let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}"#;
+        assert!(server.handle_line(init).is_some());
+        let call = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"whoami","arguments":{}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(call).unwrap()).unwrap();
+        (
+            v["result"]["isError"] == true,
+            v["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+        )
+    }
+
+    fn cwd_string() -> String {
+        std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    #[test]
+    fn whoami_names_the_agent_a_hook_registered_for_this_cwd() {
+        let (mut cfg, dir) = tmp("whoami-cwd");
+        cfg.hook.host = "claude".into();
+        let server = Server::new(&cfg).unwrap();
+        let host = server.cx.host_id().unwrap();
+        let id = server
+            .cx
+            .store
+            .register_agent(host, "sess-a", None, Some(&cwd_string()), None)
+            .unwrap();
+        let (is_err, text) = whoami_over_rpc(&server);
+        assert!(!is_err, "{text}");
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["id"], id);
+        assert_eq!(v["short"], id[..8]);
+        assert_eq!(v["host"], "claude");
+        assert_eq!(v["rule"], "cwd");
+        assert_eq!(v["worktrees"], json!([]));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn whoami_retries_until_the_hooks_have_registered() {
+        let (mut cfg, dir) = tmp("whoami-late");
+        cfg.hook.host = "claude".into();
+        let server = Server::new(&cfg).unwrap();
+        let (is_err, text) = whoami_over_rpc(&server);
+        assert!(is_err && text == "not linked to an agent session", "{text}");
+        let host = server.cx.host_id().unwrap();
+        server
+            .cx
+            .store
+            .register_agent(host, "sess-a", None, Some(&cwd_string()), None)
+            .unwrap();
+        let call = r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"whoami","arguments":{}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(call).unwrap()).unwrap();
+        assert_ne!(v["result"]["isError"], true, "{v}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn whoami_refuses_to_pick_between_sessions_in_one_cwd() {
+        let (mut cfg, dir) = tmp("whoami-ambiguous");
+        cfg.hook.host = "claude".into();
+        let server = Server::new(&cfg).unwrap();
+        let host = server.cx.host_id().unwrap();
+        for s in ["sess-a", "sess-b"] {
+            server
+                .cx
+                .store
+                .register_agent(host, s, None, Some(&cwd_string()), None)
+                .unwrap();
+        }
+        let (is_err, text) = whoami_over_rpc(&server);
+        assert!(is_err && text.starts_with("ambiguous: agents "), "{text}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_host_without_hooks_registers_itself_through_mcp_alone() {
+        let (mut cfg, dir) = tmp("whoami-hookless");
+        cfg.hook.host = "zed".into();
+        let server = Server::new(&cfg).unwrap();
+        let (is_err, text) = whoami_over_rpc(&server);
+        assert!(!is_err, "{text}");
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["rule"], "own");
+        assert_eq!(v["host_session"], format!("mcp-{}", std::process::id()));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_disabled_registry_links_nothing() {
+        let (mut cfg, dir) = tmp("whoami-off");
+        cfg.hook.host = "zed".into();
+        cfg.agents.enabled = false;
+        let server = Server::new(&cfg).unwrap();
+        let (is_err, text) = whoami_over_rpc(&server);
+        assert!(is_err && text == "not linked to an agent session", "{text}");
         let _ = fs::remove_dir_all(dir);
     }
 }
