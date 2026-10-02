@@ -305,6 +305,11 @@ fn classify(command: &str, p: &Probes, scope: &Scope) -> Verdict {
     if let Some(why) = shell_syntax(raw) {
         return Verdict::Unverified(format!("{why}: cannot be checked without running it"));
     }
+    // POSIX word splitting reads `\` as an escape, so an unquoted Windows path would be mangled
+    // into a path that does not exist and a working hook reported broken. Windows rules: T331.9.
+    if cfg!(windows) && raw.contains('\\') && !raw.contains(['\'', '"']) {
+        return Verdict::Unverified("Windows paths are not checked yet".into());
+    }
     let Some(words) = shlex::split(raw) else {
         return Verdict::Unverified("unbalanced quotes".into());
     };
@@ -372,7 +377,9 @@ fn classify(command: &str, p: &Probes, scope: &Scope) -> Verdict {
     }
 }
 
-/// `/Volumes/X` when `path` sits on a macOS volume that is not mounted.
+/// `/Volumes/X` when `path` sits on a macOS volume that is not mounted. `/Volumes` exists only
+/// on macOS; elsewhere such a path is an ordinary path and the missing-file rule covers it.
+#[cfg(target_os = "macos")]
 fn unmounted_volume(path: &Path, fs: &dyn Fs) -> Option<String> {
     let mut parts = path.components();
     let root = parts.nth(1)?; // the component after `/`
@@ -382,6 +389,11 @@ fn unmounted_volume(path: &Path, fs: &dyn Fs) -> Option<String> {
     }
     let mount = Path::new("/Volumes").join(volume.as_os_str());
     (fs.kind(&mount) == PathKind::Missing).then(|| mount.display().to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn unmounted_volume(_path: &Path, _fs: &dyn Fs) -> Option<String> {
+    None
 }
 
 /// Check every hook of Claude Code's settings files and enabled plugins, and of the JSON
@@ -760,6 +772,7 @@ mod tests {
             .collect()
     }
 
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
     #[test]
     fn a_missing_script_is_broken_and_fixable() {
         let found = run(&Mock::default(), &["~/scripts/old-guard.sh"]);
@@ -772,26 +785,40 @@ mod tests {
         assert_eq!(found[0].path, "hooks.PreToolUse[0].hooks[0]");
     }
 
+    /// An absolute path on every OS, quoted so POSIX word splitting keeps a Windows `\`.
+    fn quoted_abs(name: &str) -> (PathBuf, String) {
+        let path = std::env::temp_dir().join("rtok-hooks-test").join(name);
+        let cmd = format!("'{}'", path.display());
+        (path, cmd)
+    }
+
     #[test]
-    fn a_dangling_symlink_a_directory_and_an_unmounted_volume_are_broken() {
+    fn a_dangling_symlink_and_a_directory_are_broken() {
         let mut m = Mock::default();
-        m.kinds.insert(
-            "/h/link.sh".into(),
-            PathKind::DanglingSymlink("/Volumes/X/hook.js".into()),
-        );
-        m.kinds.insert("/h/dir".into(), PathKind::Dir);
-        let v = verdicts(&m, &["/h/link.sh", "/h/dir", "/Volumes/X/hook.js"]);
+        let (link, link_cmd) = quoted_abs("link.sh");
+        let (dir, dir_cmd) = quoted_abs("dir");
+        let target = std::env::temp_dir().join("rtok-hooks-test").join("gone.js");
+        m.kinds
+            .insert(link, PathKind::DanglingSymlink(target.clone()));
+        m.kinds.insert(dir, PathKind::Dir);
+        let v = verdicts(&m, &[&link_cmd, &dir_cmd]);
         assert_eq!(
             v[0],
             (
                 "broken-hook",
-                "dangling symlink to /Volumes/X/hook.js".into()
+                format!("dangling symlink to {}", target.display())
             )
         );
         assert_eq!(v[1].0, "broken-hook");
         assert!(v[1].1.contains("is a directory"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_path_on_an_unmounted_volume_is_broken() {
+        let v = verdicts(&Mock::default(), &["/Volumes/X/hook.js"]);
         assert_eq!(
-            v[2],
+            v[0],
             (
                 "broken-hook",
                 "path is on /Volumes/X, which is not mounted".into()
@@ -799,6 +826,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
     #[test]
     fn every_interpreter_with_a_missing_script_is_broken_and_with_a_present_one_is_fine() {
         let mut m = Mock::default();
@@ -829,6 +857,7 @@ mod tests {
         assert_eq!(v, vec![("broken-hook", "`foo` not on PATH".to_string())]);
     }
 
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
     #[test]
     fn variables_expand_and_relative_paths_resolve_against_the_project() {
         let mut m = Mock::default();
@@ -849,6 +878,7 @@ mod tests {
         assert!(v.is_empty(), "{v:?}");
     }
 
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
     #[test]
     fn a_quoted_path_with_spaces_is_one_word() {
         let mut m = Mock::default();
@@ -858,6 +888,7 @@ mod tests {
         assert_eq!(gone[0].1, "file not found: /h/Other Scripts/guard.sh");
     }
 
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
     #[test]
     fn leading_variable_assignments_are_skipped() {
         let mut m = Mock::default();
@@ -865,6 +896,7 @@ mod tests {
         assert!(verdicts(&m, &["RTOK_X=1 /h/a.sh"]).is_empty());
     }
 
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
     #[test]
     fn a_script_that_exists_but_is_not_executable_is_suspect_only_when_run_directly() {
         let mut m = Mock::default();
@@ -915,15 +947,16 @@ mod tests {
                 which: &m,
             },
         );
-        let mut sources: Vec<&str> = found.iter().map(|p| p.source.as_str()).collect();
+        // Compared as paths: `join` writes `\` on Windows where the literals have `/`.
+        let mut sources: Vec<PathBuf> = found.iter().map(|p| PathBuf::from(&p.source)).collect();
         sources.sort();
         assert_eq!(
             sources,
             vec![
-                "/h/.claude/settings.json",
-                "/h/.claude/settings.local.json",
-                "/proj/.claude/settings.json",
-                "/proj/.claude/settings.local.json"
+                PathBuf::from("/h/.claude/settings.json"),
+                PathBuf::from("/h/.claude/settings.local.json"),
+                PathBuf::from("/proj/.claude/settings.json"),
+                PathBuf::from("/proj/.claude/settings.local.json")
             ]
         );
     }
@@ -1009,6 +1042,7 @@ mod tests {
         )
     }
 
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
     #[test]
     fn another_hosts_json_hooks_are_checked_under_its_own_name_and_a_shared_file_once() {
         let mut m = Mock::default();
@@ -1037,6 +1071,7 @@ mod tests {
         assert_eq!(found[1].matcher.as_deref(), Some("run_shell_command"));
     }
 
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
     #[test]
     fn a_relative_path_is_not_judged_for_a_host_that_does_not_document_its_base() {
         let mut m = Mock::default();
@@ -1075,6 +1110,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
     #[test]
     fn a_plugin_hook_resolves_the_plugin_root_and_is_never_fixable() {
         let mut m = Mock::default();
@@ -1356,6 +1392,7 @@ mod tests {
         assert!(text.contains("    extra "), "{text}");
     }
 
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
     #[test]
     fn the_text_groups_by_class_and_says_none_found() {
         assert!(render(&[]).starts_with("hooks check none found\n"));
