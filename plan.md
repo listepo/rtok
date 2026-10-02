@@ -62,11 +62,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T346 | todo | research | 1 | 0% | |
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
-| T349 | todo | P0 | 2 | 0% | |
-| T350 | todo | P1 | 2 | 0% | |
+| T349 | in progress | P0 | 2 | 5% | Claude Code / claude-sonnet-5-5 |
+| T350 | in progress | P1 | 2 | 5% | Claude Code / claude-sonnet-5-5 |
 | T351 | todo | P1 | 3 | 0% | |
 | T352 | todo | P1 | 3 | 0% | |
-| T353 | todo | P2 | 2 | 0% | |
+| T353 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5-5 |
 | T354 | todo | P2 | 1 | 0% | |
 | T355 | todo | P2 | 2 | 0% | |
 
@@ -1406,6 +1406,8 @@ Done when: a ketch install or upgrade of rtok puts both `rtok` and `rtok-hook` o
 
 Check: fresh ketch install in a test home → `command -v rtok-hook` resolves; doctor fixture test for the missing-client warning; one day of `rtok.log` after the fix, compared with the numbers above (PreCompact p50 is high on its own — note it if it stays over budget).
 
+Execution plan: (1) `ketch.toml`: add `{ path = "rtok-hook*", name = "rtok-hook" }` beside the `rtok` entry (ketch now links the candidate whose stem is `name`, docs/MANIFESTS.md in pyrlyn/ketch) and trim the stale comment; (2) `src/doctor.rs`: a check that warns when the installed host hooks call `rtok-hook` first and `rtok-hook` is not on `PATH` (fixture test, no real host); (3) `just check`. Publishing the manifest to the registry (`ketch push`) is the creator's step — the registry copy still points at `listepo/rtok`.
+
 ### T350. Guard `PreToolUse` panics on a non-ASCII command
 
 Found 2026-10-02 in `~/.rtok/errors.log`: `plugin/guard: PreToolUse panicked: start byte index 2 is not a char boundary; it is inside '–' (bytes 1..4 of string)` (2026-09-28 12:27:35) and `… start byte index 1 … inside '⌘' (bytes 0..3 of string)` (2026-09-29 07:40:06). The hook fails open, so the guard is skipped for those calls. `segments` and `strip_wrap` in `src/plugins/guard/mod.rs` cut only at ASCII bytes, so the slice is elsewhere on the guard path (a fixed `[1..]`/`[2..]` or a byte offset from a helper it calls).
@@ -1413,6 +1415,8 @@ Found 2026-10-02 in `~/.rtok/errors.log`: `plugin/guard: PreToolUse panicked: st
 Done when: the panicking slice is found (recover the two payloads from the store's `call_io` at those timestamps), slicing on that path is char-boundary safe, and nothing else in the guard plugin slices at a computed byte offset without a boundary check.
 
 Check: regression tests with commands that start with `–` and `⌘` (and a multi-byte char right after the first byte) fail before the fix and pass after; `just check`.
+
+Execution plan: (1) find the panicking slice on the guard `PreToolUse` path (`src/plugins/guard/mod.rs` and every helper it calls) by a test that feeds commands starting with `–`/`⌘`; (2) make the slice char-boundary safe at that layer and audit the plugin's other computed-offset slices; (3) regression tests red → green; `just check`.
 
 ### T351. MCP refuses paths in sibling worktrees of the same repository
 
@@ -1437,6 +1441,8 @@ Found 2026-10-02 in `~/.rtok/errors.log`: `read` rejects `invalid line range \`N
 Done when: line ranges accept `a,b` and `a, b` like `a-b`; a missing-param error names the keys the call did send (look up the logged calls to see whether one alias, e.g. `query`, covers most of them — add only aliases the logs show); file errors name the path.
 
 Check: MCP unit tests for each case; `just check`.
+
+Execution plan: (1) the line-range parser used by MCP `read`/`expand` accepts `a,b` and `a, b`; (2) missing-param errors in `src/mcp.rs` list the keys the call sent; add an alias only where the logged calls (store `call_io`) show one; (3) `outline`/`read` file errors name the path; (4) unit tests per case; `just check`.
 
 ### T354. Agents pipe output into `rtok expand -` to get it raw
 
