@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Kimi Code CLI + Desktop (`rtok agents install kimi`, plan T46.2, T86).
 //!
 //! Moonshot's Kimi Code CLI reads hooks as `[[hooks]]` tables in `~/.kimi-code/config.toml`

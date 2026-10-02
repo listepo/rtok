@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok agents junk clear` (T182): remove junk rtok owns under its own home — log siblings
 //! left behind past `[log] files` and archive payloads past `core.retain_calls_days`. With
 //! `--yes` it also clears old hook bodies (`core.retain_hook_bodies_days`) and converts the

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T116 + D21: the Copilot CLI plugin tree carries a legacy `plugin.json` manifest and
 //! Copilot's camelCase hooks only (T275/D33 dropped its MCP server) — and `rtok agents
 //! install copilot --yes` drives `copilot plugin install <resolved plugins/copilot>` through

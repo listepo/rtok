@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Flag ↔ key coverage (plan T12.4, decision D12).
 //!
 //! Every clap long flag that is not in the allow-list must exist as a dotted key in

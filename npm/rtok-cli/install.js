@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 "use strict";
 // postinstall: on Unix, put the native binary where npm linked `rtok` and `rtok-cli` (bin/rtok), next to the
 // plugins/ and skills/ it resolves beside itself, so a hook that runs `rtok` from PATH does
