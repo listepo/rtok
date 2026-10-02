@@ -202,7 +202,7 @@
           ]
         },
         {
-          "description": "Change the project registry (T329.12): select a project.",
+          "description": "Change the project registry (T329.12, T329.20): select a project, or link two of them.",
           "type": "object",
           "properties": {
             "project": {
@@ -514,7 +514,7 @@
       ]
     },
     "ProjectRequest": {
-      "description": "The registry writes the graph page offers (links come with T329.20); `<project>` is an id or a\nroot path, as in `rtok graph projects`.",
+      "description": "The registry writes the graph page offers; `<project>` is an id or a\nroot path, as in `rtok graph projects`.",
       "oneOf": [
         {
           "type": "object",
@@ -530,6 +530,56 @@
           "required": [
             "action",
             "project"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "link"
+            },
+            "both": {
+              "type": "boolean",
+              "default": false
+            },
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "from",
+            "to",
+            "both"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "unlink"
+            },
+            "both": {
+              "type": "boolean",
+              "default": false
+            },
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "from",
+            "to",
+            "both"
           ]
         }
       ]

@@ -2098,6 +2098,16 @@ Deviations: the server emits `ok`, `not indexed`, `stale` and `missing`; the ind
 
 Status: done 2026-10-03 · Model: Claude Code / sonnet-5
 
+## T329.20 — SPA graph page links panel: `link` and `unlink` over `/ws`, both ways
+
+Second half of the original T329.12. `ProjectRequest` gains `Link` and `Unlink` (`from`, `to`, `both`); `project_write` runs them through `graph::projects::run` (`Action::Link`, `Action::Unlink`), the code `rtok graph projects link` and `unlink` use, so the CLI and the page cannot disagree and no second link API exists. The schema and `snapshot.gen.ts` are regenerated. The links panel sits under the current-project header: each outgoing link with its kind and reason and an unlink button, a "link to" picker over the projects that can still be linked, and "both ways". The reducer in `projectLogic.ts` mirrors the server for the sample server and the tests. Built from the draft `d8e0d14a` (re-applied on top of T329.12 as a normal commit).
+
+Check: `ws_project_select_link_and_unlink_reach_the_next_snapshot_and_a_bad_id_is_refused` (tests/web.rs), `client_messages_parse`, `committed_schema_is_current`, Vitest `projectLogic.test.ts` and `Projects.test.tsx` (link, link both ways and unlink send their requests, a round trip against the sample server), and Storybook stories `WithLinks` and `LinkAndUnlinkAgainstSampleServer` with axe in both themes; `just check`.
+
+Deviations: a link refusal (a missing project, an unknown id) shows as the server message under the selector, not next to the link controls. Project badges in the lists are the new card T329.21, because no list is scoped by project before T329.4 and T329.5. The two-tab sync of links is covered like the selection, by a pushed snapshot; real browsers are T310.10.
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet
+
 ## T48.7 — aider host
 
 **T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`

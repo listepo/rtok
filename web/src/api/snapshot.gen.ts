@@ -18,16 +18,29 @@ export type ClientMessage =
       project: ProjectRequest;
     };
 /**
- * The registry writes the graph page offers (links come with T329.20); `<project>` is an id or a
+ * The registry writes the graph page offers; `<project>` is an id or a
  * root path, as in `rtok graph projects`.
  *
  * This interface was referenced by `WsProtocol`'s JSON-Schema
  * via the `definition` "ProjectRequest".
  */
-export type ProjectRequest = {
-  action: "select";
-  project: string;
-};
+export type ProjectRequest =
+  | {
+      action: "select";
+      project: string;
+    }
+  | {
+      action: "link";
+      both: boolean;
+      from: string;
+      to: string;
+    }
+  | {
+      action: "unlink";
+      both: boolean;
+      from: string;
+      to: string;
+    };
 /**
  * A frame the server pushes besides the [`Snapshot`] itself.
  *

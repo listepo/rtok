@@ -54,7 +54,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T329.17 | todo | P3 | 3 | 0% | |
 | T329.18 | todo | P3 | 4 | 0% | |
 | T329.19 | todo | P3 | 3 | 0% | |
-| T329.20 | todo | P2 | 2 | 0% | |
+| T329.21 | todo | P3 | 2 | 0% | |
 | T330 | todo | P2 | 4 | 0% | |
 | T331 | todo | P1 | 4 | 0% | |
 | T332 | todo | research | 1 | 0% | |
@@ -642,7 +642,7 @@ Ivan, 2026-10-01: in the web UI's graph tab, the graph is built for a project th
 
 Today the graph plugin (`src/plugins/graph/`) always works on one root: the process's current directory. The index is keyed by that root (`index::canon(root)` in `src/store/symbols.rs`), and the MCP tools `symbol`, `callers`, `impact`, `outline` and `explore`, plus `dead` and `affected`, only see that root. The graph page shows the same single root (`root .`). There is no way to pick another project and no way to follow a call into a dependency's source.
 
-Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.20 in dependency order (T329.1 to T329.3 and T329.12 are already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
+Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.21 in dependency order (T329.1 to T329.3, T329.12 and T329.20 are already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
 
 #### Terms
 
@@ -1047,11 +1047,11 @@ T329 §8f: the 0 to 100 score with freshness, backend and link components, reaso
 
 Check: a fully indexed A with LSP and intact links scores 100; 30% of files pending drops it below 80 with the reason; tree-sitter fallback reads 0.6 on the backend component; a broken link lowers the links component; the scope shows the lowest score; `just check`.
 
-### T329.20. SPA graph page links panel: link, unlink, both ways, project badges
+### T329.21. Project badges in the graph page lists
 
-Second half of the original T329.12 (split because the whole was over 300 LOC). Adds `ProjectRequest::Link` and `Unlink` (`from`, `to`, `both`) to the `/ws` protocol, handled in `project_write` through `graph::projects::run` as `rtok graph projects link` and `unlink` do; the links panel under the current-project header (linked projects with their kind and reason, an unlink button each, a "link to" picker and "both ways" for the rest); the reducer cases for the sample server; project badges in the lists once T329.4 and T329.5 scope them. The full first draft of this half is on the local branch `t329.20-spa-links-panel` (commit `d8e0d14a`, never pushed): reuse it, rebase it on `main` once T329.12 lands, and re-check it against the schema. Depends on T329.12, T329.3.
+The last piece of the original T329.12 (split out of T329.20 on 2026-10-03): a project badge on every row of the graph page lists (dead symbols, pending files), shown once those lists are scoped to the selected project and its linked projects, so a row says which project it came from. Depends on T329.4, T329.5, T329.20.
 
-Check: Vitest for the link and unlink requests (a pushed snapshot shows the result), a Storybook play through the sample server (link both ways, unlink), the `/ws` integration test with link and unlink, `just check`.
+Check: Vitest and a story for a scoped list with badges from two projects; `just check`.
 
 ### T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 

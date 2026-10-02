@@ -524,8 +524,21 @@ fn project_write(cfg: &Config, req: protocol::ProjectRequest) -> Result<()> {
     use crate::plugins::graph::projects::{Action, run};
     use protocol::ProjectRequest as R;
     let rt = crate::plugin::Runtime::open(cfg.clone(), "web-projects")?;
-    let R::Select { project } = req;
-    run(&rt, Action::Select(project), false).map(|_| ())
+    let action = match req {
+        R::Select { project } => Action::Select(project),
+        R::Link { from, to, both } => Action::Link {
+            to,
+            from: Some(from),
+            both,
+            reason: None,
+        },
+        R::Unlink { from, to, both } => Action::Unlink {
+            to,
+            from: Some(from),
+            both,
+        },
+    };
+    run(&rt, action, false).map(|_| ())
 }
 
 #[cfg(not(feature = "graph"))]

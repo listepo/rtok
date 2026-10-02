@@ -48,7 +48,7 @@
 - T329.17. Graph alerts: linked project down or unreachable
 - T329.18. Graph diff: compare before and after a change
 - T329.19. Graph health score per project
-- T329.20. SPA graph page links panel: link, unlink, both ways, project badges
+- T329.21. Project badges in the graph page lists
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
 - T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
