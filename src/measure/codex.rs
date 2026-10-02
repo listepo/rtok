@@ -7,9 +7,10 @@
 //! `last_token_usage` is that request's counters (`input_tokens` includes
 //! `cached_input_tokens`, `output_tokens` includes reasoning). Read on the fly like the
 //! Claude Code transcripts, never written to the store, so a re-read is idempotent by
-//! construction. Surveyed 2026-09-17: OpenCode's `opencode.db` and Cursor's `state.vscdb`
-//! carry no token counts and Copilot CLI's `data.db` only a context size, so `codex` is the
-//! one host row here; the others are documented as unsupported, not estimated.
+//! construction. Surveyed 2026-09-17: Cursor's `state.vscdb` carries no token counts, so
+//! `codex` was the one host row here. The OpenCode and Kilo databases do carry them in
+//! `message.data` (re-surveyed 2026-10-03, `research.md`) and `measure::usage` reads those
+//! for `rtok agents usage`; this module stays the Codex reader.
 
 use super::stats::ApiRow;
 use serde_json::Value;

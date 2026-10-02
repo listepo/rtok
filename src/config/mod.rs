@@ -175,7 +175,7 @@ section! {
 section! {
     /// `[agents.usage]` — `rtok agents usage` (T358): tokens and estimated cost per agent, day
     /// and month. `source` is `logs` (the agents' own session files, read from
-    /// `[stats] transcripts_dir` and `codex_dir`), `rtok` (the store) or `both`. `hosts` empty = every
+    /// `[stats] transcripts_dir`, `codex_dir` and `[agents.usage.dirs]`), `rtok` (the store) or `both`. `hosts` empty = every
     /// host; `since` / `until` are a date (`2026-09-01`, a whole day in `tz`) or, for `since`, a
     /// duration (`30d`), empty = unbounded; `period` is `monthly` or `daily`; `by` groups
     /// the middle table by `agent` or `model`; `tz` is an IANA zone, empty = the system zone.
@@ -187,6 +187,53 @@ section! {
         period: String = s("monthly"),
         by: String = s("agent"),
         tz: String = String::new(),
+        dirs: UsageDirs = UsageDirs::default(),
+    }
+}
+
+section! {
+    /// `[agents.usage.dirs]` — where `rtok agents usage` reads each host's own records (T358.3):
+    /// a list per host, every entry a directory. Claude Code and Codex keep reading `[stats]
+    /// transcripts_dir` and `codex_dir`. A default the file leaves untouched yields to the host's
+    /// own relocation variable (`XDG_DATA_HOME`, `COPILOT_HOME`, `GEMINI_CLI_HOME`).
+    UsageDirs {
+        opencode: Vec<PathBuf> = vec![p("~/.local/share/opencode")],
+        kilo: Vec<PathBuf> = vec![p("~/.local/share/kilo")],
+        copilot: Vec<PathBuf> = vec![p("~/.copilot/session-state")],
+        gemini: Vec<PathBuf> = vec![p("~/.gemini/tmp")],
+        droid: Vec<PathBuf> = vec![p("~/.factory/sessions")],
+    }
+}
+
+impl UsageDirs {
+    /// Point each default the config file left untouched at the host's own relocation variable,
+    /// so a person who moved `~/.copilot` is read there without repeating it here. A relative
+    /// value is ignored, as the XDG spec says, and a key the file set always wins.
+    fn follow_env(&mut self, get: impl Fn(&str) -> Option<std::ffi::OsString>) {
+        let base = UsageDirs::default();
+        let abs = |key: &str| get(key).map(PathBuf::from).filter(|v| v.is_absolute());
+        let moved = |list: &mut Vec<PathBuf>, was: &[PathBuf], to: Option<PathBuf>| {
+            if let (true, Some(to)) = (list == was, to) {
+                *list = vec![to];
+            }
+        };
+        let xdg = abs("XDG_DATA_HOME");
+        moved(
+            &mut self.opencode,
+            &base.opencode,
+            xdg.as_ref().map(|d| d.join("opencode")),
+        );
+        moved(&mut self.kilo, &base.kilo, xdg.map(|d| d.join("kilo")));
+        moved(
+            &mut self.copilot,
+            &base.copilot,
+            abs("COPILOT_HOME").map(|d| d.join("session-state")),
+        );
+        moved(
+            &mut self.gemini,
+            &base.gemini,
+            abs("GEMINI_CLI_HOME").map(|d| d.join(".gemini").join("tmp")),
+        );
     }
 }
 
@@ -1055,6 +1102,7 @@ impl Config {
             notes.push(format!("core.log_to_db is now log.to_db (using {to_db})"));
         }
         self.home = home.to_path_buf();
+        self.agents.usage.dirs.follow_env(|k| std::env::var_os(k));
         let user_home = env_user_home();
         self.expand_paths_with(home, user_home.as_deref());
         for note in &notes {
@@ -1146,6 +1194,20 @@ impl Config {
                 .enumerate()
                 .map(|(i, p)| (format!("plugins.read.allow_paths[{i}]").into(), p)),
         );
+        let dirs = &mut self.agents.usage.dirs;
+        for (host, list) in [
+            ("opencode", &mut dirs.opencode),
+            ("kilo", &mut dirs.kilo),
+            ("copilot", &mut dirs.copilot),
+            ("gemini", &mut dirs.gemini),
+            ("droid", &mut dirs.droid),
+        ] {
+            out.extend(
+                list.iter_mut()
+                    .enumerate()
+                    .map(|(i, p)| (format!("agents.usage.dirs.{host}[{i}]").into(), p)),
+            );
+        }
         out
     }
 
@@ -1283,6 +1345,31 @@ fn expand(path: &Path, home: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn usage_dirs_follow_a_hosts_relocation_variable_until_the_file_names_one() {
+        let env = |k: &str| match k {
+            "XDG_DATA_HOME" => Some("/data".into()),
+            "COPILOT_HOME" => Some("/cop".into()),
+            "GEMINI_CLI_HOME" => Some("relative/is/ignored".into()),
+            _ => None,
+        };
+        let mut d = super::UsageDirs {
+            kilo: vec!["/mine".into()],
+            ..Default::default()
+        };
+        d.follow_env(env);
+        let one = |v: &Vec<std::path::PathBuf>| {
+            v.iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(one(&d.opencode), ["/data/opencode"]);
+        assert_eq!(one(&d.copilot), ["/cop/session-state"]);
+        assert_eq!(one(&d.kilo), ["/mine"]);
+        assert_eq!(one(&d.gemini), ["~/.gemini/tmp"]);
+        assert_eq!(one(&d.droid), ["~/.factory/sessions"]);
+    }
+
     use super::*;
     use figment::Figment;
     use figment::providers::{Format, Toml};
