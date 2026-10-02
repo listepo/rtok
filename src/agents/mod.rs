@@ -26,6 +26,7 @@ pub mod gemini;
 pub mod grok;
 pub mod jsonc;
 pub mod junk;
+pub mod junk_map;
 pub mod kilo;
 pub mod kimi;
 pub(crate) mod mcp;

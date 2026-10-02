@@ -314,6 +314,7 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --json           JSON instead of the text
       --bytes          Exact byte counts instead of KB/MB/GB
+      --all            Also the hosts that are not installed
   -h, --help           Print help
 
 $ rtok agents junk clear --help

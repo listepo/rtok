@@ -1223,7 +1223,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__junk__subcmd__list)
-            opts="-h --json --bytes --config --help"
+            opts="-h --json --bytes --all --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

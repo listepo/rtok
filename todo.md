@@ -37,7 +37,6 @@
 - T310.12. Delete Slint, the WASM build and the HTML design
 - T329. Graph page: project selector, auto-added projects and linked projects
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
-- T330.2. Junk: every host as an agent row, folders from `research.md` §22
 - T330.3. Junk: `cache`, `temp`, `build`, `locks`, `swap` kinds and rtok's own caches
 - T330.4. Junk `clear`: `--agent`, `--kind`, `--include review`, `--older-than`, `--trash`, re-check, exit codes
 - T330.5. Junk: review and explicit kinds (`sessions`, `stale-worktrees`, `crash-dumps`, `snapshots`, `logs`, `deps`, `backups`, `index`) and `[agents.junk]` config

@@ -518,6 +518,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the text')
             [CompletionResult]::new('--bytes', '--bytes', [CompletionResultType]::ParameterName, 'Exact byte counts instead of KB/MB/GB')
+            [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'Also the hosts that are not installed')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
@@ -558,6 +559,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the text')
             [CompletionResult]::new('--bytes', '--bytes', [CompletionResultType]::ParameterName, 'Exact byte counts instead of KB/MB/GB')
+            [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'Also the hosts that are not installed')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break

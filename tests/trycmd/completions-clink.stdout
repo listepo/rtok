@@ -127,8 +127,8 @@ clink.argmatcher("rtok")
         "junk" .. clink.argmatcher()
           :addarg({
             "list" .. clink.argmatcher()
-              :addflags({ "--json", "--bytes", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
-              :adddescriptions({ ["--json"] = "JSON instead of the text", ["--bytes"] = "Exact byte counts instead of KB/MB/GB", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+              :addflags({ "--json", "--bytes", "--all", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
+              :adddescriptions({ ["--json"] = "JSON instead of the text", ["--bytes"] = "Exact byte counts instead of KB/MB/GB", ["--all"] = "Also the hosts that are not installed", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
             "clear" .. clink.argmatcher()
               :addflags({ "--yes", "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
               :adddescriptions({ ["--yes"] = "Apply; without it this is a dry run that changes nothing", ["--json"] = "JSON instead of the table", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
@@ -238,8 +238,8 @@ clink.argmatcher("rtok")
         "junk" .. clink.argmatcher()
           :addarg({
             "list" .. clink.argmatcher()
-              :addflags({ "--json", "--bytes", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
-              :adddescriptions({ ["--json"] = "JSON instead of the text", ["--bytes"] = "Exact byte counts instead of KB/MB/GB", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+              :addflags({ "--json", "--bytes", "--all", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
+              :adddescriptions({ ["--json"] = "JSON instead of the text", ["--bytes"] = "Exact byte counts instead of KB/MB/GB", ["--all"] = "Also the hosts that are not installed", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
             "clear" .. clink.argmatcher()
               :addflags({ "--yes", "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
               :adddescriptions({ ["--yes"] = "Apply; without it this is a dry run that changes nothing", ["--json"] = "JSON instead of the table", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),

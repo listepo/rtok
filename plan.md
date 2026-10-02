@@ -43,7 +43,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.12 | todo | P2 | 3 | 0% | |
 | T329 | todo | P2 | 5 | 0% | |
 | T330 | todo | P2 | 4 | 0% | |
-| T330.2 | todo | P2 | 3 | 0% | |
 | T330.3 | todo | P2 | 3 | 0% | |
 | T330.4 | todo | P2 | 4 | 0% | |
 | T330.5 | todo | P2 | 4 | 0% | |
@@ -1147,12 +1146,6 @@ Check: fixture home under a temp dir, `HOME`/`XDG_*`/`LOCALAPPDATA` pointed at i
 - Permission-denied and timeout folders are reported, not fatal; exit code 1 when anything planned was not removed.
 - `--trash` moves items to the platform trash (tested on macOS and Linux CI).
 - `just check`.
-
-### T330.2. Junk: every host as an agent row, folders from `research.md` §22
-
-Part of T330. One row per host in `agents::HOSTS` (not installed hosts skipped, `--all` lists them), its config/data/cache/log folders from the §22 map with `file://` links (OSC 8) and sizes; folders without a §22 row (Cursor, platform cache roots) are listed read-only, D36, environment overrides honoured (`XDG_CACHE_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`), a folder shared by two agents counted once with a "shared with" note, permission-denied and per-agent timeout reported. Depends on T330.1 (T338 and T339 closed: D36).
-
-Check: fixture HOME with Claude Code, Cursor and Codex folders: each agent, folder and size appears with exact `--bytes`, Cursor's folders marked "not documented"; a symlink out of a folder is not followed; `just check`.
 
 ### T330.3. Junk: `cache`, `temp`, `build`, `locks`, `swap` kinds and rtok's own caches
 
