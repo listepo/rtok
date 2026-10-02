@@ -83,6 +83,15 @@ impl Home {
     }
 
     fn call(&self, version: &str, fingerprint: u64) -> Option<Option<Vec<u8>>> {
+        self.call_as(version, fingerprint, None)
+    }
+
+    fn call_as(
+        &self,
+        version: &str,
+        fingerprint: u64,
+        pid: Option<u32>,
+    ) -> Option<Option<Vec<u8>>> {
         let endpoint = rtok_hook::endpoint(&self.0).expect("endpoint");
         let mut s = rtok_hook::connect(&endpoint)?;
         let (event, host, stdin) = ("PreToolUse".into(), String::new(), self.payload());
@@ -94,6 +103,7 @@ impl Home {
             host,
             cwd,
             stdin,
+            pid,
         };
         rtok_hook::exchange(&mut s, &req.encode())
     }
@@ -180,6 +190,55 @@ fn the_resident_answers_like_rtok_hook_and_refuses_or_exits_otherwise() {
             "a resident exits once its home is gone"
         );
     }
+}
+
+/// Agent rows' recorded ancestors in `home`'s store.
+fn recorded_ancestors(home: &Home) -> Vec<Vec<i32>> {
+    let cfg = rtok::config::Config::load_from(&home.0).expect("config");
+    let store = rtok::store::Store::open(&cfg.core.db_path).expect("store");
+    let rows = store.live_agents("30m").unwrap();
+    rows.into_iter().map(|r| r.ancestors).collect()
+}
+
+/// T283.3: the resident walks the ancestors of the pid in the request and the hook stores them
+/// on the agent row, nearest first; a request without a pid (an older client) stores none.
+#[test]
+fn the_resident_records_the_ancestors_of_the_request_pid() {
+    let home = Home::new("a");
+    let mut resident = home.serve();
+    let fp = rtok_hook::fingerprint(home.env());
+    let me = std::process::id();
+    let none = home.call_as(VERSION, fp, None);
+    let before = recorded_ancestors(&home);
+    let some = home.call_as(VERSION, fp, Some(me));
+    let after = recorded_ancestors(&home);
+    let _ = resident.kill();
+    let _ = resident.wait();
+    assert!(none.is_some() && some.is_some());
+    assert_eq!(before, [Vec::<i32>::new()], "no pid, no ancestors");
+    let chain = rtok_sys::ancestors(i32::try_from(me).unwrap(), 3);
+    assert_eq!(after, [chain], "this test's own ancestors");
+}
+
+/// The real client sends its own pid. It may miss the 50 ms answer window on a loaded machine
+/// and then prints `{}` while the resident finds it gone, so retry until a call lands.
+#[test]
+fn the_client_sends_its_own_pid() {
+    let home = Home::new("p");
+    let mut resident = home.serve();
+    let me = i32::try_from(std::process::id()).unwrap();
+    let landed = (0..40).any(|_| {
+        home.output(home.cmd(CLIENT, &["PreToolUse"]));
+        recorded_ancestors(&home)
+            .iter()
+            .any(|a| a.first() == Some(&me))
+    });
+    let _ = resident.kill();
+    let _ = resident.wait();
+    assert!(
+        landed,
+        "no agent row records this test as the client's parent"
+    );
 }
 
 #[test]

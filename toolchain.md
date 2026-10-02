@@ -94,6 +94,7 @@ Project programs and direct packages from the manifests.
 | jiff | local | https://crates.io/crates/jiff | T358: IANA time zones with DST for `rtok agents usage` day and month buckets (`--tz`); already in the lock as a transitive dep of env_logger |
 | js-sys | local | https://crates.io/crates/js-sys | JS bindings for the Slint web UI (T222) |
 | jsonc-parser | local | https://crates.io/crates/jsonc-parser | JSONC parse for Zed settings (T222) |
+| libc | local (`crates/rtok-sys`, macOS only) | https://crates.io/crates/libc | T283.3: `proc_pidinfo` reads another process's parent pid, which rustix lacks |
 | libfuzzer-sys | local | https://crates.io/crates/libfuzzer-sys | `fuzz/`: libFuzzer runtime for the cargo-fuzz targets |
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | Rust dependency |
 | log | local | https://crates.io/crates/log | T225: logging facade env_logger drains; D26 lines are mirrored into it |

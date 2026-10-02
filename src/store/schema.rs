@@ -287,6 +287,7 @@ diesel::table! {
         ended_at -> Nullable<BigInt>,
         activity -> Nullable<Text>,
         status_text -> Nullable<Text>,
+        ancestors -> Nullable<Text>,
     }
 }
 

@@ -1901,6 +1901,33 @@ Cross-host pattern: of the ten hosts probed, only **Grok Build** confirms a sess
 
 **What T283.1 ships, and how sure it is (2026-10-03).** `src/agents/link.rs` implements the rule order above as **doc-derived**: it follows the vendor docs and spawn code in this table, not a live run. The T281 probe column stays `pending`, and when the creator's logs arrive they only confirm the rule per host or change it for a host where they disagree. Shipped: (a) `GROK_SESSION_ID` for `grok` (the one host with a confirmed env var) and (c) the host's live agents in the MCP process's cwd, where one match links and two or more are ambiguous and bind nothing. Not shipped yet: (b), the nearest common host ancestor pid (T283.3), because the hook wire request carries no pid and the resident hook process is not the host's child. A host with no hook support (`Agent::support(_, "hooks")` is `No`) registers its own agent row from the MCP process. A host that the `hosts` table does not know yet registers under `other`, so its cwd candidates include every such host.
 
+### Hook client ↔ host ancestry (T283.3)
+
+Question: is the process that runs an rtok hook a descendant of the host process the host's `rtok mcp` child also descends from, so the nearest common ancestor pid links the two? Checked 2026-10-03. Primary sources only; commits pinned.
+
+| Host | Source (version / commit) | How the hook command is started | Verdict |
+|---|---|---|---|
+| Codex CLI | openai/codex @ `12a30d4e`, `codex-rs/hooks/src/engine/command_runner.rs` `build_command` | `Command::new(shell)` + `-lc <command>` (or the configured shell args), `ProcessMode::NewSession` on Unix: a shell that is the codex process's child; the hook is the shell's child, or the shell itself if it execs | **Verified**: host → shell → hook |
+| Gemini CLI | google-gemini/gemini-cli @ `fb972b2f`, `packages/core/src/hooks/hookRunner.ts` | `spawn(shellConfig.executable, [...argsPrefix, command], {shell: false, cwd})` | **Verified**: host → shell → hook |
+| CodeWhale | Hmbown/CodeWhale @ `60ea7c22`, `crates/tui/src/hooks/executor.rs` `build_shell_command` | `Command::new("sh").arg("-c").arg(command)` with `process_group(0)` (`cmd` on Windows) | **Verified**: host → sh → hook |
+| Kimi CLI | MoonshotAI/kimi-code @ `21406fb4`, `packages/agent-core-v2/src/features/externalHooks/internal/runHook.ts` and `src/os/backends/node-local/hostProcessService.ts` | `hostProcess.spawn(command, [], {shell: true})`; the node-local backend wraps `node:child_process` `spawn` | **Verified** for the local backend only; other backends not read |
+| Cline | cline/cline @ `476b165b`, `apps/vscode/src/core/hooks/HookProcess.ts` | `child_process.spawn`; "Unix executes hook files through the shell for shebang support" (source comment) | **Verified**: extension host → shell → hook link |
+| Claude Code | code.claude.com/docs/en/hooks.md, 2026-10-03 | docs: a command hook "run[s] a shell command"; with `args` the command "is spawned directly ... with no shell involved" | **Unverified** for the parent: closed source, the docs do not name the parent process; probe pending |
+| ZCode | zai-org/ZCode @ `29628c9a` | spawn site not located by code search | **Unverified**; probe pending |
+| Cursor, Copilot CLI, Devin, Command Code | closed source; docs describe command hooks only | not documented | **Unverified**; probe pending |
+
+Consequence for the rule: in every verified case a shell sits between the host and the hook command, so the hook is the host's grandchild unless the shell execs it. The rule therefore records the hook client's first three ancestors, not its parent, and matches any of them against the `rtok mcp` process's own first three. The cap keeps a shared terminal, `tmux` server or `launchd` out of the match.
+
+Reading a parent pid chain without a process spawn (the hook client's budget is 10 ms, so no `ps`):
+
+| Platform | Call | Source (checked 2026-10-03) |
+|---|---|---|
+| Linux | read `/proc/<pid>/stat`, field 4 (`ppid`), parsed after the last `)` because the `comm` field may hold spaces and parentheses | man7.org/linux/man-pages/man5/proc.5.html |
+| macOS | `proc_pidinfo(pid, PROC_PIDTBSDINFO, ...)` returns `proc_bsdinfo.pbi_ppid`; `libc` 0.2.189 declares `proc_pidinfo`, `PROC_PIDTBSDINFO` and `proc_bsdinfo` (`src/unix/bsd/apple/mod.rs`) | docs.rs/libc/0.2.189 and the crate source; `libc` is already in `Cargo.lock` and in the parent `rust.md` |
+| Windows | `CreateToolhelp32Snapshot` + `PROCESSENTRY32.th32ParentProcessID` exists, but a Windows parent pid is never updated after the parent exits (the `rtok-sys::parent_pid` comment), so a chain says nothing reliable: not implemented, the rule is skipped | learn.microsoft.com/windows/win32/api/tlhelp32/ns-tlhelp32-processentry32 |
+
+No crate in `rust.md` reads another process's parent pid: `rustix::process::getppid` is the caller's own, `sysinfo` is the heavy CPU/RAM/disks crate, and `libproc` is not listed. `rtok-sys` already holds the unsafe process shims (`parent_pid`, `process_alive`), so the macOS call goes there.
+
 ## 27. Memory defaults and one install point (T291–T294) (2026-09-27)
 
 Creator 2026-09-27: the write hook and the session-end hook must fire, smart memory must be on by default, and every agent must get that from one module (or one `create`), not from a hand-written manifest per host. Decision D35. Cloud sync of notes is a later task in a private repo; that repo was not found in the local tree or via `gh repo list` / `gh search` on this date (the only cloud-sync hit was Fern in `listepo/budget-app`, a different product). D8 stands: this repo keeps one SQLite file and does not grow a sync protocol. T294 only widens the JSONL row so a later replicator can carry a tombstone.

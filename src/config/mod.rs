@@ -902,6 +902,11 @@ pub struct Config {
     /// directory (D29).
     #[serde(skip)]
     pub plugin_receipt_path: Option<PathBuf>,
+    /// T283.3: the pid of the process that runs this hook call (the `rtok-hook` client, or
+    /// `rtok hook` itself), so the agent row can record its ancestors. Not part of the file:
+    /// each call sets it, and none (a test, an in-process run) records nothing.
+    #[serde(skip)]
+    pub hook_client_pid: Option<u32>,
 }
 
 impl Config {

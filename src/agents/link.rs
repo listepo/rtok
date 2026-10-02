@@ -10,7 +10,13 @@
 //! confirms it per host:
 //!
 //! 1. the host's own session-id env var in this process ([`SESSION_ENV`]);
-//! 2. the nearest common host ancestor pid (T283.3, not wired yet);
+//! 2. the nearest common host ancestor pid: a hook records the pids above its own process on
+//!    the agent row (T283.3), and this process's own parent chain is matched against them.
+//!    Hooks and MCP children both descend from the host, usually the hook through a shell
+//!    (`research.md` §26), so the first [`ANCESTORS`] pids of each are compared and the
+//!    smallest index in this process's chain wins. One live agent at it is the link, two are
+//!    ambiguous. A host's process that serves several sessions (one editor window) gives every
+//!    session the same ancestor, so those sessions stay ambiguous and bind nothing;
 //! 3. the host's live agents in this cwd that were seen since this process started: one is
 //!    the link, two or more are ambiguous and bind nothing (a wrong link would route another
 //!    agent's messages here). A row not touched since the process started cannot be this
@@ -22,16 +28,21 @@
 use anyhow::Result;
 
 use crate::agents::Support;
-use crate::store::Store;
+use crate::store::{AgentRow, Store};
 
 /// Hosts whose MCP children inherit a session id in the environment, matching the `session_id`
 /// their hooks send (`research.md` §26: only Grok Build confirms one by first-party code).
 const SESSION_ENV: &[(&str, &str)] = &[("grok", "GROK_SESSION_ID")];
 
+/// How many ancestors a hook records and an MCP process compares. Three reaches the host past
+/// a shell wrapper and stops short of a shared terminal, `tmux` server or `launchd`.
+pub const ANCESTORS: usize = 3;
+
 /// Which rule produced a link.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rule {
     Env,
+    Ancestor,
     Cwd,
     /// The MCP process registered its own row (a host without hooks).
     Own,
@@ -41,17 +52,19 @@ impl Rule {
     pub fn as_str(self) -> &'static str {
         match self {
             Rule::Env => "env",
+            Rule::Ancestor => "ancestor",
             Rule::Cwd => "cwd",
             Rule::Own => "own",
         }
     }
 
     /// Whether a link from this rule may be remembered for the life of the process. `Env` names
-    /// the session itself and `Own` is this process's own row; `Cwd` is a guess from who else
-    /// is in the directory, and a second session that starts there later makes it ambiguous,
-    /// so it is re-run on every call and never sticks to the first match.
+    /// the session itself and `Own` is this process's own row; `Cwd` and `Ancestor` are guesses
+    /// from who else is in the directory or behind the host process, and a second session that
+    /// starts there later makes them ambiguous, so they are re-run on every call and never
+    /// stick to the first match.
     pub fn is_stable(self) -> bool {
-        !matches!(self, Rule::Cwd)
+        !matches!(self, Rule::Cwd | Rule::Ancestor)
     }
 }
 
@@ -81,6 +94,9 @@ pub struct Caller<'a> {
     /// after it: the session this process serves has fired a hook since the host launched it,
     /// while a row nobody touched since belongs to an earlier or other session in that cwd.
     pub since: i64,
+    /// This process's own ancestors, nearest first (`rtok_sys::ancestors`); empty when they
+    /// cannot be read, which skips the ancestor rule.
+    pub ancestors: &'a [i32],
 }
 
 /// True when no variant of `host` can have a hook installed, so only the MCP process can
@@ -106,13 +122,33 @@ pub fn resolve(store: &Store, who: &Caller, env: impl Fn(&str) -> Option<String>
             rule: Rule::Env,
         });
     }
+    let live: Vec<AgentRow> = store
+        .live_agents(who.idle)?
+        .into_iter()
+        .filter(|a| a.host_id == who.host_id && a.parent_key.is_empty())
+        .filter(|a| a.last_seen >= who.since)
+        .collect();
+    // Index into this process's chain of the nearest ancestor an agent's hook also had.
+    let depth = |a: &AgentRow| who.ancestors.iter().position(|p| a.ancestors.contains(p));
+    if let Some(best) = live.iter().filter_map(depth).min() {
+        let mut ids: Vec<String> = live
+            .iter()
+            .filter(|a| depth(a) == Some(best))
+            .map(|a| a.id.clone())
+            .collect();
+        if ids.len() == 1 {
+            return Ok(Link::Linked {
+                id: ids.remove(0),
+                rule: Rule::Ancestor,
+            });
+        }
+        ids.sort();
+        return Ok(Link::Ambiguous(ids));
+    }
     if let Some(cwd) = who.cwd {
-        let mut ids: Vec<String> = store
-            .live_agents(who.idle)?
+        let mut ids: Vec<String> = live
             .into_iter()
-            .filter(|a| a.host_id == who.host_id && a.parent_key.is_empty())
             .filter(|a| a.cwd.as_deref() == Some(cwd))
-            .filter(|a| a.last_seen >= who.since)
             .map(|a| a.id)
             .collect();
         match ids.len() {
@@ -151,6 +187,7 @@ mod tests {
             own_session: "mcp-1",
             idle: "30m",
             since: 0,
+            ancestors: &[],
         }
     }
 
@@ -328,5 +365,91 @@ mod tests {
     fn only_a_cwd_link_is_unstable() {
         assert!(Rule::Env.is_stable() && Rule::Own.is_stable());
         assert!(!Rule::Cwd.is_stable());
+    }
+
+    /// A live agent whose hook recorded `chain` above itself, in `cwd`.
+    fn hooked(store: &Store, host_id: i32, session: &str, cwd: &str, chain: &[i32]) -> String {
+        let id = store
+            .register_agent(host_id, session, None, Some(cwd), None)
+            .unwrap();
+        store.set_agent_ancestors(&id, chain).unwrap();
+        id
+    }
+
+    #[test]
+    fn the_nearest_common_ancestor_picks_the_agent_over_a_farther_one() {
+        let store = Store::open_in_memory().unwrap();
+        let mut who = caller("claude", &store, Some("/r"));
+        // A's hook ran through a shell (100) under host 200; B sits under host 500 and the
+        // same terminal (300) as A.
+        let a = hooked(&store, who.host_id, "a", "/r", &[100, 200, 300]);
+        let b = hooked(&store, who.host_id, "b", "/r", &[501, 500, 300]);
+        who.ancestors = &[200, 300];
+        let want = |id: &String| Link::Linked {
+            id: id.clone(),
+            rule: Rule::Ancestor,
+        };
+        assert_eq!(resolve(&store, &who, no_env).unwrap(), want(&a));
+        who.ancestors = &[500, 300];
+        assert_eq!(resolve(&store, &who, no_env).unwrap(), want(&b));
+    }
+
+    #[test]
+    fn two_agents_behind_one_ancestor_are_ambiguous_even_with_one_in_the_cwd() {
+        let store = Store::open_in_memory().unwrap();
+        let mut who = caller("claude", &store, Some("/r"));
+        let mut want = vec![
+            hooked(&store, who.host_id, "a", "/r", &[200]),
+            hooked(&store, who.host_id, "b", "/elsewhere", &[200]),
+        ];
+        want.sort();
+        who.ancestors = &[200];
+        assert_eq!(
+            resolve(&store, &who, no_env).unwrap(),
+            Link::Ambiguous(want)
+        );
+    }
+
+    #[test]
+    fn the_ancestor_rule_beats_the_cwd_rule_and_is_not_remembered() {
+        let store = Store::open_in_memory().unwrap();
+        let mut who = caller("claude", &store, Some("/r"));
+        let by_pid = hooked(&store, who.host_id, "a", "/worktree", &[200]);
+        hooked(&store, who.host_id, "b", "/r", &[999]);
+        who.ancestors = &[200];
+        assert_eq!(
+            resolve(&store, &who, no_env).unwrap(),
+            Link::Linked {
+                id: by_pid,
+                rule: Rule::Ancestor
+            }
+        );
+        assert!(!Rule::Ancestor.is_stable());
+    }
+
+    #[test]
+    fn a_missing_chain_or_a_foreign_ended_or_unseen_agent_skips_the_rule() {
+        let store = Store::open_in_memory().unwrap();
+        let mut who = started_100s_ago(&store);
+        let cursor = store.host_id("cursor").unwrap().unwrap();
+        hooked(&store, cursor, "other-host", "/r", &[200]);
+        let ended = hooked(&store, who.host_id, "ended", "/r", &[200]);
+        store.end_agent(&ended, crate::log::now() as i64).unwrap();
+        let stale = hooked(&store, who.host_id, "stale", "/r", &[200]);
+        store
+            .set_agent_last_seen(&stale, crate::log::now() as i64 - 500)
+            .unwrap();
+        who.ancestors = &[200];
+        assert_eq!(resolve(&store, &who, no_env).unwrap(), Link::None);
+        // No pid on the hook side (an old client): the cwd rule still answers.
+        let old = seen(&store, &who, "old-client", 10);
+        who.ancestors = &[200, 300];
+        assert_eq!(
+            resolve(&store, &who, no_env).unwrap(),
+            Link::Linked {
+                id: old,
+                rule: Rule::Cwd
+            }
+        );
     }
 }

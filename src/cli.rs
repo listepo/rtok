@@ -1062,7 +1062,8 @@ pub fn run() -> Result<()> {
         }
         Cmd::Hook { serve: true, .. } => crate::hooks::resident::serve()?,
         Cmd::Hook { event, host, .. } => {
-            let cfg = Config::load_lenient(config_file.as_deref(), hook_host_flag(host));
+            let mut cfg = Config::load_lenient(config_file.as_deref(), hook_host_flag(host));
+            cfg.hook_client_pid = Some(std::process::id());
             crate::hooks::run(&event.unwrap_or_default(), io::stdin(), io::stdout(), &cfg);
             let _ = io::stdout().flush();
         }

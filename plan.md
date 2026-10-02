@@ -25,7 +25,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T281 | in progress | P1 | 3 | 70% | Claude Code / claude-opus-5-5 |
 | T283 | in progress | P1 | 3 | 60% | Claude Code / sonnet-5 |
 | T283.2 | todo | P1 | 2 | 0% | |
-| T283.3 | todo | P1 | 3 | 0% | |
 | T284 | in progress | P1 | 3 | 50% | Claude Code / claude-opus-5-5 |
 | T285 | in progress | P1 | 4 | 50% | Claude Code / claude-opus-5-5 |
 | T286 | in progress | P1 | 3 | 40% | Claude Code / claude-opus-5-5 |
@@ -499,12 +498,6 @@ Progress (2026-10-03): PR 2 is split into T283.1 (resolve the link, MCP `whoami`
 PR 2 of T283, part 2 (after T283.1 and T275's per-host entries). Every host's `register_mcp` passes `--host <id>` to `rtok mcp`, so the process knows its host without `[hook] host`; the host tests and fixtures change with it. Only our entry changes, the rest of the host's file stays byte-for-byte.
 
 Check: each host's install/remove test shows `mcp --host <id>` in the written entry and removal leaves the file as before; `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where tables change; `just check`.
-
-### T283.3. MCP link rule (b): the nearest common host ancestor pid
-
-PR 2 of T283, part 3. The hook wire request (`crates/rtok-hook`, `src/hooks/resident.rs`: `version, fingerprint, event, host, cwd, stdin`) carries no pid, and the resident hook process is not the host's child, so a hook cannot record its own ancestry today. Add the client's parent pid to the request (protocol version bump), store it on the agent row (migration), record it on registration, and let `link.rs` match it against the `rtok mcp` process's ancestor chain (nearest first; two agents behind one ancestor are ambiguous). Doc-derived like the rest of the rule order; the T281 probe confirms it per host.
-
-Check: wire round-trip test; store test; `link.rs` test with a seeded agent row and a fake ancestor chain; hook latency stays inside the 10 ms budget; `just check`.
 
 ### T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
 
