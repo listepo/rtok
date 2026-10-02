@@ -666,7 +666,7 @@ enum AgentCmd {
         #[command(subcommand)]
         action: Option<SessionsCmd>,
     },
-    /// Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear
+    /// Junk and agent folders: `list` shows rtok's and every installed host's folders with sizes, `clear` removes rtok's own junk
     Junk {
         #[command(subcommand)]
         action: JunkCmd,
