@@ -670,12 +670,12 @@ enum AgentCmd {
         #[command(subcommand)]
         action: Option<SessionsCmd>,
     },
-    /// Tokens and estimated cost per agent and month (or day), from what passed through rtok
+    /// Tokens and estimated cost per agent and month (or day), from the agents' logs or rtok
     ///
     /// Prices come from `[stats.prices]`; a model without one counts in the tokens and is
     /// left out of the cost (`--unpriced` names those).
     Usage {
-        /// Data source: `rtok` (the store; the only one for now)
+        /// Data source: `logs` (the agents' own session files, the default), `rtok` (what passed through rtok) or `both`
         #[arg(long, value_name = "SOURCE")]
         source: Option<String>,
         /// Only these hosts, comma-separated (`claude,codex`)
@@ -1011,6 +1011,11 @@ pub fn run() -> Result<()> {
                     }
                 }
                 ConfigCmd::Validate { path } => {
+                    // T362: only the implicit default file is created, as `load_with` does;
+                    // a path the user typed must exist.
+                    if path.is_none() {
+                        Config::ensure_user_file(&home, config_file.as_deref())?;
+                    }
                     let path = path.unwrap_or(user);
                     let mut errs = validate::issues(&path)?;
                     // The filter drop-ins are deployment state, not part of the
