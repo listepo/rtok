@@ -1353,19 +1353,18 @@ pub(crate) fn resolve_rtok_command(
 }
 
 fn bare_rtok_on_path(path: Option<&std::ffi::OsStr>) -> bool {
+    bin_on_path("rtok", path)
+}
+
+/// True when `bin` (`bin.exe` too on Windows) is a file in a `path` directory. No sandbox:
+/// the caller passes the `PATH` value, so a test controls it.
+pub(crate) fn bin_on_path(bin: &str, path: Option<&std::ffi::OsStr>) -> bool {
     let Some(path) = path else {
         return false;
     };
-    for dir in std::env::split_paths(path) {
-        if cfg!(windows) {
-            if dir.join("rtok.exe").is_file() || dir.join("rtok").is_file() {
-                return true;
-            }
-        } else if dir.join("rtok").is_file() {
-            return true;
-        }
-    }
-    false
+    std::env::split_paths(path).any(|dir| {
+        dir.join(bin).is_file() || (cfg!(windows) && dir.join(format!("{bin}.exe")).is_file())
+    })
 }
 
 /// Basename of a command path — split on `/` and `\`, drop a trailing `.exe`
