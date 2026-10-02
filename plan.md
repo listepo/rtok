@@ -62,12 +62,12 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T346 | todo | research | 1 | 0% | |
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
-| T349 | todo | P0 | 2 | 0% | |
-| T350 | todo | P1 | 2 | 0% | |
-| T351 | todo | P1 | 3 | 0% | |
+| T349 | in progress | P0 | 2 | 5% | Claude Code / claude-sonnet-5-5 |
+| T350 | in progress | P1 | 2 | 5% | Claude Code / claude-sonnet-5-5 |
+| T351 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5-5 |
 | T352 | todo | P1 | 3 | 0% | |
-| T353 | todo | P2 | 2 | 0% | |
-| T354 | todo | P2 | 1 | 0% | |
+| T353 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5-5 |
+| T354 | in progress | P2 | 1 | 5% | Claude Code / claude-sonnet-5-5 |
 | T355 | todo | P2 | 2 | 0% | |
 
 
@@ -1406,6 +1406,8 @@ Done when: a ketch install or upgrade of rtok puts both `rtok` and `rtok-hook` o
 
 Check: fresh ketch install in a test home → `command -v rtok-hook` resolves; doctor fixture test for the missing-client warning; one day of `rtok.log` after the fix, compared with the numbers above (PreCompact p50 is high on its own — note it if it stays over budget).
 
+Execution plan: (1) `ketch.toml`: add `{ path = "rtok-hook*", name = "rtok-hook" }` beside the `rtok` entry (ketch now links the candidate whose stem is `name`, docs/MANIFESTS.md in pyrlyn/ketch) and trim the stale comment; (2) `src/doctor.rs`: a check that warns when the installed host hooks call `rtok-hook` first and `rtok-hook` is not on `PATH` (fixture test, no real host); (3) `just check`. Publishing the manifest to the registry (`ketch push`) is the creator's step — the registry copy still points at `listepo/rtok`.
+
 ### T350. Guard `PreToolUse` panics on a non-ASCII command
 
 Found 2026-10-02 in `~/.rtok/errors.log`: `plugin/guard: PreToolUse panicked: start byte index 2 is not a char boundary; it is inside '–' (bytes 1..4 of string)` (2026-09-28 12:27:35) and `… start byte index 1 … inside '⌘' (bytes 0..3 of string)` (2026-09-29 07:40:06). The hook fails open, so the guard is skipped for those calls. `segments` and `strip_wrap` in `src/plugins/guard/mod.rs` cut only at ASCII bytes, so the slice is elsewhere on the guard path (a fixed `[1..]`/`[2..]` or a byte offset from a helper it calls).
@@ -1414,6 +1416,8 @@ Done when: the panicking slice is found (recover the two payloads from the store
 
 Check: regression tests with commands that start with `–` and `⌘` (and a multi-byte char right after the first byte) fail before the fix and pass after; `just check`.
 
+Execution plan: (1) find the panicking slice on the guard `PreToolUse` path (`src/plugins/guard/mod.rs` and every helper it calls) by a test that feeds commands starting with `–`/`⌘`; (2) make the slice char-boundary safe at that layer and audit the plugin's other computed-offset slices; (3) regression tests red → green; `just check`.
+
 ### T351. MCP refuses paths in sibling worktrees of the same repository
 
 Found 2026-10-02 in `~/.rtok/errors.log` (2026-09-27 … 2026-10-02): 158 of 231 lines are `path outside cwd`; 135 of them point into `_worktrees/<repo>-<task>/…` (cox, ketch, stator, rtok), 23 into `/tmp` or a Claude Code session scratchpad. Agents follow the worktree rule (one worktree per task) while the host started `rtok mcp` in the main checkout, so `read`, `search` and `outline` fail and the agent falls back to native tools.
@@ -1421,6 +1425,8 @@ Found 2026-10-02 in `~/.rtok/errors.log` (2026-09-27 … 2026-10-02): 158 of 231
 Done when: a path inside any worktree of the cwd's repository (`git worktree list`) is accepted by every MCP tool that has the cwd guard, and so is a path under any `file://` root of the client's `roots/list` answer (today only the first one is kept, as the cwd — T263, `src/mcp.rs`); paths outside every allowed root are still refused with `is_error` (T172). Creator decision 2026-10-02: host session scratchpads (`/tmp`, `/private/tmp/claude-*/…/scratchpad`) stay outside — native `Read` covers them; `plugins.read.allow_paths` stays the manual escape hatch.
 
 Check: MCP tests with a temp repo plus a linked worktree — read/search/outline inside the worktree succeed; a `roots/list` answer with two roots allows both; a path in an unrelated directory and a scratchpad path are still refused; `just check`.
+
+Execution plan: (1) `src/plugins/read/mod.rs` root guard: extra roots = `allow_paths` + every worktree of the cwd's repository (`git worktree list --porcelain`, resolved once per server and cached, fail-soft when git is absent) + every `file://` root of the client's `roots/list` answer; (2) `src/mcp.rs` (T263): keep all roots, not only the first (the first stays the cwd); (3) tests: temp repo + linked worktree, two-root `roots/list`, unrelated and scratchpad paths still refused; `just check`.
 
 ### T352. `call_io` holds 711 MB of a 1.0 GB `rtok.db`
 
@@ -1438,6 +1444,8 @@ Done when: line ranges accept `a,b` and `a, b` like `a-b`; a missing-param error
 
 Check: MCP unit tests for each case; `just check`.
 
+Execution plan: (1) the line-range parser used by MCP `read`/`expand` accepts `a,b` and `a, b`; (2) missing-param errors in `src/mcp.rs` list the keys the call sent; add an alias only where the logged calls (store `call_io`) show one; (3) `outline`/`read` file errors name the path; (4) unit tests per case; `just check`.
+
 ### T354. Agents pipe output into `rtok expand -` to get it raw
 
 Found 2026-10-02: 15 `cli/run: unknown archive id` errors for `-` (11), `x` (2) and `/dev/stdin` (2). Claude Code transcripts show the pattern `cat file | rtok expand - 2>/dev/null || true` and `gh pr list … | rtok expand - || gh pr list …` — agents try to get unfiltered output and guess a stdin form of `expand`.
@@ -1445,6 +1453,8 @@ Found 2026-10-02: 15 `cli/run: unknown archive id` errors for `-` (11), `x` (2) 
 Done when: the skill documents the supported way to see a command's raw output (the archive id from the footer, or a raw/bypass flag if one exists), and `rtok expand` with an argument that cannot be an archive id prints a one-line hint pointing there instead of a bare `unknown archive id`.
 
 Check: trycmd case for `rtok expand -`; skill stays within its budget; `just check`.
+
+Execution plan: (1) `rtok expand <arg>` where `<arg>` cannot be an archive id (`-`, `/dev/stdin`, anything not hex) fails with a one-line hint: the id is the hex in the `expand <id>` trailer, and there is no stdin form; (2) `skills/rtok/SKILL.md`: one line that the trailer's id is the only way to the raw output (no stdin pipe); (3) trycmd case for `rtok expand -`; `just check`.
 
 ### T355. Measure what the native `Read` deny costs
 
