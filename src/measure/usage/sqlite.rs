@@ -73,9 +73,18 @@ fn is_database(host: &str, path: &Path) -> bool {
             .is_some_and(|rest| rest.is_empty() || rest.starts_with('-'))
 }
 
+/// SQLite takes `?`, `#` and `%` in a `file:` name as a query, a fragment and an escape, and
+/// Windows needs `file:///C:/...`, so the path goes through `Url` rather than `format!`.
+/// `mode=ro` means a running host is never written to, not even a journal checkpoint.
+fn read_only_uri(path: &Path) -> Option<String> {
+    let mut url = url::Url::from_file_path(std::path::absolute(path).ok()?).ok()?;
+    url.set_query(Some("mode=ro"));
+    Some(url.into())
+}
+
 fn read(host: &str, path: &Path, since: i64) -> Result<Vec<UsageSlice>, diesel::result::Error> {
-    // `mode=ro` so a running host is never written to, not even a journal checkpoint.
-    let url = format!("file:{}?mode=ro", path.display());
+    let url = read_only_uri(path)
+        .ok_or_else(|| diesel::result::Error::QueryBuilderError("path is not a file URI".into()))?;
     let mut conn = SqliteConnection::establish(&url)
         .map_err(|e| diesel::result::Error::QueryBuilderError(e.to_string().into()))?;
     let rows: Vec<(String, i64, String)> = message::table
@@ -209,6 +218,19 @@ mod tests {
             (r.input, r.cache_create, r.cache_read, r.output),
             (10, 2, 5, 7)
         );
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn a_path_with_uri_delimiters_is_read_where_it_is() {
+        let d = dir("odd #1 %41 ?x");
+        fixture(
+            &d.join("opencode.db"),
+            &[("s", 1_790_811_000_500, assistant("m", [3, 0, 0, 0, 0]))],
+        );
+        let (rows, bad) = slices("opencode", std::slice::from_ref(&d), 0);
+        assert!(bad.is_none());
+        assert_eq!(rows.len(), 1);
         std::fs::remove_dir_all(&d).ok();
     }
 
