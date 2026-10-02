@@ -244,22 +244,21 @@ impl Store {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod fixture {
     use std::path::PathBuf;
 
-    use super::*;
-
-    struct Dir(PathBuf);
+    /// A scratch directory tree that removes itself.
+    pub struct Dir(pub PathBuf);
 
     impl Dir {
-        fn new(tag: &str) -> Self {
+        pub fn new(tag: &str) -> Self {
             let dir = std::env::temp_dir().join(format!("rtok-proj-{tag}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();
             Self(dir)
         }
 
-        fn sub(&self, name: &str) -> PathBuf {
+        pub fn sub(&self, name: &str) -> PathBuf {
             let p = self.0.join(name);
             std::fs::create_dir_all(&p).unwrap();
             p
@@ -271,6 +270,12 @@ mod tests {
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fixture::Dir;
+    use super::*;
 
     fn index_row(store: &Store, root: &str) {
         let row = (

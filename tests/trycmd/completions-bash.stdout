@@ -376,11 +376,17 @@ _rtok() {
             rtok__subcmd__graph__subcmd__help__subcmd__projects,add)
                 cmd="rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__add"
                 ;;
+            rtok__subcmd__graph__subcmd__help__subcmd__projects,link)
+                cmd="rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__link"
+                ;;
             rtok__subcmd__graph__subcmd__help__subcmd__projects,remove)
                 cmd="rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__remove"
                 ;;
             rtok__subcmd__graph__subcmd__help__subcmd__projects,select)
                 cmd="rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__select"
+                ;;
+            rtok__subcmd__graph__subcmd__help__subcmd__projects,unlink)
+                cmd="rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__unlink"
                 ;;
             rtok__subcmd__graph__subcmd__projects,add)
                 cmd="rtok__subcmd__graph__subcmd__projects__subcmd__add"
@@ -388,11 +394,17 @@ _rtok() {
             rtok__subcmd__graph__subcmd__projects,help)
                 cmd="rtok__subcmd__graph__subcmd__projects__subcmd__help"
                 ;;
+            rtok__subcmd__graph__subcmd__projects,link)
+                cmd="rtok__subcmd__graph__subcmd__projects__subcmd__link"
+                ;;
             rtok__subcmd__graph__subcmd__projects,remove)
                 cmd="rtok__subcmd__graph__subcmd__projects__subcmd__remove"
                 ;;
             rtok__subcmd__graph__subcmd__projects,select)
                 cmd="rtok__subcmd__graph__subcmd__projects__subcmd__select"
+                ;;
+            rtok__subcmd__graph__subcmd__projects,unlink)
+                cmd="rtok__subcmd__graph__subcmd__projects__subcmd__unlink"
                 ;;
             rtok__subcmd__graph__subcmd__projects__subcmd__help,add)
                 cmd="rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__add"
@@ -400,11 +412,17 @@ _rtok() {
             rtok__subcmd__graph__subcmd__projects__subcmd__help,help)
                 cmd="rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__help"
                 ;;
+            rtok__subcmd__graph__subcmd__projects__subcmd__help,link)
+                cmd="rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__link"
+                ;;
             rtok__subcmd__graph__subcmd__projects__subcmd__help,remove)
                 cmd="rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__remove"
                 ;;
             rtok__subcmd__graph__subcmd__projects__subcmd__help,select)
                 cmd="rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__select"
+                ;;
+            rtok__subcmd__graph__subcmd__projects__subcmd__help,unlink)
+                cmd="rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__unlink"
                 ;;
             rtok__subcmd__guard,check)
                 cmd="rtok__subcmd__guard__subcmd__check"
@@ -616,11 +634,17 @@ _rtok() {
             rtok__subcmd__help__subcmd__graph__subcmd__projects,add)
                 cmd="rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__add"
                 ;;
+            rtok__subcmd__help__subcmd__graph__subcmd__projects,link)
+                cmd="rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__link"
+                ;;
             rtok__subcmd__help__subcmd__graph__subcmd__projects,remove)
                 cmd="rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__remove"
                 ;;
             rtok__subcmd__help__subcmd__graph__subcmd__projects,select)
                 cmd="rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__select"
+                ;;
+            rtok__subcmd__help__subcmd__graph__subcmd__projects,unlink)
+                cmd="rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__unlink"
                 ;;
             rtok__subcmd__help__subcmd__guard,check)
                 cmd="rtok__subcmd__help__subcmd__guard__subcmd__check"
@@ -2397,7 +2421,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph__subcmd__help__subcmd__projects)
-            opts="add select remove"
+            opts="add select link unlink remove"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2411,6 +2435,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__add)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__link)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2439,6 +2477,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__select)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__unlink)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2511,7 +2563,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph__subcmd__projects)
-            opts="-h --json --config --help add select remove help"
+            opts="-h --json --config --help add select link unlink remove help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2547,7 +2599,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph__subcmd__projects__subcmd__help)
-            opts="add select remove help"
+            opts="add select link unlink remove help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2575,6 +2627,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__link)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2616,6 +2682,46 @@ _rtok() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__unlink)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__graph__subcmd__projects__subcmd__link)
+            opts="-h --from --both --reason --json --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --from)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --reason)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtok__subcmd__graph__subcmd__projects__subcmd__remove)
             opts="-h --json --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -2641,6 +2747,28 @@ _rtok() {
                 return 0
             fi
             case "${prev}" in
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__graph__subcmd__projects__subcmd__unlink)
+            opts="-h --from --both --json --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --from)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --config)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -3409,7 +3537,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__graph__subcmd__projects)
-            opts="add select remove"
+            opts="add select link unlink remove"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3423,6 +3551,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__add)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__link)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -3451,6 +3593,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__select)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__unlink)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )

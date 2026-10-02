@@ -35,7 +35,6 @@
 - T310.11. CI job for the SPA
 - T310.12. Delete Slint, the WASM build and the HTML design
 - T329. Graph page: project selector, auto-added projects and linked projects (epic)
-- T329.3. Project links and graph scope: `link`/`unlink`, cycle-safe scope, manual and auto kinds
 - T329.4. `project` argument and scoped traversal for symbol, callers, impact, explore and outline (CLI and MCP)
 - T329.5. Scoped `dead` and `affected`, whole-answer caps, watch across the scope
 - T329.6. Auto-adding projects rtok sees in use (sessions, worktrees, graph MCP calls) and its config keys

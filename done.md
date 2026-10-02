@@ -2017,6 +2017,19 @@ Deviations: the card's "last error" index status is not shown, because nothing r
 Status: done 2026-10-03 · Model: Claude Code / sonnet-5
 
 
+## T329.3 — Project links and graph scope: `link`/`unlink`, cycle-safe scope, manual and auto kinds
+
+T329 Terms and §5. Migration `0028_project_links` adds directed links `(from_id, to_id, kind manual|auto, reason, unlinked)`, both ends cascading on delete so a removed project leaves no link behind, and a CHECK against self-links. `Store::link_projects`, `unlink_projects`, `project_links` and `project_scope` (new `src/store/project_links.rs`). `rtok graph projects link <project> [--from P] [--both] [--reason TEXT]` and `unlink <project> [--from P] [--both]` link from the selected project (or `--from`); the list gains each project's outgoing links (`links` count column, `links` array in `--json`).
+
+Execution: linking twice is a no-op; a manual link over an auto one takes it over, so a reference that goes away cannot drop it; unlinking a manual link deletes it, unlinking an auto link keeps the row as a remembered removal (`unlinked = 1`) so T329.8 will not re-create it, and only a manual link brings it back. The scope is plain Rust over the loaded links (a visited set, one level at a time, a 64-level cap): the project itself first, then what it reaches, each once, so cycles neither loop nor duplicate; a missing project is left out and not walked through, and its links stay for when the directory returns. Linking a target that was never indexed indexes it with the existing `graph::index::run`. A missing project cannot be linked. All queries go through Diesel; no SQL beyond the migration.
+
+Check: `project_links::tests` (scope A, B, C and D with a cycle; missing project drops out and returns; self, duplicate, manual-over-auto and remembered-unlink rules; remove leaves no links), `tests/graph_projects.rs` (link, unlink, `--both`, `--from`, JSON, indexing on link, a removed project takes its links), two trycmd refusal cases, completion and help goldens regenerated, `config_coverage` and `surface_parity` entries; `just check`.
+
+Deviations: no CLI prints the scope yet; it is a store call that T329.4 and the page use.
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet-5
+
+
 ## T48.7 — aider host
 
 **T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`

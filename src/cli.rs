@@ -603,6 +603,31 @@ enum ProjectsCmd {
         /// Project id or directory
         project: String,
     },
+    /// Link a project into the selected one's graph scope (indexes it when it never was)
+    Link {
+        /// Project id or directory to link to
+        project: String,
+        /// Link from this project instead of the selected one
+        #[arg(long)]
+        from: Option<String>,
+        /// Also link the other way
+        #[arg(long)]
+        both: bool,
+        /// Why (shown next to the link)
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Remove a link; an auto link stays removed on re-index
+    Unlink {
+        /// Project id or directory to unlink
+        project: String,
+        /// Unlink from this project instead of the selected one
+        #[arg(long)]
+        from: Option<String>,
+        /// Also remove the link the other way
+        #[arg(long)]
+        both: bool,
+    },
     /// Drop a project and its index rows; its files are never touched
     Remove {
         /// Project id or directory
@@ -1816,6 +1841,26 @@ pub fn run() -> Result<()> {
                         Some(ProjectsCmd::Add { path }) => Action::Add(path),
                         Some(ProjectsCmd::Select { project }) => Action::Select(project),
                         Some(ProjectsCmd::Remove { project }) => Action::Remove(project),
+                        Some(ProjectsCmd::Link {
+                            project,
+                            from,
+                            both,
+                            reason,
+                        }) => Action::Link {
+                            to: project,
+                            from,
+                            both,
+                            reason,
+                        },
+                        Some(ProjectsCmd::Unlink {
+                            project,
+                            from,
+                            both,
+                        }) => Action::Unlink {
+                            to: project,
+                            from,
+                            both,
+                        },
                     };
                     print!("{}", run(&cx, action, json)?);
                 }

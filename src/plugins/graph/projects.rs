@@ -3,7 +3,8 @@
 // Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 //! `rtok graph projects` — the project registry (T329.1) from the command line, with each
-//! project's index status (T329.2). Links, scope and the `project` argument come later.
+//! project's index status (T329.2) and the links between projects (T329.3). The `project`
+//! argument on the other graph commands comes later.
 
 use std::path::Path;
 
@@ -12,10 +13,10 @@ use serde::Serialize;
 
 use rtok_plugin_sdk::Ctx;
 
-use super::status;
+use super::{index, status};
 use crate::plugin::Runtime;
 use crate::render::{Col, table};
-use crate::store::{Origin, Project, Store};
+use crate::store::{LinkKind, Origin, Project, Store};
 
 /// `graph status` numbers for one project; absent for a missing root, which has nothing
 /// readable to count.
@@ -26,6 +27,15 @@ struct Index {
     pending: usize,
     watch: String,
     indexed_at: Option<i64>,
+}
+
+/// One outgoing link of a project.
+#[derive(Serialize)]
+struct LinkRow {
+    to: i32,
+    name: String,
+    kind: LinkKind,
+    reason: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -40,9 +50,31 @@ struct Row {
     created_at: i64,
     last_used_at: i64,
     index: Option<Index>,
+    links: Vec<LinkRow>,
 }
 
-fn row(cx: &Ctx, p: Project) -> Result<Row> {
+fn link_rows(store: &Store, from: i32) -> Result<Vec<LinkRow>> {
+    let mut out = Vec::new();
+    for l in store
+        .project_links()?
+        .into_iter()
+        .filter(|l| l.from == from)
+    {
+        let name = store
+            .project(l.to)?
+            .map_or_else(|| l.to.to_string(), |p| p.display_name().to_string());
+        out.push(LinkRow {
+            to: l.to,
+            name,
+            kind: l.kind,
+            reason: l.reason,
+        });
+    }
+    Ok(out)
+}
+
+fn row(rt: &Runtime, p: Project) -> Result<Row> {
+    let cx = &Ctx::new(rt);
     let missing = p.missing();
     let index = if missing {
         None
@@ -73,6 +105,7 @@ fn row(cx: &Ctx, p: Project) -> Result<Row> {
         created_at: p.created_at,
         last_used_at: p.last_used_at,
         index,
+        links: link_rows(&rt.store, p.id)?,
     })
 }
 
@@ -92,10 +125,11 @@ fn render(rows: &[Row], json: bool) -> Result<String> {
         Col::right(4),
         Col::right(5),
         Col::right(7),
+        Col::right(5),
         Col::left(4),
     ];
     let head = [
-        "", "id", "name", "origin", "state", "rows", "files", "pending", "root",
+        "", "id", "name", "origin", "state", "rows", "files", "pending", "links", "root",
     ];
     let mut cells = vec![head.map(String::from).to_vec()];
     for r in rows {
@@ -109,6 +143,7 @@ fn render(rows: &[Row], json: bool) -> Result<String> {
             n(|i| i.rows.to_string()),
             n(|i| i.files.to_string()),
             n(|i| i.pending.to_string()),
+            r.links.len().to_string(),
             r.root.clone(),
         ]);
     }
@@ -121,12 +156,11 @@ fn render(rows: &[Row], json: bool) -> Result<String> {
 }
 
 fn list(rt: &Runtime, json: bool) -> Result<String> {
-    let cx = Ctx::new(rt);
     let rows = rt
         .store
         .projects()?
         .into_iter()
-        .map(|p| row(&cx, p))
+        .map(|p| row(rt, p))
         .collect::<Result<Vec<_>>>()?;
     render(&rows, json)
 }
@@ -146,9 +180,50 @@ fn resolve(store: &Store, target: &str) -> Result<Project> {
     }
 }
 
+/// `<to>` and the project it is linked from: `--from`, else the selected project (or the
+/// working directory's, which `resolve_project` selects when nothing is).
+fn pair(rt: &Runtime, to: &str, from: Option<&str>) -> Result<(Project, Project)> {
+    let from = match from {
+        Some(f) => resolve(&rt.store, f)?,
+        None => match rt.store.resolve_project(&std::env::current_dir()?)?.project {
+            Some(p) => p,
+            None => {
+                bail!("no selected project; pass --from <project> or `rtok graph projects select`")
+            }
+        },
+    };
+    Ok((from, resolve(&rt.store, to)?))
+}
+
+fn link(rt: &Runtime, from: &Project, to: &Project, reason: Option<&str>) -> Result<bool> {
+    rt.store
+        .link_projects(from.id, to.id, LinkKind::Manual, reason)
+}
+
+fn changes(done: &[(&Project, &Project, bool)], yes: &str, no: &str, json: bool) -> Result<String> {
+    if json {
+        let rows: Vec<_> = done
+            .iter()
+            .map(|(a, b, c)| serde_json::json!({ "from": a.id, "to": b.id, "changed": c }))
+            .collect();
+        return Ok(serde_json::to_string_pretty(&rows)? + "\n");
+    }
+    Ok(done
+        .iter()
+        .map(|(a, b, c)| {
+            let (a, b) = (a.display_name(), b.display_name());
+            if *c {
+                format!("{yes} {a} -> {b}\n")
+            } else {
+                format!("{a} -> {b} {no}\n")
+            }
+        })
+        .collect())
+}
+
 /// One project as `list` shows it, so every action answers in the shape the user reads.
 fn one(rt: &Runtime, p: Project, json: bool) -> Result<String> {
-    let r = row(&Ctx::new(rt), p)?;
+    let r = row(rt, p)?;
     if json {
         return Ok(serde_json::to_string_pretty(&r)? + "\n");
     }
@@ -176,6 +251,37 @@ pub fn run(rt: &Runtime, action: Action, json: bool) -> Result<String> {
             let p = rt.store.project(p.id)?.unwrap_or(p);
             one(rt, p, json)
         }
+        Action::Link {
+            to,
+            from,
+            both,
+            reason,
+        } => {
+            let (a, b) = pair(rt, &to, from.as_deref())?;
+            for p in [&a, &b] {
+                if p.missing() {
+                    bail!("{} no longer exists; it cannot be linked", p.root);
+                }
+            }
+            let mut done = vec![(&a, &b, link(rt, &a, &b, reason.as_deref())?)];
+            if both {
+                done.push((&b, &a, link(rt, &b, &a, reason.as_deref())?));
+            }
+            // Linking a project that was never indexed starts indexing it, so the scope answers
+            // from it right away.
+            if row(rt, b.clone())?.state == "not indexed" {
+                index::run(&Ctx::new(rt), Path::new(&b.root), false)?;
+            }
+            changes(&done, "linked", "already linked", json)
+        }
+        Action::Unlink { to, from, both } => {
+            let (a, b) = pair(rt, &to, from.as_deref())?;
+            let mut done = vec![(&a, &b, rt.store.unlink_projects(a.id, b.id)?)];
+            if both {
+                done.push((&b, &a, rt.store.unlink_projects(b.id, a.id)?));
+            }
+            changes(&done, "unlinked", "was not linked", json)
+        }
         Action::Remove(target) => {
             let p = resolve(&rt.store, &target)?;
             rt.store.remove_project(p.id)?;
@@ -194,6 +300,17 @@ pub fn run(rt: &Runtime, action: Action, json: bool) -> Result<String> {
 }
 
 pub enum Action {
+    Link {
+        to: String,
+        from: Option<String>,
+        both: bool,
+        reason: Option<String>,
+    },
+    Unlink {
+        to: String,
+        from: Option<String>,
+        both: bool,
+    },
     List,
     Add(std::path::PathBuf),
     Select(String),

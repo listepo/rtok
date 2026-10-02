@@ -683,6 +683,14 @@ const EXEMPT: &[(&str, &str)] = &[
         "changes the registry; the selector is T329.12",
     ),
     (
+        "graph projects link",
+        "changes the registry; the selector is T329.12",
+    ),
+    (
+        "graph projects unlink",
+        "changes the registry; the selector is T329.12",
+    ),
+    (
         "logs export",
         "the same Logs selection, unnumbered and uncoloured",
     ),
