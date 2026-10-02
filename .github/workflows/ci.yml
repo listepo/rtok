@@ -116,6 +116,16 @@ jobs:
       # carries the "UI not built" page and the SPA-serving tests only see the placeholder.
       - run: just spa-install spa-build
       - run: just test
+      # T310.10: the Playwright e2e drives the target/debug/rtok that `just test` just built with the
+      # SPA embedded. In the `spa` job it would need its own Rust toolchain and a cold cargo build;
+      # here the binary and the cargo cache are already warm, and only Chromium is added.
+      - if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+      - if: runner.os == 'Linux'
+        run: just spa-browsers spa-e2e-run
       - run: just example
       - if: failure() && github.event_name == 'pull_request'
         uses: ./.github/actions/cancel-run
@@ -162,8 +172,8 @@ jobs:
 
   # T310.11: the admin SPA in web/ (the `just spa-*` recipes). oxlint and oxfmt already cover
   # web/ in `lint` (`just js` lints every tracked .ts/.tsx), so they are not run twice. The
-  # Playwright run against the real binary is T310.10 and adds its own step here once
-  # `rtok web` serves the SPA (T310.9). Like every job in this file it runs on every change:
+  # Playwright run against the real binary (T310.10) is a step of the ubuntu `check` job, which
+  # already builds that binary. Like every job in this file it runs on every change:
   # the pipeline gate has no per-path skip, and a Rust-only change leaves this job warm in cache.
   spa:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft

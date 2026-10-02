@@ -97,8 +97,12 @@ spa-storybook:
 # T310.10: Playwright against the real `rtok web` binary (embedded SPA, fixture store). Builds
 # the SPA first so the binary embeds it, then the binary. Needs Chrome (SPA_BROWSER_CHANNEL=chrome)
 # or Playwright's Chromium (`npx playwright install chromium` in web/).
-spa-e2e: spa-build
+spa-e2e: spa-build && spa-e2e-run
     {{cargo}} build -q
+
+# The suite alone, against the `target/debug/rtok` that is already built (CI: `just test` built it
+# with the SPA embedded, and rebuilding here would touch build.rs and recompile the crate).
+spa-e2e-run:
     {{npm}} --prefix web run test:e2e
 
 # T183: tools/publish_marketplace's own test suite (no network, no real `gh`).
