@@ -2077,6 +2077,19 @@ Deviations: the card lists "Python path dependencies"; `requirements.txt` paths 
 Status: done 2026-10-03 · Model: Claude Code / sonnet-5
 
 
+## T329.8 — Following references: transitive, depth and project caps, auto-link lifecycle, remembered unlinks
+
+T329 §4b rules: register each referenced directory (origin `reference`), index it in the background, auto-link it, follow references transitively with `reference_depth` (default 3) and `max_auto_projects` (default 20) both reported, drop an auto link when its reference disappears on re-index while keeping the project, never re-create a link the user removed, never remove a manual link. Adds `auto_link_references`, `reference_depth` and `max_auto_projects` to the config schema and `docs/config.md`. Depends on T329.3, T329.7.
+
+Execution: no migration; `project_links.unlinked` (T329.3) already remembers a removed auto link. `Store::drop_auto_links(from, keep)` (Diesel, `store/project_links.rs`) deletes only the active auto links of a project that its manifests no longer name. `src/plugins/graph/follow.rs`: `follow(store, cfg, root)` walks breadth first from the registered project of `root`, reads each project's references with `project::refs::discover`, registers a new directory `reference`, links it with `Store::link_projects(.., Auto, ..)`, queues it once per run (a cycle ends), reads references only below `reference_depth` and counts new `reference` projects against `max_auto_projects`. A project already in the registry under another origin is linked and not counted. A link the user removed is neither re-created nor followed. The stale-link drop is skipped for a project whose manifest could not be read, so a broken edit does not erase its links. A reference whose directory was deleted is also dropped (the project stays, and the link returns with the directory). `Followed` carries the new projects, link and drop counts, each `Stop::Depth` or `Stop::Cap` and the discovery warnings. `refresh` logs every stop and warning and fails open; `index_new` indexes the added projects; `report` is what `rtok graph index` prints. Wiring: `rtok graph index` (not dry-run) after its own index, and `rtok mcp` once at start on a scoped background thread, never on a hook. Config: `[plugins.graph] auto_link_references = true`, `reference_depth = 3`, `max_auto_projects = 20` in `config/mod.rs`, `config/default.toml`, `docs/config.md`; the trycmd `config-init`, `config-show` and `report-md` goldens were regenerated.
+
+Check: `follow::tests` (A links B and C and not D, a second run changes nothing; depth 1 stops at B and says so, depth 3 and 0; the cap with an already known project; a removed dependency drops the link and keeps the project; an unlinked auto link is not re-created or followed; manual links survive; a cycle ends and an unreadable manifest drops nothing; off and unregistered root) and `drop_auto_links` test; `just check` (2209 passed).
+
+Not done: the Doctor/page display of stops (they are logged and printed by `rtok graph index`; the page is a later card), and re-following on a watcher rescan, since the watcher holds only the plugin `Ctx`, not the registry. A project root that is not registered is not followed; T329.6 registers it.
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet
+
+
 ## T48.7 — aider host
 
 **T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`

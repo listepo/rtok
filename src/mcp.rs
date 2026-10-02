@@ -88,6 +88,16 @@ pub fn run(cfg: &Config) -> Result<()> {
                 });
             }
         }
+        // T329.8: register, link and index what the project's manifests reference, off the
+        // request path so `initialize` and the first tool call are not delayed.
+        #[cfg(feature = "graph")]
+        if let Ok(root) = std::env::current_dir() {
+            let cx = &server.cx;
+            s.spawn(move || {
+                let followed = crate::plugins::graph::follow::refresh(cx, &root);
+                crate::plugins::graph::follow::index_new(cx, &followed);
+            });
+        }
         let res: Result<()> = (|| {
             let mut stdin = std::io::stdin().lock();
             let mut stdout = std::io::stdout();

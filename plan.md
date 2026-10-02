@@ -45,7 +45,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T329.4 | todo | P2 | 4 | 0% | |
 | T329.5 | todo | P2 | 3 | 0% | |
 | T329.6 | todo | P2 | 3 | 0% | |
-| T329.8 | in progress | P2 | 3 | 0% | Claude Code / sonnet |
 | T329.9 | todo | P2 | 4 | 0% | |
 | T329.10 | todo | P3 | 3 | 0% | |
 | T329.11 | todo | P2 | 3 | 0% | |
@@ -990,14 +989,6 @@ Check: `dead` over A's scope spares B's function only A calls, selecting B alone
 T329 §4a: register the cwd of a hooked agent session, a worktree created or adopted through `rtok worktree` (T285, T289; display name shows the branch) and the root of any graph MCP call, origin `session|worktree|mcp`. Adds `[plugins.graph] auto_add_projects = true` to the config schema and `docs/config.md`. The hook path stays within its 10 ms budget (the registration is a deferred write). T289 is owned by another agent; stay out of `adopt`. Depends on T329.1.
 
 Check: a session in a new directory registers it with `auto_add_projects` on and does not with it off; a worktree shows its branch as the name; the hook still exits within 10 ms; `just check`.
-
-### T329.8. Following references: transitive, depth and project caps, auto-link lifecycle, remembered unlinks
-
-T329 §4b rules: register each referenced directory (origin `reference`), index it in the background, auto-link it, follow references transitively with `reference_depth` (default 3) and `max_auto_projects` (default 20) both reported, drop an auto link when its reference disappears on re-index while keeping the project, never re-create a link the user removed, never remove a manual link. Adds `auto_link_references`, `reference_depth` and `max_auto_projects` to the config schema and `docs/config.md`. Depends on T329.3, T329.7.
-
-Check: indexing A registers and links B and C, not D; `reference_depth = 1` stops at B and says so; removing the dependency drops the auto link but keeps B; an unlinked auto link is not re-created; `just check`.
-
-Execution plan: no migration (`project_links.unlinked` already remembers removed auto links). `src/store/project_links.rs`: `drop_auto_links(from, keep)` deletes only the active auto links of a project that its manifests no longer name. `src/plugins/graph/follow.rs` (new): `follow(store, cfg, root)` walks breadth first from the registered project of `root`, reads each project's references with `project::refs::discover`, registers a new directory with origin `reference` (counted against `max_auto_projects`), links it `auto`, queues it once for the next level, stops reading references at `reference_depth`, and drops stale auto links of every project it read (skipped while one of its manifests could not be read); the result lists the new projects, the links made and dropped, and each depth or cap stop. `index_new` indexes the new projects. Config: `auto_link_references = true`, `reference_depth = 3`, `max_auto_projects = 20` in `[plugins.graph]` (`config/mod.rs`, `default.toml`, `docs/config.md`, schema). Wiring, never on a hook: `rtok graph index` (not dry-run) follows and indexes the new projects after its own index; `rtok mcp` runs the same once at start on a background thread. Both log each stop. Verify: store tests for `drop_auto_links`; `follow` tests on tempdir fixtures (A links B and C and not D, depth 1, cap, dependency removed, unlinked not re-created, manual link kept, cycle); `just check`.
 
 ### T329.9. Graph backend `auto`: LSP first, tree-sitter second, chosen per project and language
 

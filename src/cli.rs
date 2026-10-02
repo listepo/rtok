@@ -1825,6 +1825,9 @@ pub fn run() -> Result<()> {
                         r.extension_mapped,
                     );
                     println!("{}", style::success(&summary));
+                    if !dry_run {
+                        crate::plugins::graph::follow::report(&cx, &root);
+                    }
                 }
                 GraphCmd::Dead { path, json } => {
                     let root = path.unwrap_or(std::env::current_dir()?);
