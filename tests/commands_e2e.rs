@@ -350,10 +350,8 @@ fn graph_subcommands_reject_a_missing_path() {
     ] {
         let out = cmd(&args, &home).assert().failure().get_output().clone();
         let err = String::from_utf8_lossy(&out.stderr);
-        assert!(
-            err.contains(missing) && err.contains("No such file or directory"),
-            "{args:?}: {err}"
-        );
+        // Only the path: the OS error text differs (Windows says "cannot find the file").
+        assert!(err.contains(missing), "{args:?}: {err}");
         assert!(out.stdout.is_empty(), "{args:?}: {:?}", out.stdout);
     }
 }
