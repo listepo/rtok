@@ -26,7 +26,7 @@ pub fn canon_root(p: &Path) -> String {
 }
 
 /// How a project got into the registry (T329 §1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Origin {
     Manual,

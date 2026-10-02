@@ -19,7 +19,7 @@ use super::schema::project_links as links;
 /// already makes cycles safe.
 const MAX_DEPTH: usize = 64;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum LinkKind {
     Manual,

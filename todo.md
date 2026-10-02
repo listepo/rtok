@@ -41,7 +41,6 @@
 - T329.9. Graph backend `auto`: LSP first, tree-sitter second, chosen per project and language
 - T329.10. Graph text-search backend (rg/grep) including `ssh://` roots
 - T329.11. Graph capability cache: one probe per project until the process restarts
-- T329.12. `/ws` project messages and the SPA graph page selector, indicator and links panel
 - T329.13. Graph page level 1: 3D projects overview (Three.js, 2D fallback)
 - T329.14. Graph page level 2: drill-down into one project
 - T329.15. Graph page: two-part UI with the read-only live graph and live metrics
@@ -49,6 +48,7 @@
 - T329.17. Graph alerts: linked project down or unreachable
 - T329.18. Graph diff: compare before and after a change
 - T329.19. Graph health score per project
+- T329.20. SPA graph page links panel: link, unlink, both ways, project badges
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
 - T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275

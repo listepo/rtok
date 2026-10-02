@@ -10,28 +10,32 @@ import { Panel } from "../ui/Panel";
 import { Pill } from "../ui/Pill";
 import { fmt } from "./format";
 import { OtherLines, responsive, TextPage, useMinWidth, WithSnapshot } from "./parts";
+import { Projects } from "./Projects";
 import { parseGraph, type DeadSymbol, type GraphView } from "./text";
 
 export function Graph() {
     return (
         <WithSnapshot>
             {(snap) => (
-                <TextPage
-                    page="graph"
-                    text={snap.graph}
-                    command="rtok graph status"
-                    absent={
-                        <Panel title="graph">
-                            <Empty
-                                title="Graph page off"
-                                hint="The graph feature is not built in, or the store read failed (Snapshot.graph = null)."
-                            />
-                        </Panel>
-                    }
-                    note="`rtok graph status` index health plus `rtok graph dead`"
-                >
-                    {(text) => <GraphBody view={parseGraph(text)} />}
-                </TextPage>
+                <>
+                    {snap.projects && <Projects rows={snap.projects} />}
+                    <TextPage
+                        page="graph"
+                        text={snap.graph}
+                        command="rtok graph status"
+                        absent={
+                            <Panel title="graph">
+                                <Empty
+                                    title="Graph page off"
+                                    hint="The graph feature is not built in, or the store read failed (Snapshot.graph = null)."
+                                />
+                            </Panel>
+                        }
+                        note="`rtok graph status` index health plus `rtok graph dead`"
+                    >
+                        {(text) => <GraphBody view={parseGraph(text)} />}
+                    </TextPage>
+                </>
             )}
         </WithSnapshot>
     );

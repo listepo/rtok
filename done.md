@@ -2088,6 +2088,16 @@ Deviations: no CLI prints the scope yet; it is a store call that T329.4 and the 
 Status: done 2026-10-03 · Model: Claude Code / sonnet-5
 
 
+## T329.12 — `/ws` project messages and the SPA graph page: selector and index indicator (links panel split to T329.20)
+
+T329 §2, §3, §5 page parts and §8 `/ws` messages, first half of the card (the links panel is T329.20, split because the whole was over 300 LOC). The snapshot gains `projects` (the rows `rtok graph projects --json` prints, read each tick, so a second tab sees a selection on its next frame) and `ClientMessage::Project` carries `select`. The server runs it through `graph::projects::run`, the same code as the CLI, off the executor in `spawn_blocking`; a refused request comes back as a `message` frame. The schema and `snapshot.gen.ts` are regenerated from the Rust types. On the graph page, `Projects.tsx` adds the selector (a search box above ten projects) and the current-project header with the index state pill and counts; the pure rules (filter, state tones and the reducer that mirrors the server) are in `projectLogic.ts`, and the sample server applies the request so `?sample` and the stories run the real round trip. No new client state library: `useProjectMutation` sits on the existing TanStack Query data layer.
+
+Check: `ws_project_select_reaches_the_next_snapshot_and_a_bad_id_is_refused` (tests/web.rs), `client_messages_parse` and `committed_schema_is_current`, Vitest `projectLogic.test.ts` and `Projects.test.tsx` (selection, search, every state, a pushed snapshot moving the selection, a refusal shown), and 11 Storybook browser stories with axe in both themes including a click-through against the sample server (run with `SPA_BROWSER_CHANNEL=chrome`, no Playwright browser is installed on this host).
+
+Deviations: the server emits `ok`, `not indexed`, `stale` and `missing`; the indicator also draws `indexing` and `failed`, but nothing sets them until a job tracker exists, which belongs with "Index now". The graph page body still answers for the working directory of `rtok web`, not the selected project (T329.4 and T329.5). The two-tab sync is covered by a pushed-snapshot test, not by two real browsers; the Playwright run against the real binary is T310.10.
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet-5
+
 ## T48.7 — aider host
 
 **T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
