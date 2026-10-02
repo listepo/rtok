@@ -307,6 +307,20 @@ Check: vitest cases with a >5 s stub — `filterStdin` returns the original stdi
 
 Do (2026-09-23): opencode `spawnSync` and pi `execFile` spawn `rtok` with `timeout: 5000`; pi also passes the event's abort `signal`. A timeout, abort or non-zero exit resolves `failed`, and every pi handler keeps the original content on it. Review fix: pi's `rtok()` now listens for `error` on the child's stdin, so a child that dies before reading a large input (timeout kill, abort) no longer crashes the host with an unhandled EPIPE. Check: vitest `a wedged rtok times out …` (opencode and pi) and `an rtok that exits before reading stdin keeps the original (EPIPE fails open)` (fails without the fix); `tests/pi_plugin.rs`, `tests/filter.rs`, `tests/opencode_plugin.rs` green.
 
+### T360. `rtok filter` drops all of stdin when it holds one non-UTF-8 byte
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). Silent data loss on the OpenCode `tool.execute.after` path, against the lossless rule: one invalid UTF-8 byte (Latin-1 file content, binary in `git diff` / `cat`, some compiler or locale output) and the agent gets an empty tool result, exit 0, nothing archived, so `expand` cannot recover it. `src/cli.rs:1488` does `let _ = io::stdin().read_to_string(&mut buf);` — on invalid UTF-8 `read_to_string` returns `InvalidData`, leaves `buf` empty, and the error is dropped; the no-plugin fallback at `src/cli.rs:1895` has the same pattern. `rtok run` and `rtok filter --archive` decode lossily and keep the data.
+
+Repro: `printf 'hello \xff world\nline2\n' | rtok filter | od -c` prints nothing; `printf 'a\xffb\n' | rtok filter --stdin; echo $?` prints an empty line and `0` (`--archive` prints `a�b`).
+
+Done when: both sites read with `read_to_end` into a `Vec<u8>` and decode with `String::from_utf8_lossy` (as `--archive` does); a real I/O error is never discarded (echo what was read, or exit non-zero). One shared helper, no second copy (AGENTS.md: no duplicated logic).
+
+Check: a `tests/filter.rs` (or trycmd) regression piping `b"a\xffb\n"` through `rtok filter` and `rtok filter --stdin` gets `a\u{FFFD}b` back with exit 0, and the no-plugin fallback is covered too; `just check`.
+
+Execution: one `read_lossy(impl Read) -> Result<String>` helper in `src/cli.rs` (`read_to_end` + `String::from_utf8_lossy`, the I/O error propagated so `rtok` exits non-zero). The plain `rtok filter` path and the no-`cmd` fallback both call it; `--archive` keeps its bytes but stops dropping the read error. Unit tests on the helper (invalid byte kept as U+FFFD, a failing reader returns `Err`) cover the fallback build; `tests/filter.rs` pipes `b"a\xffb\n"` through `rtok filter` and `rtok filter --stdin`.
+
+Result (2026-10-03, Claude Code / claude-opus-5-5): `cli::read_lossy` (`read_to_end` + `String::from_utf8_lossy`, I/O error propagated) serves the plain `rtok filter` path and the no-`cmd` fallback; `--archive` now propagates its read error instead of `let _ =`. Repro on the installed v0.14.0: `printf 'a\xffb\n' | rtok filter --stdin` printed nothing. Check: `cli::tests::read_lossy_*` (2) and `tests/filter.rs` `invalid_utf8_byte_keeps_the_rest_of_stdin` (default and `--stdin`) green; `just check`.
+
 ### T217. `AGENTS.md` is ~4× its own 350-token budget
 
 Found 2026-09-22 in the docs pass: `AGENTS.md` instructs "Keep this file under 350 tokens; it is loaded into every session" and is ~7 KB / ~1,100 words — the "Rules that never bend", "Models" and "Testing" sections alone exceed the budget. Every session in every project pays several times the promised injection, the exact per-turn overhead rtok exists to reduce.

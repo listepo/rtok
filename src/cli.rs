@@ -1478,14 +1478,13 @@ pub fn run() -> Result<()> {
             let hint = cmd.unwrap_or_else(|| cfg.filter.cmd.clone());
             if archive {
                 let mut buf = Vec::new();
-                let _ = io::stdin().read_to_end(&mut buf);
+                io::stdin().read_to_end(&mut buf)?;
                 let argv: Vec<String> = hint.split_whitespace().map(str::to_string).collect();
                 // No dispatch-time context reaches this surface (OpenCode's
                 // `tool.execute.after`, not the Claude Code PreToolUse rewrite).
                 crate::plugins::cmd::run::emit_filtered(&cfg, &argv, &buf, 0, None);
             } else {
-                let mut buf = String::new();
-                let _ = io::stdin().read_to_string(&mut buf);
+                let buf = read_lossy(io::stdin())?;
                 print!(
                     "{}",
                     crate::plugins::cmd::filter::run_with_store(&cfg, &hint, &buf)
@@ -1891,12 +1890,18 @@ pub fn run() -> Result<()> {
         }
         #[cfg(not(feature = "cmd"))]
         Cmd::Filter { .. } => {
-            let mut buf = String::new();
-            let _ = io::stdin().read_to_string(&mut buf);
-            print!("{buf}");
+            print!("{}", read_lossy(io::stdin())?);
         }
     }
     Ok(())
+}
+
+/// Lossy, because `read_to_string` empties the whole buffer on one invalid UTF-8
+/// byte and the agent would get a blank tool result nothing can expand (T360).
+fn read_lossy(mut r: impl Read) -> Result<String> {
+    let mut buf = Vec::new();
+    r.read_to_end(&mut buf)?;
+    Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
 fn stats_flags(
@@ -2390,6 +2395,22 @@ fn show(rows: &[model::ConfigEntry], sources: bool, json: bool) -> Result<()> {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[test]
+    fn read_lossy_keeps_bytes_around_invalid_utf8() {
+        assert_eq!(read_lossy(&b"a\xffb\n"[..]).unwrap(), "a\u{FFFD}b\n");
+    }
+
+    #[test]
+    fn read_lossy_surfaces_read_errors() {
+        struct Broken;
+        impl Read for Broken {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::other("boom"))
+            }
+        }
+        assert!(read_lossy(Broken).is_err());
+    }
 
     #[test]
     fn mcp_ping_is_not_parsed_as_a_wrap_argv() {
