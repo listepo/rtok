@@ -373,9 +373,9 @@ fn check_leaf(
             "plugins.graph.watch" if !matches!(s, "off" | "notify") => {
                 errors.push(format!("{at}: {dotted} must be off or notify"));
             }
-            // The one parser every reader of `stats.since` uses, so `set` cannot store a value
-            // that `rtok stats`, `doctor` and the web model then refuse.
-            "stats.since" => {
+            // The one parser every reader of these windows uses, so `set` cannot store a value
+            // that `rtok stats`, `rtok report`, `doctor` and the web model then refuse.
+            "stats.since" | "report.since" => {
                 if let Err(e) = crate::measure::stats::parse_since_from(s, dotted) {
                     errors.push(format!("{at}: {e}"));
                 }
@@ -584,37 +584,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
-    /// T364: `stats.since` goes through `parse_since`, for `validate` and `set` alike.
+    /// T364, T379: `stats.since` and `report.since` go through `parse_since`, for `validate`
+    /// and `set` alike.
     #[test]
-    fn a_malformed_stats_since_is_rejected() {
-        let dir = tmp("since");
-        let path = dir.join("c.toml");
-        for bad in ["7x", "d", "-1d", ""] {
-            std::fs::write(&path, format!("[stats]\nsince = \"{bad}\"\n")).unwrap();
-            let errs = issues(&path).unwrap();
-            assert!(
-                errs.iter()
-                    .any(|e| e.contains("stats.since") && e.contains("c.toml:2")),
-                "{bad:?}: {errs:?}"
-            );
-        }
-        for ok in ["30d", "12h", "7"] {
-            std::fs::write(&path, format!("[stats]\nsince = \"{ok}\"\n")).unwrap();
-            assert!(issues(&path).unwrap().is_empty(), "{ok}");
-        }
+    fn a_malformed_since_window_is_rejected() {
+        for table in ["stats", "report"] {
+            let key = format!("{table}.since");
+            let dir = tmp(&format!("{table}-since"));
+            let path = dir.join("c.toml");
+            for bad in ["7x", "d", "-1d", ""] {
+                std::fs::write(&path, format!("[{table}]\nsince = \"{bad}\"\n")).unwrap();
+                let errs = issues(&path).unwrap();
+                assert!(
+                    errs.iter()
+                        .any(|e| e.contains(&key) && e.contains("c.toml:2")),
+                    "{key} = {bad:?}: {errs:?}"
+                );
+            }
+            for ok in ["30d", "12h", "7"] {
+                std::fs::write(&path, format!("[{table}]\nsince = \"{ok}\"\n")).unwrap();
+                assert!(issues(&path).unwrap().is_empty(), "{key} = {ok}");
+            }
 
-        let home = tmp("since-set");
-        Config::init(&home, false).unwrap();
-        let before = std::fs::read_to_string(Config::path_for(&home)).unwrap();
-        assert!(set(&home, "stats.since", "7x", false).is_err());
-        assert_eq!(
-            std::fs::read_to_string(Config::path_for(&home)).unwrap(),
-            before,
-            "a refused set leaves the file unchanged"
-        );
-        set(&home, "stats.since", "12h", false).unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
-        let _ = std::fs::remove_dir_all(&home);
+            let home = tmp(&format!("{table}-since-set"));
+            Config::init(&home, false).unwrap();
+            let before = std::fs::read_to_string(Config::path_for(&home)).unwrap();
+            assert!(set(&home, &key, "7x", false).is_err(), "{key}");
+            assert_eq!(
+                std::fs::read_to_string(Config::path_for(&home)).unwrap(),
+                before,
+                "a refused set leaves the file unchanged"
+            );
+            set(&home, &key, "12h", false).unwrap();
+            let _ = std::fs::remove_dir_all(&dir);
+            let _ = std::fs::remove_dir_all(&home);
+        }
     }
 
     /// T363: the `(0, 1]` float keys and the `embed_backend` set go through the one rule table,
