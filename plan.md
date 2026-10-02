@@ -32,7 +32,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
 | T310 | todo | P1 | 5 | 0% | |
-| T310.7 | todo | P2 | 3 | 0% | |
+| T310.7 | in progress | P2 | 3 | 0% | Claude Code / sonnet-5 |
 | T310.8 | todo | P2 | 3 | 0% | |
 | T310.9 | todo | P1 | 4 | 0% | |
 | T310.10 | todo | P1 | 3 | 0% | |
@@ -607,6 +607,8 @@ Check: `rtok web` from a release build shows every page of `model::pages()` from
 ### T310.7. Pages: sessions, doctor, logs
 
 Check: each page matches `design/html/admin/<page>.html` in dark and light at 375 and 1280 px on sample data; stories and Vitest for page logic.
+
+Execution: one component per page in `web/src/pages/` (`Sessions.tsx`, `Doctor.tsx`, `Logs.tsx`) on the UI kit and `useSnapshot`; the doctor checks, log parsing and session/log filters are pure functions in `pages/model.ts` with Vitest; the three routes are added to the `screens` map in `router.tsx` only. The doctor page is read-only: `/ws` has no message for "Fix selected" (the client frames are `set` and `expand` only), so that action waits for the fix flow of T331. Verify: `just spa-test`, `spa-typecheck`, `spa-build`, `js`, `spa-storybook`, `spa-stories`, and a browser check on `?sample` in dark and light at 375 and 1280 px.
 
 ### T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
 
