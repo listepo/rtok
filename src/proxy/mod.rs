@@ -772,8 +772,8 @@ fn record_usage(
     }
 }
 
-/// After the body was fully forwarded: `calls.ms`, `call_io`, then `usage` + provider
-/// `tokens` when the response carried a usage block. All best-effort.
+/// After the body was fully forwarded: `calls.ms`, `call_io`, the semantic cache, then
+/// `usage` + provider `tokens` when the response carried a usage block. All best-effort.
 ///
 /// `response_total_bytes` is the true response size; `response_body` may be a shorter,
 /// capped buffer (see `handle`'s tee task and `MAX_BODY_BYTES`) — a truncated buffer means
@@ -834,6 +834,18 @@ fn finish(
     ) {
         log_err("call_io", e);
     }
+    // Fill the cache before the usage rows: a visible usage row then implies a warm cache.
+    let sc = &state.cfg.plugins.proxy.semantic_cache;
+    if sc.enabled
+        && let (Some(wire), Ok(body)) = (wire, serde_json::from_slice::<Value>(request_body))
+        && semantic_cache::eligible(&body, sc)
+        && complete
+        && let Some(prompt) =
+            semantic_cache::build_prompt(wire, &body, sc).map(|p| p.with_caller(caller))
+        && let Ok(mut guard) = state.cache.lock()
+    {
+        guard.store(&prompt, sc, response_body, content_type, status_code);
+    }
     match wire.and_then(|wire| {
         wire::usage_from_response(wire, content_type, response_body).map(|u| (wire, u))
     }) {
@@ -854,17 +866,6 @@ fn finish(
             );
         }
         None => {}
-    }
-    let sc = &state.cfg.plugins.proxy.semantic_cache;
-    if sc.enabled
-        && let (Some(wire), Ok(body)) = (wire, serde_json::from_slice::<Value>(request_body))
-        && semantic_cache::eligible(&body, sc)
-        && complete
-        && let Some(prompt) =
-            semantic_cache::build_prompt(wire, &body, sc).map(|p| p.with_caller(caller))
-        && let Ok(mut guard) = state.cache.lock()
-    {
-        guard.store(&prompt, sc, response_body, content_type, status_code);
     }
 }
 
