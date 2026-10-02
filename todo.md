@@ -59,6 +59,5 @@
 - T356. Never index `$HOME` or `/` as a graph root
 - T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
 - T361. `rtok memory import` reports success for a missing or unreadable file
-- T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
 - T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal
 - T367. `rtok graph index <path>` exits 0 for a path that does not exist
