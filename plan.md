@@ -44,7 +44,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T329 | todo | P2 | 5 | 0% | |
 | T330 | todo | P2 | 4 | 0% | |
 | T331 | todo | P1 | 4 | 0% | |
-| T331.3 | todo | P1 | 3 | 0% | |
 | T331.4 | todo | P1 | 4 | 0% | |
 | T331.5 | todo | P1 | 4 | 0% | |
 | T331.6 | todo | P1 | 4 | 0% | |
@@ -1266,12 +1265,6 @@ Dependencies: host adapters and config maps (`research.md`), JSONC/TOML editors,
 Check: all of the above pass on Linux, macOS and Windows CI; the "no real paths" guard test passes; `just check`.
 
 Split (epic, too large for one PR: three detectors, a fix engine, an interactive UI, ~15 host config shapes; each part ships read-only value or a tested edit and is one PR). Order: T331.1 broken hooks (read-only, the injected `Fs`/`Env`/`Which` seam every later part reuses), T331.2 JSON hook files of the other hosts and of Claude plugins, T331.8 TOML hook files, T331.9 `--agent` and Windows rules, T331.3 duplicate hooks, T331.4 duplicate MCP entries, T331.5 `--fix` for broken hooks (the edit/backup/race engine), T331.6 `--fix` for duplicates, T331.7 interactive checklist, web doctor action, docs and the property/pty tests. T331.4 and T331.6 touch rtok's own MCP entry and wait for the T332 and T333 decisions; everything else does not depend on them.
-
-### T331.3. Doctor: duplicate hooks
-
-Part of T331. Section 2 of T331: effective set per agent, normalization, the "not duplicates" cases, the keep recommendation, the report and `problems[]` entries with `keep`. Report only. Depends on T331.1 and T331.2.
-
-Check: the "Duplicate hooks across configs" and "Not duplicates" scenarios of T331; `just check`.
 
 ### T331.4. Doctor: duplicate MCP entries
 

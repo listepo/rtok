@@ -3,6 +3,7 @@ args = "--config tests/trycmd/input/json-readers.toml doctor"
 stdout = """
 hooks 0
 hooks check none found
+duplicate hooks none found
 mcp
   rtok (15 tools, ~274 desc tokens) [CWD]/target/debug/rtok
 proxy 

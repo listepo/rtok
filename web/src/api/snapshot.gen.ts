@@ -308,7 +308,13 @@ export interface Problem {
    */
   fixable: boolean;
   /**
-   * `broken-hook`, `suspect-hook`, `unverified-hook` or `unreadable-config`.
+   * Copies of one duplicate share a `group`; `keep` marks the copy to keep (T331.3).
+   */
+  group?: number | null;
+  keep?: boolean;
+  /**
+   * `broken-hook`, `suspect-hook`, `unverified-hook`, `duplicate-hook`, `stale-plugin` or
+   * `unreadable-config`.
    */
   kind: string;
   matcher?: string | null;

@@ -38,7 +38,6 @@
 - T329. Graph page: project selector, auto-added projects and linked projects
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
-- T331.3. Doctor: duplicate hooks
 - T331.4. Doctor: duplicate MCP entries
 - T331.5. Doctor `--fix` for broken hooks
 - T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
