@@ -7516,6 +7516,160 @@ Check: store unit tests (register is idempotent, sub-agent row, resolve prefix /
 Status: done 2026-09-27 (#439; hook bench p95 9.10 ms PreToolUse, 9.51 ms PostToolUse)
 Model: Claude Code / claude-opus-5-5
 
+### T283.1. MCP agent link: `rtok mcp --host`, the doc-derived link rule, MCP `whoami`
+
+PR 2 of T283, part 1. The link rule is **derived from the vendor docs and open-source spawn code of `research.md` §26, not from a live run**; the T281 probe (the creator's manual sessions) only confirms it, and a probe row that disagrees changes the rule for that host. Rule order: (a) the host's session-id env var in the `rtok mcp` process (only Grok Build has one that reaches an MCP child: `GROK_SESSION_ID`); (b) the nearest common host ancestor pid shared by hook processes and the MCP process (T283.3); (c) cwd plus host, with the live agents of that host in that cwd; one match links, two or more are **ambiguous** and bind nothing. A hook-less host (`Agent::support(_, "hook")` is `No` for every variant) registers its own agent row from the MCP process.
+
+Done when: `rtok mcp --host <id>` sets `[hook] host` for the process; `src/agents/link.rs` resolves `Link { id, rule }` (`env`, `cwd`) or `Ambiguous { candidates }` or nothing, from the store, the host slug, the env and the cwd; the server resolves at `initialize` and again on demand until it is linked (hooks may fire after the MCP process starts), caching a link only; MCP tool `whoami` returns `{id, short, host, host_session, cwd, rule, worktrees}`, or an error `not linked to an agent session` or `ambiguous: agents <short ids> share this cwd; use RTOK_AGENT_ID`; an entry without `--host` reads as the default `[hook] host`, as `record` attributes calls today (T283.2 closes that); `research.md` §26 and this card say the rule is doc-derived.
+
+Check: `link.rs` unit tests over a seeded store (env rule, cwd single, cwd ambiguous, no match, ended agents ignored, other host ignored); MCP e2e with a fake client: `initialize` then `tools/call whoami` returns the registered agent; a hook-less fake host registers through MCP alone; `surface_parity`, `config_coverage`, man page; touched test binaries.
+
+Execution (2026-10-03): (1) `src/agents/link.rs`: a pure `resolve(store, host_slug, env, cwd)` returning the rule that matched or the ambiguous candidate list, plus `register_own` for hook-less hosts; the env-var rule table starts with `grok` / `GROK_SESSION_ID`. (2) `rtok mcp --host <id>` overlays `[hook] host` in `cli.rs`. (3) `Server` keeps the resolved agent in a `Mutex<Option<..>>`: tried at `initialize`, retried by `whoami` until linked; `whoami` is built-in beside `ping`, always listed. (4) `research.md` §26 gets one sentence that the rule is doc-derived and the probe only confirms it. (5) Tests as in Check; `surface_parity`/`config_coverage` only if a gate fires. Touched test binaries only while disk is tight.
+
+Result (2026-10-03, Claude Code / sonnet-5): `src/agents/link.rs` resolves the link with rule (a) `GROK_SESSION_ID` for `grok` and rule (c) the host's live agents in the cwd (one links, several are ambiguous and bind nothing); a cwd candidate must have been seen since this MCP process started (an ended session's row inside `[agents] idle` is never linked to its successor), and a cwd link is re-run on every call, never cached (only `env` and `own` are); a host whose every variant has no `hooks` support registers its own row. `rtok mcp --host <id>` overlays `[hook] host` (`config_coverage` maps it to `hook.host`). The server resolves at `initialize` and again on every `whoami` until linked; MCP tool `whoami` is built in beside `ping` and survives the `[mcp] tools` allow-list. `research.md` §26 and the card say the rule is doc-derived and only confirmed by the T281 probe. Rule (b) moved to T283.3 because the hook wire request carries no pid. Tests: seven `link` unit tests and five MCP e2e tests (cwd link, late registration, ambiguity, hook-less host, registry off); `just check` green (2165 passed). The one-shot `tools/list` fixtures and shell completions were regenerated for the new tool and flag.
+
+### T285. Worktree claims: `rtok worktree add` hands the worktree to the calling agent; MCP `worktree_add`
+
+Depends on T282, T283. `rtok worktree add <task> [slug] --owner` exists (T158, `src/worktree/add.rs`) and prints the path, but the owner is free text and nothing links the worktree to an agent; `list` guesses the session from the last cwd seen (T154, `src/worktree/list.rs:174`).
+
+Done means: an agent asks rtok for a worktree (MCP or CLI) and gets back the path to work in; the worktree is bound to its agent id in the git lock and in the store; `rtok worktree list` shows the agent id next to every worktree, on every host alike.
+
+Plan:
+1. Worktree `_worktrees/rtok-T285`.
+2. Lock reason v2: `<owner> | <task-id> | <date> | agent <uuid>`. `Owner::parse` (`src/worktree/mod.rs:82`) reads both the 3-field and the 4-field form; an old lock stays valid and shows `agent -`. The lock stays the source of truth (it survives a lost store); the store keeps `worktree_claims (path, agent_id, task, claimed_at, released_at)` for fast joins.
+3. `rtok worktree add` binds to the caller: `--agent <id-prefix>`, else `RTOK_AGENT_ID`, else the T281 rule, else no agent (current behaviour). `--owner` defaults to `<host> / <model>` of that agent when known.
+4. MCP tool `worktree_add {task, slug?, base?}` → `{path, branch, task, agent}` plus the instruction text "work only inside `path`; remove it with `worktree_remove` when merged". Same code path as the CLI; the agent comes from the MCP session.
+5. `rtok worktree list`: column `agent` (short id + host, e.g. `0193ab12 claude`) and `agent state` (`live`, `idle`, `ended`) from the claim; T154's inferred session stays as a fallback shown as `seen <host> <id8>`; `--json` carries full ids. MCP tool `worktree_list` returns the same rows.
+6. `rtok worktree claim <path> [--agent]` for a worktree created before this task (writes the v2 lock only when the caller owns the lock or it has none; never takes a worktree locked by another owner).
+7. `gc` (`src/worktree/gc.rs`): a worktree whose agent is live is never removed, even when merged; ended or unknown agents keep today's rules.
+
+Check: unit tests for v2 parse/format and old-format compatibility; `add` e2e in a scratch repo with a fake agent row (bound lock, claim row, printed path under the T158 root); MCP e2e `worktree_add` → path exists, lock names the agent; `list` table and JSON snapshots with live / ended / unclaimed / old-format rows; gc keeps a live agent's merged worktree; trycmd and gates; `just check`.
+
+Execution (2026-09-27): two PRs. PR 1, cut on top of T283 PR 1 (#449): lock reason v2 parse/format, migration `0025_worktree_claims`, `worktree add --agent` / `RTOK_AGENT_ID` binding, `worktree claim`, the `agent` column in `worktree list`, gc keeps a live agent's worktree; tests on a scratch repo with fake agent rows. PR 2, after T283 PR 2: MCP `worktree_add` / `worktree_list` and their e2e.
+Progress (2026-09-28): PR 1 is #471 (lock v2, `worktree claim`, list columns, gc keeps a live agent's worktree). Left: PR 2, MCP `worktree_add` / `worktree_list` (after T283 PR 2).
+
+Execution, PR 2 (2026-10-03, Claude Code / sonnet-5): on top of T283.1. (1) `src/worktree/claim.rs::add` is the one create-and-claim path (owner default, `worktree::add::run`, claim row); the CLI `worktree add` calls it. (2) `src/worktree/list.rs::attribute_with_store` is the one attribution path (T154 sessions, T285 binding); the CLI `worktree list` calls it. (3) `src/mcp/worktrees.rs`: tools `worktree_add {task, slug?}` and `worktree_list`, listed beside `whoami` and narrowed by `[mcp] tools`; the agent is the session's link, never an argument, and the owner is never an argument. `base` is dropped: the CLI has no base either, `add` branches from the repository's default base. (4) e2e in `tests/worktree.rs` through `rtok mcp`.
+
+Result (2026-10-03, Claude Code / sonnet-5): PR 1 is #471 and PR 2 is this one. MCP `worktree_add` returns `{path, branch, task, agent, note}` and binds the lock and the claim row to the linked agent; with no linked agent (none, or ambiguous) it errors and creates nothing. `worktree_list` returns the CLI's rows with the bound agent and its state. The CLI and MCP share `claim::add` and `list::attribute_with_store`. The two tools add about 65 description tokens to the MCP listing (16 to 18 tools). Test: `tests/worktree.rs` drives a real `rtok mcp` (initialize, the hooks register the agent, then the calls); `just check` green (2172 passed). Stacks on #673 (T283.1).
+
+### T286. `rtok worktree remove` and MCP `worktree_remove`: an agent removes its own worktree
+
+Depends on T285. Removal today exists only in bulk (`rtok worktree gc`) and in the external `wt.sh done` script; an agent that finished its task has no single-worktree command.
+
+Plan:
+1. Worktree `_worktrees/rtok-T286`.
+2. `rtok worktree remove <path|task-id> [--agent] [--json]` and MCP `worktree_remove {path|task}`: refuses (exit 1, reason on stderr / in the tool result) when the worktree has uncommitted or untracked files, is locked by another owner or another agent, or is the caller's cwd; never `--force`. Otherwise: unlock, `git worktree remove`, delete the local branch only when merged (squash-aware `is_merged`, `src/worktree/git.rs:57`), release the claim, print what happened and the one-line hint to delete the remote branch.
+3. An unmerged clean worktree: removed only with `--keep-branch` (the branch survives, nothing is lost); without it, refused with that hint.
+4. Extract the single-worktree removal that `gc` already does (`src/worktree/gc.rs:76`, lock restored on failure) into one function that `gc` and `remove` both call; no second copy.
+5. `skills/worktrees/SKILL.md` finish step switches from `gc` to `remove` for "my task is merged".
+
+Check: e2e in a scratch repo: merged clean → gone with branch; unmerged clean → refused, then removed with `--keep-branch`; dirty → refused; another agent's → refused; cwd → refused; gc tests unchanged and green after the extraction; MCP e2e; trycmd and gates; `just check`.
+
+Execution (2026-09-27): two PRs. PR 1, cut on top of T285 PR 1: extract the single-worktree removal from `gc` into one shared function; `rtok worktree remove <path|task-id> [--agent] [--keep-branch] [--json]` with the refusals above; the claim is released; the skill finish step changes; e2e tests in a scratch repo. PR 2, after T283 PR 2: MCP `worktree_remove`.
+Progress (2026-09-28): PR 1 on branch `t286-worktree-remove`, stacked on #471; its PR opens when #471 merges. Left: PR 2, MCP `worktree_remove` (after T283 PR 2).
+
+Execution, PR 2 (2026-10-03, Claude Code / sonnet-5): on top of T285 PR 2. (1) `remove::for_agent` is the one remove-and-release path (owner default, `remove::run`, claim release); the CLI `worktree remove` calls it. (2) `src/mcp/worktrees.rs`: tool `worktree_remove {path | task, keep_branch?}`, listed beside `worktree_add`; the agent is the session's link, never an argument, and there is no `owner` argument. A session with no linked agent gets the link error and removes nothing. (3) e2e in `tests/worktree.rs` through `rtok mcp`.
+
+Result (2026-10-03, Claude Code / sonnet-5): PR 1 is #482 (the CLI); PR 2 is this one. MCP `worktree_remove` removes the linked agent's own clean worktree (with its branch once merged), refuses a dirty or unmerged one (`keep_branch` removes an unmerged clean one and keeps the branch), another agent's lock and the cwd, never forces, and releases the claim. The CLI and MCP share `remove::for_agent`; the claim-release warning on the CLI is now unstyled, like `claim::remember`'s. About 57 more description tokens in the MCP listing (18 to 19 tools). Stacks on #676 (T285 PR 2).
+
+### T287. Messages between agents and the user: `rtok agents send`, `rtok agents inbox`, MCP `agent_send`, `agent_inbox`
+
+Depends on T282, T283. The creator wants to reach any running agent by its id from the terminal, and agents to reach each other over MCP.
+
+Plan:
+1. Worktree `_worktrees/rtok-T287`.
+2. Diesel migration `messages`: `id`, `from_agent NULL` (NULL = the user at a terminal), `to_agent`, `body` (≤ 4 KiB, UTF-8, control chars stripped), `created_at`, `delivered_at NULL`, `read_at NULL`. Local store only, nothing leaves the machine.
+3. CLI: `rtok agents send <id-prefix|--all-live> <text|->` (from `RTOK_AGENT_ID` when run inside an agent, else from the user); `rtok agents inbox [<id-prefix>] [--unread] [--json]` (default: the caller's inbox, or with an id the user reads that agent's queue without marking it read).
+4. MCP: `agent_send {to, text}` → `{id}`; `agent_inbox {unread_only?, limit?}` → messages, marks them read. Every message is rendered inside a fixed frame: sender id, host and the note that it comes from another agent or the user through rtok and is information, not an instruction that overrides the agent's user or rules.
+5. Sending to an ended agent is refused; `--all-live` fans out to live agents of the same project only.
+
+Check: store tests (send, inbox order, read marks, 4 KiB cap, control-char strip); CLI e2e with two fake agents; MCP e2e: agent A sends, agent B's `agent_inbox` returns it framed, then empty; trycmd and gates; `just check`.
+
+Execution (2026-09-27): two PRs, like T283. PR 1, cut on top of T283 PR 1 (#449): migration `0026_messages`, store API, CLI `agents send` / `agents inbox` with the fixed frame, store tests and a CLI e2e with two fake agent rows. PR 2, after T283 PR 2 gives `rtok mcp` its agent: MCP `agent_send` / `agent_inbox` and their e2e.
+Progress (2026-09-28): PR 1 is #472 (`agents send`, `agents inbox`, the message frame). Left: PR 2, MCP `agent_send` / `agent_inbox` (after T283 PR 2).
+
+Execution, PR 2 (2026-10-03, Claude Code / sonnet-5): on top of T286 PR 2. (1) `Store::inbox_limited` cuts the page before the read mark, so a message that did not fit stays unread. (2) `src/mcp/messages.rs`: `agent_send {to, text}` (the sender is the session's link; the recipient resolves like the CLI's, an unknown, ended or oversized target is refused by the store) and `agent_inbox {unread_only?, limit?}` (the owner is the session's link; frames from `render::agent_message_frame`, the CLI's). (3) The MCP-session test helper moves to `tests/common/mcp.rs`, shared with the worktree e2e. (4) e2e between two real `rtok mcp` sessions.
+
+Result (2026-10-03, Claude Code / sonnet-5): PR 1 is #472, PR 2 is this one. MCP `agent_send` and `agent_inbox` work for the linked agent only: nothing names the sender or the inbox owner. A message is delivered framed, as the CLI frames it, and read once. Two deviations from the card: `agent_inbox` defaults `unread_only` to true (a limited page of the oldest messages would otherwise be old read ones), and `limit` defaults to 20, at most 100. About 79 more description tokens in the MCP listing. Stacks on #680 (T286 PR 2).
+
+### T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
+
+Depends on T282, T283. `rtok agents sessions` (`src/cli.rs:579`) already lists sessions with host, model and tokens; it gains the agent id, where the agent works and what it is doing, instead of a second listing command (no duplicated logic).
+
+Plan:
+1. Worktree `_worktrees/rtok-T284`.
+2. `rtok agents sessions`: new columns `agent` (8-hex short id), `worktree` (claimed worktree name from T285 when present, else the cwd relative to the project), `activity`, `seen` (e.g. `12s ago`), `state` (`live`, `idle`, `ended`); sub-agents indented under their parent; `--json` carries the full id and paths. Default shows live and idle; `--all` adds ended.
+3. `rtok agents show <id-prefix> [--json]`: host, model, full id, host session id, parent and sub-agents, cwd, claimed worktrees with branch and state (T285), task id (from the worktree lock), last activity, the agent's own status text, unread message count (T287), started / last seen.
+4. `rtok agents status "<text>"` and MCP tool `agent_status_set {text}`: the agent says what it is busy with (≤ 120 chars, plain text); shown in `sessions` and `show`.
+5. MCP tools `agents_list {all?}` and `agent_show {id}` returning the same JSON as the CLI (one model function behind both, like `web::model` for `rtok web`/`rtok tui`).
+6. `rtok web`/`rtok tui` session views read the same model; showing the new fields there is out of scope unless free.
+
+Check: model unit tests over a seeded store (live, idle, ended, sub-agent nesting, prefix lookup); trycmd for `sessions`, `show`, `status`; MCP e2e with a fake client; `surface_parity`, `config_coverage`; `just check`.
+
+Execution (2026-09-27): two PRs. PR 1, cut on top of T283 PR 1 (#449): one model function over the store; `agents sessions` gains `agent`, `worktree` (cwd relative to the project until T285 lands), `activity`, `seen`, `state`, sub-agent nesting and `--all`; `agents show <id-prefix> [--json]`; `agents status "<text>"`; model unit tests on a seeded store and trycmd. PR 2, after T283 PR 2 and T285: MCP `agents_list` / `agent_show` / `agent_status_set`, the claimed-worktree and unread-message fields.
+Progress (2026-09-28): PR 1 is #470 (`agents sessions` columns, `agents show`, `agents status`, web model). Left: PR 2, the MCP tools (after T283 PR 2 and T285).
+
+Execution, PR 2 (2026-10-03, Claude Code / sonnet-5): on top of T287 PR 2. (1) `AgentView` gains `worktrees` (open claims) and `unread`, filled by one `enrich` pass (two queries for a whole listing, `Store::unread_counts` is one grouped query); the claimed worktree's directory name replaces the cwd label in `worktree`; `agents show` prints `claimed` and `unread`. (2) `src/mcp/agents.rs`: `agents_list {all?}` and `agent_show {id}` return the CLI's `--json` from the same model functions; `agent_status_set {text}` sets the linked agent's own status through the CLI's `set_status` (the agent is the session's link, never an argument). (3) Unit test for `enrich`, e2e through a real `rtok mcp`.
+
+Result (2026-10-03, Claude Code / sonnet-5): PR 1 is #470, PR 2 is this one. MCP `agents_list`, `agent_show` and `agent_status_set` return what the CLI returns, now with claimed worktrees and unread message counts (also in `agents sessions --json`, `agents show` and its `--json`). A status of at most 120 chars is set only for the caller; blank text clears it (an empty string never reaches the tool, the server rejects a required argument that is empty). `rtok web` and `rtok tui` keep reading `session_views` without the two fields, as the card says. About 95 more description tokens in the MCP listing. Stacks on #681 (T287 PR 2).
+
+### T288. Push unread messages to hooked agents
+
+Depends on T287. Pull-only messages wait until the agent thinks to call `agent_inbox`. Hosts with hooks (`research.md` §26: Claude, Cursor, Codex, Copilot CLI, Grok, Gemini, Kimi, ZCode, CodeWhale) can receive them at the next turn.
+
+Plan:
+1. Worktree `_worktrees/rtok-T288`.
+2. `UserPromptSubmit` and `PostToolUse` add undelivered messages to `additionalContext` (PostToolUse adds context only), framed as in T287, at most `[agents] push_bytes` (default 1 KiB) per event; the rest as `… and N more: call agent_inbox`. Mark them delivered (not read).
+3. One indexed query per event; measure against the 10 ms hook budget as in T282; nothing is printed when the inbox is empty.
+4. Hosts without hooks: documented as pull-only; the SessionStart line from T283 mentions `agent_inbox` there.
+
+Check: hook fixture tests (one message, over-budget batch, empty inbox prints nothing, delivered once); hook bench row; `just check`.
+
+Execution (2026-09-27): one PR, cut on top of T287 PR 1. The push goes through the budgeted injection path on `UserPromptSubmit` and `PostToolUse` using the T287 frame. New key `[agents] push_bytes`. Messages are marked delivered, not read. The `agent_inbox` mention is deferred until T287 PR 2 ships the tool. Includes hook fixture tests and a hook bench row in the PR.
+Progress (2026-09-28): PR 1 on branch `t288-push-messages`, stacked on #472; its PR opens when #472 merges. The hook latency bench must be rerun on a quiet machine before the PR claims its row.
+
+Execution, step 4 (2026-10-03, Claude Code / sonnet-5): after T287 PR 2 shipped `agent_inbox`. The SessionStart/SubagentStart line says `agent_inbox` reads the messages sent to the agent, and the push's last line reads `… and N more: call agent_inbox (or run rtok agents inbox)`, so an MCP-only agent and a Bash-only agent both know the pull path. Tests: the existing hook unit tests and the `hook.toml` trycmd carry the new wording.
+
+Result (2026-10-03, Claude Code / sonnet-5): the push itself landed in #488; step 4 is this change. The user-facing statement that hosts without hooks are pull-only goes into the T290 docs task, which owns the agents and worktrees docs.
+
+### T289.1. `rtok worktree adopt` and the `origin` of every worktree
+
+Done means: `rtok worktree adopt [<path>] [--task <id>] [--agent] [--owner]` locks (or, in an evicting pool, claims in the store only) a host-made worktree for the calling agent; `worktree list` shows `origin`. Check: unit tests for the pool table; adopt e2e in a scratch repo with a worktree under a fake `$HOME/.cursor/worktrees/` (claim row, no lock) and under `.kilo/worktrees/` (v2 lock); detached HEAD with and without `--task`; a foreign lock is refused; list shows `origin`; trycmd and gates.
+
+Result (2026-10-03, Claude Code / sonnet-5): `rtok worktree adopt [<path>] [--task] [--agent] [--owner] [--json]` binds the linked worktree that holds the path (the cwd by default, any directory inside it). The task is `--task`, else the old lock's, else the branch's first `-` segment; a detached HEAD with none of them asks for `--task`. Pools whose host evicts worktrees to stay under a cap (Cursor, Codex, Windsurf/Devin) get a store claim and no git lock, since a lock's effect on that eviction is untested (the creator's live probe, T281, decides); every other pool gets the v2 lock like `claim`, and a foreign lock is refused either way. `worktree list` gained an `origin` column and JSON field (`main`, `cursor`, `windsurf`, `codex`, `claude`, `kilo`, `conductor`, `other`), read from where the worktree lives (`src/worktree/origin.rs`; `$CODEX_HOME` moves Codex's pool). `claim` and `adopt` share `claim::run` and `claim::bind`, which MCP `worktree_adopt` reuses in T289.2. The `source` name from the original plan is `origin`, because `source` is already the source-bytes column.
+
+### T289.2. MCP `worktree_adopt`
+
+Done means: `worktree_adopt {path?, task?}` for the session's linked agent, same code path as the CLI (no agent or owner argument).
+
+Check: MCP e2e.
+
+Result (2026-10-03, Claude Code / sonnet-5): MCP `worktree_adopt {path?, task?}` calls `claim::bind` like the CLI. The agent is the session's link and there is no owner argument. `path` is the worktree or a directory inside it, relative to the server's cwd, which is the project root for many hosts, so a model in a host-made worktree passes its path. A detached HEAD needs `task`. The MCP listing grows to 25 tools (~663 description tokens); the creator's decision on the listing is still pending.
+
+### T289.4. Skill: adopt a host-made worktree on hosts without a post-create hook
+
+Done means: `skills/` tells the agent on Codex, Grok Build, MiMo, omp and Antigravity to call `worktree_adopt` when it finds itself in a host-made worktree.
+
+Check: the skill's gate tests.
+
+Result (2026-10-03, Claude Code / sonnet-5): `skills/worktrees/SKILL.md` names the hosts whose own worktrees an agent binds (Cursor, Codex, Kilo, Devin, Grok Build, MiMo, omp, Antigravity) with MCP `worktree_adopt` or `rtok worktree adopt --task`, and the skill's list line mentions `origin`. The skill body had to stay under its 2048-byte limit, so the surrounding prose was tightened. The command-and-flag gate in `tests/skill.rs` now requires `rtok worktree adopt`.
+
+### T290. Docs, skill and one cross-host test for agents and worktrees
+
+Depends on T282–T289 (lands last; T159 may land after it and adds its own rows).
+
+Plan:
+1. Worktree `_worktrees/rtok-T290`.
+2. `docs/agents-and-worktrees.md`: agent ids (D34), how an agent learns its id, `rtok agents sessions/show/status/send/inbox`, `rtok worktree add/list/remove/adopt/claim/gc/clean`, the MCP tools, per-host table (hooks, push vs pull messages, native worktrees: redirected / adopted / skill only), security note on messages. Links from `README.md` and `docs/config.md` (`[agents]` keys).
+3. `skills/worktrees/SKILL.md` and `skills/rtok`: use `worktree_add` / `worktree_remove` / `worktree_adopt`, report the agent id, check `agent_inbox`; keep under the skill budget.
+4. `tests/agents_worktrees.rs`: table-driven over every host in `src/agents/*` with fakes only (`RTOK_HOST_SANDBOX`, T280): fake session start (hook payload or MCP initialize, per the host's surface) → agent registered → `worktree_add` → `worktree list` shows the id → `agent_send` from a second fake agent → inbox / push → `worktree_remove`. Every host must produce the same worktree path rule, lock format and list row.
+
+Check: `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where host tables change; the new test green on macOS, Linux and Windows CI; `just check`.
+
+Execution (2026-10-03, Claude Code / sonnet-5): one PR stacked on T289.4 (#690). The shared git helpers of `tests/worktree.rs` moved to `tests/common/git.rs` and `tests/common/mcp.rs` gained `session_as(host, …)`, so the new test reuses them. The post-create scripts (T289.3) are not built, so the doc marks those cells pending and the test adopts through `worktree_adopt` only.
+
+Result (2026-10-03, Claude Code / sonnet-5): `docs/agents-and-worktrees.md` (agent id and how a session learns it, the `agents` and `worktree` commands with their MCP tools, messages and their security note, worktrees a host makes itself, a per-host table of all 22 hosts), linked from `README.md` and `docs/config.md`. `skills/rtok` gained an agents section (agent id, `agent_inbox`) and `skills/worktrees` names `worktree_add`, `worktree_adopt` and `worktree_remove` and the agent id, both inside the 2048-byte body limit. `tests/agents_worktrees.rs` walks every host in `agents::HOSTS` with fakes only (a scratch `$HOME`, a scratch repository, `rtok hook` stdin for a host that can carry hooks, the MCP process's own row for one that cannot): agent registered, `worktree_add`, `worktree_adopt` of a Cursor-pool worktree, `worktree_list`, `agent_send` to a second agent, `worktree_remove` of both, then the peer's inbox and its reply. All hosts must produce the same path, branch, lock owner and list rows; a second test checks the doc's host table and Hooks column against the code. `tests/host_docs.rs` and `tests/agents_doc.rs` needed no regeneration, since no host table changed.
+
 ### T358.1. `rtok agents usage --source rtok`: CLI, `[agents.usage]` config and store reads
 
 First slice of T358: scope is the T358.1 bullet under "Split when claiming" there; the spec text stays in T358.

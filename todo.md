@@ -17,13 +17,10 @@
 - T279. One plugin version scheme for every install source (GitHub, local, marketplace), and `agents update` that skips an up-to-date plugin
 - T281. Probe: tie a host session's hooks and its rtok MCP server to one agent
 - T283. An agent learns its own rtok agent id
-- T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
-- T285. Worktree claims: `rtok worktree add` hands the worktree to the calling agent; MCP `worktree_add`
-- T286. `rtok worktree remove` and MCP `worktree_remove`: an agent removes its own worktree
-- T287. Messages between agents and the user: `rtok agents send`, `rtok agents inbox`, MCP `agent_send`, `agent_inbox`
-- T288. Push unread messages to hooked agents
+- T283.2. `--host <id>` in every host's MCP entry
+- T283.3. MCP link rule (b): the nearest common host ancestor pid
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
-- T290. Docs, skill and one cross-host test for agents and worktrees
+- T289.3. Post-create scripts: `rtok agents install <host> --project` for Cursor, Kilo and Devin/Windsurf
 - T310. React SPA replaces the Slint web UI (epic)
 - T310.5. UI kit + Storybook
 - T310.6. Pages: overview, plugins (toggle), calls (expand)
