@@ -57,3 +57,10 @@
 - T347. Investigate: D16 "one task = one PR" vs multi-PR execution plans
 - T348. Investigate: `--agent` means an agent id, a host, or both
 - T320. Fix the proxy usage/tokens test race
+- T349. Hooks never reach the fast client: ketch links `rtok` but not `rtok-hook`
+- T350. Guard `PreToolUse` panics on a non-ASCII command
+- T351. MCP refuses paths in sibling worktrees of the same repository
+- T352. `call_io` holds 711 MB of a 1.0 GB `rtok.db`
+- T353. MCP parameter tolerance: `a,b` line ranges and missing-param errors
+- T354. Agents pipe output into `rtok expand -` to get it raw
+- T355. Measure what the native `Read` deny costs

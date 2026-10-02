@@ -62,6 +62,13 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T346 | todo | research | 1 | 0% | |
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
+| T349 | todo | P0 | 2 | 0% | |
+| T350 | todo | P1 | 2 | 0% | |
+| T351 | todo | P1 | 3 | 0% | |
+| T352 | todo | P1 | 3 | 0% | |
+| T353 | todo | P2 | 2 | 0% | |
+| T354 | todo | P2 | 1 | 0% | |
+| T355 | todo | P2 | 2 | 0% | |
 | T320 | in progress | P1 | 2 | 10% | Claude Code / opus-5.5 |
 
 
@@ -1391,6 +1398,62 @@ In the plan, D34 (plan.md@966f067 line 710) makes the agent id a UUID accepted b
 Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
 
 Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+### T349. Hooks never reach the fast client: ketch links `rtok` but not `rtok-hook`
+
+Found 2026-10-02 in a log review (`~/.rtok/rtok.log`, 2026-09-26 … 2026-10-02, rtok 0.10.0). Every hook command in the Claude Code plugin's `hooks.json` tries `rtok-hook` first, then `rtok hook`. `~/.ketch/store/rtok/v0.10.0/` contains `rtok-hook`, but `~/.ketch/bin/` links only `rtok`, so `command -v rtok-hook` fails and every event pays the full `rtok` process start (T178). `rtok demon status` shows `hook` stopped; no socket exists. The log has 1,069 slow `PreToolUse` lines (p50 31 ms, p90 171 ms, max 2.8 s), 481 `PostToolUse` (p50 15 ms, max 0.9 s), 130 `PreCompact` (p50 51 ms), 34 `SessionEnd`, 25 `SessionStart`, 17 `UserPromptSubmit` — all over `hook.max_ms = 10`. A Claude Code transcript shows ketch refusing the package: "`rtok` ships several binaries sharing its name (rtok-cli, rtok-hook) and none is named `rtok`".
+
+Done when: a ketch install or upgrade of rtok puts both `rtok` and `rtok-hook` on `PATH` (fix the package manifest wherever it lives — this repo's release config or the ketch registry entry); `rtok doctor` warns when the installed hooks prefer `rtok-hook` and it is not on `PATH`.
+
+Check: fresh ketch install in a test home → `command -v rtok-hook` resolves; doctor fixture test for the missing-client warning; one day of `rtok.log` after the fix, compared with the numbers above (PreCompact p50 is high on its own — note it if it stays over budget).
+
+### T350. Guard `PreToolUse` panics on a non-ASCII command
+
+Found 2026-10-02 in `~/.rtok/errors.log`: `plugin/guard: PreToolUse panicked: start byte index 2 is not a char boundary; it is inside '–' (bytes 1..4 of string)` (2026-09-28 12:27:35) and `… start byte index 1 … inside '⌘' (bytes 0..3 of string)` (2026-09-29 07:40:06). The hook fails open, so the guard is skipped for those calls. `segments` and `strip_wrap` in `src/plugins/guard/mod.rs` cut only at ASCII bytes, so the slice is elsewhere on the guard path (a fixed `[1..]`/`[2..]` or a byte offset from a helper it calls).
+
+Done when: the panicking slice is found (recover the two payloads from the store's `call_io` at those timestamps), slicing on that path is char-boundary safe, and nothing else in the guard plugin slices at a computed byte offset without a boundary check.
+
+Check: regression tests with commands that start with `–` and `⌘` (and a multi-byte char right after the first byte) fail before the fix and pass after; `just check`.
+
+### T351. MCP refuses paths in sibling worktrees of the same repository
+
+Found 2026-10-02 in `~/.rtok/errors.log` (2026-09-27 … 2026-10-02): 158 of 231 lines are `path outside cwd`; 135 of them point into `_worktrees/<repo>-<task>/…` (cox, ketch, stator, rtok), 23 into `/tmp` or a Claude Code session scratchpad. Agents follow the worktree rule (one worktree per task) while the host started `rtok mcp` in the main checkout, so `read`, `search` and `outline` fail and the agent falls back to native tools.
+
+Done when: a path inside any worktree of the cwd's repository (`git worktree list`) is accepted by every MCP tool that has the cwd guard; paths outside every allowed root are still refused with `is_error` (T172). Open question for the creator before coding: should a host session scratchpad (and MCP `roots/list` from the client) also count as an allowed root?
+
+Check: MCP tests with a temp repo plus a linked worktree — read/search/outline inside the worktree succeed; a path in an unrelated directory is still refused; `just check`.
+
+### T352. `call_io` holds 711 MB of a 1.0 GB `rtok.db`
+
+Found 2026-10-02: `~/.rtok/rtok.db` is 1.0 GB with `retain_calls_days = 30` working (calls span 2026-09-02 … 2026-10-02, 220,853 rows). By `dbstat`, `call_io` takes 711 MB: `request_json` 527 MB, `response_json` 48 MB; the `symbols*` tables take about 280 MB. `auto_vacuum` is 0, so purged pages are never returned to the disk. `~/.rtok/archive/` holds 46,163 files (347 MB), 14,411 older than 7 days.
+
+Done when: research names which hook/MCP payloads make `request_json` large (likely full tool inputs and responses stored inline next to the archive), and the fix stores each body once (hash plus archive reference, or a shorter retention for bodies than for `calls` rows), keeps `expand <id>` lossless, and returns freed pages to the disk (incremental vacuum or a `rtok doctor`/`clear` step). Report the `symbols*` size per project root and whether roots no longer on disk are dropped.
+
+Check: store tests for the new retention and vacuum; `rtok.db` size before and after on a copy of the real store, recorded in this card.
+
+### T353. MCP parameter tolerance: `a,b` line ranges and missing-param errors
+
+Found 2026-10-02 in `~/.rtok/errors.log`: `read` rejects `invalid line range \`N,N\`` (14) and `\`N, N\`` (3) — T172 only stripped quotes; `search` fails with `missing \`pattern\`` (8), `read` with `missing \`path\`` (2), `symbol` with `missing \`name\`` (1); `outline` says `No such file or directory (os error 2)` (6) without the path.
+
+Done when: line ranges accept `a,b` and `a, b` like `a-b`; a missing-param error names the keys the call did send (look up the logged calls to see whether one alias, e.g. `query`, covers most of them — add only aliases the logs show); file errors name the path.
+
+Check: MCP unit tests for each case; `just check`.
+
+### T354. Agents pipe output into `rtok expand -` to get it raw
+
+Found 2026-10-02: 15 `cli/run: unknown archive id` errors for `-` (11), `x` (2) and `/dev/stdin` (2). Claude Code transcripts show the pattern `cat file | rtok expand - 2>/dev/null || true` and `gh pr list … | rtok expand - || gh pr list …` — agents try to get unfiltered output and guess a stdin form of `expand`.
+
+Done when: the skill documents the supported way to see a command's raw output (the archive id from the footer, or a raw/bypass flag if one exists), and `rtok expand` with an argument that cannot be an archive id prints a one-line hint pointing there instead of a bare `unknown archive id`.
+
+Check: trycmd case for `rtok expand -`; skill stays within its budget; `just check`.
+
+### T355. Measure what the native `Read` deny costs
+
+Found 2026-10-02 in Claude Code transcripts (578 sessions, last 7 days): the read hook denied native `Read` 710 times ("use rtok read; before Edit run native Read(limit=N) — it satisfies the edit gate", T127) and the guard denied 59 duplicate reads. Each deny is an extra model turn plus a retry; there is no `Measurement` row showing the deny saves more tokens than it costs.
+
+Done when: a measurement over the stored calls pairs each deny with the follow-up call (rtok `read`, ranged native `Read`, or giving up) and reports net tokens per deny; the result and a recommendation (keep, narrow, or turn into advice without deny) are recorded in this card. No behaviour change in this task.
+
+Check: the measurement query/script is reproducible from the store; numbers recorded here.
 
 ## Reference
 
