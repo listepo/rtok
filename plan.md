@@ -1418,9 +1418,9 @@ Check: regression tests with commands that start with `–` and `⌘` (and a mul
 
 Found 2026-10-02 in `~/.rtok/errors.log` (2026-09-27 … 2026-10-02): 158 of 231 lines are `path outside cwd`; 135 of them point into `_worktrees/<repo>-<task>/…` (cox, ketch, stator, rtok), 23 into `/tmp` or a Claude Code session scratchpad. Agents follow the worktree rule (one worktree per task) while the host started `rtok mcp` in the main checkout, so `read`, `search` and `outline` fail and the agent falls back to native tools.
 
-Done when: a path inside any worktree of the cwd's repository (`git worktree list`) is accepted by every MCP tool that has the cwd guard; paths outside every allowed root are still refused with `is_error` (T172). Open question for the creator before coding: should a host session scratchpad (and MCP `roots/list` from the client) also count as an allowed root?
+Done when: a path inside any worktree of the cwd's repository (`git worktree list`) is accepted by every MCP tool that has the cwd guard, and so is a path under any `file://` root of the client's `roots/list` answer (today only the first one is kept, as the cwd — T263, `src/mcp.rs`); paths outside every allowed root are still refused with `is_error` (T172). Creator decision 2026-10-02: host session scratchpads (`/tmp`, `/private/tmp/claude-*/…/scratchpad`) stay outside — native `Read` covers them; `plugins.read.allow_paths` stays the manual escape hatch.
 
-Check: MCP tests with a temp repo plus a linked worktree — read/search/outline inside the worktree succeed; a path in an unrelated directory is still refused; `just check`.
+Check: MCP tests with a temp repo plus a linked worktree — read/search/outline inside the worktree succeed; a `roots/list` answer with two roots allows both; a path in an unrelated directory and a scratchpad path are still refused; `just check`.
 
 ### T352. `call_io` holds 711 MB of a 1.0 GB `rtok.db`
 
