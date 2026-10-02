@@ -4,14 +4,14 @@
 #
 # The version in Cargo.toml is the version to release. It is raised only when that version is
 # already tagged — which is what makes the first run publish 0.0.1 instead of skipping to 0.0.2.
-# dist creates the tag and the GitHub Release itself (dispatch-releases in dist-workspace.toml),
-# so this script's job ends at "the version commit is on the remote, the workflow is running".
+# This script never pushes and never tags: the Bump workflow (pyrlyn/infra bump.yml) runs it with
+# --local, opens a PR with the version commit, rebase-merges it once the required checks pass,
+# then tags the landed commit and dispatches the dist Release (docs/release.md).
 #
-# Usage: tools/release.sh [patch|minor|major] [--dry-run|--local|--no-bump]
+# Usage: tools/release.sh [patch|minor|major] [--dry-run|--local]
+#   (none)     start the Bump workflow on GitHub (gh workflow run bump.yml -f level=<level>)
 #   --dry-run  print the version that would be released and change nothing
-#   --local    make the version commit but neither push nor start the workflow
-#   --no-bump  release the version in Cargo.toml only if it is untagged; never raise it
-#              (release-plz.yml after a merged release PR, T18.5)
+#   --local    make the version commit and stop (what bump.yml runs)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -30,6 +30,20 @@ esac
 CARGO="${CARGO:-mise exec -- cargo}"
 CLIFF="${CLIFF:-mise exec -- git-cliff}"
 
+case "$mode" in
+  "")
+    # The only way to a release: the Bump workflow (PR, required checks, merge, then the tag).
+    gh workflow run bump.yml -f level="$level"
+    echo "Bump and release ($level) started: gh run list --workflow bump.yml"
+    exit 0
+    ;;
+  --dry-run | --local) ;;
+  *)
+    echo "unknown option: $mode" >&2
+    exit 2
+    ;;
+esac
+
 current=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
 version="$current"
 
@@ -43,11 +57,7 @@ if git rev-parse -q --verify "refs/tags/v$current" >/dev/null; then
 fi
 
 echo "current $current -> release v$version"
-if [ "$mode" = "--no-bump" ] && [ "$version" != "$current" ]; then
-  echo "v$current is already released; the next version comes from a release PR"
-  exit 0
-fi
-# The workflow reads this to know which tag to dispatch. Not a `&&` one-liner: when the variable
+# The workflow reads this to know which tag to make. Not a `&&` one-liner: when the variable
 # is unset the test fails, and under `set -e` a failing top-level list ends the script.
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
   echo "version=$version" >>"$GITHUB_OUTPUT"
@@ -74,11 +84,4 @@ if [ "$version" != "$current" ]; then
   git commit -m "release: v$version"
 fi
 
-if [ "$mode" = "--local" ]; then
-  echo "local: version commit made, not pushed"
-  exit 0
-fi
-
-git push origin HEAD
-gh workflow run release.yml --field tag="v$version"
-echo "release v$version dispatched"
+echo "local: version commit made (if any), not pushed, not tagged"

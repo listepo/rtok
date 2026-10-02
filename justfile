@@ -164,8 +164,8 @@ dist-plan:
 dist-generate:
     DIST="{{dist}}" tools/dist-generate.sh
 
-# T18.2: release the version in Cargo.toml, or the next one if that is already tagged.
-# Same script the Bump workflow runs, so local and CI cannot disagree.
+# T18.2: start the Bump workflow (PR, required checks, merge, tag); `--dry-run` previews the
+# version and `--local` makes the commit only. Same script the Bump workflow runs.
 release level="patch" *flags:
     tools/release.sh {{level}} {{flags}}
 

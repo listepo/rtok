@@ -1,5 +1,6 @@
-# T18.5 (P18). release-plz keeps one "release: vX.Y.Z" pull request open on main; merging it
-# starts the same release as the Bump workflow. dist still builds, tags and publishes.
+# release-plz no longer runs in CI (its release-plz.yml is gone): the Bump workflow is the only
+# path to a release and the only thing that tags. This file stays for a local `release-plz
+# update` preview and keeps release-plz from ever tagging or releasing.
 [workspace]
 # The groups of `just changelog`, so the PR's CHANGELOG.md matches the one release.sh writes.
 changelog_config = "cliff.toml"
@@ -7,13 +8,13 @@ changelog_config = "cliff.toml"
 # dist archives. With no registry for the binary, release-plz reads the `v*` tags to know
 # which version is out. `rtok-plugin-sdk` crates.io publish is paused for now.
 publish = false
-# dist creates both the tag and the GitHub Release from release.yml (dispatch-releases);
-# release-plz creating either would race it.
+# bump.yml creates the tag and the GitHub Release (dist only uploads to it); release-plz
+# must create neither.
 git_tag_enable = false
 git_release_enable = false
 # A binary crate: cargo-semver-checks has nothing to compare.
 semver_check = false
-# The PR title is what release-plz.yml looks for in the merge commit.
+# Same subject as the commit tools/release.sh makes.
 pr_name = "release: v{{ version }}"
 pr_labels = ["release"]
 

@@ -239,11 +239,9 @@ script touches.
 - `tests/plugin_versions.rs` asserts every file `--files` lists equals `CARGO_PKG_VERSION`, so
   `just check` catches drift locally.
 
-`release-plz` edits only `Cargo.toml`, `Cargo.lock` and `CHANGELOG.md`, so it never touches the
-plugin files, and `tools/release.sh --no-bump` (run after its release PR merges) commits
-nothing. If its release PR ever raises the version, the `ci.yml` check fails on that PR until
-`tools/plugin-versions.sh --set <version>` is committed to it, and the `release.yml` check stops
-a tag that slipped through. See
+Nothing else raises the version: release-plz no longer runs in CI, and the Bump workflow's
+pull request carries the `release.sh` commit, so the `ci.yml` check runs on it before the merge
+and the `release.yml` check stops a tag that slipped through anyway. See
 [Releasing rtok](release.md) for the release flow itself.
 
 ## Troubleshooting
