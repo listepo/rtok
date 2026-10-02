@@ -360,13 +360,17 @@ pub(crate) mod tests {
         let canon = dir.canonicalize().unwrap();
         let missing = canon.join("nope.rs");
         let missing = missing.to_str().unwrap();
+        // The io wording is the OS's own (Windows: "The system cannot find …", "Access is
+        // denied."), so only the path suffix and the dropped tail are asserted.
         let err = read(&cx, missing, "full", None).unwrap_err().to_string();
-        assert_eq!(err, format!("No such file or directory: {missing}"));
+        assert!(err.ends_with(&format!(": {missing}")), "{err}");
+        assert!(!err.contains("os error"), "{err}");
         let sub = canon.join("sub");
         fs::create_dir(&sub).unwrap();
         let sub = sub.to_str().unwrap();
         let err = read(&cx, sub, "map", None).unwrap_err().to_string();
-        assert_eq!(err, format!("Is a directory: {sub}"));
+        assert!(err.ends_with(&format!(": {sub}")), "{err}");
+        assert!(!err.contains("os error"), "{err}");
         let _ = fs::remove_dir_all(dir);
     }
 
