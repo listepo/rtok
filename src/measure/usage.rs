@@ -18,6 +18,8 @@ use std::time::{Duration, SystemTime};
 
 mod copilot;
 mod gemini;
+mod kimi;
+mod pi;
 mod sqlite;
 
 /// A host whose session files exist but could not be read: named once, counted nowhere.
@@ -41,6 +43,16 @@ const UNKNOWN: &str = "unknown format";
 /// Droid keeps token counts in `<session>.settings.json`, but Factory documents only that the
 /// file holds them, not under which keys, so a reader would be a guess (`research.md`).
 const DROID_UNSUPPORTED: &str = "unsupported: the session settings fields are not documented";
+
+/// xAI documents the session files' token counts only through `grok usage`, which says to use
+/// it "instead of reading session files"; rtok does not run another host's program (D6).
+const GROK_UNSUPPORTED: &str = "unsupported: xAI documents `grok usage`, not the session files";
+
+/// ZCode's usage page says it reads local session records but names no path or field.
+const ZCODE_UNSUPPORTED: &str = "unsupported: the session records are not documented";
+
+/// Google documents neither where Antigravity keeps its sessions nor their token fields.
+const ANTIGRAVITY_UNSUPPORTED: &str = "unsupported: the local session data is not documented";
 
 /// Every host's requests stamped at or after `since`: Claude Code and Codex from the `[stats]`
 /// directories, the others from `[agents.usage.dirs]`.
@@ -79,11 +91,20 @@ pub fn read(cfg: &Config, since: i64) -> Logs {
         UNKNOWN,
         gemini::slices(&dirs.gemini, since, cutoff),
     );
-    let droid = dirs
-        .droid
-        .iter()
-        .find(|d| std::fs::read_dir(d).is_ok_and(|mut rd| rd.next().is_some()));
-    add("droid", DROID_UNSUPPORTED, (Vec::new(), droid.cloned()));
+    add("pi", UNKNOWN, pi::slices(&dirs.pi, since, cutoff));
+    add("kimi", UNKNOWN, kimi::slices(&dirs.kimi, since, cutoff));
+    // Hosts whose format is not documented are named when they left files, never guessed at.
+    for (host, reason, list) in [
+        ("droid", DROID_UNSUPPORTED, &dirs.droid),
+        ("grok", GROK_UNSUPPORTED, &dirs.grok),
+        ("zcode", ZCODE_UNSUPPORTED, &dirs.zcode),
+        ("antigravity", ANTIGRAVITY_UNSUPPORTED, &dirs.antigravity),
+    ] {
+        let found = list
+            .iter()
+            .find(|d| std::fs::read_dir(d).is_ok_and(|mut rd| rd.next().is_some()));
+        add(host, reason, (Vec::new(), found.cloned()));
+    }
     logs
 }
 
@@ -286,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn read_names_unreadable_hosts_and_lists_droid_as_unsupported() {
+    fn read_names_unreadable_hosts_and_lists_undocumented_ones_as_unsupported() {
         let dir = tmp("read");
         let mut cfg = crate::testutil::config_in(&dir);
         cfg.agents.usage.dirs.opencode = vec![dir.join("oc")];
@@ -303,6 +324,18 @@ mod tests {
         .unwrap();
         fs::create_dir_all(dir.join("droid/-proj")).unwrap();
         fs::write(dir.join("droid/-proj/a.settings.json"), "{}").unwrap();
+        cfg.agents.usage.dirs.pi = vec![dir.join("pi")];
+        fs::create_dir_all(dir.join("pi/-proj")).unwrap();
+        fs::write(dir.join("pi/-proj/a.jsonl"), "not json\n").unwrap();
+        for (host, list) in [
+            ("grok", &mut cfg.agents.usage.dirs.grok),
+            ("zcode", &mut cfg.agents.usage.dirs.zcode),
+            ("antigravity", &mut cfg.agents.usage.dirs.antigravity),
+        ] {
+            *list = vec![dir.join(host)];
+            fs::create_dir_all(dir.join(host)).unwrap();
+            fs::write(dir.join(host).join("data"), "x").unwrap();
+        }
         let logs = read(&cfg, 0);
         assert!(logs.slices.is_empty());
         let named: Vec<_> = logs
@@ -310,10 +343,28 @@ mod tests {
             .iter()
             .map(|s| (s.host.as_str(), s.reason))
             .collect();
-        assert_eq!(named, [("opencode", UNKNOWN), ("droid", DROID_UNSUPPORTED)]);
+        assert_eq!(
+            named,
+            [
+                ("opencode", UNKNOWN),
+                ("pi", UNKNOWN),
+                ("droid", DROID_UNSUPPORTED),
+                ("grok", GROK_UNSUPPORTED),
+                ("zcode", ZCODE_UNSUPPORTED),
+                ("antigravity", ANTIGRAVITY_UNSUPPORTED),
+            ]
+        );
         // Nothing to name when the directories are absent.
         cfg.agents.usage.dirs.opencode = vec![dir.join("absent")];
-        cfg.agents.usage.dirs.droid = vec![dir.join("absent")];
+        for list in [
+            &mut cfg.agents.usage.dirs.droid,
+            &mut cfg.agents.usage.dirs.pi,
+            &mut cfg.agents.usage.dirs.grok,
+            &mut cfg.agents.usage.dirs.zcode,
+            &mut cfg.agents.usage.dirs.antigravity,
+        ] {
+            *list = vec![dir.join("absent")];
+        }
         assert!(read(&cfg, 0).skipped.is_empty());
         fs::remove_dir_all(&dir).ok();
     }
