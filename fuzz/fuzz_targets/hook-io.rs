@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Hook stdin/stdout shaping, before any plugin runs: the `HookInput` JSON every host sends,
 //! each host adapter (`adapt_cursor`, `adapt_grok`, …), the typed event views, host tool-name
 //! mapping plus the guard's duplicate key, and the per-host reply encoders. In-process only:

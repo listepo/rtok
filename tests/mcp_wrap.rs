@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T59.4 Check: `rtok mcp -- <server>` is a lossless wrapper. A `sh` fake server answers
 //! `tools/list` with a fixed frame, `tools/call` id 2 with a 3000-line text block and id 3
 //! with an `isError` result; the wrapper must forward the first and last byte-for-byte,
@@ -179,5 +183,25 @@ fn short_body_is_forwarded_unchanged_instead_of_ending_the_pipe() {
         stdout.contains(valid),
         "the valid frame's bytes must still reach stdout: {stdout}"
     );
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// T366: a server killed by a signal reports `128 + signal`, as a shell would, not `1`; a
+/// plain non-zero exit keeps its own code. The `kill` targets the test's own `sh` (`$$`).
+#[test]
+fn a_server_killed_by_a_signal_exits_128_plus_the_signal() {
+    let home = std::env::temp_dir().join(format!("rtok-wrap-sig-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    for (body, code) in [
+        ("kill -TERM $$", 143),
+        ("kill -KILL $$", 137),
+        ("exit 5", 5),
+    ] {
+        let server = home.join("sig-server.sh");
+        std::fs::write(&server, format!("#!/bin/sh\n{body}\n")).unwrap();
+        let out = wrap(&home, &server, "line", b"");
+        assert_eq!(out.status.code(), Some(code), "{body}");
+    }
     let _ = std::fs::remove_dir_all(&home);
 }

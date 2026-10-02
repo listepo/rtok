@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok stats` (plan T1.2): per-tool sizes, Bash families, MCP groups, CTT.
 //!
 //! Tool-result tokens use 4 chars/token (`research.md` §2 heuristic) so this report is

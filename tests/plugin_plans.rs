@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T14.0: every `src/plugins/*/PLAN.md` has the required D15 structure.
 //! Passes on a tree with no `PLAN.md` and tightens as each lands.
 
