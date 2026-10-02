@@ -2274,6 +2274,30 @@ Complexity: 2/5
 Status: done 2026-09-15 · Model: Claude Code / Opus 5
 Evidence: `claude_modules_read_back_hooks_and_a_proxy_on_any_port` green; fmt + workspace clippy `-D warnings` clean; `cargo test --workspace` 428 passed; build-min ok; jscpd within threshold; `agent setup claude --dry-run` and `doctor` in a throwaway `HOME` print the marks for every host.
 
+### T331.1. Doctor: broken hooks report (read-only) and the injected `Fs`/`Env`/`Which` seam
+
+Part of T331. `rtok doctor` lists hooks whose target does not exist, per section 1 of T331, for Claude Code's settings files: user and project `settings.json` and `settings.local.json`. Hook commands are split like a POSIX shell, `~`/`$HOME`/`$CLAUDE_PROJECT_DIR` are expanded, the target is the first word, or the script of a known interpreter (`bash sh zsh node python python3 deno bun ruby pwsh`, `npx tsx`, `uv run`), or a program looked up on `PATH`. Classes: `broken-hook` (path missing, dangling symlink, directory, program not on `PATH`, unmounted `/Volumes/X`; fixable later), `suspect-hook` (exists but not executable when run directly; `chmod +x` hint, never fixable) and `unverified-hook` (`$(…)`, backticks, `eval`, pipes or other shell operators, unknown variables, `${CLAUDE_PLUGIN_ROOT}` before T331.2 knows the plugin root, `-c` scripts; never fixable). The result is `Report.problems[] { kind, agent, source, path, event, matcher, command, detail, fixable }` (the same list T331.3/T331.4 extend), rendered as a "hooks check" section in the text and the Doctor page and carried in `--json`. Nothing is edited. The doctor modules reach files, environment and `PATH` only through the `Fs`, `Env` and `Which` traits (`src/doctor/probe.rs`); a guard test fails when `src/doctor/` calls `std::fs`, `std::env` or `which` directly.
+
+Check: unit tests on an in-memory `Fs` (no real path, no real agent): missing script, dangling symlink, directory, each listed interpreter with a missing script, program not on `PATH`, quoted path with spaces, `$CLAUDE_PROJECT_DIR` and `$HOME` expansion, relative path against the project dir, unmounted volume; valid script, builtin, program on `PATH`, non-executable script (suspect), `$(…)`, backticks, pipe, unknown variable (unverified); user + project + local sources all read, an unparsable file reported and skipped, JSONC comments accepted, no hook object means no problem; text, JSON and the Doctor page agree; the guard test; `just check`.
+
+Execution: new `src/doctor/probe.rs` (`Fs { read, kind }`, `Env { var, home }`, `Which { find }`, the real impls, `find_on_path` of `agents/mod.rs` made `pub(crate)` for `Which` so there is one PATH walk) and `src/doctor/hooks.rs` (entry model, sources, command resolution, classification, mocks and tests). `shlex` 2 is added as a direct dependency (already in `Cargo.lock` through `cc`; the row exists in `rust.md`; shell word splitting is its whole job) with a `toolchain.md` row. Hook objects are walked in the same shape `count_hooks` reads (`hooks.<Event>[].{matcher, hooks[].command}`) and parsed with the existing `agents::jsonc::parse`. `doctor::page` fills `Report.problems` from the real probes; the text section prints "none found" when empty, so the report snapshots and `tests/trycmd/doctor.toml` are regenerated; `ws.schema.json` and `snapshot.gen.ts` are regenerated for the new field. Project files are read from the directory the check runs in.
+
+Result: `rtok doctor` (text, `--json`, Doctor page) lists `broken-hook`, `suspect-hook`, `unverified-hook` and `unreadable-config` problems for Claude Code's user and project `settings.json` / `settings.local.json`, and prints `hooks check none found` when there are none. Nothing is edited. `src/doctor/probe.rs` holds the `Fs`/`Env`/`Which` seam and `src/doctor/hooks.rs` the check; the new `Report.problems` field is in `ws.schema.json` and `snapshot.gen.ts`.
+
+Model: Claude Code / sonnet-5
+
+### T331.2. Doctor: JSON hook files of the other hosts and of enabled Claude plugins
+
+Part of T331. T331.1's checks for every host whose installer writes a JSON config (the files `Agent::files` names, once each; Cursor's variants share theirs), under the host's own name in `Problem.agent`, and for the hooks of every enabled Claude plugin: `<installPath>/hooks/hooks.json` from `installed_plugins.json`, with `${CLAUDE_PLUGIN_ROOT}` resolved against the install directory. A plugin that is enabled (`enabledPlugins` true in a settings file) but whose install directory is gone is a `stale-plugin` finding; a disabled plugin is not loaded and not checked. Plugin files belong to the plugin, so nothing found in them is fixable. Only Claude Code documents that a relative hook path resolves against the project directory, so a relative path of any other host is `unverified-hook`, never `broken-hook`. Depends on T331.1.
+
+Check: mocked scenarios per host shape (Cursor's flat `hooks.json`, Gemini's Claude-shaped `settings.json`), a shared file read once, a relative path on a host other than Claude, a plugin root resolved to a missing and a present script, a disabled plugin skipped, a stale plugin, a non-JSON-parsable host file reported and left alone; `just check`.
+
+Execution: a `Scope {project, plugin_root, relative_ok}` replaces the bare project directory in `classify`; `check` reads the Claude sources as before, then `host_sources(cfg)` (`HOSTS` minus claude, `Agent::files` filtered to `.json`/`.jsonc`), then `plugins` (reusing `doctor::plugin_install_paths` and `agents::claude::config_dir`, so the install index has one parser). No new dependency, no output change when nothing is found.
+
+Result: `rtok doctor` also lists broken, suspect and unverified hooks of the other hosts' JSON files and of enabled Claude plugins, and stale plugin installs. TOML and other formats (Kimi, Codex, CodeWhale) are T331.8; `--agent <host>`, Windows `PATHEXT` and `cmd` rules are T331.9.
+
+Model: Claude Code / sonnet-5
+
 ## T40 — drop `demon list` and `demon update`
 
 **T40 drop `demon list` and `demon update`** · P2, 1/5 · `src/cli.rs`, `src/demon.rs`, `tests/demon.rs`, `tests/surface_parity.rs`, `config/default.toml`

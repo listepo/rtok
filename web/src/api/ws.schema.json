@@ -419,6 +419,55 @@
         "stats"
       ]
     },
+    "Problem": {
+      "description": "One finding of a doctor config check. The list is shared by every T331 detector.",
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "command": {
+          "description": "The command as written, never expanded.",
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "event": {
+          "type": "string"
+        },
+        "fixable": {
+          "description": "Whether `doctor --fix` may remove it (T331.5): only `broken-hook`.",
+          "type": "boolean"
+        },
+        "kind": {
+          "description": "`broken-hook`, `suspect-hook`, `unverified-hook` or `unreadable-config`.",
+          "type": "string"
+        },
+        "matcher": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "The key path of the entry inside `source`.",
+          "type": "string"
+        },
+        "source": {
+          "description": "The config file the entry lives in.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "agent",
+        "source",
+        "path",
+        "detail",
+        "fixable"
+      ]
+    },
     "ReadShare": {
       "description": "Share of Read-class transcript tokens spent in native Grep/Glob (T50.4):\n`(grep + glob) / (read + grep + glob)` by estimated tokens. `None` when the\ntranscripts hold no Read-class results — the default stays off on no data.",
       "type": "object",
@@ -513,6 +562,13 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "problems": {
+          "description": "Hooks that lead nowhere or cannot be checked (T331.1); the list later detectors extend.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Problem"
           }
         },
         "proxy": {
