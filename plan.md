@@ -48,7 +48,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T331.6 | todo | P1 | 4 | 0% | |
 | T331.7 | todo | P2 | 3 | 0% | |
 | T331.8 | todo | P2 | 3 | 0% | |
-| T331.9 | todo | P2 | 3 | 0% | |
 | T332 | todo | research | 1 | 0% | |
 | T333 | todo | research | 1 | 0% | |
 | T334 | todo | research | 1 | 0% | |
@@ -1288,13 +1287,6 @@ Check: the scripted-prompt scenarios, the property tests, the pty test; `just ch
 Part of T331. The T331.1 and T331.2 checks for the hosts whose hooks live outside JSON: Kimi (`config.toml` `[[hooks]]` blocks), CodeWhale (`[[hooks.hooks]]`), Codex (`config.toml`) and any other host whose installer writes hooks in TOML. Each shape maps to the same `Entry` (event, matcher, command, key path), read through the TOML library the project already uses, so the same classification applies and the entry path names the TOML table. Depends on T331.2.
 
 Check: one mocked scenario per TOML shape (broken, valid, unverified, an unparsable file reported and left alone); `just check`.
-
-### T331.9. Doctor: `--agent <host>` and Windows hook rules
-
-Part of T331. `rtok doctor --agent <host>` limits the hooks check to one host (the id of `agents::HOSTS`; an unknown id is an error naming the valid ones), and on Windows a hook command resolves by `PATHEXT` and the `cmd`/PowerShell word rules of the host instead of POSIX words. Depends on T331.2.
-
-Check: the host filter on mocks (known, unknown, a host without hooks), `PATHEXT` cases on a case-insensitive mock `Fs`; `just check`.
-
 
 ### T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 

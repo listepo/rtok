@@ -179,6 +179,11 @@ fn shell_syntax(raw: &str) -> Option<&'static str> {
 /// `word` with `~`, `$NAME` and `${NAME}` expanded. `Err` names what could not be: an unset
 /// variable, or one only a plugin install defines.
 fn expand(word: &str, p: &Probes, scope: &Scope) -> Result<String, String> {
+    let word = &if p.env.windows() {
+        percent_vars(word)
+    } else {
+        word.to_string()
+    };
     let mut out = String::new();
     let rest = if word == "~" || word.starts_with("~/") {
         let home = p.env.home().ok_or("HOME")?;
@@ -223,6 +228,93 @@ fn expand(word: &str, p: &Probes, scope: &Scope) -> Result<String, String> {
     Ok(out)
 }
 
+/// `raw` split into words by the host shell's rules. POSIX by default; with `win`, `"` groups,
+/// `'` and `\` are plain characters except a `\` run right before a `"` (the
+/// `CommandLineToArgvW` rule), so an unquoted `C:\tools\x.cmd` stays one intact word.
+fn split_words(raw: &str, win: bool) -> Option<Vec<String>> {
+    if !win {
+        return shlex::split(raw);
+    }
+    let (mut words, mut cur, mut quoted, mut open) = (Vec::new(), String::new(), false, false);
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        open |= !c.is_whitespace() || quoted;
+        match c {
+            '\\' => {
+                let mut run = 1;
+                while chars.next_if_eq(&'\\').is_some() {
+                    run += 1;
+                }
+                let escapes = chars.peek() == Some(&'"');
+                cur.extend(std::iter::repeat_n(
+                    '\\',
+                    if escapes { run / 2 } else { run },
+                ));
+                if escapes && run % 2 == 1 {
+                    cur.push('"');
+                    chars.next();
+                }
+            }
+            '"' => quoted = !quoted,
+            c if c.is_whitespace() && !quoted => {
+                if std::mem::take(&mut open) {
+                    words.push(std::mem::take(&mut cur));
+                }
+            }
+            c => cur.push(c),
+        }
+    }
+    if open {
+        words.push(cur);
+    }
+    (!quoted).then_some(words)
+}
+
+/// `raw` without its `"..."` parts: a `(` in `C:\Program Files (x86)` is not shell syntax.
+fn outside_quotes(raw: &str) -> String {
+    let mut quoted = false;
+    raw.chars()
+        .filter(|&c| {
+            quoted ^= c == '"';
+            !quoted && c != '"'
+        })
+        .collect()
+}
+
+/// `%NAME%` as `${NAME}`, so the one expansion below serves `cmd` variables too.
+fn percent_vars(word: &str) -> String {
+    let mut out = String::new();
+    let mut rest = word;
+    while let Some(i) = rest.find('%') {
+        let (head, tail) = rest.split_at(i);
+        out.push_str(head);
+        match tail[1..].split_once('%') {
+            Some((name, after))
+                if !name.is_empty()
+                    && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') =>
+            {
+                out.push_str(&format!("${{{name}}}"));
+                rest = after;
+            }
+            _ => {
+                out.push('%');
+                rest = &tail[1..];
+            }
+        }
+    }
+    out + rest
+}
+
+/// `C:\x`, `C:/x` or `\\server\share`: absolute by Windows rules whatever OS runs the check.
+fn is_abs_windows(t: &str) -> bool {
+    let b = t.as_bytes();
+    t.starts_with("\\\\")
+        || (b.len() > 2
+            && b[0].is_ascii_alphabetic()
+            && b[1] == b':'
+            && matches!(b[2], b'\\' | b'/'))
+}
+
 fn base_name(program: &str) -> String {
     let name = program.rsplit(['/', '\\']).next().unwrap_or(program);
     name.strip_suffix(".exe").unwrap_or(name).to_lowercase()
@@ -230,11 +322,28 @@ fn base_name(program: &str) -> String {
 
 /// What a command runs: the path or program to look up, and whether the shell would exec it
 /// directly (so its own exec bit matters) rather than an interpreter reading it.
-fn target(words: &[String]) -> Result<(String, bool), Verdict> {
+fn target(words: &[String], win: bool) -> Result<(String, bool), Verdict> {
     let program = &words[0];
     let base = base_name(program);
     let args = &words[1..];
     let first_arg = |args: &[String]| args.iter().find(|a| !a.starts_with('-')).cloned();
+    let flag = |names: &[&str]| {
+        args.iter()
+            .position(|a| names.contains(&a.to_lowercase().as_str()))
+    };
+    // `cmd /c <command>` runs the command itself; PowerShell runs the script after `-File`.
+    if win && base == "cmd" {
+        return match flag(&["/c", "/k"]) {
+            Some(i) if i + 1 < args.len() => target(&args[i + 1..], win),
+            _ => Err(Verdict::Unverified("no command after /c".into())),
+        };
+    }
+    if win && (base == "powershell" || base == "pwsh") {
+        return match flag(&["-file", "-f"]).and_then(|i| args.get(i + 1)) {
+            Some(script) => Ok((script.clone(), false)),
+            None => Err(Verdict::Unverified("an inline PowerShell command".into())),
+        };
+    }
     if INTERPRETERS.contains(&base.as_str()) {
         if args
             .iter()
@@ -259,13 +368,16 @@ fn target(words: &[String]) -> Result<(String, bool), Verdict> {
             .collect::<Vec<_>>()
     };
     match (base.as_str(), first_arg(args).as_deref()) {
-        ("npx", Some("tsx")) => target(&[&["tsx".to_string()][..], &rest_after("tsx")].concat()),
+        ("npx", Some("tsx")) => target(
+            &[&["tsx".to_string()][..], &rest_after("tsx")].concat(),
+            win,
+        ),
         ("uv", Some("run")) => {
             let rest = rest_after("run");
             if rest.is_empty() {
                 return Err(Verdict::Unverified("no script argument".into()));
             }
-            target(&rest).map(|(t, _)| (t, false))
+            target(&rest, win).map(|(t, _)| (t, false))
         }
         _ => Ok((program.clone(), true)),
     }
@@ -276,7 +388,8 @@ fn target(words: &[String]) -> Result<(String, bool), Verdict> {
 /// written with its spacing collapsed, so two copies compare equal only when they really match.
 fn normalize(command: &str, p: &Probes, scope: &Scope) -> String {
     let raw = command.trim();
-    let words = match (shell_syntax(raw), shlex::split(raw)) {
+    let win = p.env.windows();
+    let words = match (shell_syntax(&syntax_text(raw, win)), split_words(raw, win)) {
         (None, Some(words)) => words,
         _ => return raw.split_whitespace().collect::<Vec<_>>().join(" "),
     };
@@ -284,13 +397,34 @@ fn normalize(command: &str, p: &Probes, scope: &Scope) -> String {
         .iter()
         .map(|w| {
             let w = expand(w, p, scope).unwrap_or_else(|_| w.clone());
-            match w.strip_prefix("./") {
-                Some(rest) if scope.relative_ok => scope.project.join(rest).display().to_string(),
+            match w
+                .strip_prefix("./")
+                .or_else(|| w.strip_prefix(".\\").filter(|_| win))
+            {
+                Some(rest) if scope.relative_ok => join_project(scope.project, rest, win),
                 _ => w,
             }
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// The text `shell_syntax` judges: on Windows without the quoted parts.
+fn syntax_text(raw: &str, win: bool) -> String {
+    if win {
+        outside_quotes(raw)
+    } else {
+        raw.to_string()
+    }
+}
+
+/// `rest` under the project directory, with the separator of the rules in force.
+fn join_project(project: &Path, rest: &str, win: bool) -> String {
+    if win {
+        format!("{}\\{}", project.display(), rest.replace('/', "\\"))
+    } else {
+        project.join(rest).display().to_string()
+    }
 }
 
 fn path_like(t: &str) -> bool {
@@ -302,21 +436,18 @@ fn classify(command: &str, p: &Probes, scope: &Scope) -> Verdict {
     if raw.is_empty() {
         return Verdict::Unverified("empty command".into());
     }
-    if let Some(why) = shell_syntax(raw) {
+    // POSIX word splitting reads `\` as an escape, so Windows commands get their own rules.
+    let win = p.env.windows();
+    if let Some(why) = shell_syntax(&syntax_text(raw, win)) {
         return Verdict::Unverified(format!("{why}: cannot be checked without running it"));
     }
-    // POSIX word splitting reads `\` as an escape, so an unquoted Windows path would be mangled
-    // into a path that does not exist and a working hook reported broken. Windows rules: T331.9.
-    if cfg!(windows) && raw.contains('\\') && !raw.contains(['\'', '"']) {
-        return Verdict::Unverified("Windows paths are not checked yet".into());
-    }
-    let Some(words) = shlex::split(raw) else {
+    let Some(words) = split_words(raw, win) else {
         return Verdict::Unverified("unbalanced quotes".into());
     };
     let skip = words
         .iter()
         .take_while(|w| {
-            w.split_once('=').is_some_and(|(k, _)| {
+            !win && w.split_once('=').is_some_and(|(k, _)| {
                 !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
             })
         })
@@ -336,10 +467,13 @@ fn classify(command: &str, p: &Probes, scope: &Scope) -> Verdict {
             Err(name) => return Verdict::Unverified(format!("`{name}` is not set here")),
         }
     }
-    let (target, direct) = match target(&expanded) {
+    let (target, direct) = match target(&expanded, win) {
         Ok(t) => t,
         Err(v) => return v,
     };
+    if win {
+        return classify_windows(&target, p, scope);
+    }
     if !path_like(&target) && direct {
         return if BUILTINS.contains(&target.as_str()) || p.which.find(&target).is_some() {
             Verdict::Ok
@@ -361,7 +495,13 @@ fn classify(command: &str, p: &Probes, scope: &Scope) -> Verdict {
     if let Some(volume) = unmounted_volume(&path, p.fs) {
         return Verdict::Broken(format!("path is on {volume}, which is not mounted"));
     }
-    match p.fs.kind(&path) {
+    verdict(&path, p.fs.kind(&path), direct)
+}
+
+/// What `kind` of the file at `path` means for a hook that runs it. `exec_bit` is whether the
+/// shell execs it directly, so its exec bit matters (Windows has none).
+fn verdict(path: &Path, kind: PathKind, exec_bit: bool) -> Verdict {
+    match kind {
         PathKind::Missing => Verdict::Broken(format!("file not found: {}", path.display())),
         PathKind::DanglingSymlink(to) => {
             Verdict::Broken(format!("dangling symlink to {}", to.display()))
@@ -369,11 +509,67 @@ fn classify(command: &str, p: &Probes, scope: &Scope) -> Verdict {
         PathKind::Dir => {
             Verdict::Broken(format!("{} is a directory, not a script", path.display()))
         }
-        PathKind::File { executable: false } if direct => Verdict::Suspect(format!(
+        PathKind::File { executable: false } if exec_bit => Verdict::Suspect(format!(
             "{} is not executable: run `chmod +x`",
             path.display()
         )),
         PathKind::File { .. } => Verdict::Ok,
+    }
+}
+
+/// Programs `cmd` runs without a file, besides the POSIX [`BUILTINS`] the Git Bash hooks share.
+const CMD_BUILTINS: &[&str] = &[
+    "call", "copy", "del", "dir", "md", "mkdir", "move", "rd", "ren", "rem", "start", "title",
+    "ver",
+];
+
+/// Where a hook's target is on Windows (T331.9): a path as written, a bare name on `PATH`;
+/// each tried as is and with every `PATHEXT` extension, as `cmd` does. The first file wins.
+fn classify_windows(target: &str, p: &Probes, scope: &Scope) -> Verdict {
+    let lower = target.to_lowercase();
+    let bare = !path_like(target);
+    if bare && (BUILTINS.contains(&lower.as_str()) || CMD_BUILTINS.contains(&lower.as_str())) {
+        return Verdict::Ok;
+    }
+    let exts: Vec<String> = p
+        .env
+        .var("PATHEXT")
+        .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".into())
+        .split(';')
+        .filter(|e| !e.is_empty())
+        .map(str::to_string)
+        .collect();
+    let has_ext = exts.iter().any(|e| lower.ends_with(&e.to_lowercase()));
+    let bases: Vec<String> = if bare {
+        let path = p.env.var("PATH").unwrap_or_default();
+        path.split(';')
+            .filter(|d| !d.is_empty())
+            .map(|d| format!("{}\\{target}", d.trim_end_matches('\\')))
+            .collect()
+    } else if is_abs_windows(target) {
+        vec![target.to_string()]
+    } else if scope.relative_ok {
+        let rel = target
+            .strip_prefix("./")
+            .or_else(|| target.strip_prefix(".\\"));
+        vec![join_project(scope.project, rel.unwrap_or(target), true)]
+    } else {
+        return Verdict::Unverified(
+            "relative path: this host's base directory is not known".into(),
+        );
+    };
+    for base in &bases {
+        let tries = std::iter::once(String::new()).chain(exts.iter().filter(|_| !has_ext).cloned());
+        for ext in tries {
+            let path = PathBuf::from(format!("{base}{ext}"));
+            if let kind @ PathKind::File { .. } = p.fs.kind(&path) {
+                return verdict(&path, kind, false);
+            }
+        }
+    }
+    match bases.first() {
+        Some(base) if !bare => verdict(Path::new(base), p.fs.kind(Path::new(base)), false),
+        _ => Verdict::Broken(format!("`{target}` not on PATH")),
     }
 }
 
@@ -394,6 +590,27 @@ fn unmounted_volume(path: &Path, fs: &dyn Fs) -> Option<String> {
 #[cfg(not(target_os = "macos"))]
 fn unmounted_volume(_path: &Path, _fs: &dyn Fs) -> Option<String> {
     None
+}
+
+/// [`check`] limited to one host's findings (an id of [`crate::agents::HOSTS`]); `None` is all.
+pub fn check_for(cfg: &Config, p: &Probes, agent: Option<&str>) -> Vec<Problem> {
+    let mut found = check(cfg, p);
+    found.retain(|x| agent.is_none_or(|a| x.agent == a));
+    found
+}
+
+/// `id` as a host id, or an error naming the valid ones.
+pub fn host_id(id: &str) -> Result<&'static str, String> {
+    crate::agents::HOSTS
+        .iter()
+        .find(|h| **h == id)
+        .copied()
+        .ok_or_else(|| {
+            format!(
+                "unknown host `{id}`; valid hosts: {}",
+                crate::agents::HOSTS.join(", ")
+            )
+        })
 }
 
 /// Check every hook of Claude Code's settings files and enabled plugins, and of the JSON
@@ -696,6 +913,20 @@ mod tests {
         path: BTreeMap<String, PathBuf>,
         env: BTreeMap<String, String>,
         unreadable: BTreeSet<PathBuf>,
+        /// Windows rules for hook commands (`Env::windows`).
+        win: bool,
+        /// A case-insensitive file system, as on Windows: paths match ignoring case.
+        insensitive: bool,
+    }
+
+    /// `path` as `m` keys it: case-folded in the case-insensitive mode.
+    fn key(m: &Mock, path: &Path) -> String {
+        let s = path.to_string_lossy();
+        if m.insensitive {
+            s.to_lowercase()
+        } else {
+            s.into_owned()
+        }
     }
 
     impl Fs for Mock {
@@ -706,13 +937,19 @@ mod tests {
             if self.unreadable.contains(path) {
                 return Err(io::Error::from(io::ErrorKind::PermissionDenied));
             }
+            let want = key(self, path);
             self.files
-                .get(path)
-                .cloned()
+                .iter()
+                .find(|(k, _)| key(self, k) == want)
+                .map(|(_, v)| v.clone())
                 .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
         }
         fn kind(&self, path: &Path) -> PathKind {
-            self.kinds.get(path).cloned().unwrap_or(PathKind::Missing)
+            let want = key(self, path);
+            self.kinds
+                .iter()
+                .find(|(k, _)| key(self, k) == want)
+                .map_or(PathKind::Missing, |(_, v)| v.clone())
         }
     }
     impl Env for Mock {
@@ -724,6 +961,9 @@ mod tests {
         }
         fn cwd(&self) -> Option<PathBuf> {
             Some("/proj".into())
+        }
+        fn windows(&self) -> bool {
+            self.win
         }
     }
     impl Which for Mock {
@@ -1075,6 +1315,156 @@ mod tests {
             ]
         );
         assert_eq!(found[1].matcher.as_deref(), Some("run_shell_command"));
+    }
+
+    #[test]
+    fn the_host_filter_keeps_one_hosts_findings_and_names_the_valid_ids() {
+        let mut m = Mock::default();
+        m.files.insert(
+            "/h/.cursor/hooks.json".into(),
+            r#"{"version": 1, "hooks": {"beforeShellExecution": [{"command": "/h/gone.sh"}]}}"#
+                .into(),
+        );
+        m.files.insert(
+            "/h/.gemini/settings.json".into(),
+            r#"{"hooks": {"BeforeTool": [{"hooks": [{"type": "command", "command": "/h/gone2.sh"}]}]}}"#
+                .into(),
+        );
+        m.settings("/h/.claude/settings.json", &["/h/gone3.sh"]);
+        let agents = |only: Option<&str>| -> Vec<&str> {
+            let probes = Probes {
+                fs: &m,
+                env: &m,
+                which: &m,
+            };
+            check_for(&cfg(), &probes, only)
+                .iter()
+                .map(|p| p.agent)
+                .collect()
+        };
+        assert_eq!(agents(None), ["claude", "cursor", "gemini"]);
+        assert_eq!(agents(Some("cursor")), ["cursor"]);
+        assert_eq!(agents(Some("claude")), ["claude"]);
+        assert!(
+            agents(Some("zed")).is_empty(),
+            "a host without hooks has none"
+        );
+        assert_eq!(host_id("gemini"), Ok("gemini"));
+        let err = host_id("nope").unwrap_err();
+        assert!(
+            err.starts_with("unknown host `nope`; valid hosts: claude, cursor"),
+            "{err}"
+        );
+    }
+
+    fn windows_mock() -> Mock {
+        Mock {
+            win: true,
+            insensitive: true,
+            ..Mock::default()
+        }
+    }
+
+    #[test]
+    fn windows_words_keep_backslashes_and_quotes_group() {
+        let words = |s: &str| split_words(s, true).unwrap();
+        assert_eq!(words(r"C:\hooks\x.cmd a  b"), [r"C:\hooks\x.cmd", "a", "b"]);
+        assert_eq!(
+            words(r#""C:\Program Files (x86)\x.cmd" --y"#),
+            [r"C:\Program Files (x86)\x.cmd", "--y"]
+        );
+        assert_eq!(words(r#"a "b\"c" 'd'"#), ["a", r#"b"c"#, "'d'"]);
+        assert_eq!(words(r#"a "" b"#), ["a", "", "b"]);
+        assert_eq!(split_words(r#"a "b"#, true), None, "unbalanced");
+    }
+
+    #[test]
+    fn a_windows_path_resolves_by_pathext_ignoring_case() {
+        let mut m = windows_mock();
+        m.script(r"C:\Hooks\guard.cmd", false);
+        m.script(r"C:\Hooks\run.EXE", false);
+        m.env.insert("PATHEXT".into(), ".COM;.EXE;.BAT;.CMD".into());
+        // The extension is optional; the file's own case does not matter; no exec bit exists.
+        assert!(
+            verdicts(
+                &m,
+                &[r"c:\hooks\GUARD", r"C:\Hooks\run", r"C:\hooks\guard.cmd"]
+            )
+            .is_empty()
+        );
+        let gone = verdicts(&m, &[r"C:\Hooks\missing"]);
+        assert_eq!(
+            gone,
+            [(
+                "broken-hook",
+                r"file not found: C:\Hooks\missing".to_string()
+            )]
+        );
+        // An extension PATHEXT does not list is not tried.
+        m.env.insert("PATHEXT".into(), ".EXE".into());
+        assert_eq!(verdicts(&m, &[r"C:\Hooks\guard"]).len(), 1);
+        assert!(verdicts(&m, &[r"C:\Hooks\guard.cmd"]).is_empty());
+    }
+
+    #[test]
+    fn a_windows_program_is_searched_on_path_and_builtins_need_no_file() {
+        let mut m = windows_mock();
+        m.script(r"C:\Tools\rtok.exe", false);
+        m.env.insert("PATH".into(), r"C:\bin;c:\tools\".into());
+        assert!(verdicts(&m, &["rtok hook PreToolUse", "echo hi", "COPY a b"]).is_empty());
+        assert_eq!(
+            verdicts(&m, &["nothere run"]),
+            [("broken-hook", "`nothere` not on PATH".to_string())]
+        );
+    }
+
+    #[test]
+    fn windows_quotes_variables_and_launchers_are_read_by_their_own_rules() {
+        let mut m = windows_mock();
+        m.script(r"C:\Program Files (x86)\rtok\hook.cmd", false);
+        m.script(r"C:\Users\me\hooks\x.cmd", false);
+        m.script(r"C:\h\run.bat", false);
+        m.script(r"C:\h\x.ps1", false);
+        m.env.insert("USERPROFILE".into(), r"C:\Users\me".into());
+        assert!(
+            verdicts(
+                &m,
+                &[
+                    r#""C:\Program Files (x86)\rtok\hook.cmd" --x"#,
+                    r"%USERPROFILE%\hooks\x.cmd",
+                    r"cmd /c C:\h\run.bat arg",
+                    r"powershell -NoProfile -File C:\h\x.ps1",
+                ]
+            )
+            .is_empty()
+        );
+        let found = verdicts(
+            &m,
+            &[
+                r"cmd /c C:\h\gone.bat",
+                r"powershell -File C:\h\gone.ps1",
+                r"powershell -Command Get-Date",
+                r"C:\a & C:\b",
+            ],
+        );
+        let kinds: Vec<&str> = found.iter().map(|(k, _)| *k).collect();
+        assert_eq!(
+            kinds,
+            [
+                "broken-hook",
+                "broken-hook",
+                "unverified-hook",
+                "unverified-hook"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_windows_relative_path_joins_the_project_for_claude_only() {
+        let mut m = windows_mock();
+        m.script(r"/proj\hook.cmd", false);
+        assert!(verdicts(&m, &[r".\hook.cmd"]).is_empty());
+        assert_eq!(verdicts(&m, &[r".\gone.cmd"])[0].0, "broken-hook");
     }
 
     #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9

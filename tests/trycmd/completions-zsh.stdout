@@ -156,6 +156,7 @@ _arguments "${_arguments_options[@]}" : /
 (doctor)
 _arguments "${_arguments_options[@]}" : /
 '--only=[With --fix/: which problems to fix (only /`broken-hooks/` for now)]:ONLY:(broken-hooks)' /
+'--agent=[Check (and with --fix, repair) the hooks of one host only (an id of /`rtok agents list/`)]:HOST:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--instructions[Also run the instruction-file audit (T7.2)]' /
 '(--fix)--json[JSON instead of the table]' /

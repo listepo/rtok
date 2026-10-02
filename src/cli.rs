@@ -158,6 +158,9 @@ enum Cmd {
         /// With --fix: which problems to fix (only `broken-hooks` for now)
         #[arg(long, requires = "fix", value_enum, default_value = "broken-hooks")]
         only: FixClass,
+        /// Check (and with --fix, repair) the hooks of one host only (an id of `rtok agents list`)
+        #[arg(long, value_name = "HOST")]
+        agent: Option<String>,
     },
     /// Git worktrees of this repository: owner, state and disk cost
     Worktree {
@@ -1166,20 +1169,29 @@ pub fn run() -> Result<()> {
             yes,
             dry_run,
             only: FixClass::BrokenHooks,
+            agent,
             ..
         } => {
+            let agent = doctor_host(agent.as_deref())?;
             let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
-            let (text, code) = crate::doctor::fix::run(&cfg, yes && !dry_run);
+            let (text, code) = crate::doctor::fix::run(&cfg, yes && !dry_run, agent);
             print!("{text}");
             if code != 0 {
                 std::process::exit(code);
             }
         }
         Cmd::Doctor {
-            instructions, json, ..
+            instructions,
+            json,
+            agent,
+            ..
         } => {
+            let agent = doctor_host(agent.as_deref())?;
             let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
-            let report = model::doctor(&cfg)?;
+            let mut report = model::doctor(&cfg)?;
+            report
+                .problems
+                .retain(|p| agent.is_none_or(|a| p.agent == a));
             if json {
                 print_json(&report)?;
             } else {
@@ -2322,6 +2334,14 @@ fn setup_flags(
     let mut flags = Dict::new();
     flags.insert("setup".into(), Value::from(setup));
     Some(flags)
+}
+
+/// `rtok doctor --agent <HOST>`: the host id, or an error naming the valid ones.
+fn doctor_host(agent: Option<&str>) -> Result<Option<&'static str>> {
+    agent
+        .map(crate::doctor::hooks::host_id)
+        .transpose()
+        .map_err(anyhow::Error::msg)
 }
 
 pub(crate) fn hook_host_flag(host: Option<String>) -> Option<figment::value::Dict> {
