@@ -6013,6 +6013,7 @@ Result: New Worktrees page ("worktrees","worktrees") on both surfaces: model::wo
 
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
+
 ### T183. Python utility: publish host plugins to marketplaces (per agent, via CI)
 
 Creator request 2026-09-22 (voice): a single Python script that publishes an agent plugin to a marketplace — only for hosts that support marketplace publishing. For each AirTalk/rtok host that has this capability, implement a corresponding Python module with that host's publish logic. Invoking the script with the key `all` or a specific agent name deploys/publishes that agent's plugin to its marketplace via CI, triggered from Python.
@@ -6923,6 +6924,18 @@ Result: Added `rtok agents junk clear`: a dry run by default, `--yes` applies, `
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T330.1. `rtok agents junk list`: rtok's own junk with folders, sizes and space freed
+
+First slice of T330 (too large for one PR: complexity 4, six areas). Adds the read-only `rtok agents junk list [--json] [--bytes]` over the junk `clear` already knows (the T182 `rtok-own` kind: `rtok.log.<N>` past `[log] files`, archive payloads past `core.retain_calls_days`): one `rtok` agent row with its folders (the log and archive directories, disk usage: allocated blocks, a hard link once, symlinks not followed), each kind with items and size, and "Freed by `clear`". The list is a section of the Hosts page text (`web::model::hosts_page_text`), so `agents junk list` maps to the `hosts` page in `surface_parity` (D27). `clear` is unchanged.
+
+Done when: `list` prints the `rtok` row with exact sizes (`--bytes`) equal to what the `clear` dry run plans; `--json` carries `agents[] { name, folders[], kinds[], freed_default_bytes }` and `freed_default_bytes`; `list` deletes nothing; the Hosts page shows the same text; `surface_parity`, `config_coverage` and the trycmd fence pass.
+
+Check: `tests/agents_junk.rs` (fixture home: stale log, JSON and `--bytes`, file still there), unit tests in `src/agents/junk.rs` (disk usage with a hard link and a symlink, report sums equal the plan); `just check`.
+
+Execution: `src/agents/junk.rs` gets `Report`/`AgentJunk`/`Folder`/`KindRow`, `disk_usage`, `report(cfg)` (built from `scan`, no second scan) and `to_list`; `src/cli.rs` gets `JunkCmd::List`; `src/web/model.rs` appends the text to the cached hosts page; `tests/surface_parity.rs` maps the command to `hosts` and gates `--json`; `tests/config_coverage.rs` allows `junk.bytes`; trycmd/completions regenerated.
+
+**Result (2026-10-03, Claude Code / sonnet-5):** `rtok agents junk list [--json] [--bytes]` (`src/agents/junk.rs`, `src/cli.rs`) prints the `rtok` row: its log and archive directories with disk usage (allocated blocks on Unix, a hard link once, symlinks not followed; a directory nested in another is folded), each kind with items and size, and "Freed by `clear`", built from the same `scan` the `clear` dry run uses so the numbers match. `--json` carries `agents[] { name, folders[], kinds[], freed_default_bytes }` and `freed_default_bytes`. The text is also appended to the Hosts page (`web::model::hosts_page_text`, inside the existing background read), so `surface_parity` maps `agents junk list` to `hosts` and gates its `--json`; `config_coverage` allows `junk.bytes`. `clear` is untouched. Checked by two unit tests in `src/agents/junk.rs` (hard link and symlink in `disk_usage`; report sums equal the plan and the text), one e2e test in `tests/agents_junk.rs` (JSON and `--bytes` on a fixture home, nothing deleted) and `just check`. The remaining slices are T330.2 to T330.6.
 
 ### T248. Plugin READMEs must link the host's official documentation
 

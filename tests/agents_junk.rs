@@ -67,3 +67,29 @@ fn dry_run_lists_the_stale_log_and_yes_removes_it_without_touching_the_db() {
         "the database itself is never touched"
     );
 }
+
+/// T330.1: `list` is read-only and prints exactly what the `clear` dry run plans.
+#[test]
+fn list_reports_the_stale_log_with_exact_bytes_and_removes_nothing() {
+    let home = home("list");
+    let cfg = rtok::config::Config::load_from(&home).expect("config");
+    let stale_log = cfg.log.path.with_file_name(format!(
+        "{}.{}",
+        cfg.log.path.file_name().unwrap().to_str().unwrap(),
+        cfg.log.files + 1
+    ));
+    fs::create_dir_all(stale_log.parent().unwrap()).unwrap();
+    fs::write(&stale_log, b"stale").unwrap();
+
+    let json = rtok(&["agents", "junk", "list", "--json"], &home);
+    let report: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let rtok_row = &report["agents"][0];
+    assert_eq!(rtok_row["name"], "rtok");
+    assert_eq!(rtok_row["kinds"][0]["kind"], "log");
+    assert_eq!(rtok_row["kinds"][0]["size_bytes"], 5);
+    assert_eq!(report["freed_default_bytes"], 5);
+
+    let text = rtok(&["agents", "junk", "list", "--bytes"], &home);
+    assert!(text.contains("Freed by `clear`: 5\n"), "{text}");
+    assert!(stale_log.is_file(), "list must not delete anything");
+}
