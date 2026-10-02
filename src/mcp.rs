@@ -46,7 +46,11 @@ pub fn run(cfg: &Config) -> Result<()> {
     // Retention is housekeeping with a next-start retry: the server must not die on a
     // contended store (T75) — WAL reads keep every tool serving while another process
     // writes, and the purge queues behind it under the maintenance busy window.
-    if let Err(e) = server.cx.store.run_retention(cfg.core.retain_calls_days) {
+    if let Err(e) = server
+        .cx
+        .store
+        .run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
+    {
         let msg = format!("retention skipped until next start: {e:#}");
         eprintln!("rtok mcp: {msg}");
         crate::log::append(cfg, "warn", "mcp", "retention", &msg);
@@ -1081,7 +1085,7 @@ mod tests {
         server
             .cx
             .store
-            .run_retention(cfg.core.retain_calls_days)
+            .run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
             .unwrap();
         assert_eq!(server.cx.store.count_calls().unwrap(), 0);
         let _ = fs::remove_dir_all(dir);

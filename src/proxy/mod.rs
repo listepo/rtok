@@ -173,7 +173,10 @@ pub async fn serve(cfg: &Config) -> Result<()> {
     // Retention is housekeeping with a next-start retry: the listener must not die on a
     // contended store (T75) — requests still proxy while another process writes, and
     // the purge queues behind it under the maintenance busy window.
-    if let Err(e) = state.store.run_retention(cfg.core.retain_calls_days) {
+    if let Err(e) = state
+        .store
+        .run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
+    {
         let msg = format!("retention skipped until next start: {e:#}");
         eprintln!("rtok proxy: {msg}");
         crate::log::append(cfg, "warn", "proxy", "retention", &msg);
@@ -1095,7 +1098,7 @@ mod tests {
         let state = ProxyState::new(&cfg).expect("proxy state");
         state
             .store
-            .run_retention(cfg.core.retain_calls_days)
+            .run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
             .unwrap();
         assert_eq!(state.store.count_calls().unwrap(), 0);
         let _ = std::fs::remove_dir_all(&dir);

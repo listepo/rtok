@@ -1,7 +1,9 @@
 //! `rtok agents junk clear` (T182): remove junk rtok owns under its own home — log siblings
-//! left behind past `[log] files` and archive payloads past `core.retain_calls_days`. Dry run
-//! by default; `--yes` applies. Host junk (each app's own scratch/cache folders) is out of
-//! scope until the per-host map lands (plan T182 item 3) — this never touches a host directory.
+//! left behind past `[log] files` and archive payloads past `core.retain_calls_days`. With
+//! `--yes` it also clears old hook bodies (`core.retain_hook_bodies_days`) and converts the
+//! store to incremental vacuum once (T352). Dry run by default; `--yes` applies. Host junk
+//! (each app's own scratch/cache folders) is out of scope until the per-host map lands (plan
+//! T182 item 3) — this never touches a host directory.
 //!
 //! Inventory for T182 found nothing else unbounded in `~/.rtok`: log rotation (`src/log.rs`)
 //! already caps generations on every write, archive retention (`Store::run_retention`) already
@@ -107,12 +109,13 @@ pub fn run(cfg: &Config, yes: bool) -> Vec<Outcome> {
             }
         }
     }
-    if outcomes.iter().any(|o| o.kind == "archive")
-        && let Ok(store) = Store::open(&cfg.core.db_path)
-    {
+    if let Ok(store) = Store::open(&cfg.core.db_path) {
         // Fire-and-forget on disk like `run_retention` itself (T75/T182): a file it could not
         // remove is simply left for the next run, never fatal here.
-        let _ = store.run_retention(cfg.core.retain_calls_days);
+        let _ = store.run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days);
+        // T352: a store older than the incremental-vacuum default is rewritten once so it can
+        // shrink; a no-op afterwards.
+        let _ = store.convert_to_incremental_vacuum();
         for o in outcomes.iter_mut().filter(|o| o.kind == "archive") {
             o.note = "removed".into();
         }
