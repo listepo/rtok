@@ -9,8 +9,11 @@ import {
 } from "@tanstack/react-router";
 import { useConnection, useSnapshot } from "./api/query";
 import { Calls } from "./pages/Calls";
+import { Doctor } from "./pages/Doctor";
+import { Logs } from "./pages/Logs";
 import { Overview } from "./pages/Overview";
 import { Plugins } from "./pages/Plugins";
+import { Sessions } from "./pages/Sessions";
 import { PAGES, type Page } from "./pages";
 import { NotFound, Shell } from "./Shell";
 import { Empty, Loading } from "./states";
@@ -35,6 +38,9 @@ function PagePlaceholder({ page }: { page: Page }) {
 // Pages that have a real screen; the rest keep the placeholder until their task lands.
 const screens: Partial<Record<Page["id"], RouteComponent>> = {
     overview: Overview,
+    sessions: Sessions,
+    doctor: Doctor,
+    logs: Logs,
     plugins: Plugins,
     calls: Calls,
 };

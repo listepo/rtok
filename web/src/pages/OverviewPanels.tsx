@@ -1,7 +1,7 @@
 import { Empty } from "../states";
 import { Panel } from "../ui/Panel";
 import { SERIES, CallsChart } from "./CallsChart";
-import { ago, compact } from "./format";
+import { ago, compact, nowSecs } from "./format";
 import { SURFACES, type overview } from "./model";
 import { CheckPill, LivePill, PanelLink } from "./parts";
 
@@ -91,7 +91,6 @@ export function DoctorPanel({ o }: { o: Overview }) {
 }
 
 export function SessionsPanel({ o }: { o: Overview }) {
-    const now = Math.floor(Date.now() / 1000);
     return (
         <Panel
             title="recent sessions"
@@ -120,7 +119,7 @@ export function SessionsPanel({ o }: { o: Overview }) {
                                     {compact(s.input + s.cache_create + s.cache_read + s.output)}
                                 </div>
                                 <div className="text-2xs text-fg-muted">
-                                    {ago(s.last_activity, now)}
+                                    {ago(s.last_activity, nowSecs())}
                                 </div>
                             </div>
                         </li>
