@@ -192,8 +192,9 @@ pub struct Report {
 }
 
 /// Disk usage, not apparent size: allocated blocks on Unix so sparse files and APFS clones are
-/// not over-counted, a hard link once. A symlink costs itself and is never followed, so a link
-/// out of an agent folder cannot pull foreign bytes into the total.
+/// not over-counted, a hard link once. Elsewhere it is the apparent size with every link
+/// counted, because std has no stable file id to dedupe by there. A symlink costs itself and is
+/// never followed, so a link out of an agent folder cannot pull foreign bytes into the total.
 pub fn disk_usage(path: &Path) -> u64 {
     fn walk(path: &Path, seen: &mut HashSet<(u64, u64)>) -> u64 {
         let Ok(meta) = std::fs::symlink_metadata(path) else {
@@ -399,6 +400,9 @@ mod tests {
             .collect();
         assert_eq!(left.len(), 1, "the referenced archive survives");
     }
+
+    /// Unix only: elsewhere `disk_usage` has no file id and counts each hard link.
+    #[cfg(unix)]
     #[test]
     fn disk_usage_counts_a_hard_link_once_and_never_follows_a_symlink() {
         let (_cfg, dir) = crate::testutil::config("junk-disk-usage");
@@ -410,7 +414,6 @@ mod tests {
         std::fs::write(&a, vec![2u8; 8 * 1024]).unwrap();
         let alone = disk_usage(&root);
         std::fs::hard_link(&a, root.join("b.bin")).unwrap();
-        #[cfg(unix)]
         std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
         let with_links = disk_usage(&root);
         assert!(
