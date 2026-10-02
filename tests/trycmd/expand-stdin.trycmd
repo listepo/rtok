@@ -1,0 +1,9 @@
+# `rtok expand -` (T354): agents pipe into it hoping for raw output; nothing reads stdin, so
+# a non-id gets a hint at the `expand <id>` trailer instead of a bare unknown-id error.
+
+```console
+$ HOME=target/tmp/t354-expand RTOK_HOME=target/tmp/t354-expand rtok expand -
+? 1
+Error: unknown archive id: - (expand takes the hex id from an "expand <id>" trailer; it does not read stdin)
+
+```

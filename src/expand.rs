@@ -42,6 +42,19 @@ pub fn fetch(cx: &Runtime, id: &str) -> Result<Option<Vec<u8>>> {
     Ok(Some(bytes))
 }
 
+/// The error text for an id with no archive row. An id that cannot be one — `-`,
+/// `/dev/stdin`, anything but the 64-char hex sha256 — gets a hint (T354): agents guess a
+/// stdin form (`cmd | rtok expand -`) to reach raw output, and nothing reads stdin.
+pub fn unknown_id_message(id: &str) -> String {
+    if id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()) {
+        format!("unknown archive id: {id}")
+    } else {
+        format!(
+            "unknown archive id: {id} (expand takes the hex id from an \"expand <id>\" trailer; it does not read stdin)"
+        )
+    }
+}
+
 /// 1-based inclusive line range over already-split lines.
 pub fn slice_lines<T>(lines: Vec<T>, a: usize, b: usize) -> Vec<T> {
     lines
@@ -174,7 +187,7 @@ pub fn run(
     }
     let cx = Runtime::open(cfg.clone(), "expand")?;
     let Some(bytes) = fetch(&cx, id)? else {
-        bail!("unknown archive id: {id}");
+        bail!(unknown_id_message(id));
     };
     let max_lines = cfg.expand.max_lines;
     if lines.is_none() && grep.is_none() && max_lines == 0 {
@@ -275,6 +288,26 @@ mod tests {
         let c = cfg("unknown");
         let err = run(&c, "no-such", None, None, 0).unwrap_err();
         assert!(err.to_string().contains("unknown archive id"), "{err}");
+    }
+
+    #[test]
+    fn non_id_gets_the_trailer_hint_and_a_hex_id_does_not() {
+        let hint = unknown_id_message("-");
+        assert!(hint.starts_with("unknown archive id: - ("), "{hint}");
+        assert!(hint.contains("\"expand <id>\" trailer"), "{hint}");
+        assert!(hint.contains("does not read stdin"), "{hint}");
+        assert!(!hint.contains('\n'), "{hint}");
+        assert!(unknown_id_message("/dev/stdin").contains("trailer"));
+        let hex = "ab".repeat(32);
+        assert_eq!(
+            unknown_id_message(&hex),
+            format!("unknown archive id: {hex}")
+        );
+        let c = cfg("hint");
+        let err = run(&c, "-", None, None, 0).unwrap_err();
+        assert!(err.to_string().contains("does not read stdin"), "{err}");
+        let err = run(&c, &hex, None, None, 0).unwrap_err();
+        assert_eq!(err.to_string(), format!("unknown archive id: {hex}"));
     }
 
     #[test]
