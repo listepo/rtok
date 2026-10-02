@@ -525,6 +525,12 @@ Done means: rtok's entry is written into `.cursor/worktrees.json` (`setup-worktr
 
 Check: install/remove e2e per host that changes only our entry.
 
+Open questions (2026-10-03, Claude Code / sonnet-5; not started, ask the creator before coding):
+1. A post-create script runs outside the session: no `RTOK_AGENT_ID`, no session id. `adopt` today refuses without an agent. Whom does it bind? Candidate: the one live agent of that host whose cwd is the repository (T283.1 rule, ambiguous binds nothing), else a claim with no agent that the next `worktree_adopt` or hook in that worktree completes.
+2. The host-config formats must come from primary sources before any writer: the `.cursor/worktrees.json` shape (`setup-worktree*` values), where Devin/Windsurf read `post_setup_worktree` (project vs user `hooks.json`), and Kilo's `.kilo/setup-script` is a plain script, so "our entry only" needs a marked block. `research.md` §26 names the keys but not the exact file shapes.
+3. Whether a git lock breaks a host's own eviction is still the T281 live probe; the scripts must go through `adopt`, which already skips the lock in evicting pools.
+
+
 ### T290. Docs, skill and one cross-host test for agents and worktrees
 
 Depends on T282–T289 (lands last; T159 may land after it and adds its own rows).
