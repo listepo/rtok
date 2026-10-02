@@ -64,7 +64,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T348 | todo | research | 1 | 0% | |
 | T352 | in progress | P1 | 3 | 10% | Claude Code / claude-opus-5-5 |
 | T355 | in progress | P2 | 2 | 10% | Claude Code / claude-opus-5-5 |
-| T356 | todo | P1 | 2 | 0% | |
+| T356 | in progress | P1 | 2 | 5% | Claude Code / claude-opus-5-5 |
+| T357 | in progress | P1 | 2 | 5% | Claude Code / claude-opus-5-5 |
 
 
 
@@ -1427,6 +1428,18 @@ Found 2026-10-02 (T352 research): `symbols` holds 617,319 rows (~120 MB plus ind
 Done when: the graph refuses a root that is the home directory or the filesystem root (an error that says to pass a path or open a project, no walk), and existing `symbols`/`symbol_stale` rows of such roots are dropped once (store retention or a migration). Indexing of real projects is unchanged.
 
 Check: graph tests for both refused roots and an accepted project root; a store test that drops the home-root rows; `symbols` size on a copy of the real store before and after, recorded in this card.
+
+Execution plan (after T352 lands — it adds `drop_vanished_symbol_roots` to retention): reuse `plugins::read::walk_root_ok` (T263: refuses `/` and the home directory for the watcher) in the graph's root choice (`src/plugins/graph/mod.rs`, the `current_dir()` call sites) and return `no project: pass path or open a project (roots)`; extend T352's root drop so a root that fails `walk_root_ok` is dropped like a vanished one. Tests: graph refuses home and `/`, accepts a temp project; retention drops a home-root row.
+
+### T357. rtok links `rtok-hook` next to itself on PATH
+
+Found 2026-10-02 (T349): installed hooks run `rtok-hook` only when it is on `PATH`, and a package manager that links one binary (the published ketch manifest links only `rtok`) leaves the fast client unused although `rtok-hook` sits next to the real `rtok` executable (`~/.ketch/store/rtok/<version>/rtok-hook`). The fix must not depend on publishing a manifest. Creator's choice (2026-10-02): the link goes next to `rtok` on `PATH`; hook commands stay as they are.
+
+Done when: when `rtok-hook` is not found on `PATH`, rtok creates `<dir of the rtok found on PATH>/rtok-hook` as a symlink to the `rtok-hook` beside the canonical `current_exe()`, and re-points a symlink of that name that dangles or points at another version's `rtok-hook` (after an upgrade). It never replaces a regular file or a working link it did not make, does nothing when the sibling is missing or the directory is not writable, and is skipped on Windows (no unprivileged symlinks; the T349 doctor advice stays). Runs from `rtok init`/setup, `rtok doctor --fix` if present, and the start of `rtok mcp` and `rtok hook --serve` — a few `stat` calls, never on the per-hook path. `rtok doctor` reports the link.
+
+Execution plan: one helper in `src/agents/mod.rs` next to `bin_on_path` (PATH lookup, sibling resolution, atomic create via temp name + rename); call sites listed above; tests with a temp `PATH`, a fake package dir with `rtok`/`rtok-hook`, a dangling old-version link, a foreign regular file, and a read-only dir. Verify on this machine with a copy of `~/.ketch/bin` layout under the scratch dir, not the real one.
+
+Check: unit tests for each case above; `rtok doctor` no longer prints the T349 advice once the link exists.
 
 ## Reference
 
