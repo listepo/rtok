@@ -801,24 +801,32 @@ pub(crate) fn purge_related(conn: &mut SqliteConnection, cutoff: i64) -> QueryRe
 
 /// T352: hook stdin bodies are only read back by short session windows and the OTel export, so
 /// they are cleared after `cutoff` while the `calls` row, byte counts, shas and archive columns
-/// stay. Only rows that still hold a body are touched.
-pub(crate) fn clear_hook_bodies(conn: &mut SqliteConnection, cutoff: i64) -> QueryResult<usize> {
-    diesel::update(call_io::table)
+/// stay. Clears at most `batch` rows that still hold a body, so one write transaction stays
+/// short; returns how many it cleared.
+pub(crate) fn clear_hook_bodies(
+    conn: &mut SqliteConnection,
+    cutoff: i64,
+    batch: i64,
+) -> QueryResult<usize> {
+    let old_hooks = calls::table
+        .filter(calls::kind.eq("hook"))
+        .filter(calls::ts.lt(cutoff))
+        .select(calls::id);
+    // An alias, as in `purge_related`: Diesel rejects a subselect of the table being updated.
+    let io = alias!(call_io as pending_io);
+    let pending = io
+        .filter(io.field(call_io::call_id).eq_any(old_hooks))
         .filter(
-            call_io::call_id.eq_any(
-                calls::table
-                    .filter(calls::kind.eq("hook"))
-                    .filter(calls::ts.lt(cutoff))
-                    .select(calls::id),
-            ),
-        )
-        .filter(
-            call_io::request_json
+            io.field(call_io::request_json)
                 .is_not_null()
-                .or(call_io::response_json.is_not_null())
-                .or(call_io::request_raw.is_not_null())
-                .or(call_io::response_raw.is_not_null()),
+                .or(io.field(call_io::response_json).is_not_null())
+                .or(io.field(call_io::request_raw).is_not_null())
+                .or(io.field(call_io::response_raw).is_not_null()),
         )
+        .select(io.field(call_io::call_id))
+        .limit(batch);
+    diesel::update(call_io::table)
+        .filter(call_io::call_id.eq_any(pending))
         .set((
             call_io::request_json.eq(None::<String>),
             call_io::response_json.eq(None::<String>),

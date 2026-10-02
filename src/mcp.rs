@@ -43,18 +43,9 @@ fn ping_def() -> ToolDef {
 #[cfg_attr(not(feature = "graph"), allow(unused_variables))]
 pub fn run(cfg: &Config) -> Result<()> {
     let server = Server::new(cfg)?;
-    // Retention is housekeeping with a next-start retry: the server must not die on a
-    // contended store (T75) — WAL reads keep every tool serving while another process
-    // writes, and the purge queues behind it under the maintenance busy window.
-    if let Err(e) = server
-        .cx
-        .store
-        .run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
-    {
-        let msg = format!("retention skipped until next start: {e:#}");
-        eprintln!("rtok mcp: {msg}");
-        crate::log::append(cfg, "warn", "mcp", "retention", &msg);
-    }
+    // Background, own connection: housekeeping must neither delay `initialize` nor die on a
+    // contended store (T75, T352).
+    crate::store::Store::spawn_retention(cfg, "mcp");
     crate::otel::export::spawn_ticker(cfg);
     // P8d watcher (T8.16): a thread inside this process, never a second writer.
     // Any value but `off` arms the notify backend.

@@ -136,6 +136,9 @@ thread_local! {
     pub(crate) static OPEN_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
+/// Rows per write transaction when clearing hook bodies (T352).
+const HOOK_BODY_BATCH: i64 = 5_000;
+
 impl Store {
     /// Open (creating directories and the file as needed) and migrate.
     pub fn open(path: &Path) -> Result<Self> {
@@ -2159,14 +2162,52 @@ impl Store {
 
     /// T352: clear the stdin bodies of hook `call_io` rows older than `days` (0 = never).
     /// The `calls` row, byte counts, shas and archive columns stay; readers already treat a
-    /// missing body as empty.
+    /// missing body as empty. Returns the number of rows cleared.
     pub fn clear_hook_bodies_older_than(&self, days: i64) -> Result<usize> {
+        self.clear_hook_bodies_in_batches(days, HOOK_BODY_BATCH)
+    }
+
+    /// [`Store::clear_hook_bodies_older_than`] with an explicit batch size: one short write
+    /// transaction per `batch` rows, the connection lock released in between, so a first run
+    /// over a large store never holds the SQLite write lock for the whole clear.
+    fn clear_hook_bodies_in_batches(&self, days: i64, batch: i64) -> Result<usize> {
         if days <= 0 {
             return Ok(0);
         }
         let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
         let cutoff = now.saturating_sub(days.saturating_mul(86_400));
-        self.maintenance(|c| Ok(sql_ext::clear_hook_bodies(c, cutoff)?))
+        let mut total = 0;
+        loop {
+            let n = self.maintenance(|c| Ok(sql_ext::clear_hook_bodies(c, cutoff, batch)?))?;
+            if n == 0 {
+                return Ok(total);
+            }
+            total += n;
+        }
+    }
+
+    /// T352: run [`Store::run_retention`] on a background thread with its own connection, so
+    /// the `initialize` handshake (mcp) or the listener (proxy) is never delayed by it. Retention
+    /// is housekeeping with a next-start retry: an error is logged, not fatal (T75). The thread
+    /// dies with the process; one that is killed mid-run only rolls back its current batch.
+    pub fn spawn_retention(cfg: &crate::config::Config, surface: &'static str) {
+        let cfg = cfg.clone();
+        let spawned = std::thread::Builder::new()
+            .name("rtok-retention".into())
+            .spawn(move || {
+                let run = || {
+                    Store::open(&cfg.core.db_path)?
+                        .run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
+                };
+                if let Err(e) = run() {
+                    let msg = format!("retention skipped until next start: {e:#}");
+                    eprintln!("rtok {surface}: {msg}");
+                    crate::log::append(&cfg, "warn", surface, "retention", &msg);
+                }
+            });
+        if let Err(e) = spawned {
+            eprintln!("rtok {surface}: retention thread not started: {e}");
+        }
     }
 
     /// T352: drop the graph index of every root that is no longer a directory (a removed
@@ -4527,6 +4568,28 @@ mod tests {
             ["{\"fresh\":1}", ""],
             "a cleared body reads back empty"
         );
+    }
+
+    #[test]
+    fn hook_bodies_clear_across_several_batches() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_session("s", Some(1), None, None, Some("hook"))
+            .unwrap();
+        let old: Vec<i32> = (0..5)
+            .map(|_| hook_call_with_body(&store, "hook", b"{}", 10))
+            .collect();
+        let fresh = hook_call_with_body(&store, "hook", b"{}", 1);
+        let cutoff = i64::try_from(crate::log::now()).unwrap() - 3 * 86_400;
+        {
+            let mut conn = store.lock().unwrap();
+            let first = sql_ext::clear_hook_bodies(&mut conn, cutoff, 2).unwrap();
+            assert_eq!(first, 2, "one batch clears at most `batch` rows");
+        }
+        assert_eq!(store.clear_hook_bodies_in_batches(3, 2).unwrap(), 3);
+        assert!(old.iter().all(|&id| call_io_bodies(&store, id).0.is_none()));
+        assert!(call_io_bodies(&store, fresh).0.is_some());
+        assert_eq!(store.clear_hook_bodies_in_batches(3, 2).unwrap(), 0);
     }
 
     #[test]
