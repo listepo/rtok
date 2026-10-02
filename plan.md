@@ -66,7 +66,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T363 | todo | P2 | 2 | 0% | |
 | T364 | todo | P3 | 2 | 0% | |
 | T365 | todo | P3 | 3 | 0% | |
-| T366 | todo | P3 | 1 | 0% | |
 | T367 | todo | P3 | 1 | 0% | |
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
@@ -1460,16 +1459,6 @@ Repro: `RTOK_LOG_LEVEL=verbose rtok config get log.level` prints `verbose`; `RTO
 Done when: `config validate` runs the same per-key rules over the merged config (file + project + env, `layers::load`) and names the source of each bad value (the data `config show --sources` already has). Split from the file check only if the change exceeds 300 LOC / 10 files.
 
 Check: a test with `RTOK_LOG_LEVEL=verbose` in the child env gets a non-zero `config validate` whose message names the env source; a clean env still prints `ok`; `just check`.
-
-### T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A command killed by SIGKILL (OOM killer, timeout) or SIGTERM comes back as `1`, not `128+signal` (137 / 143), so agents and scripts cannot tell "killed" from "failed" and OOM kills in test runs hide. On Unix `ExitStatus::code()` is `None` for a signal death and both sites map `None` to `1`: `src/plugins/cmd/run.rs:298` (`out.code.unwrap_or(1)`) and `src/mcp/wrap.rs:90` (`code().unwrap_or(1)`).
-
-Repro: `rtok run -- sh -c 'kill -TERM $$'; echo $?` and `rtok run -- sh -c 'kill -KILL $$'; echo $?` print `1`; plain `sh -c 'kill -TERM $$'; echo $?` prints `143`.
-
-Done when: one shared helper maps a Unix signal death (`ExitStatusExt::signal()`) to `128 + sig` where `code()` is `None`, used by both sites; Windows behaviour unchanged.
-
-Check: Unix-only tests for `rtok run` and the `rtok mcp --` wrap path get `143` for SIGTERM and `137` for SIGKILL, and a normal non-zero exit keeps its code; `just check`.
 
 ### T367. `rtok graph index <path>` exits 0 for a path that does not exist
 

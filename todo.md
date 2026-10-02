@@ -63,5 +63,4 @@
 - T363. `config validate` / `config set` accept out-of-range float keys and any `embed_backend`
 - T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
 - T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
-- T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal
 - T367. `rtok graph index <path>` exits 0 for a path that does not exist
