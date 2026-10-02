@@ -245,7 +245,11 @@ mod tests {
                 .iter()
                 .map(|r| {
                     let dir = r.dir.strip_prefix(&self.base).unwrap();
-                    (dir.display().to_string(), r.reason.clone())
+                    // `/`-joined, so the expectations hold on Windows too.
+                    (
+                        dir.display().to_string().replace('\\', "/"),
+                        r.reason.clone(),
+                    )
                 })
                 .collect();
             (refs, found.warnings)
