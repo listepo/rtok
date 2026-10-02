@@ -22,6 +22,12 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
+mod dupes;
+pub mod fix;
+pub mod hooks;
+mod mcp_dupes;
+pub mod probe;
+
 /// What `rtok doctor` found, as data.
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct Report {
@@ -56,6 +62,9 @@ pub struct Report {
     pub tools_rewrite_advice: Option<String>,
     /// Every host variant and the state of each rtok module in it, as `agent setup` prints.
     pub agents: Vec<AgentModules>,
+    /// Hooks that lead nowhere or cannot be checked (T331.1); the list later detectors extend.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub problems: Vec<hooks::Problem>,
 }
 
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
@@ -141,6 +150,8 @@ impl Report {
         for (ev, n) in &self.hooks_by_event {
             out.push_str(&format!("  {ev} {n}\n"));
         }
+        out.push_str(&hooks::render(&self.problems));
+        out.push_str(&dupes::render_mcp(&self.problems));
         out.push_str("mcp\n");
         for s in &self.mcp {
             out.push_str(&format!(
@@ -356,7 +367,22 @@ pub fn page(cfg: &Config) -> Result<Report> {
                 })
             })
             .collect(),
+        problems: checks(cfg),
     })
+}
+
+/// Every config finding of this machine: hooks, then duplicate MCP entries.
+fn checks(cfg: &Config) -> Vec<hooks::Problem> {
+    let mut problems = hooks::check_real(cfg);
+    problems.extend(mcp_dupes::check(
+        cfg,
+        &hooks::Probes {
+            fs: &probe::RealFs,
+            env: &probe::RealEnv,
+            which: &probe::RealWhich,
+        },
+    ));
+    problems
 }
 
 /// The std-only fast hook client (T178) that installed hook commands try before `rtok hook`.
@@ -1218,6 +1244,7 @@ pub(crate) fn report_fixture() -> Report {
         overlaps: Vec::new(),
         tools_rewrite_advice: None,
         agents: Vec::new(),
+        problems: Vec::new(),
     }
 }
 

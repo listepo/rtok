@@ -2284,6 +2284,42 @@ Complexity: 2/5
 Status: done 2026-09-15 · Model: Claude Code / Opus 5
 Evidence: `claude_modules_read_back_hooks_and_a_proxy_on_any_port` green; fmt + workspace clippy `-D warnings` clean; `cargo test --workspace` 428 passed; build-min ok; jscpd within threshold; `agent setup claude --dry-run` and `doctor` in a throwaway `HOME` print the marks for every host.
 
+### T331.1. Doctor: broken hooks report (read-only) and the injected `Fs`/`Env`/`Which` seam
+
+Part of T331. `rtok doctor` lists hooks whose target does not exist, per section 1 of T331, for Claude Code's settings files: user and project `settings.json` and `settings.local.json`. Hook commands are split like a POSIX shell, `~`/`$HOME`/`$CLAUDE_PROJECT_DIR` are expanded, the target is the first word, or the script of a known interpreter (`bash sh zsh node python python3 deno bun ruby pwsh`, `npx tsx`, `uv run`), or a program looked up on `PATH`. Classes: `broken-hook` (path missing, dangling symlink, directory, program not on `PATH`, unmounted `/Volumes/X`; fixable later), `suspect-hook` (exists but not executable when run directly; `chmod +x` hint, never fixable) and `unverified-hook` (`$(…)`, backticks, `eval`, pipes or other shell operators, unknown variables, `${CLAUDE_PLUGIN_ROOT}` before T331.2 knows the plugin root, `-c` scripts; never fixable). The result is `Report.problems[] { kind, agent, source, path, event, matcher, command, detail, fixable }` (the same list T331.3/T331.4 extend), rendered as a "hooks check" section in the text and the Doctor page and carried in `--json`. Nothing is edited. The doctor modules reach files, environment and `PATH` only through the `Fs`, `Env` and `Which` traits (`src/doctor/probe.rs`); a guard test fails when `src/doctor/` calls `std::fs`, `std::env` or `which` directly.
+
+Check: unit tests on an in-memory `Fs` (no real path, no real agent): missing script, dangling symlink, directory, each listed interpreter with a missing script, program not on `PATH`, quoted path with spaces, `$CLAUDE_PROJECT_DIR` and `$HOME` expansion, relative path against the project dir, unmounted volume; valid script, builtin, program on `PATH`, non-executable script (suspect), `$(…)`, backticks, pipe, unknown variable (unverified); user + project + local sources all read, an unparsable file reported and skipped, JSONC comments accepted, no hook object means no problem; text, JSON and the Doctor page agree; the guard test; `just check`.
+
+Execution: new `src/doctor/probe.rs` (`Fs { read, kind }`, `Env { var, home }`, `Which { find }`, the real impls, `find_on_path` of `agents/mod.rs` made `pub(crate)` for `Which` so there is one PATH walk) and `src/doctor/hooks.rs` (entry model, sources, command resolution, classification, mocks and tests). `shlex` 2 is added as a direct dependency (already in `Cargo.lock` through `cc`; the row exists in `rust.md`; shell word splitting is its whole job) with a `toolchain.md` row. Hook objects are walked in the same shape `count_hooks` reads (`hooks.<Event>[].{matcher, hooks[].command}`) and parsed with the existing `agents::jsonc::parse`. `doctor::page` fills `Report.problems` from the real probes; the text section prints "none found" when empty, so the report snapshots and `tests/trycmd/doctor.toml` are regenerated; `ws.schema.json` and `snapshot.gen.ts` are regenerated for the new field. Project files are read from the directory the check runs in.
+
+Result: `rtok doctor` (text, `--json`, Doctor page) lists `broken-hook`, `suspect-hook`, `unverified-hook` and `unreadable-config` problems for Claude Code's user and project `settings.json` / `settings.local.json`, and prints `hooks check none found` when there are none. Nothing is edited. `src/doctor/probe.rs` holds the `Fs`/`Env`/`Which` seam and `src/doctor/hooks.rs` the check; the new `Report.problems` field is in `ws.schema.json` and `snapshot.gen.ts`.
+
+Model: Claude Code / sonnet-5
+
+### T331.2. Doctor: JSON hook files of the other hosts and of enabled Claude plugins
+
+Part of T331. T331.1's checks for every host whose installer writes a JSON config (the files `Agent::files` names, once each; Cursor's variants share theirs), under the host's own name in `Problem.agent`, and for the hooks of every enabled Claude plugin: `<installPath>/hooks/hooks.json` from `installed_plugins.json`, with `${CLAUDE_PLUGIN_ROOT}` resolved against the install directory. A plugin that is enabled (`enabledPlugins` true in a settings file) but whose install directory is gone is a `stale-plugin` finding; a disabled plugin is not loaded and not checked. Plugin files belong to the plugin, so nothing found in them is fixable. Only Claude Code documents that a relative hook path resolves against the project directory, so a relative path of any other host is `unverified-hook`, never `broken-hook`. Depends on T331.1.
+
+Check: mocked scenarios per host shape (Cursor's flat `hooks.json`, Gemini's Claude-shaped `settings.json`), a shared file read once, a relative path on a host other than Claude, a plugin root resolved to a missing and a present script, a disabled plugin skipped, a stale plugin, a non-JSON-parsable host file reported and left alone; `just check`.
+
+Execution: a `Scope {project, plugin_root, relative_ok}` replaces the bare project directory in `classify`; `check` reads the Claude sources as before, then `host_sources(cfg)` (`HOSTS` minus claude, `Agent::files` filtered to `.json`/`.jsonc`), then `plugins` (reusing `doctor::plugin_install_paths` and `agents::claude::config_dir`, so the install index has one parser). No new dependency, no output change when nothing is found.
+
+Result: `rtok doctor` also lists broken, suspect and unverified hooks of the other hosts' JSON files and of enabled Claude plugins, and stale plugin installs. TOML and other formats (Kimi, Codex, CodeWhale) are T331.8; `--agent <host>`, Windows `PATHEXT` and `cmd` rules are T331.9.
+
+Model: Claude Code / sonnet-5
+
+### T331.3. Doctor: duplicate hooks
+
+Part of T331. Section 2 of T331: effective set per agent, normalization, the "not duplicates" cases, the keep recommendation, the report and `problems[]` entries with `keep`. Report only. Depends on T331.1 and T331.2.
+
+Check: the "Duplicate hooks across configs" and "Not duplicates" scenarios of T331; `just check`.
+
+Execution: `src/doctor/dupes.rs` groups every hook entry the T331.1 and T331.2 scans saw (not only the problems) by agent, event, matcher and command; `hooks.rs` records each entry with its keep rank (plugin, project `settings.json`, user file, `.local` file) and a normalized command (words split, variables and `~` expanded, a `./` path made absolute where the host documents its base, quoting and spacing removed). `Problem` gains `group` and `keep`; each copy is one `duplicate-hook` finding with `fixable` false until T331.6. The text always prints `duplicate hooks none found` or the groups with their copies.
+
+Result: `rtok doctor` (text, `--json`, Doctor page) lists the hooks one agent loads more than once, how many times each runs, every copy with its file and key path, and the copy to keep. `research.md` has no host that runs identical hooks once, so no "harmless on host" case exists yet; the copies are reported as running twice for every host.
+
+Model: Claude Code / sonnet-5
+
 ## T40 — drop `demon list` and `demon update`
 
 **T40 drop `demon list` and `demon update`** · P2, 1/5 · `src/cli.rs`, `src/demon.rs`, `tests/demon.rs`, `tests/surface_parity.rs`, `config/default.toml`
@@ -4613,6 +4649,42 @@ Status: done 2026-09-02 · Check: `proxy_health_reports_ok_and_mode` → `{"ok":
 Do: in `compress` mode: for `tool_result` blocks that are (a) older than `archive.keep_turns` (default 4 turns from the end), (b) larger than `archive.min_tokens` (default 1,500 est.), replace content with `[archived <id>: first 8 lines … last 4 lines · N tokens · expand(<id>)]`. **Decisions are keyed by `tool_use_id` and persisted**, so the same block is rewritten identically on every later request (frozen prefix stays byte-stable). Never touch `system`, `tools`, the last `keep_turns` turns, or any `tool_result` whose id was `expand`ed. Record measurement per rewritten block. Child `calls` row `kind=plugin_run` plugin=`archive` with `tokens` phase `before` (est. of the block) and `after` (est. of the pointer).
 Check: fixture request with 6 turns → only turns 1–2 large results rewritten; sending the same request twice yields byte-identical rewritten bodies; unit test proves the prefix up to the first rewritten block is unchanged.
 Status: done 2026-09-02 · Check: `only_turns_older_than_keep_turns_are_rewritten` (6-turn fixture → exactly turns 1–2 rewritten, `system`/`tools`/turns 3–6 byte-equal), `same_request_twice_is_byte_identical_and_prefix_unchanged` (two runs serialise identically; bytes before the first rewritten block equal the original), `proxy_compress_rewrites_old_tool_results_identically` (same request twice through the live axum server in `compress` mode → identical `call_io` request bodies, 2 `plugin_run` rows, 4 `archive` measurements). `make check` green (119 tests). Deviation: the module is `src/plugins/archive/mod.rs` (T0.4 layout), not `archive.rs`; `Ctx` gained `call_id: Option<i32>` + `record_plugin_run` so the child row nests under the API request; `Store::spill` now ignores a duplicate archive id (the second identical request used to fail `call_io`). Pointer text is `[archived <id12>: N lines · T tokens · expand(<id>)]` + head/tail lines. Over the 200 LOC / 3 files budget: rewrite, store decisions, migration `0004.sql`, proxy wiring and tests are one unit.
+
+### T331.5. Doctor `--fix` for broken hooks
+
+Part of T331. The edit engine of section 4 for the `broken-hook` class only: `--fix`, `--yes`, `--only broken-hooks`, `--dry-run` with diffs, a minimal JSONC edit that drops the entry and its empty group and event key and keeps everything else byte for byte, `_backup` generations (T249) with the path printed, the changed-since-check skip, per-file failure reporting with exit code 1, the re-check summary, and the refusals (valid, suspect, unverified hooks and managed files are never removed). Depends on T331.1.
+
+Check: the "User selecting cleanup", "Refusing to delete valid hooks and entries" and "Failure and race cases" scenarios for broken hooks, golden files byte for byte; `just check`.
+
+Execution: `src/doctor/fix.rs` selects the `broken-hook` findings that are fixable (never a plugin's files) and not rtok's own entries, groups them by file and edits through `agents::jsonc` (`remove_at` and `is_empty_at`, built on the `excise_member` that `agents install` uses): the entry goes, then its group if `hooks` is empty, then the event key if the group list is empty. Before a write the edit is verified to parse and to hold exactly the old hooks minus the removed ones, and the file is re-read to catch a change since the check. The write goes through the `Writer` seam (`rtok_agent_sdk::backup` into `_backup/`, keep `[setup] backup_files`, then `rtok_agent_sdk::write_atomic`), so no backup or atomic-write code was added. `hooks::check` now de-duplicates files by canonical path (`Fs::canonical`).
+
+Result: `rtok doctor --fix` prints the diff of each file and writes nothing; `--yes` backs the file up, removes only the broken hooks and prints the backup path, the failures and `N broken hook(s) removed, M left`; exit code 1 when a file was skipped or failed. `--dry-run` with `--yes` forces the plan. Tests: a proptest over generated JSONC (comments, whitespace, flat and nested groups) proves that exactly one contiguous region is removed and the hook list loses only the chosen hook; mocked unit tests for refusals, the race, backup and write failures; an e2e through the binary.
+
+Model: Claude Code / sonnet-5
+
+### T331.8. Doctor: hook files in TOML and other formats
+
+Part of T331. The T331.1 and T331.2 checks for the hosts whose hooks live outside JSON: Kimi (`config.toml` `[[hooks]]` blocks), CodeWhale (`[[hooks.hooks]]`), Codex (`config.toml`) and any other host whose installer writes hooks in TOML. Each shape maps to the same `Entry` (event, matcher, command, key path), read through the TOML library the project already uses, so the same classification applies and the entry path names the TOML table. Depends on T331.2.
+
+Check: one mocked scenario per TOML shape (broken, valid, unverified, an unparsable file reported and left alone); `just check`.
+
+Execution: `doctor::hooks::host_sources` also returns the `config.toml` of Kimi, CodeWhale and Codex (the three hosts with a documented TOML hook shape; any other host's TOML is not guessed at), tagged with a `Format`. `scan` parses a TOML file through `toml_edit` and the existing `agents::mcp::toml_item_to_json` (extended to convert arrays of tables) into the same JSON value and builds the same `Entry`, so `classify`, the duplicate check and the report are unchanged. Kimi `[[hooks]]` and CodeWhale `[[hooks.hooks]]` are flat `{event, matcher?, command}` lists (paths `hooks[i]`, `hooks.hooks[i]`); Codex's `[[hooks.<Event>]]` with `[[hooks.<Event>.hooks]]` has the settings.json shape and reuses `entries` (source: https://learn.chatgpt.com/docs/hooks, read 2026-10-03).
+
+Result: broken, suspect and unverified hooks of the three TOML hosts are reported like the JSON ones, an unparsable TOML is `unreadable-config` and left alone. None of them is fixable: `doctor --fix` edits JSONC only, so it names them as "TOML hook files are not edited yet" and writes nothing; a TOML editor for `--fix` is a later task.
+
+Model: Claude Code / sonnet-5
+
+### T331.4. Doctor: duplicate MCP entries (servers other than rtok's own)
+
+Part of T331. Section 3 of T331 for every MCP server except rtok's own: same name in two loaded sources, different names with the same launch, normalization (PATH and symlink resolution, `npx pkg@x`, URL case and trailing slash, env values never printed), the not-duplicates cases and the keep recommendation. Report only. rtok's own entry is excluded and never reported; it moves to T331.10, which follows the T332 and T333 decisions. Depends on T331.1.
+
+Check: the "Duplicate MCP entries" and "MCP that must not be called duplicate" scenarios of T331 for servers other than rtok's; `just check`.
+
+Execution: `src/doctor/mcp_dupes.rs` reads every host surface `agents::mcp::surfaces` knows, plus Claude Code's project `.mcp.json` and local `projects.<cwd>.mcpServers`, through the new `rtok_mcp::config::read_servers` (the reader `read_entry` now sits on, so JSON, JSONC and TOML parse as `agents info` does). Entries are grouped per host client by normalized launch (command resolved through `Which` and `Fs::canonical`, `npx`/`bunx`/`pnpx`/`uvx` as the package, URL through `url::Url` with the trailing slash dropped, env keys and values compared but never printed). Same name in two scopes: the host uses local, then project, then user (research.md section 25), the others are reported as unused. Same package at different versions is a `conflicting-mcp` finding. A server with `disabled: true` or `enabled: false` is not compared. rtok's own entry is recognised with `rtok_agent_sdk::runs_bin` and `agents::is_rtok_bin`. Findings are `Problem { kind: "duplicate-mcp" | "conflicting-mcp", group, keep }` rendered by the T331.3 renderer as "duplicate mcp servers".
+
+Result: `rtok doctor` (text, `--json`, Doctor page) lists the MCP servers a host would start twice, how many times, every copy with its file and key path, the copy to keep (project, then user, then local) and, for a same-name entry, which scope the host uses. Nothing is fixable before T331.6. Not covered: servers an enabled plugin provides (`.mcp.json` of Claude plugins), which T331.6 or a later card needs for the "plugin plus hand-written entry" case.
+
+Model: Claude Code / sonnet-5
 
 ### T305. stats archive replay no longer double-counts short bodies
 
