@@ -264,6 +264,7 @@ pub fn page(cfg: &Config) -> Result<Report> {
     // agrees with the agents block below (T173).
     let carried = plugin_hooks(cfg);
     hooks.total += carried.total;
+    hooks.prefers_client |= carried.prefers_client;
     for (event, n) in carried.by_event {
         *hooks.by_event.entry(event).or_insert(0) += n;
     }
@@ -332,6 +333,10 @@ pub fn page(cfg: &Config) -> Result<Report> {
                 &detected_hosts(settings.as_ref()),
             );
             lines.extend(crate::agents::mcp::doctor_lines(cfg));
+            lines.extend(hook_client_advice(
+                hooks.prefers_client,
+                std::env::var_os("PATH").as_deref(),
+            ));
             lines
         },
         tools_rewrite_advice: tools_rewrite_adv,
@@ -347,6 +352,19 @@ pub fn page(cfg: &Config) -> Result<Report> {
                 })
             })
             .collect(),
+    })
+}
+
+/// The std-only fast hook client (T178) that installed hook commands try before `rtok hook`.
+const HOOK_CLIENT: &str = "rtok-hook";
+
+/// T349: installed hooks try `rtok-hook` first; when it is not on `path` every hook falls back
+/// to the full `rtok hook` process start (p50 31 ms against the 10 ms budget). Advice only.
+fn hook_client_advice(prefers_client: bool, path: Option<&OsStr>) -> Option<String> {
+    (prefers_client && !crate::agents::bin_on_path(HOOK_CLIENT, path)).then(|| {
+        format!(
+            "hook client: `{HOOK_CLIENT}` is not on PATH, so hooks fall back to the slower `rtok hook`; install it beside `rtok` (a ketch install links both)"
+        )
     })
 }
 
@@ -745,12 +763,15 @@ fn duplicates(srcs: &[Source]) -> Vec<(String, Vec<String>)> {
 struct HookCount {
     total: usize,
     by_event: BTreeMap<String, usize>,
+    /// Some hook command names the fast `rtok-hook` client (T349).
+    prefers_client: bool,
 }
 
 fn count_hooks(settings: Option<&Value>) -> HookCount {
     let mut c = HookCount {
         total: 0,
         by_event: BTreeMap::new(),
+        prefers_client: false,
     };
     if let Some(hooks) = settings
         .and_then(|s| s.get("hooks"))
@@ -771,6 +792,7 @@ fn add_hooks_object(c: &mut HookCount, hooks: &serde_json::Map<String, Value>) {
         };
         c.total += n;
         *c.by_event.entry(event.clone()).or_insert(0) += n;
+        c.prefers_client |= entries.to_string().contains(HOOK_CLIENT);
     }
 }
 
@@ -786,6 +808,7 @@ fn plugin_hooks(cfg: &Config) -> HookCount {
     let mut c = HookCount {
         total: 0,
         by_event: BTreeMap::new(),
+        prefers_client: false,
     };
     if !crate::agents::claude::plugin_installed(cfg) {
         return c;
@@ -1378,6 +1401,57 @@ mod tests {
         let c = count_hooks(Some(&s));
         assert_eq!(c.total, 3);
         assert_eq!(c.by_event["PreToolUse"], 3);
+    }
+
+    /// T349: hooks that try `rtok-hook` warn when it is missing from PATH, and only then.
+    #[test]
+    fn missing_hook_client_is_advised_only_when_hooks_prefer_it() {
+        let cmd = "command -v rtok-hook >/dev/null 2>&1 && exec rtok-hook PreToolUse; exec rtok hook PreToolUse";
+        let with_client =
+            json!({"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":cmd}]}]}});
+        let without = json!({"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"rtok hook PreToolUse"}]}]}});
+        assert!(count_hooks(Some(&with_client)).prefers_client);
+        assert!(!count_hooks(Some(&without)).prefers_client);
+
+        let dir = std::env::temp_dir().join(format!("rtok-t349-path-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let bin = dir.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let empty = std::env::join_paths([&bin]).unwrap();
+        let line = hook_client_advice(true, Some(&empty)).expect("advice when missing");
+        assert!(
+            line.contains("rtok-hook") && line.contains("slower"),
+            "{line}"
+        );
+        assert!(hook_client_advice(true, None).is_some(), "no PATH at all");
+        assert!(hook_client_advice(false, Some(&empty)).is_none());
+        std::fs::write(
+            bin.join(if cfg!(windows) {
+                "rtok-hook.exe"
+            } else {
+                "rtok-hook"
+            }),
+            "",
+        )
+        .unwrap();
+        assert!(hook_client_advice(true, Some(&empty)).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T349: the ketch package links both binaries, or hooks never reach the fast client.
+    #[test]
+    fn ketch_manifest_links_rtok_and_rtok_hook() {
+        let doc: toml_edit::DocumentMut = include_str!("../ketch.toml").parse().unwrap();
+        let bins: Vec<(&str, &str)> = doc["bin"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| {
+                let t = b.as_inline_table().unwrap();
+                (t["path"].as_str().unwrap(), t["name"].as_str().unwrap())
+            })
+            .collect();
+        assert_eq!(bins, [("rtok*", "rtok"), ("rtok-hook*", "rtok-hook")]);
     }
 
     #[test]

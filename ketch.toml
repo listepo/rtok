@@ -9,20 +9,21 @@ source = "github:pyrlyn/rtok"
 description = "Reduce the context AI coding agents must carry"
 homepage = "https://github.com/pyrlyn/rtok"
 
-# Only the CLI. The release archives also ship `plugins/` for
-# `rtok agents install`; without an explicit `bin`, Windows auto-discovery
-# treats `plugins/cursor/scripts/mcp.cmd` (and `mcp.sh`) as installable
-# binaries and copies them into `~/.ketch/bin`, which then breaks upgrades.
-# Path glob matches `rtok` (Unix) and `rtok.exe` (Windows). It also matches
-# the `rtok-hook(.exe)` client dist ships beside the main binary: ketch
-# resolves a glob to the first payload match, and NTFS lists `rtok-hook.exe`
-# before `rtok.exe`, so a Windows install linked the 390 KB hook stub as
-# `rtok` and every command hung reading stdin (observed 2026-09-26, ketch
-# 0.5.1). No `*`/`?` pattern can match `rtok`+`rtok.exe` while excluding
-# `rtok-hook.exe`, so the fix is ketch's side: prefer the candidate whose
-# stem is the link name. Keep this pin regardless — without it the
-# mcp.cmd discovery regression returns.
-bin = [{ path = "rtok*", name = "rtok" }]
+# Only the CLI and its fast hook client. The release archives also ship
+# `plugins/` for `rtok agents install`; without an explicit `bin`, Windows
+# auto-discovery treats `plugins/cursor/scripts/mcp.cmd` (and `mcp.sh`) as
+# installable binaries and copies them into `~/.ketch/bin`, which then breaks
+# upgrades. Keep this pin.
+#
+# Two entries, because host hook commands try `rtok-hook` before `rtok hook`
+# (T349); without a link for it every hook pays the full `rtok` start. A glob
+# that matches several payload files links the candidate whose stem equals
+# `name` (ketch docs/MANIFESTS.md), so `rtok*` links `rtok`, never `rtok-hook`
+# (a Windows install once linked the hook stub as `rtok`, 2026-09-26).
+bin = [
+  { path = "rtok*", name = "rtok" },
+  { path = "rtok-hook*", name = "rtok-hook" },
+]
 
 # Prefer platform archives dist publishes; skip self-updater sidecars and
 # the source tarball so scoring cannot pick those by mistake.
