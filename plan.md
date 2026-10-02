@@ -62,7 +62,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T346 | todo | research | 1 | 0% | |
 | T359 | todo | P1 | 2 | 0% | |
 | T361 | todo | P2 | 1 | 0% | |
-| T362 | todo | P3 | 1 | 0% | |
 | T365 | todo | P3 | 3 | 0% | |
 | T366 | todo | P3 | 1 | 0% | |
 | T367 | todo | P3 | 1 | 0% | |
@@ -1418,16 +1417,6 @@ Repro: `rtok memory import /nonexistent.json; echo $?` prints the zero counts an
 Done when: the read propagates its error with the path as context (`.with_context(|| path.display().to_string())?`, the pattern `src/config/validate.rs` already uses), so the command exits non-zero with `Error: /nonexistent.json: No such file or directory`.
 
 Check: an import test with a missing path and one with a directory both return an error naming the path and insert nothing; existing `memory import` tests unchanged; `just check`.
-
-### T362. `rtok config validate` fails with ENOENT on a fresh install
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). The first command the reference file header tells a new user to run fails with a raw OS error, while the failed run still leaves `config.toml` behind, so a second run passes. `ConfigCmd::Validate` (`src/cli.rs:974`) calls `validate::issues(&path)`, which reads the file (`src/config/validate.rs:16`) without the `Config::ensure_user_file` step that every other subcommand gets through `Config::load_with`.
-
-Repro: `mkdir /tmp/h1 && HOME=/tmp/h1 rtok config validate; echo $?` → `Error: /tmp/h1/.rtok/config.toml … No such file or directory (os error 2)`, exit 1; the same command again prints `ok`, exit 0.
-
-Done when: with no explicit path, `config validate` first calls `Config::ensure_user_file(&home, config_file.as_deref())` (the default file is created as `load_with` does) and prints `ok …/config.toml` on the first run; an explicit missing path still errors with its name.
-
-Check: a trycmd or `tests/` case on an empty temp `HOME` gets `ok` and exit 0 on the first `config validate`, and an explicit missing path still exits non-zero; `just check`.
 
 ### T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
 

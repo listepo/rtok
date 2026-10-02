@@ -970,6 +970,11 @@ pub fn run() -> Result<()> {
                     }
                 }
                 ConfigCmd::Validate { path } => {
+                    // T362: only the implicit default file is created, as `load_with` does;
+                    // a path the user typed must exist.
+                    if path.is_none() {
+                        Config::ensure_user_file(&home, config_file.as_deref())?;
+                    }
                     let path = path.unwrap_or(user);
                     let mut errs = validate::issues(&path)?;
                     // The filter drop-ins are deployment state, not part of the

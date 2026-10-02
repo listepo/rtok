@@ -315,3 +315,34 @@ fn info_counts_error_lines_and_json_parses() {
     assert!(v["db"]["bytes"].is_number(), "{v}");
     let _ = fs::remove_dir_all(&home);
 }
+
+/// T362: the first `config validate` on an empty HOME creates the default file like every other
+/// subcommand, while a path the user typed must exist.
+#[test]
+fn config_validate_creates_the_default_file_but_not_an_explicit_one() {
+    let home = tmp("config-validate-fresh");
+    let out = String::from_utf8_lossy(
+        &cmd(&["config", "validate"], &home)
+            .env_remove("RTOK_CONFIG")
+            .assert()
+            .success()
+            .get_output()
+            .stdout,
+    )
+    .into_owned();
+    assert!(
+        out.starts_with("ok ") && out.contains("config.toml"),
+        "{out}"
+    );
+    assert!(home.join("config.toml").exists());
+
+    let missing = home.join("nope.toml");
+    let missing = missing.to_str().unwrap();
+    let out = cmd(&["config", "validate", missing], &home)
+        .env_remove("RTOK_CONFIG")
+        .assert()
+        .failure()
+        .get_output()
+        .clone();
+    assert!(String::from_utf8_lossy(&out.stderr).contains(missing));
+}
