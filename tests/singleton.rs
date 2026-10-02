@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 //! T244 + D21: after `rtok agents install` of every host into one home — run twice, so an
 //! append shows — no agent surface sees rtok twice: at most one rtok MCP server, and at most

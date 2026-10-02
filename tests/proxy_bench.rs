@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 //! T298: proxy replay bench with a saving floor for `archive`/`toon`/`compress`. Sends a
 //! realistic multi-turn request through the real proxy against a fake upstream, then checks

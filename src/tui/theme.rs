@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 //! T226: the one palette and the styles every page draws with. Colours are the
 //! terminal's own ANSI names, never RGB, so the TUI follows the operator's theme —

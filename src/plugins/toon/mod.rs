@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 //! `toon` — tabular JSON → TOON encoding (vendor bench: −42.6 % tokens). On by default;
 //! a block is only rewritten when the encoding estimates fewer tokens than the original.

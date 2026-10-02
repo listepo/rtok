@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 //! End to end: the real `rtok web` binary on a real port — the page, the bundle it
 //! loads (embedded since T111) and a real WebSocket client on `/ws`. `tests/web.rs`

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 Ivan Tugay
-# SPDX-License-Identifier: GPL-3.0-only
-# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 # T319: man pages and completion scripts for the release archives, from the built binary.
 # Usage: tools/share-files.sh <rtok binary> [out dir, default share]

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 //! Out-of-tree `.wasm` plugin host (P32, T32.2). Loaded only via [`Registry::from_plugins`]
 //! when Cargo feature `wasm-host` is on and `[plugins.wasm] enabled = true`.

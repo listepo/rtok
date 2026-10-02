@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 Ivan Tugay
-# SPDX-License-Identifier: GPL-3.0-only
-# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 # T279: the one place that writes and checks every plugin manifest version and every
 # `.rtok-plugin-version` file, so `plugins/<host>` and `Cargo.toml` cannot drift apart.

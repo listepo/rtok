@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 Ivan Tugay
-# SPDX-License-Identifier: GPL-3.0-only
-# Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 # Builds the PyPI distributions into target/pypi/dist: a wheel for the host (or --target) and,
 # with --sdist, the source distribution. maturin and twine run through uvx, so neither is a
