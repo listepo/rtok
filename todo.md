@@ -39,7 +39,6 @@
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
 - T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
 - T331.7. Doctor: interactive checklist, web action, docs and property tests
-- T331.9. Doctor: `--agent <host>` and Windows hook rules
 - T331.10. Doctor: rtok's own MCP entry in the duplicate check
 - T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 - T333. Investigate: T271 desktop-entry sweep vs D33/T275

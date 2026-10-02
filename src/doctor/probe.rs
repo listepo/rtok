@@ -35,6 +35,11 @@ pub trait Env {
     fn home(&self) -> Option<PathBuf>;
     /// The directory the check runs for: the project whose settings apply.
     fn cwd(&self) -> Option<PathBuf>;
+    /// Whether hook commands follow Windows rules (`cmd`/PowerShell words, `PATHEXT`). A mock
+    /// sets it to test those rules on any OS.
+    fn windows(&self) -> bool {
+        cfg!(windows)
+    }
 }
 
 pub trait Which {

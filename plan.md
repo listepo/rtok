@@ -45,7 +45,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T331 | todo | P1 | 4 | 0% | |
 | T331.6 | todo | P1 | 4 | 0% | |
 | T331.7 | todo | P2 | 3 | 0% | |
-| T331.9 | todo | P2 | 3 | 0% | |
 | T331.10 | todo | P2 | 2 | 0% | |
 | T332 | todo | research | 1 | 0% | |
 | T333 | todo | research | 1 | 0% | |
@@ -1268,13 +1267,6 @@ Check: the duplicate scenarios of "User selecting cleanup" and the combined case
 Part of T331. The terminal checklist with the injected `Prompt` trait (pre-unselected project files, toggles, change the kept copy, per-file diff, confirmation), the "Fix selected" action on the web doctor page (T310.7), `docs/agents.md` and the help text with `docs/ru/` and `docs/uk/`, the `proptest` invariants and the pseudo-terminal test. Depends on T331.6 and T310.7.
 
 Check: the scripted-prompt scenarios, the property tests, the pty test; `just check`.
-
-### T331.9. Doctor: `--agent <host>` and Windows hook rules
-
-Part of T331. `rtok doctor --agent <host>` limits the hooks check to one host (the id of `agents::HOSTS`; an unknown id is an error naming the valid ones), and on Windows a hook command resolves by `PATHEXT` and the `cmd`/PowerShell word rules of the host instead of POSIX words. Depends on T331.2.
-
-Check: the host filter on mocks (known, unknown, a host without hooks), `PATHEXT` cases on a case-insensitive mock `Fs`; `just check`.
-
 
 ### T331.10. Doctor: rtok's own MCP entry in the duplicate check
 

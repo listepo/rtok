@@ -154,9 +154,21 @@ fn edit(raw: &str, file: &Path, removed: &[&Problem]) -> Result<String, &'static
 /// Remove every fixable broken hook. `apply` false only plans. `keep` is how many backup
 /// generations to keep per file.
 pub fn fix_broken(cfg: &Config, p: &Probes, w: &dyn Writer, apply: bool, keep: usize) -> FixReport {
+    fix_broken_for(cfg, p, w, apply, keep, None)
+}
+
+/// [`fix_broken`] for one host's hooks (`--agent`); `None` is every host.
+pub fn fix_broken_for(
+    cfg: &Config,
+    p: &Probes,
+    w: &dyn Writer,
+    apply: bool,
+    keep: usize,
+    agent: Option<&str>,
+) -> FixReport {
     let mut report = FixReport::default();
     let mut by_file: Vec<(String, Vec<Problem>)> = Vec::new();
-    for problem in hooks::check(cfg, p) {
+    for problem in hooks::check_for(cfg, p, agent) {
         if problem.kind != "broken-hook" {
             continue;
         }
@@ -185,7 +197,7 @@ pub fn fix_broken(cfg: &Config, p: &Probes, w: &dyn Writer, apply: bool, keep: u
             .push(fix_file(p, w, &path, problems, apply, keep));
     }
     if apply {
-        report.broken_left = hooks::check(cfg, p)
+        report.broken_left = hooks::check_for(cfg, p, agent)
             .iter()
             .filter(|x| x.kind == "broken-hook")
             .count();
@@ -302,18 +314,19 @@ pub fn render(r: &FixReport, apply: bool) -> String {
 }
 
 /// `--fix` against this machine: the report text and the exit code.
-pub fn run(cfg: &Config, apply: bool) -> (String, i32) {
+pub fn run(cfg: &Config, apply: bool, agent: Option<&str>) -> (String, i32) {
     let probes = Probes {
         fs: &super::probe::RealFs,
         env: &super::probe::RealEnv,
         which: &super::probe::RealWhich,
     };
-    let r = fix_broken(
+    let r = fix_broken_for(
         cfg,
         &probes,
         &super::probe::RealWriter,
         apply,
         cfg.setup.backup_files as usize,
+        agent,
     );
     (render(&r, apply), r.exit_code())
 }

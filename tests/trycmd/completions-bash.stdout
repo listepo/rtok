@@ -2134,7 +2134,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__doctor)
-            opts="-h --instructions --json --fix --yes --dry-run --only --config --help"
+            opts="-h --instructions --json --fix --yes --dry-run --only --agent --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2142,6 +2142,10 @@ _rtok() {
             case "${prev}" in
                 --only)
                     COMPREPLY=($(compgen -W "broken-hooks" -- "${cur}"))
+                    return 0
+                    ;;
+                --agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 --config)

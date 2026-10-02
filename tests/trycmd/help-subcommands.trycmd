@@ -117,6 +117,8 @@ Options:
       --dry-run        With --fix --yes: print the diffs and write nothing
       --only <ONLY>    With --fix: which problems to fix (only `broken-hooks` for now) [default:
                        broken-hooks] [possible values: broken-hooks]
+      --agent <HOST>   Check (and with --fix, repair) the hooks of one host only (an id of `rtok
+                       agents list`)
   -h, --help           Print help
 
 $ rtok info --help
