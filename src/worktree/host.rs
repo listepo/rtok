@@ -73,13 +73,15 @@ fn create(p: &Payload, cfg: &Config, store: Option<&Store>) -> Result<PathBuf> {
     // that worktree rather than fail on "one worktree per task".
     let task = p.name.to_ascii_lowercase();
     let known = |r: &super::Record| r.path.exists() && r.owner().is_some_and(|o| o.task == task);
+    // One spelling for both answers: git lists `C:/…` on Windows, `add` plans `C:\…`.
+    let native = |p: PathBuf| dunce::canonicalize(&p).unwrap_or(p);
     if let Some(r) = git::list(cwd)?.iter().skip(1).find(|r| known(r)) {
-        return Ok(r.path.clone());
+        return Ok(native(r.path.clone()));
     }
     let agent = session_agent(store, p);
     let owner = agent.is_none().then(|| HOST.to_string());
     let plan = claim::add(cfg, store, cwd, (&p.name, None), (owner, agent.as_ref()))?;
-    Ok(plan.path)
+    Ok(native(plan.path))
 }
 
 /// The agent row of the payload's session — or, inside a sub-agent, of that sub-agent
