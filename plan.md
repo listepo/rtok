@@ -64,10 +64,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T348 | todo | research | 1 | 0% | |
 | T349 | in progress | P0 | 2 | 5% | Claude Code / claude-sonnet-5-5 |
 | T350 | in progress | P1 | 2 | 5% | Claude Code / claude-sonnet-5-5 |
-| T351 | todo | P1 | 3 | 0% | |
+| T351 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5-5 |
 | T352 | todo | P1 | 3 | 0% | |
 | T353 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5-5 |
-| T354 | todo | P2 | 1 | 0% | |
+| T354 | in progress | P2 | 1 | 5% | Claude Code / claude-sonnet-5-5 |
 | T355 | todo | P2 | 2 | 0% | |
 
 
@@ -1426,6 +1426,8 @@ Done when: a path inside any worktree of the cwd's repository (`git worktree lis
 
 Check: MCP tests with a temp repo plus a linked worktree — read/search/outline inside the worktree succeed; a `roots/list` answer with two roots allows both; a path in an unrelated directory and a scratchpad path are still refused; `just check`.
 
+Execution plan: (1) `src/plugins/read/mod.rs` root guard: extra roots = `allow_paths` + every worktree of the cwd's repository (`git worktree list --porcelain`, resolved once per server and cached, fail-soft when git is absent) + every `file://` root of the client's `roots/list` answer; (2) `src/mcp.rs` (T263): keep all roots, not only the first (the first stays the cwd); (3) tests: temp repo + linked worktree, two-root `roots/list`, unrelated and scratchpad paths still refused; `just check`.
+
 ### T352. `call_io` holds 711 MB of a 1.0 GB `rtok.db`
 
 Found 2026-10-02: `~/.rtok/rtok.db` is 1.0 GB with `retain_calls_days = 30` working (calls span 2026-09-02 … 2026-10-02, 220,853 rows). By `dbstat`, `call_io` takes 711 MB: `request_json` 527 MB, `response_json` 48 MB; the `symbols*` tables take about 280 MB. `auto_vacuum` is 0, so purged pages are never returned to the disk. `~/.rtok/archive/` holds 46,163 files (347 MB), 14,411 older than 7 days.
@@ -1451,6 +1453,8 @@ Found 2026-10-02: 15 `cli/run: unknown archive id` errors for `-` (11), `x` (2) 
 Done when: the skill documents the supported way to see a command's raw output (the archive id from the footer, or a raw/bypass flag if one exists), and `rtok expand` with an argument that cannot be an archive id prints a one-line hint pointing there instead of a bare `unknown archive id`.
 
 Check: trycmd case for `rtok expand -`; skill stays within its budget; `just check`.
+
+Execution plan: (1) `rtok expand <arg>` where `<arg>` cannot be an archive id (`-`, `/dev/stdin`, anything not hex) fails with a one-line hint: the id is the hex in the `expand <id>` trailer, and there is no stdin form; (2) `skills/rtok/SKILL.md`: one line that the trailer's id is the only way to the raw output (no stdin pipe); (3) trycmd case for `rtok expand -`; `just check`.
 
 ### T355. Measure what the native `Read` deny costs
 
