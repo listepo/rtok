@@ -58,6 +58,26 @@ pub fn owner(
     })
 }
 
+/// `rtok worktree add` and the `WorktreeCreate` hook (T159) share this: create the worktree
+/// for `id` under the configured root, locked for `owner` (else the agent's `<host> / <model>`)
+/// and bound to `agent`.
+pub fn add(
+    cfg: &crate::config::Config,
+    store: Option<&Store>,
+    cwd: &Path,
+    id: (&str, Option<&str>),
+    (owner, agent): (Option<String>, Option<&AgentDetail>),
+) -> Result<super::add::Plan> {
+    let root = Some(cfg.worktree.root.as_path()).filter(|r| !r.as_os_str().is_empty());
+    let owner = self::owner(owner, agent, store)?;
+    let agent_id = agent.map(|a| a.id.as_str());
+    let plan = super::add::run(cwd, root, id, (&owner, agent_id))?;
+    if let Some(agent) = agent_id {
+        remember(store, &plan.path, agent, &plan.task);
+    }
+    Ok(plan)
+}
+
 /// Record the claim in the store; a store error only warns — the lock already holds it.
 pub fn remember(store: Option<&Store>, path: &Path, agent: &str, task: &str) {
     let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());

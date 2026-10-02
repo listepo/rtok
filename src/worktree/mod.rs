@@ -11,6 +11,7 @@ pub mod claim;
 pub mod clean;
 pub mod gc;
 pub mod git;
+pub mod host;
 pub mod list;
 pub mod remove;
 
