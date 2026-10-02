@@ -62,9 +62,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T346 | todo | research | 1 | 0% | |
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
-| T352 | in progress | P1 | 3 | 10% | Claude Code / claude-opus-5-5 |
 | T356 | in progress | P1 | 2 | 5% | Claude Code / claude-opus-5-5 |
-| T357 | in progress | P1 | 2 | 5% | Claude Code / claude-opus-5-5 |
 
 
 
@@ -1394,22 +1392,6 @@ Goal: research both approaches, compare trade-offs, recommend one, then update t
 
 Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
 
-### T352. `call_io` holds 711 MB of a 1.0 GB `rtok.db`
-
-Found 2026-10-02: `~/.rtok/rtok.db` is 1.0 GB with `retain_calls_days = 30` working (calls span 2026-09-02 … 2026-10-02, 220,853 rows). By `dbstat`, `call_io` takes 711 MB: `request_json` 527 MB, `response_json` 48 MB; the `symbols*` tables take about 280 MB. `auto_vacuum` is 0, so purged pages are never returned to the disk. `~/.rtok/archive/` holds 46,163 files (347 MB), 14,411 older than 7 days.
-
-Done when: research names which hook/MCP payloads make `request_json` large (likely full tool inputs and responses stored inline next to the archive), and the fix stores each body once (hash plus archive reference, or a shorter retention for bodies than for `calls` rows), keeps `expand <id>` lossless, and returns freed pages to the disk (incremental vacuum or a `rtok doctor`/`clear` step). Report the `symbols*` size per project root and whether roots no longer on disk are dropped.
-
-Check: store tests for the new retention and vacuum; `rtok.db` size before and after on a copy of the real store, recorded in this card.
-
-Research (2026-10-02, `sqlite3 -readonly ~/.rtok/rtok.db`): every body is stored once (`request_raw` only for non-UTF-8, T211; hooks never archive, T201). The bulk is hook stdin kept inline under `core.call_io_inline_bytes` (64 KiB): `PostToolUse` 95,409 rows / 378 MB `request_json` (the host's `tool_response`), `PreToolUse` 75,842 / 77 MB, Codex `postToolUse` 24,581 / 58 MB. Hook bodies are read back only by the session windows `recent_hook_inputs*` (read edit window, handoff ledger) and the OTel export; a missing body already reads as `""` and fails open. Hook bodies older than 3 days: 486 MB; older than 7 days: 233 MB. `freelist_count` is 0 (purged pages are reused, the file never shrinks). `symbols*`: 282 MB; by root — `/Users/listepo` (the home directory) 617,319 rows, `apps/rtok` 61,582, `.claude/worktrees/dreamy-mendel-62ca99` 53,667, `apps/cox` 48,177; no root is gone from disk, but nothing would drop one (`delete_symbols_missing` runs only when that root is re-indexed).
-
-Execution plan:
-1. Config `core.retain_hook_bodies_days` (default 3, 0 = keep as long as `calls`): `run_retention` clears `request_json`/`response_json`/`request_raw`/`response_raw` of `kind = 'hook'` `call_io` rows older than that; `calls`, byte counts and shas stay. Archive rows (what `expand` reads) are untouched.
-2. `run_retention` also drops `symbols`/`symbol_stale` rows of roots that are no longer a directory.
-3. Pages back to the disk: a new store opens with `auto_vacuum = INCREMENTAL`; `run_retention` ends with `PRAGMA incremental_vacuum`; `rtok agents junk clear` (not `--dry-run`) converts an existing store once (`auto_vacuum = INCREMENTAL` + `VACUUM`). Pragmas stay in `src/store/sql_ext.rs` (Diesel cannot express them).
-4. Tests: store tests for body retention, vanished-root drop, incremental vacuum shrinking a file; config coverage. Then measure `rtok.db` before/after on a copy of the real store and record it here.
-
 ### T356. Never index `$HOME` or `/` as a graph root
 
 Found 2026-10-02 (T352 research): `symbols` holds 617,319 rows (~120 MB plus indexes) under the root `/Users/listepo` — `.config/amp/plugins`, `.cursor/extensions`, `.grok/bundled`, `go/pkg/mod`, `.motive/node_modules`. The graph root is the `rtok mcp` process cwd (`std::env::current_dir()` in `src/plugins/graph/mod.rs`), so a server launched in the home directory (no `roots/list` answer yet, or a host without roots) walks the whole home on its first `symbol`/`callers`/`explore` call, and the rows never leave: `delete_symbols_missing` runs only when that same root is re-indexed.
@@ -1419,16 +1401,6 @@ Done when: the graph refuses a root that is the home directory or the filesystem
 Check: graph tests for both refused roots and an accepted project root; a store test that drops the home-root rows; `symbols` size on a copy of the real store before and after, recorded in this card.
 
 Execution plan (after T352 lands — it adds `drop_vanished_symbol_roots` to retention): reuse `plugins::read::walk_root_ok` (T263: refuses `/` and the home directory for the watcher) in the graph's root choice (`src/plugins/graph/mod.rs`, the `current_dir()` call sites) and return `no project: pass path or open a project (roots)`; extend T352's root drop so a root that fails `walk_root_ok` is dropped like a vanished one. Tests: graph refuses home and `/`, accepts a temp project; retention drops a home-root row.
-
-### T357. rtok links `rtok-hook` next to itself on PATH
-
-Found 2026-10-02 (T349): installed hooks run `rtok-hook` only when it is on `PATH`, and a package manager that links one binary (the published ketch manifest links only `rtok`) leaves the fast client unused although `rtok-hook` sits next to the real `rtok` executable (`~/.ketch/store/rtok/<version>/rtok-hook`). The fix must not depend on publishing a manifest. Creator's choice (2026-10-02): the link goes next to `rtok` on `PATH`; hook commands stay as they are.
-
-Done when: when `rtok-hook` is not found on `PATH`, rtok creates `<dir of the rtok found on PATH>/rtok-hook` as a symlink to the `rtok-hook` beside the canonical `current_exe()`, and re-points a symlink of that name that dangles or points at another version's `rtok-hook` (after an upgrade). It never replaces a regular file or a working link it did not make, does nothing when the sibling is missing or the directory is not writable, and is skipped on Windows (no unprivileged symlinks; the T349 doctor advice stays). Runs from `rtok init`/setup, `rtok doctor --fix` if present, and the start of `rtok mcp` and `rtok hook --serve` — a few `stat` calls, never on the per-hook path. `rtok doctor` reports the link.
-
-Execution plan: one helper in `src/agents/mod.rs` next to `bin_on_path` (PATH lookup, sibling resolution, atomic create via temp name + rename); call sites listed above; tests with a temp `PATH`, a fake package dir with `rtok`/`rtok-hook`, a dangling old-version link, a foreign regular file, and a read-only dir. Verify on this machine with a copy of `~/.ketch/bin` layout under the scratch dir, not the real one.
-
-Check: unit tests for each case above; `rtok doctor` no longer prints the T349 advice once the link exists.
 
 ## Reference
 
