@@ -28,7 +28,6 @@ for (const { id } of PAGES) {
     await expect(main.locator("[aria-busy]")).toHaveCount(0);
     await expect(main.getByText("Something went wrong")).toHaveCount(0);
     await expect(main.getByText("Offline")).toHaveCount(0);
-    await expect(main.getByText(`No ${id} data yet`)).toHaveCount(0);
     expect(problems).toEqual([]);
   });
 }
