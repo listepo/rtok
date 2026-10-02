@@ -63,7 +63,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T359 | todo | P1 | 2 | 0% | |
 | T361 | todo | P2 | 1 | 0% | |
 | T362 | todo | P3 | 1 | 0% | |
-| T364 | todo | P3 | 2 | 0% | |
 | T365 | todo | P3 | 3 | 0% | |
 | T366 | todo | P3 | 1 | 0% | |
 | T367 | todo | P3 | 1 | 0% | |
@@ -1429,16 +1428,6 @@ Repro: `mkdir /tmp/h1 && HOME=/tmp/h1 rtok config validate; echo $?` → `Error:
 Done when: with no explicit path, `config validate` first calls `Config::ensure_user_file(&home, config_file.as_deref())` (the default file is created as `load_with` does) and prints `ok …/config.toml` on the first run; an explicit missing path still errors with its name.
 
 Check: a trycmd or `tests/` case on an empty temp `HOME` gets `ok` and exit 0 on the first `config validate`, and an explicit missing path still exits non-zero; `just check`.
-
-### T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). `stats.since = "7x"` passes `config set` and `config validate`; then `rtok stats` fails with `Error: bad --since unit in 7x`, `rtok report` silently falls back to 30 days, `doctor` silently skips its check (`.ok()?` in `src/doctor.rs`), and the web/TUI model returns the error (`?` in `src/web/model.rs`). `src/config/validate.rs` has no rule for `stats.since`; the only parser, `measure::stats::parse_since` (`src/measure/stats.rs:799,803`), hard-codes `--since` in its messages.
-
-Repro: `rtok config set stats.since 7x` (exit 0), `rtok config validate` (`ok`, exit 0), `rtok stats` (`Error: bad --since unit in 7x`, exit 1).
-
-Done when: `validate.rs` runs `measure::stats::parse_since` on `stats.since` (accepts `<n>`, `<n>d`, `<n>h`), so `set` and `validate` reject `7x`; `parse_since` names its source (`stats.since` vs `--since`) in the error.
-
-Check: validate tests reject `7x` / `d` / `-1d` for `stats.since` and accept `30d`, `12h`, `7`; a `parse_since` unit test asserts the message names `stats.since` when it comes from config and `--since` from the flag; `just check`.
 
 ### T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
 

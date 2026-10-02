@@ -1030,6 +1030,11 @@ pub fn run() -> Result<()> {
             cache,
             price,
         } => {
+            // The flag is parsed here, before it merges into `stats.since`, so a later parse error
+            // can only come from the config or the environment and says so.
+            if let Some(s) = &since {
+                crate::measure::stats::parse_since(s)?;
+            }
             let cfg = Config::load_with(
                 config_file.as_deref(),
                 stats_flags(since, json, plugin.clone(), compare.clone(), price),
