@@ -440,6 +440,41 @@ clink.argmatcher("rtok")
           :addarg(clink.filematches)
           :addflags({ "--depth" .. clink.argmatcher():addarg({}), "--to" .. clink.argmatcher():addarg({}), "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
           :adddescriptions({ ["--depth"] = "", ["--to"] = "", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+        "projects" .. clink.argmatcher()
+          :addarg({
+            "add" .. clink.argmatcher()
+              :addarg(clink.filematches)
+              :addflags({ "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
+              :adddescriptions({ ["--json"] = "JSON instead of a table", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+            "select" .. clink.argmatcher()
+              :addarg({})
+              :addflags({ "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
+              :adddescriptions({ ["--json"] = "JSON instead of a table", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+            "link" .. clink.argmatcher()
+              :addarg({})
+              :addflags({ "--from" .. clink.argmatcher():addarg({}), "--both", "--reason" .. clink.argmatcher():addarg({}), "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
+              :adddescriptions({ ["--from"] = "Link from this project instead of the selected one", ["--both"] = "Also link the other way", ["--reason"] = "Why (shown next to the link)", ["--json"] = "JSON instead of a table", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+            "unlink" .. clink.argmatcher()
+              :addarg({})
+              :addflags({ "--from" .. clink.argmatcher():addarg({}), "--both", "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
+              :adddescriptions({ ["--from"] = "Unlink from this project instead of the selected one", ["--both"] = "Also remove the link the other way", ["--json"] = "JSON instead of a table", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+            "remove" .. clink.argmatcher()
+              :addarg({})
+              :addflags({ "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
+              :adddescriptions({ ["--json"] = "JSON instead of a table", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+            "help" .. clink.argmatcher()
+              :addarg({
+                "add" .. clink.argmatcher(),
+                "select" .. clink.argmatcher(),
+                "link" .. clink.argmatcher(),
+                "unlink" .. clink.argmatcher(),
+                "remove" .. clink.argmatcher(),
+                "help" .. clink.argmatcher()
+              })
+              :adddescriptions({ ["add"] = "Register a directory as a project (a known one only refreshes its last-used time)", ["select"] = "Make a project the selected one; the page and later the CLI answer for it", ["link"] = "Link a project into the selected one's graph scope (indexes it when it never was)", ["unlink"] = "Remove a link; an auto link stays removed on re-index", ["remove"] = "Drop a project and its index rows; its files are never touched", ["help"] = "Print this message or the help of the given subcommand(s)" })
+          })
+          :addflags({ "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
+          :adddescriptions({ ["add"] = "Register a directory as a project (a known one only refreshes its last-used time)", ["select"] = "Make a project the selected one; the page and later the CLI answer for it", ["link"] = "Link a project into the selected one's graph scope (indexes it when it never was)", ["unlink"] = "Remove a link; an auto link stays removed on re-index", ["remove"] = "Drop a project and its index rows; its files are never touched", ["help"] = "Print this message or the help of the given subcommand(s)", ["--json"] = "JSON instead of a table", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
         "affected" .. clink.argmatcher()
           :addflags({ "--since" .. clink.argmatcher():addarg({}), "--staged", "--json", "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
           :adddescriptions({ ["--since"] = "Diff against this ref", ["--staged"] = "Staged files only (`git diff --cached --name-only`)", ["--json"] = "JSON instead of `file ← via symbol` lines", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
@@ -449,13 +484,22 @@ clink.argmatcher("rtok")
             "dead" .. clink.argmatcher(),
             "status" .. clink.argmatcher(),
             "impact" .. clink.argmatcher(),
+            "projects" .. clink.argmatcher()
+              :addarg({
+                "add" .. clink.argmatcher(),
+                "select" .. clink.argmatcher(),
+                "link" .. clink.argmatcher(),
+                "unlink" .. clink.argmatcher(),
+                "remove" .. clink.argmatcher()
+              })
+              :adddescriptions({ ["add"] = "Register a directory as a project (a known one only refreshes its last-used time)", ["select"] = "Make a project the selected one; the page and later the CLI answer for it", ["link"] = "Link a project into the selected one's graph scope (indexes it when it never was)", ["unlink"] = "Remove a link; an auto link stays removed on re-index", ["remove"] = "Drop a project and its index rows; its files are never touched" }),
             "affected" .. clink.argmatcher(),
             "help" .. clink.argmatcher()
           })
-          :adddescriptions({ ["index"] = "Walk a tree and insert definitions + references", ["dead"] = "List unreferenced private definitions (skips pub, trait impls, tests, macros)", ["status"] = "Index health for the current or given root (T68.3)", ["impact"] = "Symbol impact or call paths to a target (T68.4)", ["affected"] = "Tests that reach files changed in git (`git diff --name-only`)", ["help"] = "Print this message or the help of the given subcommand(s)" })
+          :adddescriptions({ ["index"] = "Walk a tree and insert definitions + references", ["dead"] = "List unreferenced private definitions (skips pub, trait impls, tests, macros)", ["status"] = "Index health for the current or given root (T68.3)", ["impact"] = "Symbol impact or call paths to a target (T68.4)", ["projects"] = "The project registry: list, add, remove, select (T329.2)", ["affected"] = "Tests that reach files changed in git (`git diff --name-only`)", ["help"] = "Print this message or the help of the given subcommand(s)" })
       })
       :addflags({ "--config" .. clink.argmatcher():addarg(clink.filematches), "--help", "-h" })
-      :adddescriptions({ ["index"] = "Walk a tree and insert definitions + references", ["dead"] = "List unreferenced private definitions (skips pub, trait impls, tests, macros)", ["status"] = "Index health for the current or given root (T68.3)", ["impact"] = "Symbol impact or call paths to a target (T68.4)", ["affected"] = "Tests that reach files changed in git (`git diff --name-only`)", ["help"] = "Print this message or the help of the given subcommand(s)", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
+      :adddescriptions({ ["index"] = "Walk a tree and insert definitions + references", ["dead"] = "List unreferenced private definitions (skips pub, trait impls, tests, macros)", ["status"] = "Index health for the current or given root (T68.3)", ["impact"] = "Symbol impact or call paths to a target (T68.4)", ["projects"] = "The project registry: list, add, remove, select (T329.2)", ["affected"] = "Tests that reach files changed in git (`git diff --name-only`)", ["help"] = "Print this message or the help of the given subcommand(s)", ["--config"] = "User config file (else `RTOK_CONFIG` or `<home>/config.toml`)", ["--help"] = "Print help", ["-h"] = "Print help" }),
     "guard" .. clink.argmatcher()
       :addarg({
         "check" .. clink.argmatcher()
@@ -634,9 +678,18 @@ clink.argmatcher("rtok")
             "dead" .. clink.argmatcher(),
             "status" .. clink.argmatcher(),
             "impact" .. clink.argmatcher(),
+            "projects" .. clink.argmatcher()
+              :addarg({
+                "add" .. clink.argmatcher(),
+                "select" .. clink.argmatcher(),
+                "link" .. clink.argmatcher(),
+                "unlink" .. clink.argmatcher(),
+                "remove" .. clink.argmatcher()
+              })
+              :adddescriptions({ ["add"] = "Register a directory as a project (a known one only refreshes its last-used time)", ["select"] = "Make a project the selected one; the page and later the CLI answer for it", ["link"] = "Link a project into the selected one's graph scope (indexes it when it never was)", ["unlink"] = "Remove a link; an auto link stays removed on re-index", ["remove"] = "Drop a project and its index rows; its files are never touched" }),
             "affected" .. clink.argmatcher()
           })
-          :adddescriptions({ ["index"] = "Walk a tree and insert definitions + references", ["dead"] = "List unreferenced private definitions (skips pub, trait impls, tests, macros)", ["status"] = "Index health for the current or given root (T68.3)", ["impact"] = "Symbol impact or call paths to a target (T68.4)", ["affected"] = "Tests that reach files changed in git (`git diff --name-only`)" }),
+          :adddescriptions({ ["index"] = "Walk a tree and insert definitions + references", ["dead"] = "List unreferenced private definitions (skips pub, trait impls, tests, macros)", ["status"] = "Index health for the current or given root (T68.3)", ["impact"] = "Symbol impact or call paths to a target (T68.4)", ["projects"] = "The project registry: list, add, remove, select (T329.2)", ["affected"] = "Tests that reach files changed in git (`git diff --name-only`)" }),
         "guard" .. clink.argmatcher()
           :addarg({
             "check" .. clink.argmatcher()

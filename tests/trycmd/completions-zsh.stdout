@@ -1496,6 +1496,116 @@ _arguments "${_arguments_options[@]}" : /
 '::path:_files' /
 && ret=0
 ;;
+(projects)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of a table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__graph__subcmd__projects_commands" /
+"*::: :->projects" /
+&& ret=0
+
+    case $state in
+    (projects)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-graph-projects-command-$line[1]:"
+        case $line[1] in
+            (add)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of a table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':path:_files' /
+&& ret=0
+;;
+(select)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of a table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':project -- Project id or directory:_default' /
+&& ret=0
+;;
+(link)
+_arguments "${_arguments_options[@]}" : /
+'--from=[Link from this project instead of the selected one]:FROM:_default' /
+'--reason=[Why (shown next to the link)]:REASON:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--both[Also link the other way]' /
+'--json[JSON instead of a table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':project -- Project id or directory to link to:_default' /
+&& ret=0
+;;
+(unlink)
+_arguments "${_arguments_options[@]}" : /
+'--from=[Unlink from this project instead of the selected one]:FROM:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--both[Also remove the link the other way]' /
+'--json[JSON instead of a table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':project -- Project id or directory to unlink:_default' /
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of a table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':project -- Project id or directory:_default' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__graph__subcmd__projects__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-graph-projects-help-command-$line[1]:"
+        case $line[1] in
+            (add)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(select)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(link)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(unlink)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
 (affected)
 _arguments "${_arguments_options[@]}" : /
 '(--staged)--since=[Diff against this ref]:SINCE:_default' /
@@ -1533,6 +1643,42 @@ _arguments "${_arguments_options[@]}" : /
 (impact)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
+;;
+(projects)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__graph__subcmd__help__subcmd__projects_commands" /
+"*::: :->projects" /
+&& ret=0
+
+    case $state in
+    (projects)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-graph-help-projects-command-$line[1]:"
+        case $line[1] in
+            (add)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(select)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(link)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(unlink)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
 ;;
 (affected)
 _arguments "${_arguments_options[@]}" : /
@@ -2247,6 +2393,42 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
+(projects)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__graph__subcmd__projects_commands" /
+"*::: :->projects" /
+&& ret=0
+
+    case $state in
+    (projects)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-graph-projects-command-$line[1]:"
+        case $line[1] in
+            (add)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(select)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(link)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(unlink)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
 (affected)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
@@ -2940,6 +3122,7 @@ _rtok__subcmd__graph_commands() {
 'dead:List unreferenced private definitions (skips pub, trait impls, tests, macros)' /
 'status:Index health for the current or given root (T68.3)' /
 'impact:Symbol impact or call paths to a target (T68.4)' /
+'projects:The project registry/: list, add, remove, select (T329.2)' /
 'affected:Tests that reach files changed in git (/`git diff --name-only/`)' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
@@ -2962,6 +3145,7 @@ _rtok__subcmd__graph__subcmd__help_commands() {
 'dead:List unreferenced private definitions (skips pub, trait impls, tests, macros)' /
 'status:Index health for the current or given root (T68.3)' /
 'impact:Symbol impact or call paths to a target (T68.4)' /
+'projects:The project registry/: list, add, remove, select (T329.2)' /
 'affected:Tests that reach files changed in git (/`git diff --name-only/`)' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
@@ -2992,6 +3176,42 @@ _rtok__subcmd__graph__subcmd__help__subcmd__index_commands() {
     local commands; commands=()
     _describe -t commands 'rtok graph help index commands' commands "$@"
 }
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__projects_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__projects_commands() {
+    local commands; commands=(
+'add:Register a directory as a project (a known one only refreshes its last-used time)' /
+'select:Make a project the selected one; the page and later the CLI answer for it' /
+'link:Link a project into the selected one'/''s graph scope (indexes it when it never was)' /
+'unlink:Remove a link; an auto link stays removed on re-index' /
+'remove:Drop a project and its index rows; its files are never touched' /
+    )
+    _describe -t commands 'rtok graph help projects commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__add_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__add_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph help projects add commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__link_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__link_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph help projects link commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__remove_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph help projects remove commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__select_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__select_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph help projects select commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__unlink_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__projects__subcmd__unlink_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph help projects unlink commands' commands "$@"
+}
 (( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__status_commands] )) ||
 _rtok__subcmd__graph__subcmd__help__subcmd__status_commands() {
     local commands; commands=()
@@ -3006,6 +3226,85 @@ _rtok__subcmd__graph__subcmd__impact_commands() {
 _rtok__subcmd__graph__subcmd__index_commands() {
     local commands; commands=()
     _describe -t commands 'rtok graph index commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects_commands() {
+    local commands; commands=(
+'add:Register a directory as a project (a known one only refreshes its last-used time)' /
+'select:Make a project the selected one; the page and later the CLI answer for it' /
+'link:Link a project into the selected one'/''s graph scope (indexes it when it never was)' /
+'unlink:Remove a link; an auto link stays removed on re-index' /
+'remove:Drop a project and its index rows; its files are never touched' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok graph projects commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__add_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__add_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph projects add commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__help_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__help_commands() {
+    local commands; commands=(
+'add:Register a directory as a project (a known one only refreshes its last-used time)' /
+'select:Make a project the selected one; the page and later the CLI answer for it' /
+'link:Link a project into the selected one'/''s graph scope (indexes it when it never was)' /
+'unlink:Remove a link; an auto link stays removed on re-index' /
+'remove:Drop a project and its index rows; its files are never touched' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok graph projects help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__add_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__add_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph projects help add commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph projects help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__link_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__link_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph projects help link commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__remove_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph projects help remove commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__select_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__select_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph projects help select commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__unlink_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__help__subcmd__unlink_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph projects help unlink commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__link_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__link_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph projects link commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__remove_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph projects remove commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__select_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__select_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph projects select commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__projects__subcmd__unlink_commands] )) ||
+_rtok__subcmd__graph__subcmd__projects__subcmd__unlink_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph projects unlink commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__graph__subcmd__status_commands] )) ||
 _rtok__subcmd__graph__subcmd__status_commands() {
@@ -3321,6 +3620,7 @@ _rtok__subcmd__help__subcmd__graph_commands() {
 'dead:List unreferenced private definitions (skips pub, trait impls, tests, macros)' /
 'status:Index health for the current or given root (T68.3)' /
 'impact:Symbol impact or call paths to a target (T68.4)' /
+'projects:The project registry/: list, add, remove, select (T329.2)' /
 'affected:Tests that reach files changed in git (/`git diff --name-only/`)' /
     )
     _describe -t commands 'rtok help graph commands' commands "$@"
@@ -3344,6 +3644,42 @@ _rtok__subcmd__help__subcmd__graph__subcmd__impact_commands() {
 _rtok__subcmd__help__subcmd__graph__subcmd__index_commands() {
     local commands; commands=()
     _describe -t commands 'rtok help graph index commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__projects_commands] )) ||
+_rtok__subcmd__help__subcmd__graph__subcmd__projects_commands() {
+    local commands; commands=(
+'add:Register a directory as a project (a known one only refreshes its last-used time)' /
+'select:Make a project the selected one; the page and later the CLI answer for it' /
+'link:Link a project into the selected one'/''s graph scope (indexes it when it never was)' /
+'unlink:Remove a link; an auto link stays removed on re-index' /
+'remove:Drop a project and its index rows; its files are never touched' /
+    )
+    _describe -t commands 'rtok help graph projects commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__add_commands] )) ||
+_rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__add_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help graph projects add commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__link_commands] )) ||
+_rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__link_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help graph projects link commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__remove_commands] )) ||
+_rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help graph projects remove commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__select_commands] )) ||
+_rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__select_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help graph projects select commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__unlink_commands] )) ||
+_rtok__subcmd__help__subcmd__graph__subcmd__projects__subcmd__unlink_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help graph projects unlink commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__status_commands] )) ||
 _rtok__subcmd__help__subcmd__graph__subcmd__status_commands() {

@@ -2021,6 +2021,45 @@ Fix: `kind_name` follows the spec; a `has_test_attr` helper walks the whole attr
 
 Check: `kind_name_follows_the_lsp_symbol_kind_numbers`, `dead_lists_only_the_private_orphan` (new `param.rs` fixture), `a_non_ascii_skill_id_is_shortened_on_a_char_boundary`, `a_single_long_title_cannot_break_the_index_cap`; `just check`.
 
+## T329.1 — Project registry in the store: `projects` table, canonical dedup, selection, missing, remove
+
+T329 §1 and the storage half of §2, with no CLI, links or page (those are T329.2 onward). Migration `0027_projects` creates `projects` (id, canonical root, optional display name, origin `manual|session|worktree|mcp|reference`, created and last-used times, `selected`) with a partial unique index so at most one row is selected, and backfills one project per root already in the symbol index, the most recently indexed one selected, so an existing store keeps working. `Store` gets `register_project`, `projects`, `project`, `project_by_root`, `rename_project`, `selected_project`, `select_project`, `resolve_project` and `remove_project`.
+
+Execution: `migrations/0027_projects/up.sql`, `src/store/projects.rs` (new), `schema.rs`, `schema_snapshot.txt`. Roots are canonicalised with `graph::index::canon`, the key the symbol index already uses, so symlinks and `..` spellings are one project and the first origin stands. "Missing" is read from the filesystem on every call, never stored. `resolve_project(cwd)` keeps a live stored selection, otherwise selects the cwd's registered project and reports `fell_back` when it replaced a stored selection that is gone. `remove_project` drops the project's `symbols`, `extractor` and `symbol_stale` rows and the registry row in one transaction and never touches files.
+
+Check: `projects::tests` (dedup through symlink and `..`, selection exclusivity and unknown id, rename, missing, cwd fallback, remove leaving other roots' index alone) and `migration_0027_registers_the_roots_the_store_already_indexed` (previous-schema db, selected = newest `indexed_at`, empty store gets no project); schema snapshot re-blessed; `just check`.
+
+Deviations: none from the card; the registry stores no index status (rows, files, pending, watch, last error), which T329.2 computes from the index when it lists projects.
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet-5
+
+
+## T329.2 — `rtok graph projects`: list, add, remove, select, with per-project index status
+
+T329 §1 (index status) and the CLI half of §7. `rtok graph projects [--json]` lists every registered project: selected marker, id, name, origin, state (`ok`, `stale`, `not indexed`, `missing`), rows, files, pending and root. `add <path>` registers an existing directory (a known one only refreshes last-used), `select <id|path>` selects one, `remove <id|path>` drops its index rows and registry row. `--json` is global on the group and prints the same rows (a missing root has `index: null`).
+
+Execution: `src/plugins/graph/projects.rs` (new) builds each row from `Store::projects()` (T329.1) and `graph::status::collect`, the same numbers `rtok graph status` prints, and renders through `render::table`; clap enum and arm in `src/cli.rs`. `<id|path>`: a number naming a known project is its id, anything else is a directory. `select` refuses a missing root, `remove` never touches files. The surface-parity gate exempts the four commands with a reason (the page selector is T329.12); README and the site command table list `graph projects`.
+
+Check: `tests/graph_projects.rs` (round trip over a fixture HOME: add, index status ok and stale and not indexed, select exclusivity, remove leaving files, bad targets, a deleted root listed as missing and not selectable), `projects::tests::resolve_prefers_a_known_id_then_a_path`, five trycmd cases (`tests/trycmd/graph-projects*.toml`), completion and help goldens regenerated; `just check`.
+
+Deviations: the card's "last error" index status is not shown, because nothing records an index failure yet; it comes with T329.8. No `docs/ru` or `docs/uk` exist, so there was nothing to update there.
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet-5
+
+
+## T329.3 — Project links and graph scope: `link`/`unlink`, cycle-safe scope, manual and auto kinds
+
+T329 Terms and §5. Migration `0028_project_links` adds directed links `(from_id, to_id, kind manual|auto, reason, unlinked)`, both ends cascading on delete so a removed project leaves no link behind, and a CHECK against self-links. `Store::link_projects`, `unlink_projects`, `project_links` and `project_scope` (new `src/store/project_links.rs`). `rtok graph projects link <project> [--from P] [--both] [--reason TEXT]` and `unlink <project> [--from P] [--both]` link from the selected project (or `--from`); the list gains each project's outgoing links (`links` count column, `links` array in `--json`).
+
+Execution: linking twice is a no-op; a manual link over an auto one takes it over, so a reference that goes away cannot drop it; unlinking a manual link deletes it, unlinking an auto link keeps the row as a remembered removal (`unlinked = 1`) so T329.8 will not re-create it, and only a manual link brings it back. The scope is plain Rust over the loaded links (a visited set, one level at a time, a 64-level cap): the project itself first, then what it reaches, each once, so cycles neither loop nor duplicate; a missing project is left out and not walked through, and its links stay for when the directory returns. Linking a target that was never indexed indexes it with the existing `graph::index::run`. A missing project cannot be linked. All queries go through Diesel; no SQL beyond the migration.
+
+Check: `project_links::tests` (scope A, B, C and D with a cycle; missing project drops out and returns; self, duplicate, manual-over-auto and remembered-unlink rules; remove leaves no links), `tests/graph_projects.rs` (link, unlink, `--both`, `--from`, JSON, indexing on link, a removed project takes its links), two trycmd refusal cases, completion and help goldens regenerated, `config_coverage` and `surface_parity` entries; `just check`.
+
+Deviations: no CLI prints the scope yet; it is a store call that T329.4 and the page use.
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet-5
+
+
 ## T48.7 — aider host
 
 **T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
