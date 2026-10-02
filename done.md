@@ -321,6 +321,18 @@ Execution: one `read_lossy(impl Read) -> Result<String>` helper in `src/cli.rs` 
 
 Result (2026-10-03, Claude Code / claude-opus-5-5): `cli::read_lossy` (`read_to_end` + `String::from_utf8_lossy`, I/O error propagated) serves the plain `rtok filter` path and the no-`cmd` fallback; `--archive` now propagates its read error instead of `let _ =`. Repro on the installed v0.14.0: `printf 'a\xffb\n' | rtok filter --stdin` printed nothing. Check: `cli::tests::read_lossy_*` (2) and `tests/filter.rs` `invalid_utf8_byte_keeps_the_rest_of_stdin` (default and `--stdin`) green; `just check`.
 
+### T361. `rtok memory import` reports success for a missing or unreadable file
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A path typo, a directory, a permission error or a non-UTF-8 file all print `inserted 0  skipped 0  malformed 0` with exit 0, so scripts and agents believe the import ran. `src/plugins/memory/import.rs:57` is `std::fs::read_to_string(path).unwrap_or_default()`.
+
+Repro: `rtok memory import /nonexistent.json; echo $?` prints the zero counts and `0`.
+
+Done when: the read propagates its error with the path as context (`.with_context(|| path.display().to_string())?`, the pattern `src/config/validate.rs` already uses), so the command exits non-zero with `Error: /nonexistent.json: No such file or directory`.
+
+Check: an import test with a missing path and one with a directory both return an error naming the path and insert nothing; existing `memory import` tests unchanged; `just check`.
+
+Result (2026-10-03, Claude Code / claude-opus-5-5): `memory::import::run` reads the file first with `.with_context(|| path.display().to_string())?`, before the store opens, so a missing path, a directory or a non-UTF-8 file exits non-zero naming the path and writes nothing. Check: `an_unreadable_file_is_an_error_naming_the_path` (missing path and directory; an empty file still returns zero counts) and the three existing import tests green; clippy `-D warnings`; `just check`.
+
 ### T217. `AGENTS.md` is ~4× its own 350-token budget
 
 Found 2026-09-22 in the docs pass: `AGENTS.md` instructs "Keep this file under 350 tokens; it is loaded into every session" and is ~7 KB / ~1,100 words — the "Rules that never bend", "Models" and "Testing" sections alone exceed the budget. Every session in every project pays several times the promised injection, the exact per-turn overhead rtok exists to reduce.
@@ -363,6 +375,18 @@ Check result (2026-09-23): `plugins::graph::tests` 34/34 green; `plugins_e2e::gr
 Follow-up to T225, creator request 2026-09-23. `rtok logs` coloured lines itself (`log::screen`, T24.2) and tailspin was reachable only as `just logs` or a pipe. Now `rtok logs` and `rtok logs watch` hand their rows to `tspin --print` (print mode: no pager, rtok keeps the numbering and the stream shape) under `[log] tspin`: `auto` (default) when stdout is a terminal and `tspin` is on `PATH`, `always` on a pipe too, `off` never; `RTOK_LOG_TSPIN` through the env layer. No `tspin`, or one that will not start, means the builtin rendering, unchanged (fail open). `rtok logs export` and `--json` never go through it. `log::Tspin` owns the child (start / sink / print / finish); `log::numbered` is the uncoloured half of `screen`, shared by both. `rtok config validate` rejects any other `log.tspin` value.
 
 Check: `tests/logs.rs` (`tspin_always_pipes_the_numbered_rows_through_the_viewer_on_path` with a fake `tspin` first on `PATH`, `tspin_auto_and_off_keep_the_builtin_rendering_on_a_pipe`), `config::validate` test for the value set, `tests/trycmd/config-init.toml` re-blessed, `just check`.
+
+### T363. `config validate` / `config set` accept out-of-range float keys and any `embed_backend`
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). `plugins.proxy.semantic_cache.threshold` is a cosine-similarity floor, yet `-1`, `0` or `5` pass `config set` and `config validate`; at `threshold <= 0` every in-scope cached entry inside the TTL matches, so the proxy serves an earlier, unrelated response. `plugins.proxy.semantic_cache.embed_backend` takes any string; the docs say only `"hash"` exists until P29, but a typo or `"openai"` turns the semantic tier on (`!= "hash"`) with the placeholder hash embedding. `plugins.read.delta_max_ratio = -3` is accepted too (silently disables deltas; above 1 sends diffs larger than the file). The range rules in `src/config/validate.rs` cover integers only and the enum rules do not list these keys; use sites are `src/proxy/semantic_cache.rs` and `src/plugins/read/cache.rs`.
+
+Repro: `rtok config set -- plugins.proxy.semantic_cache.threshold -1`, `rtok config set plugins.proxy.semantic_cache.embed_backend openai`, `rtok config set -- plugins.read.delta_max_ratio -3`, then `rtok config validate` — every step succeeds and validate prints `ok`.
+
+Done when: float range rules (`as_float()`) reject `threshold` and `delta_max_ratio` outside `(0, 1]`, and an enum rule limits `embed_backend` to the supported set; `config set` rejects them through the same rules (one rule table, no second copy).
+
+Check: new negative cases in the validate tests for all three keys (`-1`, `0`, `5`, `-3`, `openai`) plus the accepted defaults; `config set` of each bad value exits non-zero and leaves the file unchanged; `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `src/config/validate.rs` gains `UNIT_RATIO_KEYS` (`plugins.proxy.semantic_cache.threshold`, `plugins.read.delta_max_ratio`), checked as `(0, 1]` for floats and integers alike (NaN, 0, negatives and values above 1 are rejected), and `plugins.proxy.semantic_cache.embed_backend` joins `CHOICES` with the only supported value `hash`. `config set` already re-runs `issues_in` on the edited text, so it uses the same table and a refused value leaves the file untouched. Checked: new test `unit_ratio_keys_and_embed_backend_are_range_checked` (`-1`, `0`, `5`, `1.5`, `-3`, `0.0`, `openai` rejected by validate; `-1`, `0`, `5`, `-3`, `openai` rejected by `set` with the file byte-identical; `0.99`, `1`, `0.6`, `hash` accepted), `cargo test --lib config::validate` 16 passed, `just check`.
 
 ### T225. Debug log on stderr: `log` + `env_logger` behind `RUST_LOG`, tailspin viewer
 
@@ -6096,6 +6120,22 @@ Check result: new unit test `capture_returns_when_the_child_exits_though_a_grand
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+
+### T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A command killed by SIGKILL (OOM killer, timeout) or SIGTERM comes back as `1`, not `128+signal` (137 / 143), so agents and scripts cannot tell "killed" from "failed" and OOM kills in test runs hide. On Unix `ExitStatus::code()` is `None` for a signal death and both sites map `None` to `1`: `src/plugins/cmd/run.rs:298` (`out.code.unwrap_or(1)`) and `src/mcp/wrap.rs:90` (`code().unwrap_or(1)`).
+
+Repro: `rtok run -- sh -c 'kill -TERM $$'; echo $?` and `rtok run -- sh -c 'kill -KILL $$'; echo $?` print `1`; plain `sh -c 'kill -TERM $$'; echo $?` prints `143`.
+
+Done when: one shared helper maps a Unix signal death (`ExitStatusExt::signal()`) to `128 + sig` where `code()` is `None`, used by both sites; Windows behaviour unchanged.
+
+Check: Unix-only tests for `rtok run` and the `rtok mcp --` wrap path get `143` for SIGTERM and `137` for SIGKILL, and a normal non-zero exit keeps its code; `just check`.
+
+
+Result (2026-10-03, Claude Code / sonnet-5): added `proc::exit_code` (`src/proc.rs`), which maps a Unix signal death (`ExitStatusExt::signal()`) to `128 + signal` and otherwise returns `code()`; `proc::capture` (the `rtok run` path) and `mcp::wrap::run` (the `rtok mcp --` path) both use it, so SIGTERM gives 143 and SIGKILL 137 at both sites, a normal non-zero exit keeps its code, and Windows is unchanged. Checked: new Unix-only tests (`proc::tests::capture_reports_128_plus_the_signal_of_a_killed_child`, `run_reports_128_plus_the_signal_for_a_killed_command` in `tests/commands_e2e.rs`, `a_server_killed_by_a_signal_exits_128_plus_the_signal` in `tests/mcp_wrap.rs`) each signal only their own `sh`; `just check` green (2143 tests run: 2143 passed, 6 skipped).
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
 
 ### T235.2. `rtok run` starts no login shell per call
 

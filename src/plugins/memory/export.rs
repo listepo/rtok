@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok memory export` (plan T66.2): the JSONL that `memory import` reads.
 
 use crate::config::Config;

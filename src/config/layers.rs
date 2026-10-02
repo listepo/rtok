@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Config layering + precedence (plan T12.2, decision D14).
 //!
 //! Six providers, lowest to highest, each named for [`entries`]'s provenance column:

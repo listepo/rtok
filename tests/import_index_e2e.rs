@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T38.3: e2e for `memory import` and `graph index` through the binary.
 //!
 //! Check: an imported JSONL note is found by `mem_search`, and an indexed

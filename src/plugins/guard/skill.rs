@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T62.1: digest an oversized skill body before Claude Code injects it.
 //!
 //! `PreToolUse(Skill)` fires before the host appends `SKILL.md` to the context and may

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T101: the hook fail-open matrix. `tests/extra_cover.rs` checks bad and empty stdin for
 //! the default host only; here every value `[hook]` host accepts × every hook event ×
 //! every kind of bad stdin must exit 0, print the host's no-op reply, and never rewrite

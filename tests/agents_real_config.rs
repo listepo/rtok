@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T78: the installers against foreign configs that live only under the throwaway home.
 //!
 //! Each test writes a fixture (another tool's hook, server, or setting — never this
