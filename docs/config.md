@@ -107,7 +107,7 @@ idle       = "30m"                    # `live()`'s window: no `ended_at` and `la
 push_bytes = 1024                     # framed messages pushed per UserPromptSubmit/PostToolUse; the rest → "and N more" (T288)
 
 [agents.usage]                        # rtok agents usage (T358)
-source = "rtok"                       # rtok = what passed through rtok (the store); T358.2 adds logs and both
+source = "logs"                       # logs = the agents' own session files (Claude Code, Codex); rtok = what passed through rtok; both
 hosts  = []                           # [] = every host; else host ids, e.g. ["claude", "codex"]
 since  = ""                           # "" = all time; a date (2026-09-01, whole days in tz) or a duration (30d)
 until  = ""                           # "" = through today; a date, inclusive
