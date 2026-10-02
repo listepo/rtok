@@ -185,6 +185,22 @@ fn run_echo_prints_its_output() {
     let _ = fs::remove_dir_all(&home);
 }
 
+/// T366: a command killed by a signal exits `128 + signal` like a shell, not `1`; a plain
+/// non-zero exit keeps its code. The `kill` targets the test's own `sh` (`$$`).
+#[cfg(unix)]
+#[test]
+fn run_reports_128_plus_the_signal_for_a_killed_command() {
+    let home = tmp("signal");
+    for (script, code) in [
+        ("kill -TERM $$", 143),
+        ("kill -KILL $$", 137),
+        ("exit 7", 7),
+    ] {
+        cmd(&["run", "sh", "-c", script], &home).assert().code(code);
+    }
+    let _ = fs::remove_dir_all(&home);
+}
+
 #[test]
 fn run_long_output_then_expand_round_trips() {
     let home = tmp("expand");
