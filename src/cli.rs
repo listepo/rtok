@@ -56,6 +56,10 @@ enum Cmd {
         /// JSON arguments for `--call`
         #[arg(long, value_name = "ARGS")]
         json: Option<String>,
+        /// The host this MCP entry belongs to (`claude`, `cursor`, `grok`, …): overlays `[hook] host` so
+        /// the process can find its rtok agent (T283.1)
+        #[arg(long, value_name = "HOST")]
+        host: Option<String>,
         /// Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`)
         #[arg(last = true)]
         wrap: Vec<String>,
@@ -1072,6 +1076,11 @@ pub fn run() -> Result<()> {
             cache,
             price,
         } => {
+            // The flag is parsed here, before it merges into `stats.since`, so a later parse error
+            // can only come from the config or the environment and says so.
+            if let Some(s) = &since {
+                crate::measure::stats::parse_since(s)?;
+            }
             let cfg = Config::load_with(
                 config_file.as_deref(),
                 stats_flags(since, json, plugin.clone(), compare.clone(), price),
@@ -1568,9 +1577,10 @@ pub fn run() -> Result<()> {
             action,
             call,
             json,
+            host,
             wrap,
         } => {
-            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let cfg = Config::load_with(config_file.as_deref(), hook_host_flag(host))?;
             if let Some(McpCmd::Ping {
                 agent,
                 cli,
