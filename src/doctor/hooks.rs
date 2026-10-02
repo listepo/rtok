@@ -23,8 +23,8 @@ use crate::config::Config;
 /// One finding of a doctor config check. The list is shared by every T331 detector.
 #[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct Problem {
-    /// `broken-hook`, `suspect-hook`, `unverified-hook`, `duplicate-hook`, `stale-plugin` or
-    /// `unreadable-config`.
+    /// `broken-hook`, `suspect-hook`, `unverified-hook`, `duplicate-hook`, `duplicate-mcp`,
+    /// `conflicting-mcp`, `stale-plugin` or `unreadable-config`.
     pub kind: &'static str,
     pub agent: &'static str,
     /// The config file the entry lives in.

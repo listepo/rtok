@@ -1,6 +1,5 @@
 ---
 source: src/report/html.rs
-assertion_line: 298
 expression: out
 ---
 <!DOCTYPE html>
@@ -71,6 +70,7 @@ svg.chart{background:#fafafa;margin:1rem 0}
 <pre><code>hooks 0
 hooks check none found
 duplicate hooks none found
+duplicate mcp servers none found
 mcp
 proxy 
 proxy openai 
