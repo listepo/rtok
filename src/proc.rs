@@ -6,7 +6,7 @@
 //! the host `--version` probe (T280).
 
 use std::io::Read;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
@@ -18,8 +18,8 @@ const DRAIN_AFTER_EXIT: Duration = Duration::from_millis(200);
 /// How often [`capture`] checks a time-limited child.
 const POLL: Duration = Duration::from_millis(10);
 
-/// What [`capture`] read, and the exit code: `None` when a signal ended the process or it
-/// was killed at the time limit.
+/// What [`capture`] read, and the exit code ([`exit_code`]): `None` when the process was
+/// killed at the time limit.
 pub(crate) struct Captured {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
@@ -41,7 +41,7 @@ pub(crate) fn capture(mut cmd: Command, limit: Option<Duration>) -> std::io::Res
     let out = drain(child.stdout.take(), tx.clone());
     let err = drain(child.stderr.take(), tx);
     let code = match limit {
-        None => child.wait()?.code(),
+        None => exit_code(child.wait()?),
         Some(limit) => wait_until(&mut child, Instant::now() + limit)?,
     };
     let deadline = Instant::now() + DRAIN_AFTER_EXIT;
@@ -62,11 +62,23 @@ pub(crate) fn capture(mut cmd: Command, limit: Option<Duration>) -> std::io::Res
     })
 }
 
+/// The code a shell would report for `status`: its own code, or `128 + signal` for a Unix
+/// signal death, where `ExitStatus::code()` is `None` and callers that default it to 1 hide
+/// an OOM kill (137) or a timeout (143) behind an ordinary failure (T366). `None` stays only
+/// for a status with neither, which no supported platform produces.
+pub(crate) fn exit_code(status: ExitStatus) -> Option<i32> {
+    #[cfg(unix)]
+    if let Some(sig) = std::os::unix::process::ExitStatusExt::signal(&status) {
+        return Some(128 + sig);
+    }
+    status.code()
+}
+
 /// The child's exit code, or `None` after killing it at `deadline`.
 fn wait_until(child: &mut Child, deadline: Instant) -> std::io::Result<Option<i32>> {
     loop {
         if let Some(status) = child.try_wait()? {
-            return Ok(status.code());
+            return Ok(exit_code(status));
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
@@ -113,6 +125,20 @@ mod tests {
             start.elapsed()
         );
         assert_eq!((c.stdout.as_slice(), c.code), (&b"hi\n"[..], Some(4)));
+    }
+
+    /// T366: `ExitStatus::code()` is `None` for a signal death; the shell convention is `128 + signal`.
+    #[test]
+    fn capture_reports_128_plus_the_signal_of_a_killed_child() {
+        for (script, code) in [
+            ("kill -TERM $$", 143),
+            ("kill -KILL $$", 137),
+            ("exit 7", 7),
+        ] {
+            let mut cmd = Command::new("sh");
+            cmd.args(["-c", script]);
+            assert_eq!(capture(cmd, None).unwrap().code, Some(code), "{script}");
+        }
     }
 
     /// T280: a process still running at the limit is killed, and what it printed is kept.
