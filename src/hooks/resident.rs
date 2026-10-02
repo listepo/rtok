@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T178 / D32: `rtok hook --serve`, the optional resident hook process. The `rtok-hook` client
 //! sends it each hook call over a Unix socket (Windows: a named pipe) and prints what it answers
 //! — what `rtok hook` would print, without a process start. One per home (`hook.lock`). Calls

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T178 / D32: `rtok hook --serve` answers what `rtok hook` prints, refuses a client whose
 //! environment or version differs, runs once per home, and exits on a newer client or a deleted
 //! home. `rtok-hook` prints a resident's answer, runs `rtok hook` when none answers or one

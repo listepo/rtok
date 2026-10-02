@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // rtok design — shared by every page: light/dark theme toggle.
 // The pre-paint snippet in each <head> applies the saved choice (localStorage 'rtok-theme',
 // the key the Slint UI and the web admin use) or prefers-color-scheme when none is saved.

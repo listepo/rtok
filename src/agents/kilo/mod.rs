@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Kilo Code installer (`rtok agents install kilo`, plan T97).
 //!
 //! Kilo Code 7 runs on the OpenCode server: the `kilo` CLI and the VS Code extension read one

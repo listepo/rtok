@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok completions <shell>` (T53.2, T317): clap_complete's shells plus Clink, the completion
 //! system `cmd.exe` gets through <https://chrisant996.github.io/clink/>. All of them come from
 //! the same clap tree as `--help`.

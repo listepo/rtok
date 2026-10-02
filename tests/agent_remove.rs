@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T10.9: `rtok agents uninstall <host>` (alias `remove`) takes back everything `rtok agents install <host>` wrote,
 //! and both commands copy the host's config files before they touch anything.
 //!

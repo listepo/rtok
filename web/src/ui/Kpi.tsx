@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 import type { ReactNode } from "react";
 
 const tones = { default: "", ok: "text-success-fg", warn: "text-warn-fg", fail: "text-delta-fg" };
