@@ -222,6 +222,8 @@ fn the_resident_records_the_ancestors_of_the_request_pid() {
 
 /// The real client sends its own pid. It may miss the 50 ms answer window on a loaded machine
 /// and then prints `{}` while the resident finds it gone, so retry until a call lands.
+/// Not on Windows: `rtok_sys::parent_of` gives no answer there, so no row can name this test.
+#[cfg(not(windows))]
 #[test]
 fn the_client_sends_its_own_pid() {
     let home = Home::new("p");
