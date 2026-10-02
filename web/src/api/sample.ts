@@ -2,6 +2,18 @@
 // offline e2e. Typed as `Snapshot`, so a schema change breaks `tsc` here instead of drifting.
 import type { Connect, Connection } from "./ws";
 import type { Snapshot } from "./snapshot.gen";
+// The text pages have no live source offline, so `?sample` shows the same made-up text the
+// page stories use; every value is sample data.
+import {
+  configText,
+  graphText,
+  hostsText,
+  servicesText,
+  skillRows,
+  skillsHeader,
+  statsText,
+  worktreesText,
+} from "../pages/textFixtures";
 
 const stats = {
   cache_create: 1_200,
@@ -59,10 +71,10 @@ export const sampleSnapshot: Snapshot = {
       ts: 1_790_000_000,
     },
   ],
-  config: "plugins.shell.enabled = true",
+  config: configText,
   doctor: null,
-  graph: null,
-  hosts: "claude-code  1.0.0  hook, mcp",
+  graph: graphText,
+  hosts: hostsText,
   logs: ["rtok hook PostToolUse ok 4 ms"],
   plugins: [
     {
@@ -87,7 +99,7 @@ export const sampleSnapshot: Snapshot = {
     },
   ],
   ref_ids: { "2": "sample-archive-id" },
-  services: null,
+  services: servicesText,
   sessions: [
     {
       api: "anthropic",
@@ -105,8 +117,8 @@ export const sampleSnapshot: Snapshot = {
       started_at: 1_789_999_000,
     },
   ],
-  skills: { header: "0 skills listed", rows: [] },
-  stats: null,
+  skills: { header: skillsHeader, rows: skillRows },
+  stats: statsText,
   usage: {
     cache_create: 1_200,
     cache_read: 48_000,
@@ -118,7 +130,7 @@ export const sampleSnapshot: Snapshot = {
     rows: 42,
     turns: [4_000, 6_500, 9_000],
   },
-  worktrees: null,
+  worktrees: worktreesText,
 };
 
 export const isSampleRequested = (search: string): boolean =>

@@ -9,8 +9,15 @@ import {
 } from "@tanstack/react-router";
 import { useConnection, useSnapshot } from "./api/query";
 import { Calls } from "./pages/Calls";
+import { Config } from "./pages/Config";
+import { Graph } from "./pages/Graph";
+import { Hosts } from "./pages/Hosts";
 import { Overview } from "./pages/Overview";
 import { Plugins } from "./pages/Plugins";
+import { Services } from "./pages/Services";
+import { Skills } from "./pages/Skills";
+import { Stats } from "./pages/Stats";
+import { Worktrees } from "./pages/Worktrees";
 import { PAGES, type Page } from "./pages";
 import { NotFound, Shell } from "./Shell";
 import { Empty, Loading } from "./states";
@@ -37,6 +44,13 @@ const screens: Partial<Record<Page["id"], RouteComponent>> = {
     overview: Overview,
     plugins: Plugins,
     calls: Calls,
+    skills: Skills,
+    stats: Stats,
+    graph: Graph,
+    hosts: Hosts,
+    config: Config,
+    services: Services,
+    worktrees: Worktrees,
 };
 
 const root = createRootRoute({ component: Shell, notFoundComponent: NotFound });

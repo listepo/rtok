@@ -33,7 +33,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T290 | todo | P1 | 3 | 0% | |
 | T310 | todo | P1 | 5 | 0% | |
 | T310.7 | todo | P2 | 3 | 0% | |
-| T310.8 | todo | P2 | 3 | 0% | |
 | T310.9 | todo | P1 | 4 | 0% | |
 | T310.10 | todo | P1 | 3 | 0% | |
 | T310.11 | todo | P2 | 3 | 0% | |
@@ -606,10 +605,6 @@ Done when: `rtok web` serves the SPA from the binary, every page of `model::page
 Check: `rtok web` from a release build shows every page of `model::pages()` from the embedded SPA; no `slint`/`rtok-webui` left in the tree; `just check` and the SPA CI job green.
 
 ### T310.7. Pages: sessions, doctor, logs
-
-Check: each page matches `design/html/admin/<page>.html` in dark and light at 375 and 1280 px on sample data; stories and Vitest for page logic.
-
-### T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
 
 Check: each page matches `design/html/admin/<page>.html` in dark and light at 375 and 1280 px on sample data; stories and Vitest for page logic.
 
