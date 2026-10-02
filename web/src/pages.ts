@@ -2,7 +2,7 @@ import type { Snapshot } from "./api/snapshot.gen";
 
 // Mirrors `model::pages()` (src/web/model.rs): page id and the snapshot field it reads. The
 // route tree, sidebar and tab bar are all built from this one list, so a page cannot be
-// routable and missing from the nav. Rust's `tests/surface_parity.rs` keeps the ids honest.
+// routable and missing from the nav. `tests/surface_parity.rs` (`spa_page_list_matches_the_model`) fails when this list drifts.
 export const PAGES = [
   { id: "overview", field: "usage" },
   { id: "plugins", field: "plugins" },
