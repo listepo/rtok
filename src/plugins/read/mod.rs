@@ -267,13 +267,10 @@ fn under_ascii_case_insensitive(path: &Path, root: &Path) -> bool {
 }
 
 /// T263: refuse to walk `/` or the home directory (Claude.app launches `rtok mcp` in `/`);
-/// such a walk times out instead of answering.
+/// such a walk times out instead of answering. T356: graph indexing uses it too.
 pub(crate) fn walk_root_ok(root: &Path) -> Result<()> {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let is_home = std::env::home_dir()
-        .and_then(|h| h.canonicalize().ok())
-        .is_some_and(|h| h == root);
-    if root.parent().is_none() || is_home {
+    if crate::fs::is_unwalkable_root(root, std::env::home_dir().as_deref()) {
+        let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
         bail!(
             "no project root: rtok mcp runs in {}; pass an absolute path inside the repository or start rtok mcp there",
             root.display()

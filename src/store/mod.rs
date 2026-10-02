@@ -2146,7 +2146,7 @@ impl Store {
     ) -> Result<usize> {
         let purged = self.purge_calls_older_than(i64::from(retain_calls_days))?;
         self.clear_hook_bodies_older_than(i64::from(retain_hook_bodies_days))?;
-        self.drop_vanished_symbol_roots()?;
+        self.drop_dead_symbol_roots(std::env::home_dir().as_deref())?;
         self.maintenance(|c| sql_ext::pragma_incremental_vacuum(c).map_err(Into::into))?;
         Ok(purged)
     }
@@ -2224,13 +2224,17 @@ impl Store {
         }
     }
 
-    /// T352: drop the graph index of every root that is no longer a directory (a removed
-    /// worktree or clone). The empty root is a placeholder, not a path, and stays.
-    pub fn drop_vanished_symbol_roots(&self) -> Result<usize> {
+    /// T352/T356: drop the graph index of every root that is no longer a directory (a removed
+    /// worktree or clone) or that may never be a root (`/`, `home`). The empty root is a
+    /// placeholder, not a path, and stays.
+    pub fn drop_dead_symbol_roots(&self, home: Option<&Path>) -> Result<usize> {
         self.maintenance(|c| {
             let gone: Vec<String> = sql_ext::symbol_roots(c)?
                 .into_iter()
-                .filter(|r| !r.is_empty() && !Path::new(r).is_dir())
+                .filter(|r| {
+                    let p = Path::new(r);
+                    !r.is_empty() && (!p.is_dir() || crate::fs::is_unwalkable_root(p, home))
+                })
                 .collect();
             for root in &gone {
                 sql_ext::delete_symbol_root(c, root)?;
@@ -4645,6 +4649,38 @@ mod tests {
         assert_eq!(store.extractor_fingerprint(gone).unwrap(), None);
         assert_eq!(store.symbol_count(live).unwrap(), 1);
         assert_eq!(store.symbol_count("").unwrap(), 1, "the empty root stays");
+    }
+
+    /// T356: an existing directory that is `home` or `/` is dropped too; a project stays.
+    #[test]
+    fn retention_drops_home_and_filesystem_roots() {
+        let store = Store::open_in_memory().unwrap();
+        let home = crate::testutil::tmp_dir("t356-home");
+        let project = crate::testutil::tmp_dir("t356-project");
+        let (home, project) = (home.to_str().unwrap(), project.to_str().unwrap());
+        let row = (
+            "f".to_string(),
+            "function".to_string(),
+            1,
+            true,
+            1,
+            String::new(),
+        );
+        for root in [home, project, "/"] {
+            store
+                .replace_symbols(root, "a.rs", "s", (0, 0), std::slice::from_ref(&row))
+                .unwrap();
+            store.set_extractor_fingerprint(root, "fp").unwrap();
+        }
+        assert_eq!(
+            store.drop_dead_symbol_roots(Some(Path::new(home))).unwrap(),
+            2
+        );
+        for gone in [home, "/"] {
+            assert_eq!(store.symbol_count(gone).unwrap(), 0, "{gone}");
+            assert_eq!(store.extractor_fingerprint(gone).unwrap(), None, "{gone}");
+        }
+        assert_eq!(store.symbol_count(project).unwrap(), 1);
     }
 
     fn auto_vacuum_mode(store: &Store) -> i32 {
