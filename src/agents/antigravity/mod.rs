@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Antigravity CLI + Antigravity 2.0 / IDE (`rtok agents install antigravity`, plan T91.1, D21).
 //!
 //! The plugin is the only unit (T90): `plugins/antigravity` carries `mcp_config.json` and no

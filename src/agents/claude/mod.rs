@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Install rtok hooks into Claude Code `settings.json` (plan T2.3).
 //!
 //! What is Claude-specific is the `hooks` shape below; backup, the write gate and the

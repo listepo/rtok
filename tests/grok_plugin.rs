@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T99: the Grok Build plugin tree ships a manifest and rtok's hooks. MCP is independent of the
 //! plugin (T275/D33): `rtok agents install grok` writes `[mcp_servers.rtok]` into
 //! `~/.grok/config.toml` itself, so the plugin carries no `.mcp.json` of its own.

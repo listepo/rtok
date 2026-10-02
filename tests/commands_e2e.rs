@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T38.1/T38.5: e2e for the commands without direct coverage — `hook`, `run`,
 //! `expand`, `plugins`, `config`, `bench --dry-run`, `doctor`, `stats` — driven
 //! through `assert_cmd` (plan Working agreement).
@@ -178,6 +182,22 @@ fn run_echo_prints_its_output() {
     let home = tmp("run");
     let out = ok(&["run", "echo", "hello-e2e"], &home);
     assert!(out.contains("hello-e2e"), "{out}");
+    let _ = fs::remove_dir_all(&home);
+}
+
+/// T366: a command killed by a signal exits `128 + signal` like a shell, not `1`; a plain
+/// non-zero exit keeps its code. The `kill` targets the test's own `sh` (`$$`).
+#[cfg(unix)]
+#[test]
+fn run_reports_128_plus_the_signal_for_a_killed_command() {
+    let home = tmp("signal");
+    for (script, code) in [
+        ("kill -TERM $$", 143),
+        ("kill -KILL $$", 137),
+        ("exit 7", 7),
+    ] {
+        cmd(&["run", "sh", "-c", script], &home).assert().code(code);
+    }
     let _ = fs::remove_dir_all(&home);
 }
 

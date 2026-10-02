@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T95 + D21: the Cline plugin tree is one POSIX script plus its README.
 //!
 //! Check: `plugins/cline/hooks/rtok-hook` is executable, fails open without `rtok`

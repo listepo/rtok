@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok worktree remove` (T286): an agent removes its own finished worktree. [`detach`] is
 //! the single-worktree removal `gc` applies too; [`run`] refuses before it touches anything.
 
