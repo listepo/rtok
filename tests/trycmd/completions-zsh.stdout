@@ -155,12 +155,12 @@ _arguments "${_arguments_options[@]}" : /
 ;;
 (doctor)
 _arguments "${_arguments_options[@]}" : /
-'--only=[With --fix/: which problems to fix (only /`broken-hooks/` for now)]:ONLY:(broken-hooks)' /
+'*--only=[With --fix/: limit it to these problems (repeatable; default/: all of them)]:ONLY:(broken-hooks duplicate-hooks duplicate-mcp)' /
 '--agent=[Check (and with --fix, repair) the hooks of one host only (an id of /`rtok agents list/`)]:HOST:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--instructions[Also run the instruction-file audit (T7.2)]' /
 '(--fix)--json[JSON instead of the table]' /
-'--fix[Remove the hooks whose script no longer exists; prints the diff, writes only with --yes]' /
+'--fix[Remove broken hooks and the extra copies of duplicate hooks and MCP entries; prints the diff, writes only with --yes]' /
 '--yes[With --fix/: write the changes (a copy goes to /`_backup//` first)]' /
 '--dry-run[With --fix --yes/: print the diffs and write nothing]' /
 '-h[Print help]' /

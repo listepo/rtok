@@ -681,6 +681,8 @@ pub(super) struct Seen {
     /// differ only there run the same thing.
     pub normal: String,
     pub rank: u8,
+    /// Whether `--fix` may edit the file the entry lives in: not a plugin's, and JSON.
+    pub editable: bool,
 }
 
 /// The hosts whose hooks live in a `config.toml`, each shape documented by the host (see
@@ -856,6 +858,7 @@ fn scan(
             command: e.command.clone(),
             normal: normalize(&e.command, p, scope),
             rank,
+            editable,
         });
         let (kind, detail, fixable) = match classify(&e.command, p, scope) {
             Verdict::Ok => continue,
@@ -1671,7 +1674,10 @@ mod tests {
         assert_eq!(d.len(), 2);
         assert_eq!(d[0].group, d[1].group);
         assert!(d[0].detail.starts_with("runs 2 times"));
-        assert!(!d.iter().any(|p| p.fixable), "report only until T331.6");
+        assert!(
+            d.iter().all(|p| p.fixable != p.keep),
+            "only the extra copy is fixable"
+        );
         assert_eq!(
             copies(&m),
             vec![
@@ -1736,6 +1742,40 @@ mod tests {
             vec![
                 (PathBuf::from("/h/.claude/settings.json"), false),
                 (PathBuf::from("/h/plug/demo/hooks/hooks.json"), true)
+            ]
+        );
+    }
+
+    #[test]
+    fn only_a_hand_written_extra_is_fixable_never_a_plugin_copy() {
+        let mut m = Mock::default();
+        m.files.insert(
+            "/h/.claude/plugins/installed_plugins.json".into(),
+            r#"{"plugins": {"demo@mkt": [{"installPath": "/h/plug/demo"}]}}"#.into(),
+        );
+        let mut settings: Value =
+            serde_json::from_str(&hooks_doc("Stop", None, &["jq ."])).unwrap();
+        settings["enabledPlugins"] = serde_json::json!({"demo@mkt": true});
+        m.files
+            .insert("/h/.claude/settings.json".into(), settings.to_string());
+        m.kinds.insert("/h/plug/demo".into(), PathKind::Dir);
+        // The plugin repeats the hook inside its own file too: an extra, but not the user's to edit.
+        m.files.insert(
+            "/h/plug/demo/hooks/hooks.json".into(),
+            hooks_doc("Stop", None, &["jq .", "jq ."]),
+        );
+        m.path.insert("jq".into(), "/usr/bin/jq".into());
+        let fixable: Vec<(String, bool, bool)> = check_with(&m)
+            .into_iter()
+            .filter(|p| p.kind == "duplicate-hook")
+            .map(|p| (p.source, p.keep, p.fixable))
+            .collect();
+        assert_eq!(
+            fixable,
+            vec![
+                ("/h/.claude/settings.json".into(), false, true),
+                ("/h/plug/demo/hooks/hooks.json".into(), true, false),
+                ("/h/plug/demo/hooks/hooks.json".into(), false, false),
             ]
         );
     }

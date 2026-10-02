@@ -26,6 +26,7 @@ mod dupes;
 pub mod fix;
 pub mod hooks;
 mod mcp_dupes;
+mod mcp_fix;
 pub mod probe;
 
 /// What `rtok doctor` found, as data.

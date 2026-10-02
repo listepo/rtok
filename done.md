@@ -4699,6 +4699,19 @@ Result: `rtok doctor --agent <HOST>` limits the hooks check, and with `--fix` th
 Status: done 2026-10-03
 Model: Claude Code / claude-sonnet-5-5
 
+### T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
+
+Part of T331. Extends the T331.5 engine to the extra copies of T331.3 and T331.4: keep rules, choosing another copy, never the last copy, TOML `[mcp_servers.<name>]` removal, never a plugin's own files or a managed file. Depends on T331.3, T331.4, T331.5 and, for rtok's own entry, T331.10.
+
+Check: the duplicate scenarios of "User selecting cleanup" and the combined case; `just check`.
+
+Execution (2026-10-03): (1) The duplicate findings carry `fixable`: an extra copy in a JSON file the user owns (`Seen::editable`: not a plugin's file, not TOML) for hooks, and every non-kept `duplicate-mcp` entry (an extra launch copy or a name the host does not use); the kept copy, version conflicts, plugin files, TOML hook files and rtok's own entries never are. No managed file is read, so none is ever edited. (2) `fix::fix_for` takes the selected kinds (`broken-hook`, `duplicate-hook`, `duplicate-mcp`) and reuses the T331.5 pipeline end to end: per file one plan, one diff, the re-read before the write, `Writer::backup` (`rtok_agent_sdk::backup`) and `write_atomic`. A finding that is broken and an extra copy at once is removed once; when the kept copy of a duplicate goes as broken, its extras stay, so a duplicate rule never empties a hook. (3) `fix::edit` splits a file's removals: hooks through the unchanged `edit_hooks` guard (old hooks minus the removed ones), then servers through `mcp_fix::remove`, whose guard re-reads the servers table through the `rtok_mcp` reader and, for JSON, the whole document. JSON and JSONC drop the member with `jsonc::remove_at`; a TOML `[mcp_servers.<name>]` table goes through `toml_edit`, so every other byte stays. The empty `mcpServers` object is left, like `hooks: {}`. (4) `--only` is repeatable (`broken-hooks`, `duplicate-hooks`, `duplicate-mcp`); none selected means all. (5) Tests: the extra copy goes and the kept one stays, three copies leave one, broken and duplicated at once with each class selected alone, JSON and TOML byte for byte, a shadowed server, rtok's own entries, a plugin-owned copy is never the extra, an unlocatable entry is refused, and an e2e through the binary.
+
+Result: `rtok doctor --fix` removes the extra copies of duplicate hooks and duplicate MCP entries as well as broken hooks (`--only` limits it); the summary reads `N entries removed, M left`. The rtok part (T331.10) and choosing another copy to keep (the interactive checklist, T331.7) are not here.
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5-5
+
 ### T305. stats archive replay no longer double-counts short bodies
 
 `replay_ctt` (`src/measure/stats.rs`), which estimates what `rtok stats` calls `archive replay (estimate)` — the CTT the `archive` plugin (T5.3) leaves behind once a tool result ages past `keep_turns` — modelled the kept lines as `lines.iter().take(head_lines)` chained with `lines.iter().rev().take(tail_lines)`. When a result had fewer lines than `head_lines + tail_lines` (a single huge line, for example) the two slices overlapped, so `kept` counted those lines up to 2x and the estimate could land above not archiving at all. Fixed to mirror `archive::pointer`'s own guard: when `lines.len() <= head + tail`, sum each line once — through `archive::clip`, the same per-line truncation `pointer` applies — instead of taking overlapping head/tail slices; every shown line (head and tail too) goes through `archive::clip`, as `pointer` does. Also: the stats tests' `tempfile_dir` named directories by pid + nanos only, and macOS clocks tick in microseconds, so two parallel tests could share one directory (`compact_boundary_counts_once_per_event` failed intermittently); a counter now keeps them apart.

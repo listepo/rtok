@@ -5,7 +5,8 @@
 //! Duplicate hooks (T331.3): one agent loads the same hook twice, so it runs twice. Entries
 //! of the same host, event, matcher and normalized command are copies; one copy is recommended
 //! to keep (plugin-owned, then a project's shared file, then the user's, then a `.local` file,
-//! first in load order among equals). Report only: no copy is marked fixable before T331.6.
+//! first in load order among equals). An extra copy in a file `--fix` may edit is fixable (T331.6);
+//! the kept copy never is.
 
 use std::collections::BTreeMap;
 
@@ -76,7 +77,7 @@ pub(super) fn find(seen: &[Seen]) -> Vec<Problem> {
                 matcher: s.matcher.clone(),
                 command: s.command.clone(),
                 detail,
-                fixable: false,
+                fixable: i != keep && s.editable,
                 group: Some(n as u32),
                 keep: i == keep,
             });

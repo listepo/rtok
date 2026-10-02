@@ -149,12 +149,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;doctor' {
-            [CompletionResult]::new('--only', '--only', [CompletionResultType]::ParameterName, 'With --fix: which problems to fix (only `broken-hooks` for now)')
+            [CompletionResult]::new('--only', '--only', [CompletionResultType]::ParameterName, 'With --fix: limit it to these problems (repeatable; default: all of them)')
             [CompletionResult]::new('--agent', '--agent', [CompletionResultType]::ParameterName, 'Check (and with --fix, repair) the hooks of one host only (an id of `rtok agents list`)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--instructions', '--instructions', [CompletionResultType]::ParameterName, 'Also run the instruction-file audit (T7.2)')
             [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
-            [CompletionResult]::new('--fix', '--fix', [CompletionResultType]::ParameterName, 'Remove the hooks whose script no longer exists; prints the diff, writes only with --yes')
+            [CompletionResult]::new('--fix', '--fix', [CompletionResultType]::ParameterName, 'Remove broken hooks and the extra copies of duplicate hooks and MCP entries; prints the diff, writes only with --yes')
             [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'With --fix: write the changes (a copy goes to `_backup/` first)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'With --fix --yes: print the diffs and write nothing')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
