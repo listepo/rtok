@@ -666,6 +666,39 @@ enum AgentCmd {
         #[command(subcommand)]
         action: Option<SessionsCmd>,
     },
+    /// Tokens and estimated cost per agent and month (or day), from what passed through rtok
+    ///
+    /// Prices come from `[stats.prices]`; a model without one counts in the tokens and is
+    /// left out of the cost (`--unpriced` names those).
+    Usage {
+        /// Data source: `rtok` (the store; the only one for now)
+        #[arg(long, value_name = "SOURCE")]
+        source: Option<String>,
+        /// Only these hosts, comma-separated (`claude,codex`)
+        #[arg(long, value_name = "IDS")]
+        host: Option<String>,
+        /// From a date (`2026-09-01`, whole days in `--tz`) or a duration back from now (`30d`)
+        #[arg(long, value_name = "DATE|DUR")]
+        since: Option<String>,
+        /// Through this date, inclusive
+        #[arg(long, value_name = "DATE")]
+        until: Option<String>,
+        /// Bottom table by day
+        #[arg(long, conflicts_with = "monthly")]
+        daily: bool,
+        /// Bottom table by month (the default)
+        #[arg(long)]
+        monthly: bool,
+        /// IANA time zone for day and month boundaries (default: the system zone)
+        #[arg(long, value_name = "ZONE")]
+        tz: Option<String>,
+        /// List the models without a price instead of the tables
+        #[arg(long)]
+        unpriced: bool,
+        /// One JSON document
+        #[arg(long)]
+        json: bool,
+    },
     /// Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear
     Junk {
         #[command(subcommand)]
@@ -1406,6 +1439,37 @@ pub fn run() -> Result<()> {
                     print!("{}", crate::render::sessions_table(&rows, all, now));
                 }
             }
+            AgentCmd::Usage {
+                source,
+                host,
+                since,
+                until,
+                daily,
+                monthly,
+                tz,
+                unpriced,
+                json,
+            } => {
+                let period = daily.then_some("daily").or(monthly.then_some("monthly"));
+                let flags = usage_flags([
+                    ("source", source),
+                    ("hosts", host),
+                    ("since", since),
+                    ("until", until),
+                    ("period", period.map(str::to_string)),
+                    ("tz", tz),
+                ]);
+                let cfg = Config::load_with(config_file.as_deref(), flags)?;
+                let store = crate::store::Store::open(&cfg.core.db_path)?;
+                let report = crate::agents::usage::report(&cfg, &store, crate::log::now() as i64)?;
+                if json {
+                    print_json(&report)?;
+                } else if unpriced {
+                    print!("{}", report.unpriced_text());
+                } else {
+                    print!("{}", report.to_text());
+                }
+            }
             AgentCmd::Junk {
                 action: JunkCmd::List { json, bytes },
             } => {
@@ -1957,6 +2021,35 @@ fn stats_flags(
     }
     let mut flags = Dict::new();
     flags.insert("stats".into(), Value::from(stats));
+    Some(flags)
+}
+
+/// The `[agents.usage]` overlay for the flags the caller gave. `hosts` is the one list key,
+/// so its comma-separated flag is split here.
+fn usage_flags<const N: usize>(given: [(&str, Option<String>); N]) -> Option<figment::value::Dict> {
+    use figment::value::{Dict, Value};
+    let mut usage = Dict::new();
+    for (key, value) in given {
+        let Some(value) = value else { continue };
+        let value = if key == "hosts" {
+            Value::from(
+                value
+                    .split(',')
+                    .map(|h| h.trim().to_string())
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            Value::from(value)
+        };
+        usage.insert(key.into(), value);
+    }
+    if usage.is_empty() {
+        return None;
+    }
+    let mut agents = Dict::new();
+    agents.insert("usage".into(), Value::from(usage));
+    let mut flags = Dict::new();
+    flags.insert("agents".into(), Value::from(agents));
     Some(flags)
 }
 
