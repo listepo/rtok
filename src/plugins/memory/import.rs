@@ -1,7 +1,7 @@
 //! `rtok memory import <file.jsonl>` (plan T6.3).
 
 use crate::config::Config;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::Path;
@@ -50,11 +50,12 @@ fn sha(body: &str) -> String {
 /// `(project, kind, title)` already names a local note is skipped too, whatever its body —
 /// an older export must never replace a newer local body (T209: `notes_topic` is one row
 /// per topic key, so a plain insert would otherwise fail outright on the collision).
-/// Always exit-success. `dry_run` counts exactly what a real run would insert and skip,
-/// and writes no rows.
+/// Malformed lines are counted, never fatal; a file that cannot be read is an error naming
+/// its path, read before the store opens so it writes nothing (T361). `dry_run` counts
+/// exactly what a real run would insert and skip, and writes no rows.
 pub fn run(cfg: &Config, path: &Path, dry_run: bool) -> Result<Report> {
+    let raw = std::fs::read_to_string(path).with_context(|| path.display().to_string())?;
     let cx = crate::plugin::Runtime::open(cfg.clone(), "import")?;
-    let raw = std::fs::read_to_string(path).unwrap_or_default();
     let mut seen: HashSet<String> = cx
         .store
         .note_bodies()?
@@ -128,6 +129,20 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n")
             + "\n"
+    }
+
+    /// T361: a missing path or a directory used to print zero counts and exit 0.
+    #[test]
+    fn an_unreadable_file_is_an_error_naming_the_path() {
+        let (c, dir) = cfg("unreadable");
+        for p in [dir.join("missing.jsonl"), dir.clone()] {
+            let err = format!("{:#}", run(&c, &p, false).unwrap_err());
+            assert!(err.starts_with(&p.display().to_string()), "{err}");
+        }
+        let empty = dir.join("empty.jsonl");
+        fs::write(&empty, "").unwrap();
+        assert_eq!(run(&c, &empty, false).unwrap(), Report::default());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
