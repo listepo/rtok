@@ -177,7 +177,7 @@ impl Store {
         // so switching to WAL waits too; `wait.busy` bounds each statement's wait.
         set_busy(&mut conn, wait.busy)?;
         // T352: the mode is fixed once a table exists, so only a brand-new file gets it, before
-        // WAL and the first migration. Existing stores convert in `agents junk clear --yes`.
+        // WAL and the first migration. Existing stores convert in `housekeeping` (T352).
         if std::fs::metadata(url).map_or(true, |m| m.len() == 0) {
             sql_ext::pragma_auto_vacuum_incremental(&mut conn)?;
         }
@@ -2186,27 +2186,41 @@ impl Store {
         }
     }
 
-    /// T352: run [`Store::run_retention`] on a background thread with its own connection, so
-    /// the `initialize` handshake (mcp) or the listener (proxy) is never delayed by it. Retention
-    /// is housekeeping with a next-start retry: an error is logged, not fatal (T75). The thread
-    /// dies with the process; one that is killed mid-run only rolls back its current batch.
+    /// T352: run [`Store::housekeeping`] on a background thread, so the `initialize` handshake
+    /// (mcp) or the listener (proxy) is never delayed by it. The thread dies with the process;
+    /// one that is killed mid-run only rolls back its current batch (or its `VACUUM`).
     pub fn spawn_retention(cfg: &crate::config::Config, surface: &'static str) {
         let cfg = cfg.clone();
         let spawned = std::thread::Builder::new()
             .name("rtok-retention".into())
-            .spawn(move || {
-                let run = || {
-                    Store::open(&cfg.core.db_path)?
-                        .run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
-                };
-                if let Err(e) = run() {
-                    let msg = format!("retention skipped until next start: {e:#}");
-                    eprintln!("rtok {surface}: {msg}");
-                    crate::log::append(&cfg, "warn", surface, "retention", &msg);
-                }
-            });
+            .spawn(move || Self::housekeeping(&cfg, surface));
         if let Err(e) = spawned {
             eprintln!("rtok {surface}: retention thread not started: {e}");
+        }
+    }
+
+    /// T352: retention on its own connection, then the one-time conversion of a pre-T352 store
+    /// to `auto_vacuum = INCREMENTAL`. Retention goes first so the `VACUUM` rewrites the
+    /// already-smaller file. Both are housekeeping with a next-start retry (T75): an error is
+    /// logged, not fatal. A failed `VACUUM` (busy, `SQLITE_FULL`) rolls back and leaves the
+    /// file intact; a successful one briefly blocks other writers, once per store.
+    pub fn housekeeping(cfg: &crate::config::Config, surface: &'static str) {
+        let report = |what: &str, e: &anyhow::Error| {
+            let msg = format!("{what} skipped until next start: {e:#}");
+            eprintln!("rtok {surface}: {msg}");
+            crate::log::append(cfg, "warn", surface, "retention", &msg);
+        };
+        let store = match Store::open(&cfg.core.db_path) {
+            Ok(s) => s,
+            Err(e) => return report("retention", &e),
+        };
+        if let Err(e) =
+            store.run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
+        {
+            return report("retention", &e);
+        }
+        if let Err(e) = store.convert_to_incremental_vacuum() {
+            report("vacuum", &e);
         }
     }
 
@@ -4676,6 +4690,28 @@ mod tests {
         assert!(store.convert_to_incremental_vacuum().unwrap());
         assert_eq!(auto_vacuum_mode(&store), 2);
         assert!(!store.convert_to_incremental_vacuum().unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Session-start housekeeping converts a pre-T352 store on its own, after retention.
+    #[test]
+    fn housekeeping_converts_a_pre_t352_store() {
+        let dir = crate::testutil::tmp_dir("t352-housekeeping");
+        let cfg = crate::testutil::config_in(&dir);
+        let mut raw = SqliteConnection::establish(cfg.core.db_path.to_str().unwrap()).unwrap();
+        diesel::sql_query("CREATE TABLE t (x INTEGER)")
+            .execute(&mut raw)
+            .unwrap();
+        drop(raw);
+        assert_eq!(
+            auto_vacuum_mode(&Store::open(&cfg.core.db_path).unwrap()),
+            0
+        );
+        Store::housekeeping(&cfg, "test");
+        assert_eq!(
+            auto_vacuum_mode(&Store::open(&cfg.core.db_path).unwrap()),
+            2
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
