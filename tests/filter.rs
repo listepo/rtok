@@ -51,3 +51,37 @@ fn printf_git_status_returns_filtered_text() {
 fn opencode_plugin_unit_test_with_api_mock() {
     common::vitest("plugins/opencode/rtok.test.ts", &[]);
 }
+
+/// T360: one invalid UTF-8 byte used to empty the whole result.
+#[rstest]
+#[case::default(&["filter"][..])]
+#[case::stdin_flag(&["filter", "--stdin"][..])]
+fn invalid_utf8_byte_keeps_the_rest_of_stdin(#[case] args: &[&str]) {
+    let home = std::env::temp_dir().join(format!(
+        "rtok-filter-utf8-{}-{}",
+        std::process::id(),
+        args.len()
+    ));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
+        .args(args)
+        .env("RTOK_HOME", &home)
+        .env("HOME", &home)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"a\xffb\n").unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let s = String::from_utf8(out.stdout).unwrap();
+    assert!(s.contains("a\u{FFFD}b"), "{s:?}");
+    let _ = std::fs::remove_dir_all(&home);
+}

@@ -61,7 +61,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T345 | todo | research | 1 | 0% | |
 | T346 | todo | research | 1 | 0% | |
 | T359 | todo | P1 | 2 | 0% | |
-| T360 | todo | P1 | 1 | 0% | |
 | T361 | todo | P2 | 1 | 0% | |
 | T362 | todo | P3 | 1 | 0% | |
 | T363 | todo | P2 | 2 | 0% | |
@@ -1411,16 +1410,6 @@ Repro: `awk '/^[ \t]*```/{print NR": "$0}' docs/config.md` (the fence at 67 is f
 Done when: the reference block closes with a bare ```` ``` ```` before the semantic-cache section; that section (heading, table, example) sits outside the reference file under a `###` (or is dropped from the reference, since `config/default.toml`, which the reference mirrors, has no such table); the rest of the reference reopens as ```` ```toml ````; no heading level is skipped. A test parses every `docs/**/*.md` with a CommonMark parser (no Markdown parser is in `Cargo.lock` today: `pulldown-cmark` as a dev-dependency with a one-line reason and a `toolchain.md` row) and fails on unclosed/mis-nested fences and heading-level skips. English-only change: rtok has no `docs/ru` / `docs/uk` mirror.
 
 Check: a new docs-structure test fails on `main` @ `aecab806` (h2 → h4 at `[proxy.flex]`) and passes after the fix; `config_coverage` and `public_numbers` stay green; `just check`.
-
-### T360. `rtok filter` drops all of stdin when it holds one non-UTF-8 byte
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). Silent data loss on the OpenCode `tool.execute.after` path, against the lossless rule: one invalid UTF-8 byte (Latin-1 file content, binary in `git diff` / `cat`, some compiler or locale output) and the agent gets an empty tool result, exit 0, nothing archived, so `expand` cannot recover it. `src/cli.rs:1488` does `let _ = io::stdin().read_to_string(&mut buf);` — on invalid UTF-8 `read_to_string` returns `InvalidData`, leaves `buf` empty, and the error is dropped; the no-plugin fallback at `src/cli.rs:1895` has the same pattern. `rtok run` and `rtok filter --archive` decode lossily and keep the data.
-
-Repro: `printf 'hello \xff world\nline2\n' | rtok filter | od -c` prints nothing; `printf 'a\xffb\n' | rtok filter --stdin; echo $?` prints an empty line and `0` (`--archive` prints `a�b`).
-
-Done when: both sites read with `read_to_end` into a `Vec<u8>` and decode with `String::from_utf8_lossy` (as `--archive` does); a real I/O error is never discarded (echo what was read, or exit non-zero). One shared helper, no second copy (AGENTS.md: no duplicated logic).
-
-Check: a `tests/filter.rs` (or trycmd) regression piping `b"a\xffb\n"` through `rtok filter` and `rtok filter --stdin` gets `a\u{FFFD}b` back with exit 0, and the no-plugin fallback is covered too; `just check`.
 
 ### T361. `rtok memory import` reports success for a missing or unreadable file
 
