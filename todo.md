@@ -39,7 +39,6 @@
 - T329.4. `project` argument and scoped traversal for symbol, callers, impact, explore and outline (CLI and MCP)
 - T329.5. Scoped `dead` and `affected`, whole-answer caps, watch across the scope
 - T329.6. Auto-adding projects rtok sees in use (sessions, worktrees, graph MCP calls) and its config keys
-- T329.7. Reference discovery from manifests (Cargo, npm, Go, Python, submodules)
 - T329.8. Following references: transitive, depth and project caps, auto-link lifecycle, remembered unlinks
 - T329.9. Graph backend `auto`: LSP first, tree-sitter second, chosen per project and language
 - T329.10. Graph text-search backend (rg/grep) including `ssh://` roots
