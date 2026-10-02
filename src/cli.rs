@@ -594,6 +594,14 @@ enum GraphCmd {
         to: Option<String>,
         path: Option<PathBuf>,
     },
+    /// The project registry: list, add, remove, select (T329.2)
+    Projects {
+        #[command(subcommand)]
+        action: Option<ProjectsCmd>,
+        /// JSON instead of a table
+        #[arg(long, global = true)]
+        json: bool,
+    },
     /// Tests that reach files changed in git (`git diff --name-only`)
     Affected {
         /// Diff against this ref
@@ -605,6 +613,23 @@ enum GraphCmd {
         /// JSON instead of `file ← via symbol` lines
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[cfg(feature = "graph")]
+#[derive(Subcommand)]
+enum ProjectsCmd {
+    /// Register a directory as a project (a known one only refreshes its last-used time)
+    Add { path: PathBuf },
+    /// Make a project the selected one; the page and later the CLI answer for it
+    Select {
+        /// Project id or directory
+        project: String,
+    },
+    /// Drop a project and its index rows; its files are never touched
+    Remove {
+        /// Project id or directory
+        project: String,
     },
 }
 
@@ -1814,6 +1839,16 @@ pub fn run() -> Result<()> {
                 }
                 GraphCmd::Status { path, json } => {
                     crate::plugins::graph::status::run(&cfg, path, json)?;
+                }
+                GraphCmd::Projects { action, json } => {
+                    use crate::plugins::graph::projects::{Action, run};
+                    let action = match action {
+                        None => Action::List,
+                        Some(ProjectsCmd::Add { path }) => Action::Add(path),
+                        Some(ProjectsCmd::Select { project }) => Action::Select(project),
+                        Some(ProjectsCmd::Remove { project }) => Action::Remove(project),
+                    };
+                    print!("{}", run(&cx, action, json)?);
                 }
                 GraphCmd::Impact {
                     name,
