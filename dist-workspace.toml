@@ -28,9 +28,11 @@ macos-sign = true
 allow-dirty = ["ci"]
 # Injected into build-local-artifacts after checkout; discovers CODESIGN_IDENTITY on macOS.
 github-build-setup = "../build-setup.yml"
-# T18.1: start a release from the Actions tab. dist creates the tag itself, so `bump.yml` only has
-# to land the version commit; a tag push still triggers the workflow for anyone releasing by hand.
+# Releases start only from the Bump workflow (pyrlyn/infra bump.yml): it merges the version PR,
+# tags the landed commit, creates a draft Release and dispatches this workflow with --ref <tag>
+# -f tag=<tag>. dist never tags: it uploads to that draft and undrafts it (create-release).
 dispatch-releases = true
+create-release = false
 # T18.1: ship `rtok-update` beside `rtok` so an installed binary can update itself.
 install-updater = true
 # Build -p rtok only. Default --workspace also compiles rtok-wasm-demo-guest
@@ -40,4 +42,4 @@ precise-builds = true
 # T18.6: the test gate is NOT a dist `plan-jobs` entry. dist's `host` job runs on
 # `build-local-artifacts.result == 'skipped'`, and a failed custom job skips it — so a red gate
 # would publish a Release with no binaries instead of stopping. The gate lives in the two
-# workflows that dispatch this one (`bump.yml`, `release-plz.yml`), before any tag exists.
+# required checks of the bump PR, which must pass before bump tags anything.

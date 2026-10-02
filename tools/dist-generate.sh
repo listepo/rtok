@@ -133,16 +133,19 @@ if "Report artifact sizes" not in text:
             sys.exit(1)
         text = text[:step_start] + REPORT + "\n" + text[step_start:]
 
-create_old = """          # Write and read notes from a file to avoid quoting breaking things
-          echo \"$ANNOUNCEMENT_BODY\" > $RUNNER_TEMP/notes.txt
+# create-release = false: bump.yml made the tag and a draft Release (notes from CHANGELOG.md);
+# dist uploads to it and undrafts it. Append the archive sizes to bump's notes on the way.
+create_old = """          # If we're editing a release in place, we need to upload things ahead of time
+          gh release upload \"${{ needs.plan.outputs.tag }}\" artifacts/*
 
-          gh release create \"${{ needs.plan.outputs.tag }}\" --target \"$RELEASE_COMMIT\" $PRERELEASE_FLAG --title \"$ANNOUNCEMENT_TITLE\" --notes-file \"$RUNNER_TEMP/notes.txt\" artifacts/*
+          gh release edit \"${{ needs.plan.outputs.tag }}\" --target \"$RELEASE_COMMIT\" $PRERELEASE_FLAG --draft=false
 """
 
-create_new = """          # Write and read notes from a file to avoid quoting breaking things
-          echo \"$ANNOUNCEMENT_BODY\" > $RUNNER_TEMP/notes.txt
+create_new = """          # If we're editing a release in place, we need to upload things ahead of time
+          gh release upload \"${{ needs.plan.outputs.tag }}\" artifacts/*
 
-          # Append archive sizes so the Release page shows MiB without opening Assets.
+          # bump.yml wrote the notes; append archive sizes so the Release page shows MiB.
+          gh release view \"${{ needs.plan.outputs.tag }}\" --json body --jq .body > \"$RUNNER_TEMP/notes.txt\"
           {
             echo
             echo \"## Download sizes\"
@@ -163,12 +166,12 @@ create_new = """          # Write and read notes from a file to avoid quoting br
           } >> \"$RUNNER_TEMP/notes.txt\"
           sed -n '/^## Download sizes$/,$p' \"$RUNNER_TEMP/notes.txt\" | tee -a \"$GITHUB_STEP_SUMMARY\"
 
-          gh release create \"${{ needs.plan.outputs.tag }}\" --target \"$RELEASE_COMMIT\" $PRERELEASE_FLAG --title \"$ANNOUNCEMENT_TITLE\" --notes-file \"$RUNNER_TEMP/notes.txt\" artifacts/*
+          gh release edit \"${{ needs.plan.outputs.tag }}\" --target \"$RELEASE_COMMIT\" $PRERELEASE_FLAG --notes-file \"$RUNNER_TEMP/notes.txt\" --draft=false
 """
 
 if "## Download sizes" not in text:
     if create_old not in text:
-        print("dist-generate patch: Create GitHub Release block missing/changed", file=sys.stderr)
+        print("dist-generate patch: Release upload block missing/changed (create-release = false?)", file=sys.stderr)
         sys.exit(1)
     text = text.replace(create_old, create_new, 1)
 

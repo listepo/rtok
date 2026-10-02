@@ -6,65 +6,47 @@ up in this repository right now.
 
 ## The release as it runs today
 
-Actions → **Bump and release** → *Run workflow*. No version is typed anywhere:
+Actions → **Bump and release** → *Run workflow* (or `just release`, which starts it). It is the
+only way to a release, and the only thing that creates a `v*` tag. No version is typed anywhere:
 [`tools/release.sh`](../tools/release.sh) releases the version in `Cargo.toml`, and raises it only
-when that version is already tagged. So the first run publishes `0.0.1`, the next `0.0.2`, and so
-on. `level` (`patch` by default) chooses which part moves when a raise is due. The workflow has
-no dry run: every run of it ships, so a green run always means a release.
+when that version is already tagged. `level` (`patch` by default) chooses which part moves.
 
-The same script runs locally, and the preview lives only here — it prints the version that would
-be released and writes nothing:
+The run ([`bump.yml`](../.github/workflows/bump.yml) → pyrlyn/infra `bump.yml`):
+
+1. `tools/release.sh <level> --local` makes one `release: v<version>` commit — `Cargo.toml`,
+   `Cargo.lock`, `CHANGELOG.md` and every plugin version file
+   ([Plugin versions: Releasing](plugin-versions.md#releasing)). Nothing is pushed to `main`.
+2. The commit goes to `release/bump-v<version>` and a pull request into `main` is opened with
+   `RELEASE_PLZ_TOKEN`, so the PR's own CI runs and reports the required `gate` check.
+3. When every required check is green, bump rebase-merges the PR with `GITHUB_TOKEN` (not a
+   ruleset bypass actor, so the `protect-main` rules decide) and reads back the commit that
+   landed on `main` (rebase gives it a new SHA; its tree must equal the tested one).
+4. Only then: the `v<version>` tag on that commit, a draft GitHub Release with the version's
+   `CHANGELOG.md` section as notes, and the dist **Release** workflow dispatched on the tag. dist
+   (`create-release = false`) builds three targets, uploads the archives and the shell installer
+   to the draft, appends download sizes and publishes it.
+
+Red checks, a timeout or a failed merge close the PR and fail the run (a `release-failure` issue
+is opened): no tag, no Release. If `main` moves while the checks run, the branch is rebuilt on
+the new head and checked again. `dry-run` opens the PR, waits for the checks and closes it.
+`release-untagged-head` releases a version that is already on `main` untagged (nothing to
+commit) after its checks pass; off by default.
+
+The preview lives only locally — it prints the version that would be released and writes
+nothing:
 
 ```bash
-just release
 tools/release.sh patch --dry-run
 ```
 
-It lands one `release: v<version>` commit — `Cargo.toml`, `Cargo.lock`, `CHANGELOG.md` and every
-plugin version file ([Plugin versions: Releasing](plugin-versions.md#releasing)) — pushes it, and
-dispatches the dist **Release** workflow, which builds three targets, creates the tag and the
-GitHub Release with the shell installer.
+release-plz no longer runs in CI: its release pull request was a second way to release that did
+not go through bump. [`release-plz.toml`](../release-plz.toml) stays for a local
+`release-plz update` preview, with `git_tag_enable` and `git_release_enable` off.
 
-**Or merge the release PR** (T18.5). On every push to `main`, `.github/workflows/release-plz.yml`
-runs [release-plz](https://release-plz.dev) with [`release-plz.toml`](../release-plz.toml): it keeps
-one pull request titled `release: v<version>` open with the next version in `Cargo.toml` and the
-`CHANGELOG.md` section for it (same `cliff.toml` groups as `just changelog`). Merging the PR (merge
-commit or squash, so the title is in the commit message — GitHub appends ` (#123)` when squashing,
-which the trigger allows for) runs `tools/release.sh patch --no-bump`, which dispatches **Release**
-for the version now in `Cargo.toml` and refuses to raise it. release-plz creates neither the tag
-nor the GitHub Release: dist does both. Both entry points end in the same script and the same
-workflow, so they cannot disagree on the version.
-
-**The release pull request cannot raise the version, and will not after v0.0.1** (measured
-2026-09-09, release-plz 0.3.163). release-plz decides whether a version has shipped by comparing
-the packaged crate against the copy in the registry. With `publish = false` there is no copy —
-`Package rtok@*.*.* not found` — so it reads the package as never released and answers `next
-version is 0.0.1` every time, whatever is in the history. Reproduced in a clean clone with the
-`v0.0.1` tag fetched and `git describe` finding it, and it does not move with
-`git_tag_enable = true`, with an explicit `git_tag_name = "v{{ version }}"` (ketch's setting), or
-with a conventional `fix:` commit after the tag. `../ketch` is configured the same way — its own
-config comment says it ships a tarball, not a crate — so it should meet this at its second release.
-Untested there: it is still on `v0.1.0`.
-
-Nothing mis-releases as a result: merging a stale release pull request runs
-`tools/release.sh patch --no-bump`, which sees the version is already tagged and exits 0 without
-dispatching. But the pull request proposes a version that is already out, so **use
-Actions → Bump and release for the second and later releases** — `tools/release.sh` reads the tags
-itself and raises the version correctly. Whether release-plz is worth keeping as a changelog
-preview is a decision, not a defect to patch around.
-
-`RELEASE_PLZ_TOKEN` (fine-grained PAT, contents and pull requests write) is required, not optional.
-GitHub starts no workflow from a `GITHUB_TOKEN` event, so a release PR opened with the default
-token has an empty checks list rather than a red one, and merges having never run `ci.yml`. The
-`release-pr` job checks for the secret first and fails with that explanation (T18.6).
-
-Whichever entry point starts it, the release waits on
-[`verify.yml`](../.github/workflows/verify.yml) — `just check` and `just example` on Linux and
-macOS, the `ci.yml` matrix — and dispatches **Release** only if it is green (T18.6). A red gate
-means no dispatch, no tag and nothing on the releases page. The gate cannot live inside
-`release.yml`: dist runs `host` when `build-local-artifacts` is `skipped`, which is what a failed
-`plan-jobs` entry leaves behind, so it would publish a Release with no assets — the one thing the
-installer and `rtok-update` both read.
+The gate cannot live inside `release.yml`: dist runs `host` when `build-local-artifacts` is
+`skipped`, which is what a failed `plan-jobs` entry leaves behind, so it would publish a Release
+with no assets — the one thing the installer and `rtok-update` both read. The bump PR's required
+checks are the gate instead.
 
 | Target | Runner | Archive |
 |---|---|---|
@@ -113,8 +95,7 @@ Homebrew.
 
 All three are **manual**: a person runs the scripts below from a clean checkout of the release
 commit. No workflow publishes to any of them, and none should without a separate decision
-(`release-plz.yml` does not publish to crates.io either: `release-plz.toml` sets
-`publish = false` and the workflow only runs `release-pr` and dispatches dist). Publish after
+(neither bump nor dist publishes to crates.io; `release-plz.toml` sets `publish = false`). Publish after
 dist has finished the GitHub Release, because npm packs its binaries from that Release.
 
 Every script refuses to run when versions disagree with the `rtok` version in `Cargo.toml`, and
@@ -470,6 +451,6 @@ Regenerate the Release workflow after dist config changes:
 just dist-generate
 ```
 
-`RELEASE_PLZ_TOKEN` remains required; `release-plz.yml` still fails loudly without it. Dist stays
-the publisher of tags and Release assets — this change only makes the signed macOS path consume
-the secrets that are already set.
+`RELEASE_PLZ_TOKEN` remains required: bump.yml opens the version PR with it. bump creates the tags
+and the Release; dist only uploads the assets — this change only makes the signed macOS path
+consume the secrets that are already set.
