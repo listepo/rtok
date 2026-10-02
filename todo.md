@@ -57,6 +57,5 @@
 - T347. Investigate: D16 "one task = one PR" vs multi-PR execution plans
 - T348. Investigate: `--agent` means an agent id, a host, or both
 - T352. `call_io` holds 711 MB of a 1.0 GB `rtok.db`
-- T355. Measure what the native `Read` deny costs
 - T356. Never index `$HOME` or `/` as a graph root
 - T357. rtok links `rtok-hook` next to itself on PATH
