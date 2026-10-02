@@ -1347,9 +1347,11 @@ fn expand(path: &Path, home: &Path) -> PathBuf {
 mod tests {
     #[test]
     fn usage_dirs_follow_a_hosts_relocation_variable_until_the_file_names_one() {
+        // Absolute on Windows needs a drive; the strings below compare with `/` separators.
+        let root = if cfg!(windows) { "C:" } else { "" };
         let env = |k: &str| match k {
-            "XDG_DATA_HOME" => Some("/data".into()),
-            "COPILOT_HOME" => Some("/cop".into()),
+            "XDG_DATA_HOME" => Some(format!("{root}/data").into()),
+            "COPILOT_HOME" => Some(format!("{root}/cop").into()),
             "GEMINI_CLI_HOME" => Some("relative/is/ignored".into()),
             _ => None,
         };
@@ -1360,11 +1362,11 @@ mod tests {
         d.follow_env(env);
         let one = |v: &Vec<std::path::PathBuf>| {
             v.iter()
-                .map(|p| p.display().to_string())
+                .map(|p| p.display().to_string().replace('\\', "/"))
                 .collect::<Vec<_>>()
         };
-        assert_eq!(one(&d.opencode), ["/data/opencode"]);
-        assert_eq!(one(&d.copilot), ["/cop/session-state"]);
+        assert_eq!(one(&d.opencode), [format!("{root}/data/opencode")]);
+        assert_eq!(one(&d.copilot), [format!("{root}/cop/session-state")]);
         assert_eq!(one(&d.kilo), ["/mine"]);
         assert_eq!(one(&d.gemini), ["~/.gemini/tmp"]);
         assert_eq!(one(&d.droid), ["~/.factory/sessions"]);
