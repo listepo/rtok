@@ -213,7 +213,7 @@ section! {
 }
 
 section! {
-    /// `[web]` — `rtok web` (P19). Slint WASM UI + WebSocket API, the same data as `rtok tui`.
+    /// `[web]` — `rtok web` (P19). React SPA + WebSocket API, the same data as `rtok tui`.
     Web {
         host: String = s("127.0.0.1"),
         port: u16 = 3333,

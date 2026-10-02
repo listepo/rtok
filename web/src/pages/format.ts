@@ -1,4 +1,4 @@
-// Number and time formatting shared by the pages; ported from admin.js in design/html.
+// Number and time formatting shared by the pages.
 const nf = new Intl.NumberFormat("en-US");
 
 export const fmt = (n: number | null | undefined): string => (n == null ? "-" : nf.format(n));

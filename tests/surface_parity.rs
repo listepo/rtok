@@ -9,10 +9,8 @@
 //! without its page and no new command can land unclassified.
 
 use clap::{Command, CommandFactory};
-use rstest::rstest;
 use rtok::cli::Cli;
 use rtok::config::Config;
-use rtok::doctor;
 use rtok::testutil::{config_in, tmp_dir};
 use rtok::web::frame;
 use rtok::web::model;
@@ -104,22 +102,11 @@ fn every_model_page_has_a_tui_body() {
     }
 }
 
-/// T19.4: the Slint WASM UI's tab bar is `model::pages()`, not a second list. The webui
-/// crate is outside the workspace (wasm toolchain), so this reads its `PAGE_IDS` from
-/// source — the same pin `rtok-webui`'s own `page_ids_cover_the_d23_set` holds locally.
-/// T60.3: both surfaces render session drill-down from the same model accessor.
+/// T60.3: the TUI renders session drill-down from the model's accessor (D23).
 #[test]
 fn session_detail_exists_on_both_surfaces() {
     let model = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/model.rs"));
     let tui = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/view.rs"));
-    let web = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/rtok-webui/src/lib.rs"
-    ));
-    let slint = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/rtok-webui/ui/app.slint"
-    ));
     assert!(
         model.contains("pub fn session_detail"),
         "the one accessor lives on the model (D23)"
@@ -128,50 +115,25 @@ fn session_detail_exists_on_both_surfaces() {
         tui.contains("model::session_detail"),
         "the TUI renders model::session_detail"
     );
-    assert!(
-        web.contains("fn session_detail"),
-        "the web UI rebuilds the same snapshot filter"
-    );
-    assert!(
-        slint.contains("session.detail"),
-        "the web Sessions page has a detail pane"
-    );
 }
 
-/// The five sources every "both surfaces" case reads: model, TUI view and app, the web
-/// crate and its Slint UI.
+/// The sources every "both surfaces" case reads: the model, the TUI view and the TUI app.
 struct Surfaces {
     model: &'static str,
     tui: &'static str,
     app: &'static str,
-    web: &'static str,
-    slint: &'static str,
 }
 
 const SURFACES: Surfaces = Surfaces {
     model: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/model.rs")),
     tui: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/view.rs")),
     app: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/app.rs")),
-    web: include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/rtok-webui/src/lib.rs"
-    )),
-    slint: include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/rtok-webui/ui/app.slint"
-    )),
 };
 
 /// T60.4: both surfaces render archive expand from the same model accessor.
 #[test]
 fn expand_payload_exists_on_both_surfaces() {
-    let Surfaces {
-        model,
-        tui,
-        app,
-        web,
-        slint,
-    } = SURFACES;
+    let Surfaces { model, tui, app } = SURFACES;
     let inbound = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/mod.rs"));
     assert!(
         model.contains("pub fn expand_payload"),
@@ -185,22 +147,12 @@ fn expand_payload_exists_on_both_surfaces() {
         inbound.contains("ClientMessage::Expand") && inbound.contains("expand_payload"),
         "web inbound answers expand through expand_payload"
     );
-    assert!(
-        web.contains("on_expand_archive") && slint.contains("expand-archive"),
-        "the web Calls page has an expand button and pane"
-    );
 }
 
 /// T63.1: both surfaces render the skills page from the same model accessor.
 #[test]
 fn skills_page_exists_on_both_surfaces() {
-    let Surfaces {
-        model,
-        tui,
-        app,
-        web,
-        slint,
-    } = SURFACES;
+    let Surfaces { model, tui, app } = SURFACES;
     assert!(
         model.contains("pub fn skills_from"),
         "the one accessor lives on the model (D23)"
@@ -213,24 +165,14 @@ fn skills_page_exists_on_both_surfaces() {
         tui.contains("\"skills\" =>") && app.contains("skills_key"),
         "the TUI renders the skills page"
     );
-    assert!(
-        web.contains("skills_of") && slint.contains("page-id == \"skills\""),
-        "the web Skills page renders the same rows"
-    );
-    assert!(
-        slint.contains("never invoked only"),
-        "web filter matches TUI n"
-    );
 }
 
-/// T260: both surfaces filter the Sessions page to live rows — the TUI Sessions
-/// tab's `l` key and KEYS entry in `src/tui/app.rs`, the web's "live only" checkbox
-/// in `crates/rtok-webui/ui/app.slint`. Both read the `ended_at`-derived `live` flag
-/// that already rides the snapshot wire, so this is a UI-only feature and the check
-/// fails by name if either surface drops it.
+/// T260: the TUI Sessions tab filters to live rows with `l` (KEYS entry in
+/// `src/tui/app.rs`), reading the `ended_at`-derived `live` flag that already rides the
+/// snapshot wire. The check fails by name if the TUI drops it.
 #[test]
 fn sessions_live_filter_exists_on_both_surfaces() {
-    let Surfaces { app, slint, .. } = SURFACES;
+    let Surfaces { app, .. } = SURFACES;
     assert!(
         app.contains("(\"sessions\", \"l\", \"live-only filter\")"),
         "the TUI's KEYS table documents the sessions live-only filter"
@@ -239,14 +181,6 @@ fn sessions_live_filter_exists_on_both_surfaces() {
         app.contains("self.sessions.live_only = !self.sessions.live_only"),
         "the TUI Sessions tab toggles live_only on `l`"
     );
-    assert!(
-        slint.contains("sessions-live-only"),
-        "the web Sessions page has a live-only property bound from the shell"
-    );
-    assert!(
-        slint.contains("\"live only\"") && slint.contains("!live-only || s.live"),
-        "the web Sessions page has a live-only checkbox that filters on `live`"
-    );
 }
 
 /// T227: both surfaces render the Stats page from the same model accessor — `rtok
@@ -254,13 +188,7 @@ fn sessions_live_filter_exists_on_both_surfaces() {
 /// commands.
 #[test]
 fn stats_page_exists_on_both_surfaces() {
-    let Surfaces {
-        model,
-        tui,
-        web,
-        slint,
-        ..
-    } = SURFACES;
+    let Surfaces { model, tui, .. } = SURFACES;
     assert!(
         model.contains("(\"stats\", \"stats\")"),
         "pages() offers stats"
@@ -273,10 +201,6 @@ fn stats_page_exists_on_both_surfaces() {
         tui.contains("\"stats\" =>"),
         "the TUI renders the stats page"
     );
-    assert!(
-        web.contains("stats_text") && slint.contains("page-id == \"stats\""),
-        "the web Stats page renders the same text"
-    );
 }
 
 /// T230: both surfaces render the Graph page — `graph status`'s index health plus
@@ -284,13 +208,7 @@ fn stats_page_exists_on_both_surfaces() {
 /// can leave EXEMPT for COMMAND_PAGES.
 #[test]
 fn graph_page_exists_on_both_surfaces() {
-    let Surfaces {
-        model,
-        tui,
-        web,
-        slint,
-        ..
-    } = SURFACES;
+    let Surfaces { model, tui, .. } = SURFACES;
     assert!(
         model.contains("(\"graph\", \"graph\")"),
         "pages() offers graph"
@@ -303,10 +221,6 @@ fn graph_page_exists_on_both_surfaces() {
         tui.contains("\"graph\" =>"),
         "the TUI renders the graph page"
     );
-    assert!(
-        web.contains("graph_text") && slint.contains("page-id == \"graph\""),
-        "the web Graph page renders the same text"
-    );
 }
 
 /// T231: both surfaces render the Hosts page — `agents list`'s blocks, kind,
@@ -314,13 +228,7 @@ fn graph_page_exists_on_both_surfaces() {
 /// `agents list`/`agents info` can leave EXEMPT for COMMAND_PAGES.
 #[test]
 fn hosts_page_exists_on_both_surfaces() {
-    let Surfaces {
-        model,
-        tui,
-        web,
-        slint,
-        ..
-    } = SURFACES;
+    let Surfaces { model, tui, .. } = SURFACES;
     assert!(
         model.contains("(\"hosts\", \"hosts\")"),
         "pages() offers hosts"
@@ -333,10 +241,6 @@ fn hosts_page_exists_on_both_surfaces() {
         tui.contains("\"hosts\" =>"),
         "the TUI renders the hosts page"
     );
-    assert!(
-        web.contains("hosts_text") && slint.contains("page-id == \"hosts\""),
-        "the web Hosts page renders the same text"
-    );
 }
 
 /// T228: both surfaces render the Config page — `config show`'s rows, key/value/D12
@@ -344,13 +248,7 @@ fn hosts_page_exists_on_both_surfaces() {
 /// EXEMPT for COMMAND_PAGES.
 #[test]
 fn config_page_exists_on_both_surfaces() {
-    let Surfaces {
-        model,
-        tui,
-        web,
-        slint,
-        ..
-    } = SURFACES;
+    let Surfaces { model, tui, .. } = SURFACES;
     assert!(
         model.contains("(\"config\", \"config\")"),
         "pages() offers config"
@@ -363,10 +261,6 @@ fn config_page_exists_on_both_surfaces() {
         tui.contains("\"config\" =>"),
         "the TUI renders the config page"
     );
-    assert!(
-        web.contains("config_text") && slint.contains("page-id == \"config\""),
-        "the web Config page renders the same text"
-    );
 }
 
 /// T229: both surfaces render the Services page — `demon status`'s per-service rows
@@ -374,13 +268,7 @@ fn config_page_exists_on_both_surfaces() {
 /// status`/`otel status` can join `COMMAND_PAGES`.
 #[test]
 fn services_page_exists_on_both_surfaces() {
-    let Surfaces {
-        model,
-        tui,
-        web,
-        slint,
-        ..
-    } = SURFACES;
+    let Surfaces { model, tui, .. } = SURFACES;
     assert!(
         model.contains("(\"services\", \"services\")"),
         "pages() offers services"
@@ -393,10 +281,6 @@ fn services_page_exists_on_both_surfaces() {
         tui.contains("\"services\" =>"),
         "the TUI renders the services page"
     );
-    assert!(
-        web.contains("services_text") && slint.contains("page-id == \"services\""),
-        "the web Services page renders the same text"
-    );
 }
 
 /// T232: both surfaces render the Worktrees page — `worktree list`'s table (path,
@@ -404,13 +288,7 @@ fn services_page_exists_on_both_surfaces() {
 /// `worktree list` can leave EXEMPT for COMMAND_PAGES; `gc`/`clean` stay CLI-only.
 #[test]
 fn worktrees_page_exists_on_both_surfaces() {
-    let Surfaces {
-        model,
-        tui,
-        web,
-        slint,
-        ..
-    } = SURFACES;
+    let Surfaces { model, tui, .. } = SURFACES;
     assert!(
         model.contains("(\"worktrees\", \"worktrees\")"),
         "pages() offers worktrees"
@@ -423,47 +301,6 @@ fn worktrees_page_exists_on_both_surfaces() {
         tui.contains("\"worktrees\" =>"),
         "the TUI renders the worktrees page"
     );
-    assert!(
-        web.contains("worktrees_text") && slint.contains("page-id == \"worktrees\""),
-        "the web Worktrees page renders the same text"
-    );
-}
-
-#[test]
-fn wasm_ui_renders_every_model_page() {
-    let lib = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/rtok-webui/src/lib.rs"
-    ));
-    let slint = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/rtok-webui/ui/app.slint"
-    ));
-    let model: Vec<&str> = model::pages().iter().map(|(page, _)| *page).collect();
-    // PAGE_IDS array contents, in order — strip the const block between `[` and `];`.
-    let start = lib
-        .find("pub const PAGE_IDS")
-        .and_then(|i| lib[i..].find("= &[").map(|j| i + j + "= &[".len()))
-        .expect("PAGE_IDS = &[...] in rtok-webui");
-    let close = lib[start..].find(']').expect("PAGE_IDS ]");
-    let wasm: Vec<&str> = lib[start..start + close]
-        .split(',')
-        .filter_map(|s| {
-            let s = s.trim();
-            let s = s.strip_prefix('"')?.strip_suffix('"')?;
-            Some(s)
-        })
-        .collect();
-    assert_eq!(
-        model, wasm,
-        "WASM PAGE_IDS drifted from model::pages() (D23 / T19.4)"
-    );
-    for page in &model {
-        assert!(
-            slint.contains(&format!("page-id == \"{page}\"")),
-            "app.slint has no body for page `{page}`"
-        );
-    }
 }
 
 /// Reading commands and the page of the model they render: (command path, page). The
@@ -772,85 +609,4 @@ fn reading_commands_accept_json() {
             "reading command `{path}` renders a model page but is not gated for --json (T60.1)"
         );
     }
-}
-
-/// Emission order inside the instructions tail — `doctor::Report::to_text` and
-/// `snapshot::doctor_of` must share it (T36.15).
-const INSTRUCTION_TAIL: &[&str] = &["instructions", "tokens", "duplicate"];
-
-fn tail_after<'a>(src: &'a str, marker: &str) -> &'a str {
-    src.split(marker).nth(1).expect(marker)
-}
-
-fn markers_in_order(haystack: &str, markers: &[&str]) -> bool {
-    let mut pos = 0;
-    for m in markers {
-        let Some(i) = haystack[pos..].find(m) else {
-            return false;
-        };
-        pos += i + m.len();
-    }
-    true
-}
-
-/// T36.15: the WASM Doctor tab mirrors `doctor::Report::to_text` for the instruction
-/// audit — source-pinned here because `rtok-webui` is outside the workspace.
-#[rstest]
-fn web_doctor_instruction_audit_matches_cli_order() {
-    let lib = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/rtok-webui/src/lib.rs"
-    ));
-    let doctor_rs = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/doctor.rs"));
-    let wasm_tail = tail_after(
-        lib.split("fn doctor_of").nth(1).expect("doctor_of"),
-        "autoCompactWindow",
-    );
-    let cli_tail = tail_after(
-        doctor_rs.split("pub fn to_text").nth(1).expect("to_text"),
-        "autoCompactWindow",
-    );
-    for (name, tail) in [("doctor_of", wasm_tail), ("Report::to_text", cli_tail)] {
-        assert!(
-            markers_in_order(tail, INSTRUCTION_TAIL),
-            "{name} instructions tail markers drifted"
-        );
-    }
-    assert!(
-        wasm_tail.contains(r"  {} {} tokens {}{}\n"),
-        "doctor_of row format matches Report::to_text"
-    );
-    assert!(
-        wasm_tail.contains("duplicate `{sent}` in {}"),
-        "doctor_of duplicate format matches Report::to_text"
-    );
-
-    let dir = std::env::temp_dir().join(format!("rtok-parity-doctor-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(
-        dir.join("CLAUDE.md"),
-        "user claude md padding for a long enough line xx\n",
-    )
-    .unwrap();
-    std::fs::write(
-        dir.join("claude.json"),
-        r#"{"mcpServers":{"lean-ctx":{"command":"/bin/true"},"engram":{"command":"/bin/true"},"ponytail":{"command":"/bin/true"},"claude-mem":{"command":"/bin/true"}}}"#,
-    )
-    .unwrap();
-    std::fs::write(dir.join("settings.json"), "{}").unwrap();
-    let mut cfg = config_in(&dir);
-    cfg.doctor.settings_path = dir.join("settings.json");
-    cfg.doctor.claude_json = dir.join("claude.json");
-    cfg.doctor.instructions = true;
-
-    let cli = doctor::page(&cfg).expect("doctor").to_text();
-    assert!(cli.contains("instructions\n"));
-    let compact = cli.find("autoCompactWindow").expect("compact line");
-    let instr = cli.find("instructions\n").expect("instructions section");
-    assert!(
-        instr > compact,
-        "`rtok doctor` prints instructions after autoCompactWindow"
-    );
-    let _ = std::fs::remove_dir_all(&dir);
 }

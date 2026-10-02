@@ -1,4 +1,4 @@
-// Background orb, ported from design/html/js/orb.js: one WebGL fragment shader at half
+// Background orb, one WebGL fragment shader at half
 // resolution and ~30 fps, painted behind the glass panels at low opacity.
 const FPS = 30;
 const VERT = "attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}";

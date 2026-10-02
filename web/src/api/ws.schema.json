@@ -291,7 +291,7 @@
       ]
     },
     "Overview": {
-      "description": "The Overview page (T15.3): the usage totals plus what the tab draws from them —\ncontext-token-turns and the per-turn series behind the sparkline. The totals stay\nflat under the `usage` key, so the `/ws` frame keeps the shape P19 pinned and the\nSlint UI reads on untouched.",
+      "description": "The Overview page (T15.3): the usage totals plus what the tab draws from them —\ncontext-token-turns and the per-turn series behind the sparkline. The totals stay\nflat under the `usage` key, so the `/ws` frame keeps the shape P19 pinned and the\nSPA reads on untouched.",
       "type": "object",
       "properties": {
         "alerts": {

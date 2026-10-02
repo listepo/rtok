@@ -1,4 +1,4 @@
-// Ported from `spark()` in design/html/js/admin.js.
+// Inline SVG sparkline.
 export function Sparkline({
     values,
     label,

@@ -975,7 +975,7 @@ mod tests {
             .enumerate()
             .map(|(index, content)| SkillRef {
                 id: format!("tu-{}", index + 1),
-                name: "slint".into(),
+                name: "pixel".into(),
                 content,
                 turn: total - index - 1,
             })
@@ -987,14 +987,14 @@ mod tests {
         let mut cx = cx("skills-on");
         cx.config.plugins.archive.skills = true;
         cx.config.plugins.archive.keep_turns = 1;
-        let body = skill_text("slint");
+        let body = skill_text("pixel");
         let mut values: Vec<Value> = (0..3).map(|_| Value::String(body.clone())).collect();
         let ms = rewrite_skills(srefs(&mut values), &Ctx::new(&cx));
         assert_eq!(ms.len(), 2, "turns 2 and 1 (keep_turns=1); turn 0 stays");
         assert!(ms.iter().all(|m| m.kind == "skill"));
         assert!(
             values[0].as_str().unwrap().starts_with("[archived ")
-                && values[0].as_str().unwrap().contains("skill slint")
+                && values[0].as_str().unwrap().contains("skill pixel")
         );
         assert!(values[1].as_str().unwrap().starts_with("[archived "));
         assert_eq!(
@@ -1021,10 +1021,10 @@ mod tests {
         let mut cx = cx("skills-utf8-id");
         cx.config.plugins.archive.skills = true;
         cx.config.plugins.archive.keep_turns = 0;
-        let mut values = [Value::String(skill_text("slint"))];
+        let mut values = [Value::String(skill_text("pixel"))];
         let skills = vec![SkillRef {
             id: "tu-ключи-1".into(),
-            name: "slint".into(),
+            name: "pixel".into(),
             content: &mut values[0],
             turn: 1,
         }];
@@ -1034,7 +1034,7 @@ mod tests {
             values[0]
                 .as_str()
                 .unwrap()
-                .starts_with("[archived tu-ключи-1: skill slint"),
+                .starts_with("[archived tu-ключи-1: skill pixel"),
             "{}",
             values[0]
         );
@@ -1045,7 +1045,7 @@ mod tests {
         let mut cx = cx("skills-off");
         cx.config.plugins.archive.skills = false;
         cx.config.plugins.archive.keep_turns = 0;
-        let body = skill_text("slint");
+        let body = skill_text("pixel");
         let mut values = vec![Value::String(body.clone())];
         let ms = rewrite_skills(srefs(&mut values), &Ctx::new(&cx));
         assert!(ms.is_empty());

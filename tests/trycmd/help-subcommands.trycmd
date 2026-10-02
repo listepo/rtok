@@ -50,7 +50,7 @@ Options:
   -h, --help                 Print help
 
 $ rtok web --help
-Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
+Local web UI over the same data as `rtok tui` (WebSocket API + React SPA)
 
 Usage: rtok web [OPTIONS]
 
