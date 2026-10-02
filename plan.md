@@ -62,8 +62,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T346 | todo | research | 1 | 0% | |
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
-| T352 | todo | P1 | 3 | 0% | |
-| T355 | todo | P2 | 2 | 0% | |
+| T352 | in progress | P1 | 3 | 10% | Claude Code / claude-opus-5-5 |
+| T355 | in progress | P2 | 2 | 10% | Claude Code / claude-opus-5-5 |
 
 
 
@@ -1401,6 +1401,14 @@ Done when: research names which hook/MCP payloads make `request_json` large (lik
 
 Check: store tests for the new retention and vacuum; `rtok.db` size before and after on a copy of the real store, recorded in this card.
 
+Research (2026-10-02, `sqlite3 -readonly ~/.rtok/rtok.db`): every body is stored once (`request_raw` only for non-UTF-8, T211; hooks never archive, T201). The bulk is hook stdin kept inline under `core.call_io_inline_bytes` (64 KiB): `PostToolUse` 95,409 rows / 378 MB `request_json` (the host's `tool_response`), `PreToolUse` 75,842 / 77 MB, Codex `postToolUse` 24,581 / 58 MB. Hook bodies are read back only by the session windows `recent_hook_inputs*` (read edit window, handoff ledger) and the OTel export; a missing body already reads as `""` and fails open. Hook bodies older than 3 days: 486 MB; older than 7 days: 233 MB. `freelist_count` is 0 (purged pages are reused, the file never shrinks). `symbols*`: 282 MB; by root — `/Users/listepo` (the home directory) 617,319 rows, `apps/rtok` 61,582, `.claude/worktrees/dreamy-mendel-62ca99` 53,667, `apps/cox` 48,177; no root is gone from disk, but nothing would drop one (`delete_symbols_missing` runs only when that root is re-indexed).
+
+Execution plan:
+1. Config `core.retain_hook_bodies_days` (default 3, 0 = keep as long as `calls`): `run_retention` clears `request_json`/`response_json`/`request_raw`/`response_raw` of `kind = 'hook'` `call_io` rows older than that; `calls`, byte counts and shas stay. Archive rows (what `expand` reads) are untouched.
+2. `run_retention` also drops `symbols`/`symbol_stale` rows of roots that are no longer a directory.
+3. Pages back to the disk: a new store opens with `auto_vacuum = INCREMENTAL`; `run_retention` ends with `PRAGMA incremental_vacuum`; `rtok agents junk clear` (not `--dry-run`) converts an existing store once (`auto_vacuum = INCREMENTAL` + `VACUUM`). Pragmas stay in `src/store/sql_ext.rs` (Diesel cannot express them).
+4. Tests: store tests for body retention, vanished-root drop, incremental vacuum shrinking a file; config coverage. Then measure `rtok.db` before/after on a copy of the real store and record it here.
+
 ### T355. Measure what the native `Read` deny costs
 
 Found 2026-10-02 in Claude Code transcripts (578 sessions, last 7 days): the read hook denied native `Read` 710 times ("use rtok read; before Edit run native Read(limit=N) — it satisfies the edit gate", T127) and the guard denied 59 duplicate reads. Each deny is an extra model turn plus a retry; there is no `Measurement` row showing the deny saves more tokens than it costs.
@@ -1408,6 +1416,8 @@ Found 2026-10-02 in Claude Code transcripts (578 sessions, last 7 days): the rea
 Done when: a measurement over the stored calls pairs each deny with the follow-up call (rtok `read`, ranged native `Read`, or giving up) and reports net tokens per deny; the result and a recommendation (keep, narrow, or turn into advice without deny) are recorded in this card. No behaviour change in this task.
 
 Check: the measurement query/script is reproducible from the store; numbers recorded here.
+
+Execution plan: read-only `sqlite3` queries over a copy of `~/.rtok/rtok.db` (hook `calls` + inline `call_io` bodies, last 7 days, while T352 still keeps them): find each `PreToolUse` `Read` the read hook denied, then the same session's next tool call — rtok `read` (MCP), ranged native `Read`, another tool, or nothing; estimate tokens of the deny turn (deny text + retried call) against the saving of the rtok `read` that replaced it (`measurements`). Queries go into `research.md` with the date; numbers and a recommendation (keep, narrow, advice-only) go here. No code change.
 
 ## Reference
 
