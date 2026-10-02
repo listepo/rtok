@@ -42,6 +42,18 @@ pub struct Problem {
     pub fixable: bool,
 }
 
+/// What a hook command may rely on besides the machine.
+#[derive(Clone, Copy)]
+struct Scope<'a> {
+    project: &'a Path,
+    /// `${CLAUDE_PLUGIN_ROOT}`, known only inside a plugin's own `hooks.json`.
+    plugin_root: Option<&'a Path>,
+    /// Whether a relative path resolves against `project`. Only Claude Code documents that;
+    /// for any other host a relative path is not judged, since guessing its base would offer
+    /// a working hook for removal.
+    relative_ok: bool,
+}
+
 /// The machine, as the checks see it.
 pub struct Probes<'a> {
     pub fs: &'a dyn Fs,
@@ -148,7 +160,7 @@ fn shell_syntax(raw: &str) -> Option<&'static str> {
 
 /// `word` with `~`, `$NAME` and `${NAME}` expanded. `Err` names what could not be: an unset
 /// variable, or one only a plugin install defines.
-fn expand(word: &str, p: &Probes, project: &Path) -> Result<String, String> {
+fn expand(word: &str, p: &Probes, scope: &Scope) -> Result<String, String> {
     let mut out = String::new();
     let rest = if word == "~" || word.starts_with("~/") {
         let home = p.env.home().ok_or("HOME")?;
@@ -181,8 +193,8 @@ fn expand(word: &str, p: &Probes, project: &Path) -> Result<String, String> {
         }
         let value = match name {
             "HOME" => p.env.home().map(|h| h.to_string_lossy().into_owned()),
-            "CLAUDE_PROJECT_DIR" => Some(project.to_string_lossy().into_owned()),
-            "CLAUDE_PLUGIN_ROOT" => None,
+            "CLAUDE_PROJECT_DIR" => Some(scope.project.to_string_lossy().into_owned()),
+            "CLAUDE_PLUGIN_ROOT" => scope.plugin_root.map(|r| r.to_string_lossy().into_owned()),
             other => p.env.var(other),
         };
         out.push_str(&value.ok_or_else(|| name.to_string())?);
@@ -245,7 +257,7 @@ fn path_like(t: &str) -> bool {
     t.contains(['/', '\\']) || t.starts_with(['~', '.'])
 }
 
-fn classify(command: &str, p: &Probes, project: &Path) -> Verdict {
+fn classify(command: &str, p: &Probes, scope: &Scope) -> Verdict {
     let raw = command.trim();
     if raw.is_empty() {
         return Verdict::Unverified("empty command".into());
@@ -269,11 +281,11 @@ fn classify(command: &str, p: &Probes, project: &Path) -> Verdict {
     }
     let mut expanded = Vec::new();
     for w in &words[skip..] {
-        match expand(w, p, project) {
+        match expand(w, p, scope) {
             Ok(x) => expanded.push(x),
             Err(name) if name == "CLAUDE_PLUGIN_ROOT" => {
                 return Verdict::Unverified(
-                    "`CLAUDE_PLUGIN_ROOT` is only known for plugin hooks".into(),
+                    "`CLAUDE_PLUGIN_ROOT` is only known inside a plugin's own hooks.json".into(),
                 );
             }
             Err(name) => return Verdict::Unverified(format!("`{name}` is not set here")),
@@ -292,8 +304,14 @@ fn classify(command: &str, p: &Probes, project: &Path) -> Verdict {
     }
     let path = if Path::new(&target).is_absolute() {
         PathBuf::from(&target)
+    } else if scope.relative_ok {
+        scope
+            .project
+            .join(target.strip_prefix("./").unwrap_or(&target))
     } else {
-        project.join(&target)
+        return Verdict::Unverified(
+            "relative path: this host's base directory is not known".into(),
+        );
     };
     if let Some(volume) = unmounted_volume(&path, p.fs) {
         return Verdict::Broken(format!("path is on {volume}, which is not mounted"));
@@ -326,64 +344,190 @@ fn unmounted_volume(path: &Path, fs: &dyn Fs) -> Option<String> {
     (fs.kind(&mount) == PathKind::Missing).then(|| mount.display().to_string())
 }
 
-/// Check every hook of Claude Code's settings files. A file that does not exist is skipped; one
+/// Check every hook of Claude Code's settings files and enabled plugins, and of the JSON
+/// config files the other hosts' installers write. A file that does not exist is skipped; one
 /// that cannot be read or parsed is reported and left alone.
 pub fn check(cfg: &Config, p: &Probes) -> Vec<Problem> {
     let project = p.env.cwd().unwrap_or_default();
+    let claude = Scope {
+        project: &project,
+        plugin_root: None,
+        relative_ok: true,
+    };
+    let other = Scope {
+        relative_ok: false,
+        ..claude
+    };
     let mut out = Vec::new();
-    for source in sources(
+    let mut seen = BTreeSet::new();
+    let mut enabled = BTreeSet::new();
+    let user_sources = sources(
         cfg,
         Some(project.as_path()).filter(|d| !d.as_os_str().is_empty()),
-    ) {
-        let raw = match p.fs.read(&source) {
-            Ok(raw) => raw,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => {
-                out.push(unreadable(&source, &e.to_string()));
-                continue;
+    );
+    for source in &user_sources {
+        if let Some(doc) = scan(p, "claude", source, &claude, false, &mut out) {
+            enabled.extend(enabled_plugins(&doc));
+        }
+    }
+    seen.extend(user_sources);
+    for (agent, source) in host_sources(cfg) {
+        if seen.insert(source.clone()) {
+            scan(p, agent, &source, &other, false, &mut out);
+        }
+    }
+    plugins(cfg, p, &enabled, &claude, &mut out);
+    out
+}
+
+/// The JSON files every host but Claude Code keeps hooks in, as its installer names them, once
+/// each (Cursor's variants share theirs). Other formats wait for T331.8.
+fn host_sources(cfg: &Config) -> Vec<(&'static str, PathBuf)> {
+    let mut out = Vec::new();
+    for agent in crate::agents::HOSTS
+        .iter()
+        .filter(|id| **id != "claude")
+        .filter_map(|id| crate::agents::host(id))
+    {
+        for v in agent.variants() {
+            for path in agent.files(cfg, v.kind) {
+                let json = path
+                    .extension()
+                    .is_some_and(|e| e == "json" || e == "jsonc");
+                if json && !out.iter().any(|(_, seen)| *seen == path) {
+                    out.push((agent.id(), path));
+                }
             }
-        };
-        let doc = match crate::agents::jsonc::parse(&raw) {
-            Ok(doc) => doc,
-            Err(e) => {
-                out.push(unreadable(&source, &e.to_string()));
-                continue;
-            }
-        };
-        for e in entries(&doc) {
-            let (kind, detail, fixable) = match classify(&e.command, p, &project) {
-                Verdict::Ok => continue,
-                Verdict::Broken(d) => ("broken-hook", d, true),
-                Verdict::Suspect(d) => ("suspect-hook", d, false),
-                Verdict::Unverified(d) => ("unverified-hook", d, false),
-            };
-            out.push(Problem {
-                kind,
-                agent: "claude",
-                source: source.display().to_string(),
-                path: e.key,
-                event: e.event,
-                matcher: e.matcher,
-                command: e.command,
-                detail,
-                fixable,
-            });
         }
     }
     out
 }
 
-fn unreadable(source: &Path, why: &str) -> Problem {
+/// `enabledPlugins` of a settings document: the ids switched on.
+fn enabled_plugins(doc: &Value) -> impl Iterator<Item = String> + '_ {
+    doc.get("enabledPlugins")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter(|(_, on)| on.as_bool() == Some(true))
+        .map(|(id, _)| id.clone())
+}
+
+/// The hooks of every enabled Claude plugin, with `${CLAUDE_PLUGIN_ROOT}` resolved against its
+/// install directory. A plugin that is enabled but whose directory is gone is reported as
+/// stale. These files belong to the plugin, so nothing found in them is ever fixable.
+fn plugins(
+    cfg: &Config,
+    p: &Probes,
+    enabled: &BTreeSet<String>,
+    claude: &Scope,
+    out: &mut Vec<Problem>,
+) {
+    let index = crate::agents::claude::config_dir(cfg).join("plugins/installed_plugins.json");
+    let Some(root) =
+        p.fs.read(&index)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+    else {
+        return;
+    };
+    let Some(plugins) = root.get("plugins").and_then(Value::as_object) else {
+        return;
+    };
+    for id in plugins.keys().filter(|id| enabled.contains(*id)) {
+        for (i, dir) in super::plugin_install_paths(&root, id).iter().enumerate() {
+            let dir = PathBuf::from(dir);
+            if p.fs.kind(&dir) != PathKind::Dir {
+                out.push(Problem {
+                    path: format!("plugins.{id}[{i}]"),
+                    detail: format!(
+                        "`{id}` is enabled but its install directory {} is gone",
+                        dir.display()
+                    ),
+                    ..problem("stale-plugin", "claude", &index)
+                });
+                continue;
+            }
+            let scope = Scope {
+                plugin_root: Some(&dir),
+                ..*claude
+            };
+            scan(
+                p,
+                "claude",
+                &dir.join("hooks/hooks.json"),
+                &scope,
+                true,
+                out,
+            );
+        }
+    }
+}
+
+/// One config file: its hooks classified into `out`. `managed` marks a file that is not the
+/// user's to edit, so nothing in it is fixable. Returns the parsed document.
+fn scan(
+    p: &Probes,
+    agent: &'static str,
+    source: &Path,
+    scope: &Scope,
+    managed: bool,
+    out: &mut Vec<Problem>,
+) -> Option<Value> {
+    let raw = match p.fs.read(source) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            out.push(unreadable(agent, source, &e.to_string()));
+            return None;
+        }
+    };
+    let doc = match crate::agents::jsonc::parse(&raw) {
+        Ok(doc) => doc,
+        Err(e) => {
+            out.push(unreadable(agent, source, &e.to_string()));
+            return None;
+        }
+    };
+    for e in entries(&doc) {
+        let (kind, detail, fixable) = match classify(&e.command, p, scope) {
+            Verdict::Ok => continue,
+            Verdict::Broken(d) => ("broken-hook", d, !managed),
+            Verdict::Suspect(d) => ("suspect-hook", d, false),
+            Verdict::Unverified(d) => ("unverified-hook", d, false),
+        };
+        out.push(Problem {
+            path: e.key,
+            event: e.event,
+            matcher: e.matcher,
+            command: e.command,
+            detail,
+            fixable,
+            ..problem(kind, agent, source)
+        });
+    }
+    Some(doc)
+}
+
+/// A finding with only its identity set.
+fn problem(kind: &'static str, agent: &'static str, source: &Path) -> Problem {
     Problem {
-        kind: "unreadable-config",
-        agent: "claude",
+        kind,
+        agent,
         source: source.display().to_string(),
         path: String::new(),
         event: String::new(),
         matcher: None,
         command: String::new(),
-        detail: format!("cannot read {}: {why}", source.display()),
+        detail: String::new(),
         fixable: false,
+    }
+}
+
+fn unreadable(agent: &'static str, source: &Path, why: &str) -> Problem {
+    Problem {
+        detail: format!("cannot read {}: {why}", source.display()),
+        ..problem("unreadable-config", agent, source)
     }
 }
 
@@ -403,17 +547,20 @@ pub fn check_real(cfg: &Config) -> Vec<Problem> {
 pub fn render(problems: &[Problem]) -> String {
     let hook_problems: Vec<&Problem> = problems
         .iter()
-        .filter(|p| p.kind.ends_with("-hook") || p.kind == "unreadable-config")
+        .filter(|p| {
+            p.kind.ends_with("-hook") || matches!(p.kind, "unreadable-config" | "stale-plugin")
+        })
         .collect();
     if hook_problems.is_empty() {
         return "hooks check none found\n".into();
     }
     let mut out = String::from("hooks check\n");
-    for (kind, title, note) in [
-        ("broken-hook", "broken", " (can be cleaned up)"),
-        ("suspect-hook", "suspect", ""),
-        ("unverified-hook", "cannot verify", ""),
-        ("unreadable-config", "unreadable", ""),
+    for (kind, title) in [
+        ("broken-hook", "broken"),
+        ("suspect-hook", "suspect"),
+        ("unverified-hook", "cannot verify"),
+        ("stale-plugin", "stale plugin"),
+        ("unreadable-config", "unreadable"),
     ] {
         for p in hook_problems.iter().filter(|p| p.kind == kind) {
             let matcher = p
@@ -421,10 +568,15 @@ pub fn render(problems: &[Problem]) -> String {
                 .as_deref()
                 .map(|m| format!("[{m}]"))
                 .unwrap_or_default();
-            if kind == "unreadable-config" {
-                out.push_str(&format!("  {title} {}\n", p.detail));
+            if matches!(kind, "unreadable-config" | "stale-plugin") {
+                out.push_str(&format!("  {title} {} {}\n", p.agent, p.detail));
                 continue;
             }
+            let note = if p.fixable {
+                " (can be cleaned up)"
+            } else {
+                ""
+            };
             out.push_str(&format!(
                 "  {title} {} {}{matcher} `{}`: {}{note}\n    {} {}\n",
                 p.agent, p.event, p.command, p.detail, p.source, p.path
@@ -500,6 +652,9 @@ mod tests {
     fn cfg() -> Config {
         let mut c = Config::default();
         c.doctor.settings_path = "/h/.claude/settings.json".into();
+        c.setup.claude.settings_path = "/h/.claude/settings.json".into();
+        c.setup.cursor.hooks_path = "/h/.cursor/hooks.json".into();
+        c.setup.gemini.dir = "/h/.gemini".into();
         c
     }
 
@@ -758,6 +913,141 @@ mod tests {
                 }
             )
             .is_empty()
+        );
+    }
+
+    fn check_with(m: &Mock) -> Vec<Problem> {
+        check(
+            &cfg(),
+            &Probes {
+                fs: m,
+                env: m,
+                which: m,
+            },
+        )
+    }
+
+    #[test]
+    fn another_hosts_json_hooks_are_checked_under_its_own_name_and_a_shared_file_once() {
+        let mut m = Mock::default();
+        m.files.insert(
+            "/h/.cursor/hooks.json".into(),
+            r#"{"version": 1, "hooks": {"beforeShellExecution": [{"command": "/h/gone.sh"}]}}"#
+                .into(),
+        );
+        m.files.insert(
+            "/h/.gemini/settings.json".into(),
+            r#"{"hooks": {"BeforeTool": [{"matcher": "run_shell_command", "hooks": [{"type": "command", "command": "/h/gone2.sh"}]}]}}"#
+                .into(),
+        );
+        let found = check_with(&m);
+        let by: Vec<(&str, &str, bool)> = found
+            .iter()
+            .map(|p| (p.agent, p.event.as_str(), p.fixable))
+            .collect();
+        assert_eq!(
+            by,
+            vec![
+                ("cursor", "beforeShellExecution", true),
+                ("gemini", "BeforeTool", true)
+            ]
+        );
+        assert_eq!(found[1].matcher.as_deref(), Some("run_shell_command"));
+    }
+
+    #[test]
+    fn a_relative_path_is_not_judged_for_a_host_that_does_not_document_its_base() {
+        let mut m = Mock::default();
+        m.files.insert(
+            "/h/.cursor/hooks.json".into(),
+            r#"{"hooks": {"stop": [{"command": "./hooks/a.sh"}, {"command": "/h/gone.sh"}]}}"#
+                .into(),
+        );
+        let found = check_with(&m);
+        assert_eq!(found[0].kind, "unverified-hook");
+        assert!(found[0].detail.starts_with("relative path"));
+        assert!(!found[0].fixable);
+        assert_eq!(found[1].kind, "broken-hook");
+        // Claude Code runs hooks in the project directory.
+        m.settings("/h/.claude/settings.json", &["./hooks/a.sh"]);
+        let claude = check_with(&m);
+        assert_eq!(claude[0].agent, "claude");
+        assert_eq!(claude[0].detail, "file not found: /proj/hooks/a.sh");
+    }
+
+    fn plugin_home(m: &mut Mock, enabled: bool, install_dir: bool, hooks: &str) {
+        m.files.insert(
+            "/h/.claude/plugins/installed_plugins.json".into(),
+            r#"{"plugins": {"demo@mkt": [{"installPath": "/h/plug/demo"}], "off@mkt": [{"installPath": "/h/plug/off"}]}}"#
+                .into(),
+        );
+        m.files.insert(
+            "/h/.claude/settings.json".into(),
+            serde_json::json!({"enabledPlugins": {"demo@mkt": enabled, "off@mkt": false}})
+                .to_string(),
+        );
+        if install_dir {
+            m.kinds.insert("/h/plug/demo".into(), PathKind::Dir);
+            m.files
+                .insert("/h/plug/demo/hooks/hooks.json".into(), hooks.into());
+        }
+    }
+
+    #[test]
+    fn a_plugin_hook_resolves_the_plugin_root_and_is_never_fixable() {
+        let mut m = Mock::default();
+        let hooks = r#"{"hooks": {"SessionStart": [{"hooks": [
+            {"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/ok.sh"},
+            {"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/gone.sh\" start"}]}]}}"#;
+        plugin_home(&mut m, true, true, hooks);
+        m.script("/h/plug/demo/scripts/ok.sh", true);
+        // A disabled plugin is not loaded, so its hooks are not checked.
+        m.files.insert(
+            "/h/plug/off/hooks/hooks.json".into(),
+            r#"{"hooks": {"Stop": [{"command": "/h/never.sh"}]}}"#.into(),
+        );
+        let found = check_with(&m);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].kind, "broken-hook");
+        assert_eq!(
+            found[0].detail,
+            "file not found: /h/plug/demo/scripts/gone.sh"
+        );
+        assert_eq!(found[0].source, "/h/plug/demo/hooks/hooks.json");
+        assert!(!found[0].fixable);
+    }
+
+    #[test]
+    fn an_enabled_plugin_whose_directory_is_gone_is_stale_and_a_disabled_one_is_ignored() {
+        let mut m = Mock::default();
+        plugin_home(&mut m, true, false, "");
+        let found = check_with(&m);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].kind, "stale-plugin");
+        assert_eq!(found[0].path, "plugins.demo@mkt[0]");
+        assert!(found[0].detail.contains("/h/plug/demo is gone"));
+        assert!(!found[0].fixable);
+        plugin_home(&mut m, false, false, "");
+        assert!(check_with(&m).is_empty());
+    }
+
+    #[test]
+    fn plugin_root_outside_a_plugin_is_still_unverified() {
+        let m = Mock::default();
+        let found = run(&m, &["${CLAUDE_PLUGIN_ROOT}/x.sh"]);
+        assert_eq!(found[0].kind, "unverified-hook");
+    }
+
+    #[test]
+    fn a_foreign_non_json_host_file_is_left_alone() {
+        let mut m = Mock::default();
+        m.files
+            .insert("/h/.cursor/hooks.json".into(), "{ nope".into());
+        let found = check_with(&m);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            (found[0].kind, found[0].agent),
+            ("unreadable-config", "cursor")
         );
     }
 

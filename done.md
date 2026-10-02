@@ -2286,6 +2286,18 @@ Result: `rtok doctor` (text, `--json`, Doctor page) lists `broken-hook`, `suspec
 
 Model: Claude Code / sonnet-5
 
+### T331.2. Doctor: JSON hook files of the other hosts and of enabled Claude plugins
+
+Part of T331. T331.1's checks for every host whose installer writes a JSON config (the files `Agent::files` names, once each; Cursor's variants share theirs), under the host's own name in `Problem.agent`, and for the hooks of every enabled Claude plugin: `<installPath>/hooks/hooks.json` from `installed_plugins.json`, with `${CLAUDE_PLUGIN_ROOT}` resolved against the install directory. A plugin that is enabled (`enabledPlugins` true in a settings file) but whose install directory is gone is a `stale-plugin` finding; a disabled plugin is not loaded and not checked. Plugin files belong to the plugin, so nothing found in them is fixable. Only Claude Code documents that a relative hook path resolves against the project directory, so a relative path of any other host is `unverified-hook`, never `broken-hook`. Depends on T331.1.
+
+Check: mocked scenarios per host shape (Cursor's flat `hooks.json`, Gemini's Claude-shaped `settings.json`), a shared file read once, a relative path on a host other than Claude, a plugin root resolved to a missing and a present script, a disabled plugin skipped, a stale plugin, a non-JSON-parsable host file reported and left alone; `just check`.
+
+Execution: a `Scope {project, plugin_root, relative_ok}` replaces the bare project directory in `classify`; `check` reads the Claude sources as before, then `host_sources(cfg)` (`HOSTS` minus claude, `Agent::files` filtered to `.json`/`.jsonc`), then `plugins` (reusing `doctor::plugin_install_paths` and `agents::claude::config_dir`, so the install index has one parser). No new dependency, no output change when nothing is found.
+
+Result: `rtok doctor` also lists broken, suspect and unverified hooks of the other hosts' JSON files and of enabled Claude plugins, and stale plugin installs. TOML and other formats (Kimi, Codex, CodeWhale) are T331.8; `--agent <host>`, Windows `PATHEXT` and `cmd` rules are T331.9.
+
+Model: Claude Code / sonnet-5
+
 ## T40 — drop `demon list` and `demon update`
 
 **T40 drop `demon list` and `demon update`** · P2, 1/5 · `src/cli.rs`, `src/demon.rs`, `tests/demon.rs`, `tests/surface_parity.rs`, `config/default.toml`
