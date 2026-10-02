@@ -7,7 +7,8 @@ use diesel::sql_types::{BigInt, Binary, Double, Integer, Nullable, Text};
 use diesel::sqlite::Sqlite;
 
 use super::schema::{
-    archive, archive_decisions, call_io, calls, logs, measurements, read_cache, tokens, usage,
+    archive, archive_decisions, call_io, calls, extractor, logs, measurements, read_cache,
+    symbol_stale, symbols, tokens, usage,
 };
 
 /// `ROW_NUMBER() OVER (PARTITION BY ended_at ORDER BY id)` — no window functions in
@@ -168,6 +169,47 @@ pub(crate) fn pragma_synchronous_normal(conn: &mut SqliteConnection) -> QueryRes
 pub(crate) fn pragma_foreign_keys_on(conn: &mut SqliteConnection) -> QueryResult<()> {
     exec_pragma(conn, "PRAGMA foreign_keys = ON")
 }
+
+/// T352: only effective before the first table exists — the caller sets it on a brand-new file.
+pub(crate) fn pragma_auto_vacuum_incremental(conn: &mut SqliteConnection) -> QueryResult<()> {
+    exec_pragma(conn, "PRAGMA auto_vacuum = INCREMENTAL")
+}
+
+/// A row of `PRAGMA incremental_vacuum`: one per freed page, no columns.
+#[derive(QueryableByName)]
+struct FreedPage {}
+
+/// T352: hand every free page back to the filesystem; a no-op when `auto_vacuum` is 0.
+pub(crate) fn pragma_incremental_vacuum(conn: &mut SqliteConnection) -> QueryResult<()> {
+    // One page is freed per result row, so the statement must be stepped to the end (`execute`
+    // steps once). No DSL form for a PRAGMA.
+    diesel::sql_query("PRAGMA incremental_vacuum")
+        .load::<FreedPage>(conn)
+        .map(|_| ())
+}
+
+/// T352: `VACUUM` rebuilds the file, which is the only way to change `auto_vacuum` on a store
+/// that already has tables. No DSL form.
+pub(crate) fn vacuum(conn: &mut SqliteConnection) -> QueryResult<()> {
+    exec_pragma(conn, "VACUUM")
+}
+
+/// `PRAGMA auto_vacuum` — a read, one column, no DSL form (0 none, 1 full, 2 incremental).
+#[derive(QueryId)]
+pub(crate) struct AutoVacuumMode;
+
+impl QueryFragment<Sqlite> for AutoVacuumMode {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, Sqlite>) -> QueryResult<()> {
+        out.push_sql("PRAGMA auto_vacuum");
+        Ok(())
+    }
+}
+
+impl Query for AutoVacuumMode {
+    type SqlType = Integer;
+}
+
+impl RunQueryDsl<SqliteConnection> for AutoVacuumMode {}
 
 #[cfg(test)]
 pub(crate) fn pragma_query_only_on(conn: &mut SqliteConnection) -> QueryResult<()> {
@@ -754,6 +796,70 @@ pub(crate) fn purge_related(conn: &mut SqliteConnection, cutoff: i64) -> QueryRe
         )
         .set(calls::parent_id.eq(None::<i32>))
         .execute(conn)?;
+    Ok(())
+}
+
+/// T352: hook stdin bodies are only read back by short session windows and the OTel export, so
+/// they are cleared after `cutoff` while the `calls` row, byte counts, shas and archive columns
+/// stay. Clears at most `batch` rows that still hold a body, so one write transaction stays
+/// short; returns how many it cleared.
+pub(crate) fn clear_hook_bodies(
+    conn: &mut SqliteConnection,
+    cutoff: i64,
+    batch: i64,
+) -> QueryResult<usize> {
+    let old_hooks = calls::table
+        .filter(calls::kind.eq("hook"))
+        .filter(calls::ts.lt(cutoff))
+        .select(calls::id);
+    // An alias, as in `purge_related`: Diesel rejects a subselect of the table being updated.
+    let io = alias!(call_io as pending_io);
+    let pending = io
+        .filter(io.field(call_io::call_id).eq_any(old_hooks))
+        .filter(
+            io.field(call_io::request_json)
+                .is_not_null()
+                .or(io.field(call_io::response_json).is_not_null())
+                .or(io.field(call_io::request_raw).is_not_null())
+                .or(io.field(call_io::response_raw).is_not_null()),
+        )
+        .select(io.field(call_io::call_id))
+        .limit(batch);
+    diesel::update(call_io::table)
+        .filter(call_io::call_id.eq_any(pending))
+        .set((
+            call_io::request_json.eq(None::<String>),
+            call_io::response_json.eq(None::<String>),
+            call_io::request_raw.eq(None::<Vec<u8>>),
+            call_io::response_raw.eq(None::<Vec<u8>>),
+        ))
+        .execute(conn)
+}
+
+/// T352: every root the graph index holds rows for.
+pub(crate) fn symbol_roots(conn: &mut SqliteConnection) -> QueryResult<Vec<String>> {
+    let mut roots: Vec<String> = symbols::table.select(symbols::root).distinct().load(conn)?;
+    roots.extend(
+        symbol_stale::table
+            .select(symbol_stale::root)
+            .distinct()
+            .load::<String>(conn)?,
+    );
+    roots.extend(
+        extractor::table
+            .select(extractor::root)
+            .distinct()
+            .load::<String>(conn)?,
+    );
+    roots.sort();
+    roots.dedup();
+    Ok(roots)
+}
+
+pub(crate) fn delete_symbol_root(conn: &mut SqliteConnection, root: &str) -> QueryResult<()> {
+    diesel::delete(symbols::table.filter(symbols::root.eq(root))).execute(conn)?;
+    diesel::delete(symbol_stale::table.filter(symbol_stale::root.eq(root))).execute(conn)?;
+    diesel::delete(extractor::table.filter(extractor::root.eq(root))).execute(conn)?;
     Ok(())
 }
 

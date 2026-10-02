@@ -299,13 +299,18 @@ impl Store {
             return Ok(0);
         }
         let mut conn = self.lock()?;
-        Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
-            let mut inserted = 0usize;
-            for (path, file_sha, stat, rows) in files {
-                inserted += replace_one(conn, root, path, file_sha, *stat, rows)?;
-            }
-            Ok(inserted)
-        })?)
+        // T352: every write here is `immediate_transaction` (BEGIN IMMEDIATE): a deferred one that
+        // has to upgrade after another connection committed (the session-start housekeeping
+        // thread) gets SQLITE_BUSY at once in WAL, skipping the busy handler.
+        Ok(
+            conn.immediate_transaction::<usize, diesel::result::Error, _>(|conn| {
+                let mut inserted = 0usize;
+                for (path, file_sha, stat, rows) in files {
+                    inserted += replace_one(conn, root, path, file_sha, *stat, rows)?;
+                }
+                Ok(inserted)
+            })?,
+        )
     }
 
     pub fn replace_symbols(
@@ -322,9 +327,11 @@ impl Store {
         // rows over 127 files). What: multi-row INSERTs chunked under SQLite's variable limit,
         // one transaction per batch of files. Why: ~140 single-row INSERTs per file. Not yet
         // measured apart from the parse — measure before changing.
-        Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
-            replace_one(conn, root, path, file_sha, stat, rows)
-        })?)
+        Ok(
+            conn.immediate_transaction::<usize, diesel::result::Error, _>(|conn| {
+                replace_one(conn, root, path, file_sha, stat, rows)
+            })?,
+        )
     }
 
     pub fn delete_symbols_missing(&self, root: &str, keep: &HashSet<String>) -> Result<usize> {
@@ -361,7 +368,7 @@ impl Store {
     /// `WHERE ? = root || '/' || path` scanned the whole table on each `Edit`/`Write`.
     pub fn mark_symbols_stale(&self, abs_path: &str) -> Result<()> {
         let mut conn = self.lock()?;
-        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+        conn.immediate_transaction::<_, diesel::result::Error, _>(|conn| {
             for (i, _) in abs_path.match_indices('/') {
                 let root = &abs_path[..i];
                 let rel = &abs_path[i + 1..];
@@ -378,7 +385,7 @@ impl Store {
     /// the root.
     pub fn mark_symbols_stale_in(&self, root: &str, rel_path: &str) -> Result<()> {
         let mut conn = self.lock()?;
-        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+        conn.immediate_transaction::<_, diesel::result::Error, _>(|conn| {
             if delete_file(conn, root, rel_path)? > 0 {
                 note_stale(conn, root, rel_path)?;
             }
@@ -419,7 +426,7 @@ impl Store {
 
     pub fn touch_symbol_indexed_at(&self, root: &str, ts: i64) -> Result<()> {
         let mut conn = self.lock()?;
-        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+        conn.immediate_transaction::<_, diesel::result::Error, _>(|conn| {
             let existing_fingerprint: Option<String> = extractor::table
                 .filter(extractor::root.eq(root))
                 .select(extractor::fingerprint)

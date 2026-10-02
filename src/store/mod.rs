@@ -136,6 +136,9 @@ thread_local! {
     pub(crate) static OPEN_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
+/// Rows per write transaction when clearing hook bodies (T352).
+const HOOK_BODY_BATCH: i64 = 5_000;
+
 impl Store {
     /// Open (creating directories and the file as needed) and migrate.
     pub fn open(path: &Path) -> Result<Self> {
@@ -173,6 +176,11 @@ impl Store {
         // "database is locked" instead of waiting the few ms the first one holds the lock. First,
         // so switching to WAL waits too; `wait.busy` bounds each statement's wait.
         set_busy(&mut conn, wait.busy)?;
+        // T352: the mode is fixed once a table exists, so only a brand-new file gets it, before
+        // WAL and the first migration. Existing stores convert in `housekeeping` (T352).
+        if std::fs::metadata(url).map_or(true, |m| m.len() == 0) {
+            sql_ext::pragma_auto_vacuum_incremental(&mut conn)?;
+        }
         sql_ext::pragma_journal_wal(&mut conn)?;
         sql_ext::pragma_synchronous_normal(&mut conn)?;
         Self::init(conn, wait)
@@ -2127,10 +2135,122 @@ impl Store {
         Ok(paths.0)
     }
 
-    /// Apply `core.retain_calls_days` (0 = keep forever). Proxy and MCP call this once at session
-    /// start.
-    pub fn run_retention(&self, retain_calls_days: u32) -> Result<usize> {
-        self.purge_calls_older_than(i64::from(retain_calls_days))
+    /// Apply `core.retain_calls_days` (0 = keep forever) and `core.retain_hook_bodies_days`
+    /// (0 = keep hook bodies as long as their `calls` row), drop symbol rows of roots that no
+    /// longer exist, then return the freed pages. Proxy and MCP call this once at session
+    /// start; the count is the `calls` rows purged.
+    pub fn run_retention(
+        &self,
+        retain_calls_days: u32,
+        retain_hook_bodies_days: u32,
+    ) -> Result<usize> {
+        let purged = self.purge_calls_older_than(i64::from(retain_calls_days))?;
+        self.clear_hook_bodies_older_than(i64::from(retain_hook_bodies_days))?;
+        self.drop_vanished_symbol_roots()?;
+        self.maintenance(|c| sql_ext::pragma_incremental_vacuum(c).map_err(Into::into))?;
+        Ok(purged)
+    }
+
+    /// T352: run `f` under the maintenance busy window (see `purge_calls_older_than`).
+    fn maintenance<T>(&self, f: impl FnOnce(&mut SqliteConnection) -> Result<T>) -> Result<T> {
+        let mut conn = self.lock()?;
+        set_busy(&mut conn, std::time::Duration::from_secs(30))?;
+        let out = f(&mut conn);
+        set_busy(&mut conn, self.wait.busy)?;
+        out
+    }
+
+    /// T352: clear the stdin bodies of hook `call_io` rows older than `days` (0 = never).
+    /// The `calls` row, byte counts, shas and archive columns stay; readers already treat a
+    /// missing body as empty. Returns the number of rows cleared.
+    pub fn clear_hook_bodies_older_than(&self, days: i64) -> Result<usize> {
+        self.clear_hook_bodies_in_batches(days, HOOK_BODY_BATCH)
+    }
+
+    /// [`Store::clear_hook_bodies_older_than`] with an explicit batch size: one short write
+    /// transaction per `batch` rows, the connection lock released in between, so a first run
+    /// over a large store never holds the SQLite write lock for the whole clear.
+    fn clear_hook_bodies_in_batches(&self, days: i64, batch: i64) -> Result<usize> {
+        if days <= 0 {
+            return Ok(0);
+        }
+        let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
+        let cutoff = now.saturating_sub(days.saturating_mul(86_400));
+        let mut total = 0;
+        loop {
+            let n = self.maintenance(|c| Ok(sql_ext::clear_hook_bodies(c, cutoff, batch)?))?;
+            if n == 0 {
+                return Ok(total);
+            }
+            total += n;
+        }
+    }
+
+    /// T352: run [`Store::housekeeping`] on a background thread, so the `initialize` handshake
+    /// (mcp) or the listener (proxy) is never delayed by it. The thread dies with the process;
+    /// one that is killed mid-run only rolls back its current batch (or its `VACUUM`).
+    pub fn spawn_retention(cfg: &crate::config::Config, surface: &'static str) {
+        let cfg = cfg.clone();
+        let spawned = std::thread::Builder::new()
+            .name("rtok-retention".into())
+            .spawn(move || Self::housekeeping(&cfg, surface));
+        if let Err(e) = spawned {
+            eprintln!("rtok {surface}: retention thread not started: {e}");
+        }
+    }
+
+    /// T352: retention on its own connection, then the one-time conversion of a pre-T352 store
+    /// to `auto_vacuum = INCREMENTAL`. Retention goes first so the `VACUUM` rewrites the
+    /// already-smaller file. Both are housekeeping with a next-start retry (T75): an error is
+    /// logged, not fatal. A failed `VACUUM` (busy, `SQLITE_FULL`) rolls back and leaves the
+    /// file intact; a successful one briefly blocks other writers, once per store.
+    pub fn housekeeping(cfg: &crate::config::Config, surface: &'static str) {
+        let report = |what: &str, e: &anyhow::Error| {
+            let msg = format!("{what} skipped until next start: {e:#}");
+            eprintln!("rtok {surface}: {msg}");
+            crate::log::append(cfg, "warn", surface, "retention", &msg);
+        };
+        let store = match Store::open(&cfg.core.db_path) {
+            Ok(s) => s,
+            Err(e) => return report("retention", &e),
+        };
+        if let Err(e) =
+            store.run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
+        {
+            return report("retention", &e);
+        }
+        if let Err(e) = store.convert_to_incremental_vacuum() {
+            report("vacuum", &e);
+        }
+    }
+
+    /// T352: drop the graph index of every root that is no longer a directory (a removed
+    /// worktree or clone). The empty root is a placeholder, not a path, and stays.
+    pub fn drop_vanished_symbol_roots(&self) -> Result<usize> {
+        self.maintenance(|c| {
+            let gone: Vec<String> = sql_ext::symbol_roots(c)?
+                .into_iter()
+                .filter(|r| !r.is_empty() && !Path::new(r).is_dir())
+                .collect();
+            for root in &gone {
+                sql_ext::delete_symbol_root(c, root)?;
+            }
+            Ok(gone.len())
+        })
+    }
+
+    /// T352: make an existing store shrink on delete. A store created before T352 has
+    /// `auto_vacuum = 0`; the mode only changes through a `VACUUM`, which rewrites the file
+    /// (needs free disk the size of the database). Returns whether it converted anything.
+    pub fn convert_to_incremental_vacuum(&self) -> Result<bool> {
+        self.maintenance(|c| {
+            if sql_ext::AutoVacuumMode.get_result::<i32>(c)? == 2 {
+                return Ok(false);
+            }
+            sql_ext::pragma_auto_vacuum_incremental(c)?;
+            sql_ext::vacuum(c)?;
+            Ok(true)
+        })
     }
 
     #[cfg(test)]
@@ -2627,7 +2747,7 @@ mod tests {
         held_ack.recv().unwrap();
         let store = Store::open(&db).unwrap();
         let purged = store
-            .run_retention(30)
+            .run_retention(30, 3)
             .expect("purge queues behind the writer");
         assert_eq!(purged, 1, "the old call is gone once the lock is released");
         assert_eq!(store.count_calls().unwrap(), 0);
@@ -3492,7 +3612,12 @@ mod tests {
         assert!(arch_path.is_file());
         assert_eq!(store.count_calls().unwrap(), 1);
 
-        assert_eq!(store.run_retention(cfg.core.retain_calls_days).unwrap(), 1);
+        assert_eq!(
+            store
+                .run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
+                .unwrap(),
+            1
+        );
         assert_eq!(store.count_calls().unwrap(), 0);
         assert!(!arch_path.exists());
         let _ = std::fs::remove_dir_all(&dir);
@@ -3520,7 +3645,12 @@ mod tests {
             "0 = keep forever"
         );
 
-        assert_eq!(store.run_retention(cfg.core.retain_calls_days).unwrap(), 1);
+        assert_eq!(
+            store
+                .run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
+                .unwrap(),
+            1
+        );
         assert!(!arch_path.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3825,7 +3955,12 @@ mod tests {
             .put_archive("sess", body_read, &cfg.core.archive_dir)
             .unwrap();
 
-        assert_eq!(store.run_retention(cfg.core.retain_calls_days).unwrap(), 0);
+        assert_eq!(
+            store
+                .run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
+                .unwrap(),
+            0
+        );
         assert_eq!(store.archive_decision_counts().unwrap(), (1, 1));
         assert_eq!(
             store
@@ -4395,6 +4530,187 @@ mod tests {
             names,
             [sha, "reader-view".to_string()],
             "temp file left behind"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T352: a hook call with an inline stdin body, `age_days` old.
+    fn hook_call_with_body(store: &Store, kind: &str, body: &[u8], age_days: i64) -> i32 {
+        let id = store
+            .insert_call("s", "hook", kind, None, None, None, None, None)
+            .unwrap();
+        store
+            .insert_call_io(id, Some(body), Some(body), body.len() + 1, None)
+            .unwrap();
+        let ts = i64::try_from(crate::log::now()).unwrap() - age_days * 86_400;
+        store.set_call_ts(id, ts).unwrap();
+        id
+    }
+
+    fn call_io_bodies(store: &Store, id: i32) -> (Option<String>, Option<String>, i64) {
+        let mut conn = store.lock().unwrap();
+        call_io::table
+            .filter(call_io::call_id.eq(id))
+            .select((
+                call_io::request_json,
+                call_io::response_json,
+                call_io::request_bytes,
+            ))
+            .first(&mut *conn)
+            .unwrap()
+    }
+
+    #[test]
+    fn retention_clears_old_hook_bodies_and_keeps_the_rest() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_session("s", Some(1), None, None, Some("hook"))
+            .unwrap();
+        let old = hook_call_with_body(&store, "hook", b"{\"old\":1}", 10);
+        let fresh = hook_call_with_body(&store, "hook", b"{\"fresh\":1}", 1);
+        let mcp = hook_call_with_body(&store, "mcp_call", b"{\"mcp\":1}", 10);
+
+        store.run_retention(30, 3).unwrap();
+
+        let (req, res, bytes) = call_io_bodies(&store, old);
+        assert_eq!((req, res), (None, None));
+        assert_eq!(bytes, 9, "byte counts stay");
+        assert!(call_io_bodies(&store, fresh).0.is_some());
+        assert!(call_io_bodies(&store, mcp).0.is_some());
+        assert_eq!(
+            store.recent_hook_inputs("s", 10).unwrap(),
+            ["{\"fresh\":1}", ""],
+            "a cleared body reads back empty"
+        );
+    }
+
+    #[test]
+    fn hook_bodies_clear_across_several_batches() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_session("s", Some(1), None, None, Some("hook"))
+            .unwrap();
+        let old: Vec<i32> = (0..5)
+            .map(|_| hook_call_with_body(&store, "hook", b"{}", 10))
+            .collect();
+        let fresh = hook_call_with_body(&store, "hook", b"{}", 1);
+        let cutoff = i64::try_from(crate::log::now()).unwrap() - 3 * 86_400;
+        {
+            let mut conn = store.lock().unwrap();
+            let first = sql_ext::clear_hook_bodies(&mut conn, cutoff, 2).unwrap();
+            assert_eq!(first, 2, "one batch clears at most `batch` rows");
+        }
+        assert_eq!(store.clear_hook_bodies_in_batches(3, 2).unwrap(), 3);
+        assert!(old.iter().all(|&id| call_io_bodies(&store, id).0.is_none()));
+        assert!(call_io_bodies(&store, fresh).0.is_some());
+        assert_eq!(store.clear_hook_bodies_in_batches(3, 2).unwrap(), 0);
+    }
+
+    #[test]
+    fn zero_hook_body_days_keeps_every_body() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_session("s", Some(1), None, None, Some("hook"))
+            .unwrap();
+        let old = hook_call_with_body(&store, "hook", b"{}", 10);
+        store.run_retention(30, 0).unwrap();
+        assert!(call_io_bodies(&store, old).0.is_some());
+    }
+
+    #[test]
+    fn retention_drops_symbol_roots_that_are_no_longer_directories() {
+        let store = Store::open_in_memory().unwrap();
+        let live = crate::testutil::tmp_dir("t352-live");
+        let live = live.to_str().unwrap();
+        let gone = "/rtok-t352-no-such-root";
+        let row = (
+            "f".to_string(),
+            "function".to_string(),
+            1,
+            true,
+            1,
+            String::new(),
+        );
+        for root in [live, gone, ""] {
+            store
+                .replace_symbols(root, "a.rs", "s", (0, 0), std::slice::from_ref(&row))
+                .unwrap();
+            store.set_extractor_fingerprint(root, "fp").unwrap();
+        }
+        // A stale mark on a file with no rows left, as `mark_symbols_stale_in` leaves it.
+        store.mark_symbols_stale_in(gone, "z.rs").unwrap();
+        store.run_retention(30, 3).unwrap();
+        assert_eq!(store.symbol_count(gone).unwrap(), 0);
+        assert!(store.symbol_stale_paths(gone).unwrap().is_empty());
+        assert_eq!(store.extractor_fingerprint(gone).unwrap(), None);
+        assert_eq!(store.symbol_count(live).unwrap(), 1);
+        assert_eq!(store.symbol_count("").unwrap(), 1, "the empty root stays");
+    }
+
+    fn auto_vacuum_mode(store: &Store) -> i32 {
+        let mut conn = store.lock().unwrap();
+        sql_ext::AutoVacuumMode.get_result(&mut *conn).unwrap()
+    }
+
+    #[test]
+    fn fresh_store_is_incremental_and_its_file_shrinks_after_retention() {
+        let dir = crate::testutil::tmp_dir("t352-shrink");
+        let db = dir.join("rtok.db");
+        let store = Store::open(&db).unwrap();
+        assert_eq!(auto_vacuum_mode(&store), 2);
+        store
+            .upsert_session("s", Some(1), None, None, Some("hook"))
+            .unwrap();
+        hook_call_with_body(&store, "hook", &vec![b'x'; 2 << 20], 10);
+        drop(store);
+        let big = std::fs::metadata(&db).unwrap().len();
+        assert!(big > 2 << 20, "{big}");
+
+        let store = Store::open(&db).unwrap();
+        store.run_retention(30, 3).unwrap();
+        drop(store);
+        let small = std::fs::metadata(&db).unwrap().len();
+        assert!(small < big / 2, "{small} vs {big}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_existing_store_converts_once() {
+        let dir = crate::testutil::tmp_dir("t352-convert");
+        let db = dir.join("old.db");
+        // A pre-T352 file: one table exists before any `auto_vacuum` setting.
+        let url = db.to_str().unwrap();
+        let mut raw = SqliteConnection::establish(url).unwrap();
+        diesel::sql_query("CREATE TABLE t (x INTEGER)")
+            .execute(&mut raw)
+            .unwrap();
+        drop(raw);
+        let store = Store::open(&db).unwrap();
+        assert_eq!(auto_vacuum_mode(&store), 0);
+        assert!(store.convert_to_incremental_vacuum().unwrap());
+        assert_eq!(auto_vacuum_mode(&store), 2);
+        assert!(!store.convert_to_incremental_vacuum().unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Session-start housekeeping converts a pre-T352 store on its own, after retention.
+    #[test]
+    fn housekeeping_converts_a_pre_t352_store() {
+        let dir = crate::testutil::tmp_dir("t352-housekeeping");
+        let cfg = crate::testutil::config_in(&dir);
+        let mut raw = SqliteConnection::establish(cfg.core.db_path.to_str().unwrap()).unwrap();
+        diesel::sql_query("CREATE TABLE t (x INTEGER)")
+            .execute(&mut raw)
+            .unwrap();
+        drop(raw);
+        assert_eq!(
+            auto_vacuum_mode(&Store::open(&cfg.core.db_path).unwrap()),
+            0
+        );
+        Store::housekeeping(&cfg, "test");
+        assert_eq!(
+            auto_vacuum_mode(&Store::open(&cfg.core.db_path).unwrap()),
+            2
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -104,6 +104,9 @@ section! {
         /// payload (D1: ≤ 10 ms). 8 MiB default.
         hook_max_input_bytes: u32 = 8_388_608,
         retain_calls_days: u32 = 30,
+        /// T352: hook stdin bodies in `call_io` are cleared after this many days; the call row,
+        /// sizes and shas stay. 0 keeps bodies as long as `calls`.
+        retain_hook_bodies_days: u32 = 3,
         /// Removed in T24.5: it is now `log.to_db`. Accepted from an old file with a
         /// warning, then dropped.
         #[serde(skip_serializing_if = "Option::is_none")]

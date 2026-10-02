@@ -170,14 +170,9 @@ pub fn serve_blocking(cfg: Config) -> Result<()> {
 /// [`app`] directly instead.
 pub async fn serve(cfg: &Config) -> Result<()> {
     let state = Arc::new(ProxyState::new(cfg)?);
-    // Retention is housekeeping with a next-start retry: the listener must not die on a
-    // contended store (T75) — requests still proxy while another process writes, and
-    // the purge queues behind it under the maintenance busy window.
-    if let Err(e) = state.store.run_retention(cfg.core.retain_calls_days) {
-        let msg = format!("retention skipped until next start: {e:#}");
-        eprintln!("rtok proxy: {msg}");
-        crate::log::append(cfg, "warn", "proxy", "retention", &msg);
-    }
+    // Background, own connection: housekeeping must neither delay the listener nor die on a
+    // contended store (T75, T352).
+    Store::spawn_retention(cfg, "proxy");
     // A plain thread, not a task: a flush is blocking SQLite plus a blocking `flock`, and on
     // this runtime it stalled whichever worker also served live requests.
     crate::otel::export::spawn_ticker(cfg);
@@ -1095,7 +1090,7 @@ mod tests {
         let state = ProxyState::new(&cfg).expect("proxy state");
         state
             .store
-            .run_retention(cfg.core.retain_calls_days)
+            .run_retention(cfg.core.retain_calls_days, cfg.core.retain_hook_bodies_days)
             .unwrap();
         assert_eq!(state.store.count_calls().unwrap(), 0);
         let _ = std::fs::remove_dir_all(&dir);
