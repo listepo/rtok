@@ -11,7 +11,7 @@ The linked plugin carries hooks instead, by default (below); MCP is independent 
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | yes | `hooks.enabled = true` and `hooks.events.<Event>[]` → `<abs rtok> hook <event>` with `timeoutMs` on PreToolUse (Bash, Read), PostToolUse, UserPromptSubmit, SessionStart; ZCode has no PreCompact, PostCompact or SessionEnd |
-| mcp | yes | `mcp.servers.rtok` → `<abs rtok> mcp` (off with `[setup] mcp = false`); independent of the plugin (T275/D33): written on every install/update regardless of plugin state, only remove takes it out |
+| mcp | yes | `mcp.servers.rtok` → `<abs rtok> mcp --host zcode` (off with `[setup] mcp = false`); independent of the plugin (T275/D33): written on every install/update regardless of plugin state, only remove takes it out |
 | proxy | no | ZCode providers are per-id tables with their own keys and base URLs; setup does not edit them |
 | plugin | yes | links `plugins/zcode` (hooks only: T275/D33) to `~/.zcode/cli/plugins/local/rtok` by default, once ZCode itself is detected, and lists it in `plugins.dirs` — ZCode loads inline plugin roots from there, enabled by default; while the plugin is linked it is the only call path for hooks, so setup strips its own config-file hook entries; a stale or foreign destination is never overwritten |
 

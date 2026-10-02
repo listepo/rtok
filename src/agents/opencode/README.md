@@ -13,7 +13,7 @@ config files, so each selected app installs on its own:
 | Module | Support | Why |
 | --- | --- | --- |
 | proxy | yes | `env.OPENAI_BASE_URL` → `http://<bind>:<port>/v1` |
-| mcp | yes | `mcp.rtok` → `{type: local, command: [rtok, mcp], enabled: true}` (off with `[setup] mcp = false`) |
+| mcp | yes | `mcp.rtok` → `{type: local, command: [rtok, mcp, --host, opencode], enabled: true}` (off with `[setup] mcp = false`) |
 | plugin | yes | links `plugins/opencode/rtok.ts` to `<config dir>/plugins/rtok.ts` by default, once OpenCode itself is detected; a stale or foreign destination is never overwritten |
 | hooks | no | OpenCode has no shell hook events; the linked plugin filters bash output instead |
 

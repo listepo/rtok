@@ -7488,6 +7488,19 @@ Execution (2026-10-03): (1) `src/agents/link.rs`: a pure `resolve(store, host_sl
 
 Result (2026-10-03, Claude Code / sonnet-5): `src/agents/link.rs` resolves the link with rule (a) `GROK_SESSION_ID` for `grok` and rule (c) the host's live agents in the cwd (one links, several are ambiguous and bind nothing); a cwd candidate must have been seen since this MCP process started (an ended session's row inside `[agents] idle` is never linked to its successor), and a cwd link is re-run on every call, never cached (only `env` and `own` are); a host whose every variant has no `hooks` support registers its own row. `rtok mcp --host <id>` overlays `[hook] host` (`config_coverage` maps it to `hook.host`). The server resolves at `initialize` and again on every `whoami` until linked; MCP tool `whoami` is built in beside `ping` and survives the `[mcp] tools` allow-list. `research.md` §26 and the card say the rule is doc-derived and only confirmed by the T281 probe. Rule (b) moved to T283.3 because the hook wire request carries no pid. Tests: seven `link` unit tests and five MCP e2e tests (cwd link, late registration, ambiguity, hook-less host, registry off); `just check` green (2165 passed). The one-shot `tools/list` fixtures and shell completions were regenerated for the new tool and flag.
 
+### T283.2. `--host <id>` in every host's MCP entry
+
+PR 2 of T283, part 2 (after T283.1 and T275's per-host entries). Every host's `register_mcp` passes `--host <id>` to `rtok mcp`, so the process knows its host without `[hook] host`; the host tests and fixtures change with it. Only our entry changes, the rest of the host's file stays byte-for-byte.
+
+Check: each host's install/remove test shows `mcp --host <id>` in the written entry and removal leaves the file as before; `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where tables change; `just check`.
+
+Execution: (1) one helper in `src/agents/mod.rs` (`mcp_args(host)` = `mcp --host <id>`, `mcp_summary`) that every host's entry builder and report summary call; the shared `register_local_mcp` (OpenCode, Kilo, MiMo) takes the host id, so Kilo's entry says `kilo`. (2) `rtok-agent-sdk`'s ownership check ignores a `--host <id>` pair after `mcp`, so an entry written before this task is still rtok's own and `remove` takes it out without a prompt; `agents info` and `doctor` read it as present. (3) Install and update replace a host-less entry with the new one (`register_server` already swaps a differing entry; Codex's `is_ours` and Grok's keep-if-present guard learn the legacy shape, and Grok upgrades only that exact one, a user-edited entry stays). (4) Only our entry changes; host tests assert the new argv, the legacy upgrade, and that the rest of the file survives.
+
+Result (2026-10-03, Claude Code / sonnet-5): 19 hosts write `rtok mcp --host <id>` (claude CLI and Desktop, cursor, codex, opencode, kilo, mimo, omp, zcode, kimi, grok, vscode, copilot, commandcode, windsurf, zed, cline, gemini, codewhale, devin). Legacy upgrade and removal are pinned for the JSON, local-argv, TOML (Codex, Grok) and JSONC (Zed) mechanisms by a shared `assert_legacy_entry_upgraded`; `rtok-agent-sdk` has a test for the either-way host-argument rule; `agents_update` checks a stale Windsurf entry gains `--host windsurf`. The host READMEs and `docs/agents.md` describe the new entry; `host_docs` and `agents_doc` needed no regeneration. Left alone: `rtok_mcp`'s generic `McpSpec::entry`/`ops` (not wired to any installer yet) still describe `rtok mcp`.
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
+
 ### T358.1. `rtok agents usage --source rtok`: CLI, `[agents.usage]` config and store reads
 
 First slice of T358: scope is the T358.1 bullet under "Split when claiming" there; the spec text stays in T358.
