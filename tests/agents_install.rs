@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T44.4: the `rtok agents install` matrix over every host and both app kinds.
 //!
 //! Check: per host, a second setup takes no new backup and heads its block `already

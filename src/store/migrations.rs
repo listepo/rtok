@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Embedded `migrations/<version>/up.sql` plus the one-time bridge from `schema_migrations`.
 //!
 //! Diesel 2.3 records applied versions in `__diesel_schema_migrations`. Databases opened

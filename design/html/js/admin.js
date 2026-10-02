@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // rtok design — admin screens. Plain JS, no deps, works from file://.
 // Adapted from web/app.js on the design/web-admin draft (1e144253): one HTML file per
 // screen (body[data-route]) instead of hash routes, all 13 model::pages() screens.

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok report` (P22, decision D24): the operator model as one document.
 //!
 //! [`Document`] is the format-neutral shape — T22.2 (html), T22.3 (pdf) and T22.4 (`--ai`)

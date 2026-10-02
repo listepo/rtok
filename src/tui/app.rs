@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Pure TUI state: which tab, what data, when it last refreshed — and, on the Plugins
 //! tab, the row cursor and the toggle that writes `plugins.<id>.enabled` through `rtok
 //! config set`'s writer (T15.4). No terminal and no clock reach this module from
