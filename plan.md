@@ -26,9 +26,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T283 | in progress | P1 | 3 | 60% | Claude Code / sonnet-5 |
 | T283.2 | todo | P1 | 2 | 0% | |
 | T283.3 | todo | P1 | 3 | 0% | |
-| T289 | in progress | P2 | 4 | 50% | Claude Code / sonnet-5 |
+| T289 | in progress | P2 | 4 | 75% | Claude Code / sonnet-5 |
 | T289.3 | todo | P2 | 3 | 0% | |
-| T289.4 | todo | P2 | 1 | 0% | |
 | T290 | todo | P1 | 3 | 0% | |
 | T310 | todo | P1 | 5 | 0% | |
 | T310.4 | todo | P1 | 3 | 0% | |
@@ -525,13 +524,6 @@ Execution (2026-10-03, Claude Code / sonnet-5): split into four PRs, each at mos
 Done means: rtok's entry is written into `.cursor/worktrees.json` (`setup-worktree*`), `.kilo/setup-script` and Devin/Windsurf's `post_setup_worktree` hook config, our entry only and the rest of each file byte-for-byte (host-config rule), and removal takes it out; the entry runs `rtok worktree adopt`.
 
 Check: install/remove e2e per host that changes only our entry.
-
-### T289.4. Skill: adopt a host-made worktree on hosts without a post-create hook
-
-Done means: `skills/` tells the agent on Codex, Grok Build, MiMo, omp and Antigravity to call `worktree_adopt` when it finds itself in a host-made worktree.
-
-Check: the skill's gate tests.
-
 
 ### T290. Docs, skill and one cross-host test for agents and worktrees
 
