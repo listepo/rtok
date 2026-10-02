@@ -146,6 +146,10 @@ describe("?sample source", () => {
     expect(queryClient.getQueryData<Snapshot>(snapshotKey)?.plugins.map((p) => p.enabled)).toEqual([
       true,
       false,
+      true,
+      true,
+      true,
+      false,
     ]);
 
     const expanded = api.expand("abc");
@@ -155,6 +159,10 @@ describe("?sample source", () => {
     expect(queryClient.getQueryData<Snapshot>(snapshotKey)?.plugins.map((p) => p.enabled)).toEqual([
       true,
       true,
+      true,
+      true,
+      true,
+      false,
     ]);
     expect(sampleSnapshot.plugins[1]?.enabled).toBe(false);
   });
