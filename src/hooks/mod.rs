@@ -2075,7 +2075,10 @@ mod tests {
         cx.store.send_message(None, &id, "hello").unwrap();
         cx.config.agents.push_bytes = 64;
         let ctx = additional_context(&dispatch(&stdin, &input, &cx));
-        assert_eq!(ctx, "… and 1 more: call agent_inbox (or run rtok agents inbox)");
+        assert_eq!(
+            ctx,
+            "… and 1 more: call agent_inbox (or run rtok agents inbox)"
+        );
         assert_eq!(dispatch(&stdin, &input, &cx), b"{}");
         assert_eq!(cx.store.inbox(&id, true, false).unwrap().len(), 1);
     }
