@@ -7544,6 +7544,18 @@ Check: `an_empty_rtok_home_falls_back_to_the_user_home`, `a_dotenv_directory_doe
 Status: done 2026-10-01
 Model: Claude Code / sonnet (reviewed by Claude Code / claude-opus-5-5)
 
+### T362. `rtok config validate` fails with ENOENT on a fresh install
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). The first command the reference file header tells a new user to run fails with a raw OS error, while the failed run still leaves `config.toml` behind, so a second run passes. `ConfigCmd::Validate` (`src/cli.rs:974`) calls `validate::issues(&path)`, which reads the file (`src/config/validate.rs:16`) without the `Config::ensure_user_file` step that every other subcommand gets through `Config::load_with`.
+
+Repro: `mkdir /tmp/h1 && HOME=/tmp/h1 rtok config validate; echo $?` → `Error: /tmp/h1/.rtok/config.toml … No such file or directory (os error 2)`, exit 1; the same command again prints `ok`, exit 0.
+
+Done when: with no explicit path, `config validate` first calls `Config::ensure_user_file(&home, config_file.as_deref())` (the default file is created as `load_with` does) and prints `ok …/config.toml` on the first run; an explicit missing path still errors with its name.
+
+Check: a trycmd or `tests/` case on an empty temp `HOME` gets `ok` and exit 0 on the first `config validate`, and an explicit missing path still exits non-zero; `just check`.
+
+**Result (2026-10-03, Claude Code / sonnet-5):** `ConfigCmd::Validate` (`src/cli.rs`) calls `Config::ensure_user_file(&home, config_file.as_deref())` when no path argument is given, the same call `load_with` makes, so the first `config validate` on an empty home creates the default file and prints `ok <home>/config.toml`. A path typed as the argument is not created: a missing one still fails naming it, and `--config`/`RTOK_CONFIG` stay untouched because `ensure_user_file` skips them. The rule tables in `src/config/validate.rs` are not touched. Checked by `config_validate_creates_the_default_file_but_not_an_explicit_one` in `tests/commands_e2e.rs` (empty temp HOME: `ok`, exit 0, file created; explicit missing path exits non-zero naming it) and `just check`.
+
 ### T349. Hooks never reach the fast client: ketch links `rtok` but not `rtok-hook`
 
 Found 2026-10-02 in a log review (`~/.rtok/rtok.log`, 2026-09-26 … 2026-10-02, rtok 0.10.0). Every hook command in the Claude Code plugin's `hooks.json` tries `rtok-hook` first, then `rtok hook`. `~/.ketch/store/rtok/v0.10.0/` contains `rtok-hook`, but `~/.ketch/bin/` links only `rtok`, so `command -v rtok-hook` fails and every event pays the full `rtok` process start (T178). `rtok demon status` shows `hook` stopped; no socket exists. The log has 1,069 slow `PreToolUse` lines (p50 31 ms, p90 171 ms, max 2.8 s), 481 `PostToolUse` (p50 15 ms, max 0.9 s), 130 `PreCompact` (p50 51 ms), 34 `SessionEnd`, 25 `SessionStart`, 17 `UserPromptSubmit` — all over `hook.max_ms = 10`. A Claude Code transcript shows ketch refusing the package: "`rtok` ships several binaries sharing its name (rtok-cli, rtok-hook) and none is named `rtok`".

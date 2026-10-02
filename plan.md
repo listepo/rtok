@@ -59,7 +59,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T344 | todo | research | 1 | 0% | |
 | T345 | todo | research | 1 | 0% | |
 | T346 | todo | research | 1 | 0% | |
-| T362 | todo | P3 | 1 | 0% | |
 | T364 | todo | P3 | 2 | 0% | |
 | T365 | todo | P3 | 3 | 0% | |
 | T367 | todo | P3 | 1 | 0% | |
@@ -1393,16 +1392,6 @@ In the plan, D34 (plan.md@966f067 line 710) makes the agent id a UUID accepted b
 Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
 
 Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
-
-### T362. `rtok config validate` fails with ENOENT on a fresh install
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). The first command the reference file header tells a new user to run fails with a raw OS error, while the failed run still leaves `config.toml` behind, so a second run passes. `ConfigCmd::Validate` (`src/cli.rs:974`) calls `validate::issues(&path)`, which reads the file (`src/config/validate.rs:16`) without the `Config::ensure_user_file` step that every other subcommand gets through `Config::load_with`.
-
-Repro: `mkdir /tmp/h1 && HOME=/tmp/h1 rtok config validate; echo $?` → `Error: /tmp/h1/.rtok/config.toml … No such file or directory (os error 2)`, exit 1; the same command again prints `ok`, exit 0.
-
-Done when: with no explicit path, `config validate` first calls `Config::ensure_user_file(&home, config_file.as_deref())` (the default file is created as `load_with` does) and prints `ok …/config.toml` on the first run; an explicit missing path still errors with its name.
-
-Check: a trycmd or `tests/` case on an empty temp `HOME` gets `ok` and exit 0 on the first `config validate`, and an explicit missing path still exits non-zero; `just check`.
 
 ### T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
 
