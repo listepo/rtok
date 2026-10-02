@@ -10,6 +10,7 @@ Invoke when the task needs rtok's token-saving surfaces — not for general codi
 ## expand
 
 Anything rtok shortened ends with an `expand <id>` trailer. Recover it: `rtok expand <id>`.
+That trailer id is the only way to the raw output; nothing reads stdin (`rtok expand -` fails).
 Flags: `--lines`, `--grep`, `--context`. See `docs/config.md` (`[expand]`).
 
 ## bash output

@@ -500,7 +500,7 @@ fn expand_text(cx: &Runtime, args: &Value) -> Result<String> {
         crate::expand::parse_range(spec, usize::MAX)?;
     }
     let Some(bytes) = crate::expand::fetch(cx, id)? else {
-        bail!("unknown archive id: {id}");
+        bail!(crate::expand::unknown_id_message(id));
     };
     let text = String::from_utf8_lossy(&bytes);
     let context = args["context"].as_u64().map_or(0, |n| n as usize);
@@ -905,7 +905,9 @@ mod tests {
         let line = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"expand","arguments":{"id":"x"}}}"#;
         let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
         assert_eq!(v["result"]["isError"], true, "{v}");
-        assert_eq!(v["result"]["content"][0]["text"], "unknown archive id: x");
+        let text = v["result"]["content"][0]["text"].as_str().unwrap();
+        assert_eq!(text, crate::expand::unknown_id_message("x"));
+        assert!(text.starts_with("unknown archive id: x ("), "{text}");
         // The one-shot `call()` path (used by hosts that cannot speak MCP) rejects a
         // filtered name with the same text, never running it.
         let err = call(&cfg, "search", &json!({"pattern": "x"}))
