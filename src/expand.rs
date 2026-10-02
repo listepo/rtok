@@ -207,7 +207,14 @@ pub(crate) fn parse_range(spec: &str, n: usize) -> Result<(usize, usize)> {
     if spec.is_empty() {
         bail!("invalid line range `{spec}`: expected a positive line or a-b");
     }
-    let mut parts = spec.splitn(2, '-');
+    // `a,b` / `a, b` read as `a-b` (T353): models write the range the way they would a pair.
+    // The error text keeps the caller's spelling.
+    let norm = if spec.contains(',') {
+        spec.replacen(',', "-", 1).replace(' ', "")
+    } else {
+        spec.to_string()
+    };
+    let mut parts = norm.splitn(2, '-');
     let start = parts.next().unwrap_or_default();
     let end = parts.next();
     let a = if start.is_empty() {
@@ -486,6 +493,20 @@ mod tests {
         // A lone or mismatched quote is not a pair — still rejected, not silently stripped.
         assert!(parse_range("\"5-10", 20).is_err());
         assert!(parse_range("\"5-10'", 20).is_err());
+    }
+
+    /// T353: `a,b` and `a, b` are the same range as `a-b`; the same checks still apply.
+    #[test]
+    fn parse_range_accepts_comma_pairs() {
+        assert_eq!(parse_range("5,10", 20).unwrap(), (5, 10));
+        assert_eq!(parse_range("5, 10", 20).unwrap(), (5, 10));
+        assert_eq!(parse_range("\"5, 10\"", 20).unwrap(), (5, 10));
+        assert_eq!(parse_range("5,", 20).unwrap(), (5, 20));
+        assert_eq!(parse_range("7,100", 10).unwrap(), (7, 10));
+        for spec in ["1,2,3", "3,2", "0,2", "a,b"] {
+            let err = parse_range(spec, 20).unwrap_err().to_string();
+            assert!(err.contains(&format!("`{spec}`")), "{err}");
+        }
     }
 
     #[test]
