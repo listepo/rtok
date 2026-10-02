@@ -136,6 +136,8 @@ pub struct Row {
     pub locked: bool,
     /// T150's state, or `orphan`.
     pub state: &'static str,
+    /// Which tool made the worktree (T289): `main`, a host's pool, or `other`.
+    pub origin: &'static str,
     /// The rtok agent (T282) the worktree is bound to: the lock's, else a claim row (T285).
     pub agent: Option<Bound>,
     /// The newest session the hooks saw working here (T154); never set on the main checkout.
@@ -208,12 +210,18 @@ impl Row {
     fn new(path: PathBuf, state: &'static str) -> Self {
         let used = usage(&path);
         let unix = |t: SystemTime| t.duration_since(UNIX_EPOCH).ok().map(|d| d.as_secs());
+        let origin = if state == "main" {
+            "main"
+        } else {
+            super::origin::of(&path)
+        };
         Self {
             path,
             branch: None,
             owner: None,
             locked: false,
             state,
+            origin,
             agent: None,
             session: None,
             source_bytes: used.source,
@@ -266,6 +274,20 @@ pub fn rows(cwd: &Path) -> anyhow::Result<Vec<Row>> {
     Ok(rows)
 }
 
+/// What the store knows about `rows`: T154's inferred session per worktree, then T285's bound
+/// agent. The listing must not depend on the store, so without one (or on a store error) the
+/// rows stay unattributed. Shared by `rtok worktree list` and MCP `worktree_list`. The caller
+/// scans first and opens the store after: a store opened under a worktree's own directory
+/// would otherwise show up in that worktree's scan.
+pub fn attribute_with_store(rows: &mut [Row], store: Option<&crate::store::Store>, idle: &str) {
+    if let Some(store) = store
+        && let Ok(seen) = store.sessions_by_cwd()
+    {
+        attribute(rows, &seen);
+        let _ = bind(rows, store, idle);
+    }
+}
+
 pub fn to_table(rows: &[Row], now: SystemTime) -> String {
     let now = now.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let dash = || "-".to_string();
@@ -277,6 +299,7 @@ pub fn to_table(rows: &[Row], now: SystemTime) -> String {
             "agent",
             "agent state",
             "state",
+            "origin",
             "seen",
             "modified",
             "source",
@@ -311,13 +334,14 @@ pub fn to_table(rows: &[Row], now: SystemTime) -> String {
             agent,
             agent_state,
             r.state.into(),
+            r.origin.into(),
             seen.unwrap_or_else(dash),
             age.unwrap_or_else(dash),
             human_bytes(r.source_bytes),
             human_bytes(r.cache_bytes),
         ]
     }));
-    let cols = [0; 8].map(Col::left).into_iter();
+    let cols = [0; 9].map(Col::left).into_iter();
     let cols: Vec<Col> = cols.chain([Col::right(0), Col::right(0)]).collect();
     let (source, cache) = rows
         .iter()
@@ -376,6 +400,7 @@ mod tests {
             owner: owner.map(Into::into),
             locked,
             state,
+            origin: "other",
             agent: None,
             session,
             source_bytes: 1024,
@@ -409,13 +434,13 @@ mod tests {
             },
         ];
         let now = UNIX_EPOCH + std::time::Duration::from_secs(1_000 + 3 * 86_400 + 4 * 3_600);
-        insta::assert_snapshot!(to_table(&rows, now), @r"
-        path branch owner                 agent                agent state state    seen  modified source  cache
-        /w/x t1     Cursor / grok         seen claude b1e2c3d4 -           merged   4h00m 3d04h    1.0 KB 2.0 KB
-        /w/x t1     locked, owner unknown -                    -           dirty    -     3d04h    1.0 KB    0 B
-        /w/x t1     -                     seen claude b1e2c3d4 -           unmerged 4h00m 3d04h    1.0 KB    0 B
-        /w/x t1     -                     -                    -           orphan   -     3d04h    1.0 KB    0 B
-        /w/x t1     claude / sonnet       0193ab12 claude      live        unmerged -     3d04h    1.0 KB    0 B
+        insta::assert_snapshot!(to_table(&rows, now), @"
+        path branch owner                 agent                agent state state    origin seen  modified source  cache
+        /w/x t1     Cursor / grok         seen claude b1e2c3d4 -           merged   other  4h00m 3d04h    1.0 KB 2.0 KB
+        /w/x t1     locked, owner unknown -                    -           dirty    other  -     3d04h    1.0 KB    0 B
+        /w/x t1     -                     seen claude b1e2c3d4 -           unmerged other  4h00m 3d04h    1.0 KB    0 B
+        /w/x t1     -                     -                    -           orphan   other  -     3d04h    1.0 KB    0 B
+        /w/x t1     claude / sonnet       0193ab12 claude      live        unmerged other  -     3d04h    1.0 KB    0 B
 
         5 worktrees: 5.0 KB source, 2.0 KB build cache (logical bytes; clones and hard links count in full)
         ");

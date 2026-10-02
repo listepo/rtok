@@ -9,6 +9,7 @@
 pub mod agents;
 #[cfg(unix)]
 pub mod fake_lsp;
+pub mod mcp;
 pub mod proxy;
 
 use std::io::{ErrorKind, Write};

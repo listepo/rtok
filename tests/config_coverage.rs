@@ -87,6 +87,9 @@ const ALLOW_KEYS: &[&str] = &[
     "worktree.add.owner",
     // `worktree claim --owner` (T285): the name an old lock carries, per call like `add --owner`.
     "worktree.claim.owner",
+    // `worktree adopt` (T289): per call like `claim` — which task and whose lock.
+    "worktree.adopt.owner",
+    "worktree.adopt.task",
     // `worktree remove` (T286): per call like `claim` — whose old lock, and whether an
     // unmerged branch survives this one removal.
     "worktree.remove.owner",
@@ -190,6 +193,8 @@ fn config_key(path: &[&str], long: &str) -> String {
         ["agents", ..] => format!("setup.{name}"),
         // `rtok dashboard` is the hidden deprecated spelling of `rtok web`; one table, `[web]`.
         ["dashboard", ..] => format!("web.{name}"),
+        // `rtok mcp --host` (T283.1) overlays `[hook] host`, as `rtok hook --host` does.
+        ["mcp"] if name == "host" => "hook.host".into(),
         ["run", ..] | ["filter", ..] => match name {
             "shell" => "plugins.cmd.shell".into(),
             "no_trailer" => "plugins.cmd.trailer_min_lines".into(),

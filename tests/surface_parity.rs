@@ -607,6 +607,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "rewrites one git worktree lock and its claim row (T285)",
     ),
     (
+        "worktree adopt",
+        "binds the cwd's worktree to the session agent (T289.2 MCP worktree_adopt)",
+    ),
+    (
         "worktree remove",
         "removes one git worktree, its merged branch and its claim row (T286)",
     ),
