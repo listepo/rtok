@@ -56,10 +56,10 @@
 - T348. Investigate: `--agent` means an agent id, a host, or both
 - T356. Never index `$HOME` or `/` as a graph root
 - T358. `rtok agents usage`: tokens and estimated cost across every coding agent
-- T358.2. `rtok agents usage --source logs|both` for Claude Code and Codex
 - T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
 - T358.4. `rtok agents usage` readers: Grok, ZCode, Kimi, pi, Antigravity
 - T358.5. The Usage page on `rtok web` and `rtok tui`
+- T358.6. `rtok agents usage`: `--by`, saved columns and the `skipped` list
 - T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
 - T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
 - T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
