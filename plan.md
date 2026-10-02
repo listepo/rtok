@@ -68,7 +68,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T348 | todo | research | 1 | 0% | |
 | T356 | in progress | P1 | 2 | 5% | Claude Code / claude-opus-5-5 |
 | T358 | todo | P2 | 4 | 0% | |
-| T358.3 | todo | P2 | 4 | 0% | |
 | T358.4 | todo | P2 | 3 | 0% | |
 | T358.5 | todo | P2 | 3 | 0% | |
 
@@ -1590,12 +1589,6 @@ Check: every item below passes.
 - `--source rtok` on a store fixture matches `rtok stats --price` totals for the same rows; `both` coverage is through-rtok ÷ logs.
 - `rtok config validate` accepts every new key; each has its `default.toml` row and `docs/config.md` row; `just check` green.
 - The screenshot's layout (summary, warning, per-agent table, monthly totals) is what `rtok agents usage` prints for the fixture.
-
-### T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
-
-Scope: the T358.3 bullet under "Split when claiming" in T358, plus the `[agents.usage.dirs]` config keys (T358.2 reads Claude Code and Codex from the existing `[stats] transcripts_dir` and `codex_dir`).
-
-Check: one fixture per host pins its totals; each reader was run against that host's real files once; `just check`.
 
 ### T358.4. `rtok agents usage` readers: Grok, ZCode, Kimi, pi, Antigravity
 

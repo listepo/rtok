@@ -16,6 +16,8 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+mod copilot;
+mod gemini;
 mod sqlite;
 
 /// A host whose session files exist but could not be read: named once, counted nowhere.
@@ -44,6 +46,7 @@ const DROID_UNSUPPORTED: &str = "unsupported: the session settings fields are no
 /// directories, the others from `[agents.usage.dirs]`.
 pub fn read(cfg: &Config, since: i64) -> Logs {
     let dirs = &cfg.agents.usage.dirs;
+    let cutoff = mtime_cutoff(since);
     let mut logs = Logs::default();
     let mut add =
         |host: &str, reason: &'static str, (slices, bad): (Vec<UsageSlice>, Option<PathBuf>)| {
@@ -66,6 +69,16 @@ pub fn read(cfg: &Config, since: i64) -> Logs {
         sqlite::slices("opencode", &dirs.opencode, since),
     );
     add("kilo", UNKNOWN, sqlite::slices("kilo", &dirs.kilo, since));
+    add(
+        "copilot",
+        UNKNOWN,
+        copilot::slices(&dirs.copilot, since, cutoff),
+    );
+    add(
+        "gemini",
+        UNKNOWN,
+        gemini::slices(&dirs.gemini, since, cutoff),
+    );
     let droid = dirs
         .droid
         .iter()

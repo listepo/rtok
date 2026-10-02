@@ -2111,3 +2111,39 @@ FROM g JOIN h x ON x.id = g.id GROUP BY 1, 2 ORDER BY 1, 3 DESC;
 ### 29.3 Recommendation
 
 Narrow the deny. A ranged native `Read` already costs less than the rtok `read` that replaces it, so the deny loses about 780 tokens and one or two turns on 70 % of its hits. Only an unranged read of a large file pays (about 18,000 tokens per deny). Proposed change (a separate task, not part of T355): let a native `Read` with `limit` ≤ 300 lines pass like the edit gate does, keep the deny for unranged reads and larger ranges, and write a `Measurement` row per deny so the saving is claimed from data rather than from this estimate.
+
+## 30. Where each agent keeps its token counts (T358.3, 2026-10-03)
+
+What `rtok agents usage --source logs` reads per host, from each host's own source or documentation. A repository is cited by commit, a documentation page by the day it was read. Anything backed only by a secondary source is marked **unverified**; the ccusage guide (https://ccusage.com/guide/, fetched 2026-10-02) was used as a lead for locations only.
+
+| Host | Reads | Verdict |
+| --- | --- | --- |
+| OpenCode | `message.data` JSON in `opencode.db` | supported |
+| Kilo | `message.data` JSON in `kilo.db` | supported, not run on real data (the local `kilo.db` holds no messages) |
+| Copilot CLI | `modelMetrics` of `session.shutdown` in `session-state/*/events.jsonl` | supported, per session |
+| Gemini CLI | `tokens` of `gemini` messages in `tmp/*/chats/session-*.jsonl` (and legacy `.json`) | supported, not run on real data (no chats on this machine) |
+| Droid | none | `unsupported` |
+
+### 30.1 OpenCode and Kilo
+
+- Sessions live in a SQLite file under the data directory, `${XDG_DATA_HOME}/opencode` (https://github.com/anomalyco/opencode, commit `c42ae0d56b6f86f8df39d451d6d2cfe6414b3928`, `packages/core/src/global.ts`: `path.join(xdgData, "opencode")`). Kilo uses `kilo` the same way (https://github.com/Kilo-Org/kilocode, commit `76bcfd40be616a72f4697b3041565f322245b462`, `packages/core/src/global.ts`) and names its file `kilo.db`, or `kilo-<channel>.db` for a non-stable channel (`packages/opencode/src/storage/db.ts`).
+- The `message` table has `id`, `session_id`, `time_created` (milliseconds) and a JSON `data` column (`packages/core/src/session/sql.ts`). An assistant message's `data` carries `role`, `modelID`, `providerID`, `time.created`, and `tokens` = `{input, output, reasoning, cache: {read, write}}` (`packages/core/src/v1/session.ts`, `Assistant`).
+- `input` already excludes the cache legs and `output` excludes the reasoning tokens: `input = inputTokens - cacheRead - cacheWrite`, `output = outputTokens - reasoningTokens` (`packages/opencode/src/session/session.ts`, `getUsage`, and the same arithmetic in Kilo's `packages/core/src/v1/session.ts`). The reader adds reasoning back into output, as it is billed as output.
+- This corrects the 2026-09-17 note in `measure::codex` that `opencode.db` carries no token counts. Checked on this machine on 2026-10-03: the sums over `role = 'assistant'` messages (input, cache read, cache write, output + reasoning) match what `rtok agents usage --host opencode` prints for all four legs.
+
+### 30.2 Copilot CLI
+
+- The config directory is `~/.copilot`, relocated by `COPILOT_HOME`; `session-state/<session id>/events.jsonl` is the session event log (https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference, read 2026-10-03).
+- The SDK's event schema (https://github.com/github/copilot-sdk, commit `5b2d7cdd7da1e5d082ae316a533cbb7584a495c1`, `nodejs/src/generated/session-events.ts`) marks `assistant.usage` (per API call) as ephemeral, "not persisted to the session event log on disk". What is persisted is `session.shutdown.data.modelMetrics[<model>].usage`: `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `reasoningTokens?`, totals over the whole run. A session that never shut down cleanly has no totals and is not counted.
+- **Unverified** (no primary text says it): that `inputTokens` includes the cache legs and `outputTokens` includes reasoning. The one real log on this machine has cache reads below `inputTokens` (18.6M against 17.7M), so the reader treats input as inclusive, and its printed totals are exactly that file's `usage` block. The same event's `tokenDetails` block disagrees with `usage` (uncached input 2.10M plus 17.7M cache reads, output 18.9K against 9.8K): the SDK does not say why, and the reader follows `usage`, the block with documented per-field meaning. Also unverified: whether a resumed session writes a second shutdown with run-only or cumulative totals (the reader sums them).
+
+### 30.3 Gemini CLI
+
+- https://github.com/google-gemini/gemini-cli, commit `fb972b2f87fe7d5b06d37eac711490162d98de2c`. `packages/core/src/config/storage.ts`: the project temp directory is `<home>/.gemini/tmp/<project identifier>`, chats are in its `chats/` directory, and `GEMINI_CLI_HOME` replaces the home directory (`packages/core/src/utils/paths.ts`). Sub-agent chats sit in `chats/<parent session id>/`.
+- `packages/core/src/services/chatRecordingService.ts` and `chatRecordingTypes.ts`: a chat is an append-only JSONL log of messages, `$patch` records, `$rewindTo` records and `$set` metadata; a `gemini` message has `id`, `timestamp`, `model` and `tokens` = `{input, output, cached, thoughts?, tool?, total}` where `input` is `promptTokenCount` (which includes `cached`), `output` `candidatesTokenCount`, `thoughts` `thoughtsTokenCount` and `tool` `toolUsePromptTokenCount`. The last record with a given message id wins. An older release wrote one `session-*.json` document with a `messages` array; the CLI migrates it only when the session is opened again.
+- Not run on real files: this machine has no Gemini chats.
+
+### 30.4 Droid (Factory)
+
+- Sessions are `~/.factory/sessions/<project folder>/<uuid>.jsonl` plus `<uuid>.settings.json`; the settings file holds "which model, how long it ran, token counts, autonomy mode" (https://github.com/Factory-AI/factory-plugins, commit `d362dc1823301bee56315bd73f22b5614392365c`, `plugins/core/skills/session-navigation/SKILL.md`). No Factory page read on 2026-10-03 (docs.factory.ai CLI settings and session API reference, the plugin above) names the keys, and `DROID_SESSIONS_DIR` is ccusage's variable, not one a Factory page documents. Reading it would be a guess, so the host is `unsupported` and listed in `skipped` when the directory has content. No Droid files exist on this machine.
+

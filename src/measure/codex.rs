@@ -21,6 +21,11 @@ use std::time::SystemTime;
 /// Every `*.jsonl` under `dir` (recursive) modified at or after `cutoff`. Shared with the
 /// Claude Code transcript walk in `stats::collect` and the doctor skills audit (T61.3).
 pub(crate) fn jsonl_paths(dir: &Path, cutoff: SystemTime) -> Vec<PathBuf> {
+    paths_with_ext(dir, cutoff, "jsonl")
+}
+
+/// [`jsonl_paths`] for any one extension (`rtok agents usage` reads Gemini's legacy `.json`).
+pub(crate) fn paths_with_ext(dir: &Path, cutoff: SystemTime, ext: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
@@ -33,7 +38,7 @@ pub(crate) fn jsonl_paths(dir: &Path, cutoff: SystemTime) -> Vec<PathBuf> {
                 stack.push(p);
                 continue;
             }
-            if p.extension().and_then(OsStr::to_str) != Some("jsonl") {
+            if p.extension().and_then(OsStr::to_str) != Some(ext) {
                 continue;
             }
             let mtime = e
