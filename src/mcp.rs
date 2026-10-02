@@ -42,6 +42,7 @@ fn ping_def() -> ToolDef {
 /// Serve MCP on stdin/stdout until EOF.
 #[cfg_attr(not(feature = "graph"), allow(unused_variables))]
 pub fn run(cfg: &Config) -> Result<()> {
+    crate::agents::ensure_hook_client_link_here();
     let server = Server::new(cfg)?;
     // Retention is housekeeping with a next-start retry: the server must not die on a
     // contended store (T75) — WAL reads keep every tool serving while another process

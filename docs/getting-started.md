@@ -20,6 +20,8 @@ Or with [ketch](https://github.com/pyrlyn/ketch), from the same release archives
 ketch install pyrlyn/rtok
 ```
 
+Hooks try the fast `rtok-hook` client first. When a package manager links only `rtok` onto `PATH`, `rtok mcp`, `rtok hook --serve` and `rtok agents install` link the `rtok-hook` beside it into the same `PATH` directory (unix, best effort; an existing foreign file is left alone).
+
 From source (toolchain pinned in `mise.toml`):
 
 ```bash
