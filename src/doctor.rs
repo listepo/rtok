@@ -373,15 +373,13 @@ pub fn page(cfg: &Config) -> Result<Report> {
 
 /// Every config finding of this machine: hooks, then duplicate MCP entries.
 fn checks(cfg: &Config) -> Vec<hooks::Problem> {
-    let mut problems = hooks::check_real(cfg);
-    problems.extend(mcp_dupes::check(
-        cfg,
-        &hooks::Probes {
-            fs: &probe::RealFs,
-            env: &probe::RealEnv,
-            which: &probe::RealWhich,
-        },
-    ));
+    let probes = hooks::Probes {
+        fs: &probe::RealFs,
+        env: &probe::RealEnv,
+        which: &probe::RealWhich,
+    };
+    let (mut problems, plugins) = hooks::check_with_plugins(cfg, &probes);
+    problems.extend(mcp_dupes::check(cfg, &probes, &plugins));
     problems
 }
 
