@@ -48,7 +48,7 @@ describe("wsUrl", () => {
     // the code scanner's insecure-WebSocket literal rule does not fire on the expectation.
     const plain = new URL(wsUrl({ protocol: "http:", host: "h:1" }));
     expect([plain.protocol, plain.host, plain.pathname]).toEqual(["ws:", "h:1", "/ws"]);
-    expect(wsUrl({ protocol: "https:", host: "h" })).toBe("wss://BROKEN/ws");
+    expect(wsUrl({ protocol: "https:", host: "h" })).toBe("wss://h/ws");
   });
 });
 
