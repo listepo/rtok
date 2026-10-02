@@ -322,6 +322,9 @@ Options:
       --monthly
           Bottom table by month (the default)
 
+      --by <AGENT|MODEL>
+          Middle table grouping: `agent` (the default) or `model`
+
       --tz <ZONE>
           IANA time zone for day and month boundaries (default: the system zone)
 

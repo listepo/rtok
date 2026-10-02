@@ -689,6 +689,9 @@ enum AgentCmd {
         /// Bottom table by month (the default)
         #[arg(long)]
         monthly: bool,
+        /// Middle table grouping: `agent` (the default) or `model`
+        #[arg(long, value_name = "AGENT|MODEL")]
+        by: Option<String>,
         /// IANA time zone for day and month boundaries (default: the system zone)
         #[arg(long, value_name = "ZONE")]
         tz: Option<String>,
@@ -1437,6 +1440,7 @@ pub fn run() -> Result<()> {
                 until,
                 daily,
                 monthly,
+                by,
                 tz,
                 unpriced,
                 json,
@@ -1448,11 +1452,15 @@ pub fn run() -> Result<()> {
                     ("since", since),
                     ("until", until),
                     ("period", period.map(str::to_string)),
+                    ("by", by),
                     ("tz", tz),
                 ]);
                 let cfg = Config::load_with(config_file.as_deref(), flags)?;
                 let store = crate::store::Store::open(&cfg.core.db_path)?;
                 let report = crate::agents::usage::report(&cfg, &store, crate::log::now() as i64)?;
+                for s in &report.skipped {
+                    eprintln!("skipped {}: {} in {}", s.host, s.reason, s.path.display());
+                }
                 if json {
                     print_json(&report)?;
                 } else if unpriced {
