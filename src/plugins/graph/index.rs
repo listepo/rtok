@@ -97,6 +97,8 @@ pub fn run_with(
     dry_run: bool,
     pb: &indicatif::ProgressBar,
 ) -> Result<Report> {
+    // T356: the one choke point for the CLI, the MCP tools, the watcher and `ensure`.
+    crate::plugins::read::walk_root_ok(root)?;
     let root = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let rk = canon(&root);
     let current_fp = extractor_fingerprint();
@@ -201,6 +203,7 @@ fn run_changed_with(
     dry_run: bool,
     pb: &indicatif::ProgressBar,
 ) -> Result<Report> {
+    crate::plugins::read::walk_root_ok(root)?;
     let root = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let rk = canon(&root);
     let mut report = Report::default();
@@ -468,6 +471,7 @@ fn scoped(hits: &[outline::TagHit]) -> Vec<Row> {
 
 /// Index `root` only when it has no rows yet (first tool call in that repo).
 pub fn ensure(cx: &Ctx, root: &Path) -> Result<Report> {
+    crate::plugins::read::walk_root_ok(root)?;
     if cx.symbol_count(&canon(root))? > 0 {
         return Ok(Report::default());
     }
@@ -484,6 +488,26 @@ pub(crate) mod tests {
     /// Fresh DB + archive dir under the temp dir; shared with the `mod.rs` tool tests.
     pub(crate) fn cx(name: &str) -> (crate::plugin::Runtime, PathBuf) {
         crate::testutil::runtime(name)
+    }
+
+    /// T356: `/` and the real home directory are refused before any walk or write, by every
+    /// entry point (`run`, `run_changed`, `ensure`); a project directory is indexed.
+    #[test]
+    fn index_refuses_home_and_filesystem_root_but_accepts_a_project() {
+        let (cx, dir) = cx("t356-refuse");
+        let ctx = Ctx::new(&cx);
+        let mut bad = vec![PathBuf::from("/")];
+        bad.extend(std::env::home_dir());
+        for root in &bad {
+            let err = format!("{:#}", run(&ctx, root, false).unwrap_err());
+            assert!(err.contains("no project root"), "{}: {err}", root.display());
+            assert!(run_changed(&ctx, root, &HashSet::new()).is_err());
+            assert!(ensure(&ctx, root).is_err());
+            assert_eq!(ctx.symbol_count(&canon(root)).unwrap(), 0);
+        }
+        fs::write(dir.join("a.rs"), "pub fn alpha() {}\n").unwrap();
+        assert_eq!(run(&ctx, &dir, false).unwrap().indexed, 1);
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
