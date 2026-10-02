@@ -36,6 +36,55 @@ fn the_release_build_requires_the_embedded_spa() {
     );
 }
 
+/// The SPA is built before the first cargo step of the release job, in every matrix job; the
+/// `require` flag is exported by the same step, so a failed build cannot fall through to a
+/// placeholder release.
+#[test]
+fn the_release_job_builds_the_spa_before_cargo() {
+    for rel in [".github/build-setup.yml", ".github/workflows/release.yml"] {
+        let text = read(rel);
+        let spa = text
+            .find("npm --prefix web run build")
+            .unwrap_or_else(|| panic!("{rel} no longer builds the SPA"));
+        assert!(
+            text.contains("npm --prefix web ci"),
+            "{rel} builds the SPA without a locked install"
+        );
+        let cargo = text
+            .find("cargo build --locked")
+            .unwrap_or_else(|| panic!("{rel}: no cargo build step"));
+        assert!(spa < cargo, "{rel} builds the SPA after cargo has started");
+    }
+    let setup = read(".github/build-setup.yml");
+    assert!(
+        setup.contains("install_args: rust node"),
+        "the release job no longer installs node from mise.toml"
+    );
+}
+
+/// CI builds the SPA before the tests that read it, so they see the SPA and not the placeholder.
+#[test]
+fn ci_builds_the_spa_before_the_test_suite() {
+    let ci = read(".github/workflows/ci.yml");
+    let spa = ci
+        .find("just spa-install spa-build")
+        .expect("ci builds the SPA");
+    let test = ci.find("- run: just test").expect("ci runs the tests");
+    assert!(spa < test, "ci.yml builds the SPA after the tests");
+}
+
+/// `release.yml` is generated from `dist-workspace.toml` + `build-setup.yml`
+/// (`just dist-generate`); a change to the setup that was never regenerated would
+/// leave CI running the old steps.
+#[test]
+fn the_generated_workflow_is_in_step_with_build_setup() {
+    let release = read(".github/workflows/release.yml");
+    assert!(
+        release.contains("npm --prefix web run build") && release.contains("\"rust node\""),
+        "run `just dist-generate` and commit .github/workflows/release.yml"
+    );
+}
+
 /// `vite build` writes `web/dist`, which `build.rs` embeds; `precompress.mjs` runs after it so
 /// the `.br`/`.gz` files are in the same directory.
 #[test]

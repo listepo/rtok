@@ -34,7 +34,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310 | todo | P1 | 5 | 0% | |
 | T310.7 | todo | P2 | 3 | 0% | |
 | T310.8 | todo | P2 | 3 | 0% | |
-| T310.9 | todo | P1 | 4 | 0% | |
 | T310.10 | todo | P1 | 3 | 0% | |
 | T310.11 | todo | P2 | 3 | 0% | |
 | T310.12 | todo | P2 | 3 | 0% | |
@@ -611,12 +610,6 @@ Check: each page matches `design/html/admin/<page>.html` in dark and light at 37
 ### T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
 
 Check: each page matches `design/html/admin/<page>.html` in dark and light at 375 and 1280 px on sample data; stories and Vitest for page logic.
-
-### T310.9. Serve the SPA from `rtok web`
-
-Embed `web/dist` in the binary (hashed assets, precompressed, SPA fallback, CSP), keep `RTOK_WEB_PKG`-style dev override for a local `dist`, build the SPA in CI and release before cargo. Rewrite `tests/web.rs`, `tests/web_e2e.rs`, `tests/release_bundle.rs` and `tests/surface_parity.rs` for the SPA (parity reads the SPA's page list).
-
-Check: `cargo nextest run --test web --test web_e2e --test release_bundle --test surface_parity`; a release build serves the SPA with no `dist` on disk.
 
 ### T310.10. Playwright e2e against the real binary
 

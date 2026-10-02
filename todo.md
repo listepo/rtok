@@ -28,7 +28,6 @@
 - T310. React SPA replaces the Slint web UI (epic)
 - T310.7. Pages: sessions, doctor, logs
 - T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
-- T310.9. Serve the SPA from `rtok web`
 - T310.10. Playwright e2e against the real binary
 - T310.11. CI job for the SPA
 - T310.12. Delete Slint, the WASM build and the HTML design
