@@ -41,6 +41,24 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.11 | todo | P2 | 3 | 0% | |
 | T310.12 | todo | P2 | 3 | 0% | |
 | T329 | todo | P2 | 5 | 0% | |
+| T329.2 | todo | P2 | 3 | 0% | |
+| T329.3 | todo | P2 | 3 | 0% | |
+| T329.4 | todo | P2 | 4 | 0% | |
+| T329.5 | todo | P2 | 3 | 0% | |
+| T329.6 | todo | P2 | 3 | 0% | |
+| T329.7 | todo | P2 | 4 | 0% | |
+| T329.8 | todo | P2 | 3 | 0% | |
+| T329.9 | todo | P2 | 4 | 0% | |
+| T329.10 | todo | P3 | 3 | 0% | |
+| T329.11 | todo | P2 | 3 | 0% | |
+| T329.12 | todo | P2 | 3 | 0% | |
+| T329.13 | todo | P2 | 4 | 0% | |
+| T329.14 | todo | P2 | 4 | 0% | |
+| T329.15 | todo | P3 | 5 | 0% | |
+| T329.16 | todo | P3 | 3 | 0% | |
+| T329.17 | todo | P3 | 3 | 0% | |
+| T329.18 | todo | P3 | 4 | 0% | |
+| T329.19 | todo | P3 | 3 | 0% | |
 | T330 | todo | P2 | 4 | 0% | |
 | T331 | todo | P1 | 4 | 0% | |
 | T332 | todo | research | 1 | 0% | |
@@ -649,11 +667,13 @@ Remove `crates/rtok-webui`, `tools/webui-bundle.sh`, `just web-bundle`/`webui-ch
 
 Check: `just check` green; `git grep -i slint` finds only history docs; the release workflow dry-run builds.
 
-### T329. Graph page: project selector, auto-added projects and linked projects
+### T329. Graph page: project selector, auto-added projects and linked projects (epic)
 
 Ivan, 2026-10-01: in the web UI's graph tab, the graph is built for a project the user picks. The page always shows which project is selected. Projects the user needs are added automatically. Other projects can be linked to the selected one, and the graph then traverses into them as if everything were one project. If the selected project references other projects, those are added, indexed and linked automatically, so an agent working in the current project can follow the graph across them right away.
 
 Today the graph plugin (`src/plugins/graph/`) always works on one root: the process's current directory. The index is keyed by that root (`index::canon(root)` in `src/store/symbols.rs`), and the MCP tools `symbol`, `callers`, `impact`, `outline` and `explore`, plus `dead` and `affected`, only see that root. The graph page shows the same single root (`root .`). There is no way to pick another project and no way to follow a call into a dependency's source.
+
+Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.19 in dependency order (T329.1 is already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
 
 #### Terms
 
@@ -967,6 +987,114 @@ Check: fixture repos under `tests/fixtures`, no network:
 - Diff: changing a function signature in B and running `rtok graph diff --from HEAD` from A reports the change and lists A's affected call sites; the working tree is untouched by building the old side; a rename is reported as a rename; an unknown ref errors clearly; MCP `graph_diff` returns a capped summary with a paging id.
 - Health: a fully indexed A with LSP and intact links scores 100; with 30% of files pending it drops below 80 with the reason shown; on tree-sitter fallback the backend component reads 0.6; a broken link lowers the links component; the scope shows the lowest score; an MCP answer from a scope under 80 includes the health note.
 - Playwright covers the selector, the indicator and its states, link/unlink, project badges, backend tags, both graph levels, export, alerts, compare mode, health rings, 3D and 2D modes, the two-part layout with the read-only live graph and its metric displays, and the list-view fallback; `just check`.
+
+### T329.2. `rtok graph projects`: list, add, remove, select, with per-project index status
+
+T329 §1 (index status: rows, files, pending, `indexed_at`, watch state, last error), §7 CLI half. `rtok graph projects [--json]`, `add <path>`, `remove <id|path>`, `select <id|path>`. Needs the usual new-CLI gates (trycmd, surface_parity, config_coverage, completions). Depends on T329.1.
+
+Check: fixture store with three projects; list, add, remove and select round-trip with `--json`; status shows rows, files and pending; `just check`.
+
+### T329.3. Project links and graph scope: `link`/`unlink`, cycle-safe scope, manual and auto kinds
+
+T329 Terms and §5. A `project_links` table (from, to, kind `manual|auto`, reason, a flag for an unlink the user made so T329.8 does not re-create it), the scope builder (the selected project plus everything reachable, each project once, missing ones excluded), `rtok graph projects link|unlink` (also `--both`), no self-links, a duplicate link is a no-op. Linking an unindexed project starts its indexing. Depends on T329.1, T329.2.
+
+Check: fixture repos A to B to C and D; scope of A is A, B, C; a cycle D to A neither loops nor duplicates; unlink and a self-link behave as the card says; `just check`.
+
+### T329.4. `project` argument and scoped traversal for symbol, callers, impact, explore and outline (CLI and MCP)
+
+T329 §6 (first half), §7 and the tags-backend half of §6a mode 2. Every graph command and graph MCP tool takes `project` (id or path); without it the project is the caller's cwd and its links are in scope (T336 decides whether the selected project replaces the cwd, so settle it before claiming). Queries run over the scope as one graph, rows carry `project` (JSON field, `[name]` text prefix), same-named symbols across projects are grouped and flagged ambiguous with the selected project first. Depends on T329.3.
+
+Check: fixture repos from the T329 Check list; `callers` of a function in C returns call sites in A and B labelled by project; `impact` walks up into A; a same-named symbol is grouped and flagged; MCP `project` set to D does not cross; `just check`.
+
+### T329.5. Scoped `dead` and `affected`, whole-answer caps, watch across the scope
+
+T329 §6 (second half): `dead` over the scope (a symbol in B used only from A is not dead while A links B, still reported per project), `affected` reading `git diff` in every git project of the scope, caps and token budgets applied to the whole answer, `watch` updating every project in the scope. Depends on T329.4.
+
+Check: `dead` over A's scope spares B's function only A calls, selecting B alone reports it; `affected` maps per project; an MCP reply stays under the cap with three linked projects; an edit in C updates its index under `watch`; `just check`.
+
+### T329.6. Auto-adding projects rtok sees in use (sessions, worktrees, graph MCP calls) and its config keys
+
+T329 §4a: register the cwd of a hooked agent session, a worktree created or adopted through `rtok worktree` (T285, T289; display name shows the branch) and the root of any graph MCP call, origin `session|worktree|mcp`. Adds `[plugins.graph] auto_add_projects = true` to the config schema and `docs/config.md`. The hook path stays within its 10 ms budget (the registration is a deferred write). T289 is owned by another agent; stay out of `adopt`. Depends on T329.1.
+
+Check: a session in a new directory registers it with `auto_add_projects` on and does not with it off; a worktree shows its branch as the name; the hook still exits within 10 ms; `just check`.
+
+### T329.7. Reference discovery from manifests (Cargo, npm, Go, Python, submodules)
+
+T329 §4b sources, in the card's order: Cargo `path`/`[patch]`/out-of-root workspace members, npm/pnpm/yarn `file:`/`link:`/`workspace:`, Go `replace` and `go.work`, Python path dependencies, `.gitmodules`. A pure function from a project root to a list of `(directory, reason)`, plus warnings for paths that do not exist. Import-resolver references (the last source in the card) are left to a later sub-id once T329.9 lands. Fixture repos only. Depends on nothing but T329.1; no registry writes here.
+
+Check: fixture manifests for each source return the expected directories and reasons; a missing path is a warning; registry dependencies are not returned; `just check`.
+
+### T329.8. Following references: transitive, depth and project caps, auto-link lifecycle, remembered unlinks
+
+T329 §4b rules: register each referenced directory (origin `reference`), index it in the background, auto-link it, follow references transitively with `reference_depth` (default 3) and `max_auto_projects` (default 20) both reported, drop an auto link when its reference disappears on re-index while keeping the project, never re-create a link the user removed, never remove a manual link. Adds `auto_link_references`, `reference_depth` and `max_auto_projects` to the config schema and `docs/config.md`. Depends on T329.3, T329.7.
+
+Check: indexing A registers and links B and C, not D; `reference_depth = 1` stops at B and says so; removing the dependency drops the auto link but keeps B; an unlinked auto link is not re-created; `just check`.
+
+### T329.9. Graph backend `auto`: LSP first, tree-sitter second, chosen per project and language
+
+T329 §6a modes 1 and 2 and the config (`backend = "auto"|"lsp"|"tags"|"text"`, `lsp_timeout_ms`, `backend_by_language`); pinned values keep today's strict behaviour. Each answer says which mode answered per project (`Measurement` kinds `lsp.*`/`tags.*`). T334 (default backend decision) must be answered first. Depends on T329.4.
+
+Check: with the server on `PATH` the answer is tagged LSP, without it (MCP restarted) tree-sitter, a scope mixing both labels each project; `backend = "lsp"` with no server still errors; a crash mid-session falls back with a notice; `just check`.
+
+### T329.10. Graph text-search backend (rg/grep) including `ssh://` roots
+
+T329 §6a mode 3 and "when no mode works": word-boundary definition and mention searches through `rg` or `grep -rn`, the same over `ssh host` for `ssh://host/path` roots (passwordless only, test skipped without it), `dead` reported as not available, `text.*` Measurement kinds. Depends on T329.9.
+
+Check: a project in a language with no grammar answers from text search, tagged text, with `dead` not available; `ssh://localhost/<path>` answers `symbol` when passwordless SSH works (skipped otherwise); an unreachable host reports no backend within the timeout; `just check`.
+
+### T329.11. Graph capability cache: one probe per project until the process restarts
+
+T329 §6b: an in-memory per-project (and language) record of which mode works, single-flight first probes, downgrade once on failure, cleared for the affected projects when `backend` config changes, shown by `rtok graph projects --json` and the page. T337 (never re-probe vs alerts and health) must be answered first. Depends on T329.9.
+
+Check: a test counts probes, 100 requests after the first run zero lookups or spawns; restarting picks up a newly installed server; a `backend` change re-checks only affected projects; concurrent first requests run one check; `just check`.
+
+### T329.12. `/ws` project messages and the SPA graph page selector, indicator and links panel
+
+T329 §2, §3, §5 page parts and §8 `/ws` messages (project list, selection changed, links changed, per-project index progress). Builds on the SPA graph page of T310.8 (PR #655): selector with search above about ten projects, current-project header with the index status and the not-indexed/indexing/stale/failed/missing states, links panel with link, unlink and "link both ways", project badges in the lists, selection synced between tabs. Playwright covers it. Depends on T329.3, T310.8.
+
+Check: Playwright covers the selector, the indicator and its five states, link and unlink, project badges and selection syncing between two tabs; Vitest for the reducers; `just check`.
+
+### T329.13. Graph page level 1: 3D projects overview (Three.js, 2D fallback)
+
+T329 §8a level 1 and the rendering section: node per project, edges per link (dashed auto, solid manual, thickness by cross-project references), scope emphasis, node menu, filter, clustered layout above about 50 projects, 3D with Three.js (pick the library, record it and its bundle size in `toolchain.md`) with the 2D fallback and toggle, layout in a web worker, disposal on leaving the page, list view for accessibility. Depends on T329.12.
+
+Check: Vitest for the data-to-scene mapping without WebGL; Playwright with software WebGL sees a non-empty canvas, selects a node by click and shows the 2D fallback and notice with WebGL off; the 2D/3D choice survives a reload; `just check`.
+
+### T329.14. Graph page level 2: drill-down into one project
+
+T329 §8a level 2: files, modules, types and functions with contains/calls/implements/imports edges, URL-carried drill-down state and breadcrumb, expand and focus, calls into linked projects ending at that project's node, side panel, search-to-focus, the 500-node cap with "+N more", live updates under `watch`. Depends on T329.13, T329.5.
+
+Check: opening A shows files with aggregated edges, expanding a file shows its functions, a call into C ends at a C node that opens the target symbol, breadcrumb and browser back return; the 500-node fixture shows "+N more"; `just check`.
+
+### T329.15. Graph page: two-part UI with the read-only live graph and live metrics
+
+T329 §8b: the explorer and the read-only live graph side by side with a splitter, the start/end/progress call events on `/ws` from every process through the store, the live canvas and its metric displays (values from the same `Measurement` rows as `rtok stats`), freeze, window selector and the call feed. Over the size budget on its own; split into data path and display when claimed. Depends on T329.13, T329.14.
+
+Check: an MCP `callers` call from another process lights the node within one second and adds a feed row equal to its `Measurement` row and `rtok stats`; the live canvas ignores input; freeze and unfreeze keep exact totals; a 500-call burst keeps the page responsive; `just check`.
+
+### T329.16. Graph export: PNG, SVG, JSON, `rtok graph export`, MCP `graph_export`
+
+T329 §8c, including the `rtok.graph.v1` JSON schema file, redaction by default and read-only import. Depends on T329.14.
+
+Check: PNG, SVG and JSON exports of A's scope open; the JSON validates against the schema file; paths and the user name are redacted by default; `rtok graph export` and `graph_export` give the same JSON; import is read-only; `just check`.
+
+### T329.17. Graph alerts: linked project down or unreachable
+
+T329 §8d: alert states, the two-check rule, the 60 s background check, the page badges and toasts, `rtok doctor`, notices in MCP answers, optional T288 push. Adds `alerts` and `health_check_interval_s`. T337 shapes the probing, so settle it first. Depends on T329.11, T329.12.
+
+Check: renaming B's directory raises "B missing" after two checks on the page, in `rtok doctor`, in `--json` and in an MCP `callers` notice; restoring clears it and re-indexes; a broken manifest path raises "link broken"; several at once group into one alert; `just check`.
+
+### T329.18. Graph diff: compare before and after a change
+
+T329 §8e: `rtok graph diff`, MCP `graph_diff`, the Compare mode on the page; the old side is indexed from the git object database into a temporary index. Depends on T329.5, T329.14.
+
+Check: a signature change in B shows in `rtok graph diff --from HEAD` from A with A's affected call sites; the working tree is untouched; a rename is a rename; an unknown ref errors; `graph_diff` returns a capped summary with a paging id; `just check`.
+
+### T329.19. Graph health score per project
+
+T329 §8f: the 0 to 100 score with freshness, backend and link components, reasons and fixes, the scope's lowest score, the MCP health note and the `rtok doctor` list. Depends on T329.11.
+
+Check: a fully indexed A with LSP and intact links scores 100; 30% of files pending drops it below 80 with the reason; tree-sitter fallback reads 0.6 on the backend component; a broken link lowers the links component; the scope shows the lowest score; `just check`.
 
 ### T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 
