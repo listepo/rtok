@@ -41,7 +41,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.11 | todo | P2 | 3 | 0% | |
 | T310.12 | todo | P2 | 3 | 0% | |
 | T329 | todo | P2 | 5 | 0% | |
-| T329.2 | todo | P2 | 3 | 0% | |
 | T329.3 | todo | P2 | 3 | 0% | |
 | T329.4 | todo | P2 | 4 | 0% | |
 | T329.5 | todo | P2 | 3 | 0% | |
@@ -673,7 +672,7 @@ Ivan, 2026-10-01: in the web UI's graph tab, the graph is built for a project th
 
 Today the graph plugin (`src/plugins/graph/`) always works on one root: the process's current directory. The index is keyed by that root (`index::canon(root)` in `src/store/symbols.rs`), and the MCP tools `symbol`, `callers`, `impact`, `outline` and `explore`, plus `dead` and `affected`, only see that root. The graph page shows the same single root (`root .`). There is no way to pick another project and no way to follow a call into a dependency's source.
 
-Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.19 in dependency order (T329.1 is already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
+Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.19 in dependency order (T329.1 and T329.2 are already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
 
 #### Terms
 
@@ -987,12 +986,6 @@ Check: fixture repos under `tests/fixtures`, no network:
 - Diff: changing a function signature in B and running `rtok graph diff --from HEAD` from A reports the change and lists A's affected call sites; the working tree is untouched by building the old side; a rename is reported as a rename; an unknown ref errors clearly; MCP `graph_diff` returns a capped summary with a paging id.
 - Health: a fully indexed A with LSP and intact links scores 100; with 30% of files pending it drops below 80 with the reason shown; on tree-sitter fallback the backend component reads 0.6; a broken link lowers the links component; the scope shows the lowest score; an MCP answer from a scope under 80 includes the health note.
 - Playwright covers the selector, the indicator and its states, link/unlink, project badges, backend tags, both graph levels, export, alerts, compare mode, health rings, 3D and 2D modes, the two-part layout with the read-only live graph and its metric displays, and the list-view fallback; `just check`.
-
-### T329.2. `rtok graph projects`: list, add, remove, select, with per-project index status
-
-T329 §1 (index status: rows, files, pending, `indexed_at`, watch state, last error), §7 CLI half. `rtok graph projects [--json]`, `add <path>`, `remove <id|path>`, `select <id|path>`. Needs the usual new-CLI gates (trycmd, surface_parity, config_coverage, completions). Depends on T329.1.
-
-Check: fixture store with three projects; list, add, remove and select round-trip with `--json`; status shows rows, files and pending; `just check`.
 
 ### T329.3. Project links and graph scope: `link`/`unlink`, cycle-safe scope, manual and auto kinds
 

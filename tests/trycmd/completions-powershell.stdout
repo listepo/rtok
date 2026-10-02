@@ -1102,6 +1102,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Index health for the current or given root (T68.3)')
             [CompletionResult]::new('impact', 'impact', [CompletionResultType]::ParameterValue, 'Symbol impact or call paths to a target (T68.4)')
+            [CompletionResult]::new('projects', 'projects', [CompletionResultType]::ParameterValue, 'The project registry: list, add, remove, select (T329.2)')
             [CompletionResult]::new('affected', 'affected', [CompletionResultType]::ParameterValue, 'Tests that reach files changed in git (`git diff --name-only`)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
@@ -1135,6 +1136,57 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
+        'rtok;graph;projects' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of a table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Register a directory as a project (a known one only refreshes its last-used time)')
+            [CompletionResult]::new('select', 'select', [CompletionResultType]::ParameterValue, 'Make a project the selected one; the page and later the CLI answer for it')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Drop a project and its index rows; its files are never touched')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;graph;projects;add' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of a table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;projects;select' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of a table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;projects;remove' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of a table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;projects;help' {
+            [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Register a directory as a project (a known one only refreshes its last-used time)')
+            [CompletionResult]::new('select', 'select', [CompletionResultType]::ParameterValue, 'Make a project the selected one; the page and later the CLI answer for it')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Drop a project and its index rows; its files are never touched')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;graph;projects;help;add' {
+            break
+        }
+        'rtok;graph;projects;help;select' {
+            break
+        }
+        'rtok;graph;projects;help;remove' {
+            break
+        }
+        'rtok;graph;projects;help;help' {
+            break
+        }
         'rtok;graph;affected' {
             [CompletionResult]::new('--since', '--since', [CompletionResultType]::ParameterName, 'Diff against this ref')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
@@ -1149,6 +1201,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Index health for the current or given root (T68.3)')
             [CompletionResult]::new('impact', 'impact', [CompletionResultType]::ParameterValue, 'Symbol impact or call paths to a target (T68.4)')
+            [CompletionResult]::new('projects', 'projects', [CompletionResultType]::ParameterValue, 'The project registry: list, add, remove, select (T329.2)')
             [CompletionResult]::new('affected', 'affected', [CompletionResultType]::ParameterValue, 'Tests that reach files changed in git (`git diff --name-only`)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
@@ -1163,6 +1216,21 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;graph;help;impact' {
+            break
+        }
+        'rtok;graph;help;projects' {
+            [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Register a directory as a project (a known one only refreshes its last-used time)')
+            [CompletionResult]::new('select', 'select', [CompletionResultType]::ParameterValue, 'Make a project the selected one; the page and later the CLI answer for it')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Drop a project and its index rows; its files are never touched')
+            break
+        }
+        'rtok;graph;help;projects;add' {
+            break
+        }
+        'rtok;graph;help;projects;select' {
+            break
+        }
+        'rtok;graph;help;projects;remove' {
             break
         }
         'rtok;graph;help;affected' {
@@ -1640,6 +1708,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Index health for the current or given root (T68.3)')
             [CompletionResult]::new('impact', 'impact', [CompletionResultType]::ParameterValue, 'Symbol impact or call paths to a target (T68.4)')
+            [CompletionResult]::new('projects', 'projects', [CompletionResultType]::ParameterValue, 'The project registry: list, add, remove, select (T329.2)')
             [CompletionResult]::new('affected', 'affected', [CompletionResultType]::ParameterValue, 'Tests that reach files changed in git (`git diff --name-only`)')
             break
         }
@@ -1653,6 +1722,21 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;help;graph;impact' {
+            break
+        }
+        'rtok;help;graph;projects' {
+            [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Register a directory as a project (a known one only refreshes its last-used time)')
+            [CompletionResult]::new('select', 'select', [CompletionResultType]::ParameterValue, 'Make a project the selected one; the page and later the CLI answer for it')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Drop a project and its index rows; its files are never touched')
+            break
+        }
+        'rtok;help;graph;projects;add' {
+            break
+        }
+        'rtok;help;graph;projects;select' {
+            break
+        }
+        'rtok;help;graph;projects;remove' {
             break
         }
         'rtok;help;graph;affected' {
