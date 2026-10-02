@@ -1824,7 +1824,9 @@ Every other host in `HOSTS`: not documented for these three columns (§22 table 
 
 **Approach C: keep §22 as the default, allow sessions by explicit name only.** Credentials stay absolute (token files dropped, as in B). Sessions and snapshots are class `never` for every default and `--include review` run, and are deleted only with `--kind sessions` (snapshots go with their session where the host ties them, as Claude Code's `file-history/<session>/`), only on hosts whose §22 row documents the whole session unit and its index, never the host's memory, index or store files themselves; per-project shadow-git history (Gemini) stays `never`. `list` shows the host's own retention setting next to rtok's threshold. Risk: low; deleting history needs a deliberate flag and a documented layout. Usefulness: keeps the creator's `stale_session_days` feature for hosts that do not prune themselves (Codex, Copilot, Kimi, opencode). Maintenance: one new §22 column (Sessions), verified per host like the others.
 
-**Recommendation: C.** It keeps the §22 safety rule as the default, removes the one kind with no upside (token files: KB freed, sign-out and keychain-migration risk), and keeps session cleanup as an explicit, documented-only action instead of dropping it. If the creator prefers the smallest surface, B is the fallback; A is not recommended. The 3-day default stays as the creator set it; it now applies only to an explicit `--kind sessions` run (open question in T338: raise it to 30 to match Claude Code and Gemini).
+**Recommendation: C.** It keeps the §22 safety rule as the default, removes the one kind with no upside (token files: KB freed, sign-out and keychain-migration risk), and keeps session cleanup as an explicit, documented-only action instead of dropping it. If the creator prefers the smallest surface, B is the fallback; A is not recommended. The 3-day default then applies only to an explicit `--kind sessions` run.
+
+**Decision (creator, 2026-10-03):** C, recorded as D36; `stale_session_days` default raised from 3 to 30 to match Claude Code and Gemini.
 
 ### 22.2 T330 cache detection: §22 paths only vs heuristics (T339) (2026-10-03)
 
@@ -1848,6 +1850,8 @@ The conflict: T330 says paths come only from §22 and "not documented" cells are
 **Approach C: evidence decides what is cleared; heuristics only inform `list`.** `clear` deletes only paths with evidence: (1) a §22 cell (docs or source); (2) a directory carrying a valid `CACHEDIR.TAG`, the owner's own declaration (deletion rules per T342); (3) a path the user names in `[agents.junk] extra`. Platform cache roots and Electron subfolders are scanned read-only: `list` shows them under the agent with size and the note "not documented: not cleared (add to `[agents.junk] extra` to clear)", and they never count toward "Freed by `clear`". Cursor is `list`-only until a primary source names its paths. A heuristic path that later gets a cited §22 row moves to (1) with no code change beyond the map. Risk: low; nothing is deleted on a guess. Usefulness: the user sees every large cache folder, and freeing the undocumented ones takes one explicit config line. Maintenance: same as A for deletion, plus a small read-only scanner.
 
 **Recommendation: C.** `list` is read-only (T330.1 shipped it that way in PR #651), so showing heuristic finds costs no data; only deletion needs evidence. It keeps §22's rule for everything `clear` removes and makes the user, not rtok, the source for any undocumented path. Candidate §22 rows for T330.3, each to be added only with its citation: VS Code `CachedData/<commit>` other than the current commit (VS Code source above).
+
+**Decision (creator, 2026-10-03):** C, recorded as D36.
 
 ## 23. Subagent-start context injection per host (T262.2) (2026-09-24)
 
