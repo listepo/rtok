@@ -35,7 +35,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.8 | todo | P2 | 3 | 0% | |
 | T310.9 | todo | P1 | 4 | 0% | |
 | T310.10 | todo | P1 | 3 | 0% | |
-| T310.11 | todo | P2 | 3 | 0% | |
+| T310.11 | in progress | P2 | 3 | 20% | Claude Code / sonnet-5 |
 | T310.12 | todo | P2 | 3 | 0% | |
 | T329 | todo | P2 | 5 | 0% | |
 | T330 | todo | P2 | 4 | 0% | |
@@ -624,6 +624,8 @@ Check: `npx playwright test` green locally and in CI; breaking the toggle round-
 One CI job: `npm ci`, typecheck, oxlint/oxfmt, Vitest, Storybook tests, Playwright, `vite build`; cache npm and Playwright browsers.
 
 Check: the job is green on a PR and goes red when a Vitest, Storybook or Playwright test is broken on purpose.
+
+Execution: add a `spa` job to `.github/workflows/ci.yml` (ubuntu, same draft skip, permissions and cancel-run as the other jobs, SHA-pinned actions, added to `revert-on-failure`'s `needs`). It installs only node and just through mise, caches `~/.npm` and the Playwright browsers keyed on `web/package-lock.json`, then runs the `just spa-*` recipes one step each (install, browsers, typecheck, test, storybook build, story tests, build); a new `spa-browsers` recipe installs Chromium. oxlint/oxfmt stay in the existing `lint` job (`just js` covers `web/`). The repo has no path filters, so the job always runs. Playwright e2e against the real binary is T310.10 and adds its own step. Verify with actionlint, a green PR run, then a deliberately red run (one broken Vitest test and one broken story).
 
 ### T310.12. Delete Slint, the WASM build and the HTML design
 

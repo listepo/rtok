@@ -83,6 +83,10 @@ spa-test:
 spa-stories:
     {{npm}} --prefix web run test:stories
 
+# T310.11: the Chromium the story tests drive; `--with-deps` adds the system libraries on Linux.
+spa-browsers:
+    {{npm}} --prefix web exec -- playwright install --with-deps chromium
+
 # T310.5: static Storybook build of the UI kit.
 spa-storybook:
     {{npm}} --prefix web run build-storybook
