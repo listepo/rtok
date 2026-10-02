@@ -64,6 +64,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T348 | todo | research | 1 | 0% | |
 | T352 | in progress | P1 | 3 | 10% | Claude Code / claude-opus-5-5 |
 | T355 | in progress | P2 | 2 | 10% | Claude Code / claude-opus-5-5 |
+| T356 | todo | P1 | 2 | 0% | |
 
 
 
@@ -1418,6 +1419,14 @@ Done when: a measurement over the stored calls pairs each deny with the follow-u
 Check: the measurement query/script is reproducible from the store; numbers recorded here.
 
 Execution plan: read-only `sqlite3` queries over a copy of `~/.rtok/rtok.db` (hook `calls` + inline `call_io` bodies, last 7 days, while T352 still keeps them): find each `PreToolUse` `Read` the read hook denied, then the same session's next tool call — rtok `read` (MCP), ranged native `Read`, another tool, or nothing; estimate tokens of the deny turn (deny text + retried call) against the saving of the rtok `read` that replaced it (`measurements`). Queries go into `research.md` with the date; numbers and a recommendation (keep, narrow, advice-only) go here. No code change.
+
+### T356. Never index `$HOME` or `/` as a graph root
+
+Found 2026-10-02 (T352 research): `symbols` holds 617,319 rows (~120 MB plus indexes) under the root `/Users/listepo` — `.config/amp/plugins`, `.cursor/extensions`, `.grok/bundled`, `go/pkg/mod`, `.motive/node_modules`. The graph root is the `rtok mcp` process cwd (`std::env::current_dir()` in `src/plugins/graph/mod.rs`), so a server launched in the home directory (no `roots/list` answer yet, or a host without roots) walks the whole home on its first `symbol`/`callers`/`explore` call, and the rows never leave: `delete_symbols_missing` runs only when that same root is re-indexed.
+
+Done when: the graph refuses a root that is the home directory or the filesystem root (an error that says to pass a path or open a project, no walk), and existing `symbols`/`symbol_stale` rows of such roots are dropped once (store retention or a migration). Indexing of real projects is unchanged.
+
+Check: graph tests for both refused roots and an accepted project root; a store test that drops the home-root rows; `symbols` size on a copy of the real store before and after, recorded in this card.
 
 ## Reference
 
