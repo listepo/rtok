@@ -91,9 +91,24 @@ impl Store {
     /// rows come back as they were before that stamp, so `read_at: None` still tells which
     /// were new. The user peeking at an agent's queue passes `mark_read: false`.
     pub fn inbox(&self, to: &str, unread_only: bool, mark_read: bool) -> Result<Vec<Message>> {
+        self.inbox_limited(to, unread_only, mark_read, None)
+    }
+
+    /// [`Store::inbox`] with at most `limit` messages, the oldest. The cut is made before the
+    /// read mark, so a message that did not fit stays unread for the next call.
+    pub fn inbox_limited(
+        &self,
+        to: &str,
+        unread_only: bool,
+        mark_read: bool,
+        limit: Option<usize>,
+    ) -> Result<Vec<Message>> {
         let mut conn = self.lock()?;
         let only = if unread_only { Only::Unread } else { Only::All };
-        let rows = load(&mut conn, to, only)?;
+        let mut rows = load(&mut conn, to, only)?;
+        if let Some(limit) = limit {
+            rows.truncate(limit);
+        }
         if mark_read && !rows.is_empty() {
             let ids: Vec<i32> = rows.iter().map(|m| m.id).collect();
             diesel::update(messages::table.filter(messages::id.eq_any(ids)))
@@ -192,6 +207,20 @@ mod tests {
             .register_agent(claude, "m-b", None, None, None)
             .unwrap();
         (a, b)
+    }
+
+    #[test]
+    fn a_limited_read_marks_only_what_it_returned() {
+        let store = Store::open_in_memory().unwrap();
+        let (a, b) = two_agents(&store);
+        let ids: Vec<i32> = ["one", "two", "three"]
+            .iter()
+            .map(|t| store.send_message(Some(&a), &b, t).unwrap())
+            .collect();
+        let page = store.inbox_limited(&b, true, true, Some(2)).unwrap();
+        assert_eq!(page.iter().map(|m| m.id).collect::<Vec<_>>(), ids[..2]);
+        let rest = store.inbox(&b, true, false).unwrap();
+        assert_eq!(rest.iter().map(|m| m.id).collect::<Vec<_>>(), ids[2..]);
     }
 
     #[test]
