@@ -50,8 +50,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T335 | todo | research | 1 | 0% | |
 | T336 | todo | research | 1 | 0% | |
 | T337 | todo | research | 1 | 0% | |
-| T338 | todo | research | 1 | 0% | |
-| T339 | todo | research | 1 | 0% | |
+| T338 | in progress | research | 1 | 10% | Claude Code / opus |
+| T339 | in progress | research | 1 | 10% | Claude Code / opus |
 | T340 | todo | research | 1 | 0% | |
 | T341 | todo | research | 1 | 0% | |
 | T342 | todo | research | 1 | 0% | |
@@ -1312,6 +1312,8 @@ Goal: research both approaches, compare trade-offs, recommend one, then update t
 
 Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
 
+Execution plan (branch `t338-junk-research`, one PR with T339): (1) read the T330 card (now on `main`, ~lines 976-1146) and T330.1-T330.6 (PR #651, branch `t330-agents-junk`); (2) per host, read the vendor docs or source for what `sessions`, auth/token files and checkpoints/snapshots are and whether the host itself prunes them; (3) write `research.md` §22.1 with both approaches, trade-offs and a recommendation, every path fact cited (URL + date), blog/issue-only facts marked **unverified**; (4) record the recommendation here and propose a decision row; (5) in a separate commit, edit T330, T330.2-T330.6 and §22 to match, for the creator to choose before merge.
+
 ### T339. Investigate: T330 scans only §22 paths vs heuristic cache detection
 
 In the plan, T330 (branch `docs/plan-agents-junk`, ~line 697, from PR #541 (T330), not merged yet) says "Paths for each host come from `research.md` §22 (official docs or source only). A cell §22 marks "not documented" is not scanned". The same task (~line 716) detects agent caches from "(2) the platform cache root for that app ... (3) well-known Electron/Chromium cache subfolders ... (4) any directory ... carrying a valid `CACHEDIR.TAG`", says "macOS: `~/Library/Caches` entries are treated as `cache`" (~line 811), and its Check clears Cursor caches although §22 marks every Cursor cell "not documented". These contradict each other because one rule forbids scanning undocumented paths and the other scans and deletes them by heuristics (the risk §22 warns about: "a wrong row here can destroy a user's real data").
@@ -1319,6 +1321,8 @@ In the plan, T330 (branch `docs/plan-agents-junk`, ~line 697, from PR #541 (T330
 Goal: research both approaches, compare trade-offs, recommend one, then update the conflicting tasks. Do not change either task before the decision.
 
 Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
+
+Execution plan (same branch and PR as T338): (1) list every heuristic in T330 (platform cache roots, Electron subfolders, `CACHEDIR.TAG`, `~/Library/Caches`, the Cursor Check line); (2) check each against primary sources: the Electron/Chromium docs for what lives in `userData` and `sessionData`, Apple's file-system guide for `~/Library/Caches`, the Cache Directory Tagging spec, and Cursor's docs for any documented path; (3) write `research.md` §22.2 with both approaches, trade-offs and a recommendation, cited as in T338; (4) record it here and in the shared decision row; (5) consistency edits in the separate commit.
 
 ### T340. Investigate: T330 "never touch rtok.db" vs clearing rows inside it
 
