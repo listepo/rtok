@@ -315,3 +315,42 @@ fn info_counts_error_lines_and_json_parses() {
     assert!(v["db"]["bytes"].is_number(), "{v}");
     let _ = fs::remove_dir_all(&home);
 }
+
+/// T367: every path-taking graph subcommand fails on a missing path, naming it, before walking.
+#[test]
+fn graph_subcommands_reject_a_missing_path() {
+    let home = tmp("graph-missing-home");
+    let missing = home.join("nonexistent");
+    let missing = missing.to_str().unwrap();
+    for args in [
+        vec!["graph", "index", missing],
+        vec!["graph", "dead", missing],
+        vec!["graph", "status", missing],
+        vec!["graph", "impact", "main", missing],
+    ] {
+        let out = cmd(&args, &home).assert().failure().get_output().clone();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            err.contains(missing) && err.contains("No such file or directory"),
+            "{args:?}: {err}"
+        );
+        assert!(out.stdout.is_empty(), "{args:?}: {:?}", out.stdout);
+    }
+}
+
+#[test]
+fn graph_index_rejects_a_file_path_and_still_indexes_a_project() {
+    let home = tmp("graph-file-home");
+    let project = tmp("graph-project");
+    let file = project.join("a.rs");
+    fs::write(&file, "fn alpha() {}\n").unwrap();
+    let err = cmd(&["graph", "index", file.to_str().unwrap()], &home)
+        .assert()
+        .failure()
+        .get_output()
+        .stderr
+        .clone();
+    assert!(String::from_utf8_lossy(&err).contains("not a directory"));
+    let out = ok(&["graph", "index", project.to_str().unwrap()], &home);
+    assert!(out.contains("indexed 1 files"), "{out}");
+}

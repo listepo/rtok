@@ -67,7 +67,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T364 | todo | P3 | 2 | 0% | |
 | T365 | todo | P3 | 3 | 0% | |
 | T366 | todo | P3 | 1 | 0% | |
-| T367 | todo | P3 | 1 | 0% | |
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
 | T356 | in progress | P1 | 2 | 5% | Claude Code / claude-opus-5-5 |
@@ -1470,16 +1469,6 @@ Repro: `rtok run -- sh -c 'kill -TERM $$'; echo $?` and `rtok run -- sh -c 'kill
 Done when: one shared helper maps a Unix signal death (`ExitStatusExt::signal()`) to `128 + sig` where `code()` is `None`, used by both sites; Windows behaviour unchanged.
 
 Check: Unix-only tests for `rtok run` and the `rtok mcp --` wrap path get `143` for SIGTERM and `137` for SIGKILL, and a normal non-zero exit keeps its code; `just check`.
-
-### T367. `rtok graph index <path>` exits 0 for a path that does not exist
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A typo prints `indexed 0 files · 0 rows …` with exit 0, so a script or agent thinks the index was built. `src/cli.rs` (the `graph index` arm, `index::run_with` at `:1684`) passes `path` as-is and the walker yields nothing for a missing root. The sibling graph subcommands in `src/cli.rs` and `src/plugins/graph/status.rs` resolve `path` the same unchecked way (suspected, not reproduced).
-
-Repro: `rtok graph index /nonexistent; echo $?` prints the zero counts and `0`.
-
-Done when: every graph subcommand that takes a path checks it is an existing directory (or canonicalizes with the path as context) before walking, and exits non-zero with `Error: /nonexistent: No such file or directory`; the T356 home/`/` refusal stays as it is.
-
-Check: tests for `graph index` and each sibling path-taking graph subcommand with a missing path exit non-zero naming the path; indexing a temp project is unchanged; `just check`.
 
 ### T356. Never index `$HOME` or `/` as a graph root
 

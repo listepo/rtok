@@ -39,7 +39,7 @@ pub fn collect(cx: &Ctx, root: &Path) -> Result<GraphStatus> {
 
 pub fn run(cfg: &Config, path: Option<PathBuf>, json: bool) -> Result<()> {
     let cx = Runtime::open(cfg.clone(), "graph-status")?;
-    let root = path.unwrap_or(std::env::current_dir()?);
+    let root = super::cli_root(path)?;
     let status = collect(&Ctx::new(&cx), &root)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&status)?);
