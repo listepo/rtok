@@ -280,7 +280,7 @@ Live probes (the `rtok doctor` page), not store rows.
 hooks 0
 hooks check none found
 mcp
-  rtok (15 tools, ~274 desc tokens) [CWD]/target/debug/rtok
+  rtok (15 tools, ~274 desc tokens) [CWD]/target/debug/rtok[EXE]
 proxy 
 proxy openai 
 BASH_MAX_OUTPUT_LENGTH (unset)
