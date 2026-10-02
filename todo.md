@@ -56,7 +56,6 @@
 - T348. Investigate: `--agent` means an agent id, a host, or both
 - T356. Never index `$HOME` or `/` as a graph root
 - T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
-- T361. `rtok memory import` reports success for a missing or unreadable file
 - T362. `rtok config validate` fails with ENOENT on a fresh install
 - T363. `config validate` / `config set` accept out-of-range float keys and any `embed_backend`
 - T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed

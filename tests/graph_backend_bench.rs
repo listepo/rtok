@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Tags vs LSP graph backends: context tokens + latency/throughput.
 //!
 //! Measures the text each backend returns into the agent context (tool output),

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `read` — MCP `read` / `search` / `tree` with modes, size caps and re-read dedup (plan P4).
 //!
 //! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a

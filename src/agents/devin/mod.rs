@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Devin CLI + Desktop (`rtok agents install devin`, plan T89).
 //!
 //! Both surfaces read the same user files. Hooks live under the `"hooks"` key of

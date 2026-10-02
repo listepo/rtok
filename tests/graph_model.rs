@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T230: `rtok graph status` + `rtok graph dead` render the D23 Graph page. This file
 //! pins the page's dead-symbol list against a fixture tree with exactly one confirmed
 //! dead private function, so the model's store read (`graph::dead_candidates`) cannot

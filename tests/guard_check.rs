@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T70.5: `rtok guard check` prints the same allow/deny `plugins::guard` returns on PreToolUse.
 use serde_json::{Value, json};
 use std::io::Write;

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok config validate` and `rtok config set` (plan T12.3, decision D14).
 //!
 //! Validate walks a TOML file against [`Config::default()`] and reports unknown keys,

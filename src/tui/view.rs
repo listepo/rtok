@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The shell (T15.2): a header line, the tab bar, the page body, a footer. The tabs
 //! are the model's page list, never a second one (D23). The Overview tab renders CTT,
 //! per-plugin savings bars and a per-turn sparkline off the snapshot (T15.3); the
