@@ -1,0 +1,13 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml agents usage --tz UTC"
+stdout = """
+rtok agents usage: through rtok, no usage recorded (UTC)
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t358-1-agents-usage"
+RTOK_HOME = "target/tmp/t358-1-agents-usage"
