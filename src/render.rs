@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Console rendering for the commands that change files (plan T12.6, T20.2).
 //!
 //! Anything rtok would write to a file is shown as a unified diff — the same `--- a/… +++ b/…`,

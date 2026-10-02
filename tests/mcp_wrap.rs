@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T59.4 Check: `rtok mcp -- <server>` is a lossless wrapper. A `sh` fake server answers
 //! `tools/list` with a fixed frame, `tools/call` id 2 with a 3000-line text block and id 3
 //! with an `isError` result; the wrapper must forward the first and last byte-for-byte,

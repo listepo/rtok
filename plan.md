@@ -32,7 +32,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
 | T310 | todo | P1 | 5 | 0% | |
-| T310.3 | todo | P1 | 3 | 0% | |
 | T310.4 | todo | P1 | 3 | 0% | |
 | T310.5 | todo | P1 | 3 | 0% | |
 | T310.6 | todo | P1 | 3 | 0% | |
@@ -61,7 +60,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T345 | todo | research | 1 | 0% | |
 | T346 | todo | research | 1 | 0% | |
 | T359 | todo | P1 | 2 | 0% | |
-| T361 | todo | P2 | 1 | 0% | |
 | T362 | todo | P3 | 1 | 0% | |
 | T365 | todo | P3 | 3 | 0% | |
 | T366 | todo | P3 | 1 | 0% | |
@@ -606,12 +604,6 @@ Check: `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where host tables
 Done when: `rtok web` serves the SPA from the binary, every page of `model::pages()` renders on it, Playwright drives the real binary, and no Slint code is left.
 
 Check: `rtok web` from a release build shows every page of `model::pages()` from the embedded SPA; no `slint`/`rtok-webui` left in the tree; `just check` and the SPA CI job green.
-
-### T310.3. Data layer: WebSocket client + TanStack Query
-
-A typed `/ws` client (same-origin `ws`/`wss`, backoff reconnect, connection state) that pushes each snapshot into the TanStack Query cache; mutations for `set` and `expand`; a fixture source (`?sample`) with a snapshot fixture for Storybook, Vitest and offline e2e. Vitest covers reconnect and frame handling.
-
-Check: Vitest covers frame parsing, reconnect with backoff, `set`/`expand` mutations and the `?sample` source; the app renders on sample data with no server.
 
 ### T310.4. App shell: router, layout, theme, states
 
@@ -1408,16 +1400,6 @@ Repro: `awk '/^[ \t]*```/{print NR": "$0}' docs/config.md` (the fence at 67 is f
 Done when: the reference block closes with a bare ```` ``` ```` before the semantic-cache section; that section (heading, table, example) sits outside the reference file under a `###` (or is dropped from the reference, since `config/default.toml`, which the reference mirrors, has no such table); the rest of the reference reopens as ```` ```toml ````; no heading level is skipped. A test parses every `docs/**/*.md` with a CommonMark parser (no Markdown parser is in `Cargo.lock` today: `pulldown-cmark` as a dev-dependency with a one-line reason and a `toolchain.md` row) and fails on unclosed/mis-nested fences and heading-level skips. English-only change: rtok has no `docs/ru` / `docs/uk` mirror.
 
 Check: a new docs-structure test fails on `main` @ `aecab806` (h2 → h4 at `[proxy.flex]`) and passes after the fix; `config_coverage` and `public_numbers` stay green; `just check`.
-
-### T361. `rtok memory import` reports success for a missing or unreadable file
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A path typo, a directory, a permission error or a non-UTF-8 file all print `inserted 0  skipped 0  malformed 0` with exit 0, so scripts and agents believe the import ran. `src/plugins/memory/import.rs:57` is `std::fs::read_to_string(path).unwrap_or_default()`.
-
-Repro: `rtok memory import /nonexistent.json; echo $?` prints the zero counts and `0`.
-
-Done when: the read propagates its error with the path as context (`.with_context(|| path.display().to_string())?`, the pattern `src/config/validate.rs` already uses), so the command exits non-zero with `Error: /nonexistent.json: No such file or directory`.
-
-Check: an import test with a missing path and one with a directory both return an error naming the path and insert nothing; existing `memory import` tests unchanged; `just check`.
 
 ### T362. `rtok config validate` fails with ENOENT on a fresh install
 

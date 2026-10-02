@@ -26,7 +26,6 @@
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
 - T310. React SPA replaces the Slint web UI (epic)
-- T310.3. Data layer: WebSocket client + TanStack Query
 - T310.4. App shell: router, layout, theme, states
 - T310.5. UI kit + Storybook
 - T310.6. Pages: overview, plugins (toggle), calls (expand)
@@ -58,7 +57,6 @@
 - T348. Investigate: `--agent` means an agent id, a host, or both
 - T356. Never index `$HOME` or `/` as a graph root
 - T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
-- T361. `rtok memory import` reports success for a missing or unreadable file
 - T362. `rtok config validate` fails with ENOENT on a fresh install
 - T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
 - T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal

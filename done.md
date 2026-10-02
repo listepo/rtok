@@ -321,6 +321,18 @@ Execution: one `read_lossy(impl Read) -> Result<String>` helper in `src/cli.rs` 
 
 Result (2026-10-03, Claude Code / claude-opus-5-5): `cli::read_lossy` (`read_to_end` + `String::from_utf8_lossy`, I/O error propagated) serves the plain `rtok filter` path and the no-`cmd` fallback; `--archive` now propagates its read error instead of `let _ =`. Repro on the installed v0.14.0: `printf 'a\xffb\n' | rtok filter --stdin` printed nothing. Check: `cli::tests::read_lossy_*` (2) and `tests/filter.rs` `invalid_utf8_byte_keeps_the_rest_of_stdin` (default and `--stdin`) green; `just check`.
 
+### T361. `rtok memory import` reports success for a missing or unreadable file
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A path typo, a directory, a permission error or a non-UTF-8 file all print `inserted 0  skipped 0  malformed 0` with exit 0, so scripts and agents believe the import ran. `src/plugins/memory/import.rs:57` is `std::fs::read_to_string(path).unwrap_or_default()`.
+
+Repro: `rtok memory import /nonexistent.json; echo $?` prints the zero counts and `0`.
+
+Done when: the read propagates its error with the path as context (`.with_context(|| path.display().to_string())?`, the pattern `src/config/validate.rs` already uses), so the command exits non-zero with `Error: /nonexistent.json: No such file or directory`.
+
+Check: an import test with a missing path and one with a directory both return an error naming the path and insert nothing; existing `memory import` tests unchanged; `just check`.
+
+Result (2026-10-03, Claude Code / claude-opus-5-5): `memory::import::run` reads the file first with `.with_context(|| path.display().to_string())?`, before the store opens, so a missing path, a directory or a non-UTF-8 file exits non-zero naming the path and writes nothing. Check: `an_unreadable_file_is_an_error_naming_the_path` (missing path and directory; an empty file still returns zero counts) and the three existing import tests green; clippy `-D warnings`; `just check`.
+
 ### T217. `AGENTS.md` is ~4× its own 350-token budget
 
 Found 2026-09-22 in the docs pass: `AGENTS.md` instructs "Keep this file under 350 tokens; it is loaded into every session" and is ~7 KB / ~1,100 words — the "Rules that never bend", "Models" and "Testing" sections alone exceed the budget. Every session in every project pays several times the promised injection, the exact per-turn overhead rtok exists to reduce.
@@ -822,6 +834,16 @@ Derive `schemars::JsonSchema` on `web::model::Snapshot`, everything it holds (st
 Check: the stale-schema test fails after a field is added to `Snapshot` and passes after regenerating; regenerating leaves `git diff` empty; `just spa-typecheck`.
 
 Result: `src/web/protocol.rs` types the `/ws` frames (`ServerFrame::{Message, Expand}`, used by `inbound` instead of ad-hoc `json!`) and client messages (`ClientMessage::{Expand, Set}`); `JsonSchema` is derived on `Snapshot` and the 20 types it reaches (store rows, `doctor::Report`, skills page, agents rows). `web/src/api/ws.schema.json` (draft 2020-12, serialize contract) is committed; `committed_schema_is_current` fails when it is stale and `RTOK_BLESS=1` rewrites it. `web/scripts/gen-api.mjs` (`npm run gen:api`, json-schema-to-typescript 16.0.0) writes `web/src/api/snapshot.gen.ts`; `npm run typecheck` (so `just spa-typecheck`) runs it with `--check` first. Checked: adding a field to `Snapshot` fails the Rust test, editing the schema fails `spa-typecheck`, re-blessing and regenerating leave `git diff` empty; `just js`, `just spa-build`, clippy `-D warnings`.
+
+### T310.3. Data layer: WebSocket client + TanStack Query
+
+A typed `/ws` client (same-origin `ws`/`wss`, backoff reconnect, connection state) that pushes each snapshot into the TanStack Query cache; mutations for `set` and `expand`; a fixture source (`?sample`) with a snapshot fixture for Storybook, Vitest and offline e2e. Vitest covers reconnect and frame handling.
+
+Check: Vitest covers frame parsing, reconnect with backoff, `set`/`expand` mutations and the `?sample` source; the app renders on sample data with no server.
+
+Execution: `web/src/api/ws.ts` — a transport-agnostic client (injected `WebSocket` constructor, same-origin `ws`/`wss` URL, capped exponential backoff, `connecting|open|closed` state) that parses the three server frame kinds against `snapshot.gen.ts`; `web/src/api/sample.ts` — a `Snapshot`-typed fixture and the `?sample` source with the same interface; `web/src/api/query.ts` — `QueryClient` wiring (`setQueryData` on each snapshot), `useSnapshot`, `useConnection`, `useSetMutation`, `useExpandMutation` (resolves on the matching `expand` frame, rejects on timeout). `App.tsx` mounts the provider and shows the connection state on sample data. Deps: `@tanstack/react-query`; dev `vitest` (+ a DOM env only if a render test needs it), rows in `toolchain.md`. `npm test` and `just spa-test`; wiring into CI is T310.11. Verify: `just spa-test`, `just spa-typecheck`, `just spa-build`, `just js`, the built page on `?sample` in a browser.
+
+Result (2026-10-03, Claude Code / claude-opus-5-5): `web/src/api/ws.ts` (`connectWs`: injectable socket and location, same-origin `ws`/`wss`, backoff 500 ms doubling to a 10 s cap and reset on open; `parseFrame` keeps a failed tick's `{"type":"snapshot","error"}` apart from a full `Snapshot` and drops malformed frames), `web/src/api/sample.ts` (`Snapshot`-typed fixture, `?sample` source with the same `Connect` interface), `web/src/api/query.tsx` (`createApi` writes pushed frames into the query cache, `DataProvider`, `useSnapshot`/`useConnection`/`useServerMessage` as `skipToken` cache-only queries, `useSetMutation`, `useExpandMutation`; a server `message` or a closed link fails every expand in flight because refusals do not name their request). `App.tsx` shows the connection state and the plugin list. Deps: `@tanstack/react-query` 5.104.1, `vitest` 5.0.3 (dev); `just spa-test`. Check: Vitest 28/28; `just spa-typecheck`, `just js`, `just spa-build`; the built page on `vite preview` shows `Connection: open` and the sample plugins on `?sample`, and `Connection: closed` with no server. No render-level test yet (no DOM env); CI wiring is T310.11.
 
 ### T80. `rtok web` from an installed binary 404s the whole UI
 

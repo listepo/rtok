@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T282 (D34): the rtok agent id. The host's own session id collides across hosts and is
 //! missing on several (`research.md` §26), so rtok issues its own random UUIDv4 per host session,
 //! shown as its first 8 hex chars and resolved from any unique prefix of 4+ hex chars.
