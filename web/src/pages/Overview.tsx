@@ -4,10 +4,12 @@ import { DataTable, type Column } from "../ui/DataTable";
 import { Kpi } from "../ui/Kpi";
 import { Panel } from "../ui/Panel";
 import { Pill } from "../ui/Pill";
+import { Bitset, MiniBars } from "../ui/Marks";
 import { Sparkline } from "../ui/Sparkline";
 import { compact, fmt, pct } from "./format";
 import { overview } from "./model";
-import { WithSnapshot } from "./parts";
+import { CallsPanel, DoctorPanel, SessionsPanel } from "./OverviewPanels";
+import { PanelLink, WithSnapshot } from "./parts";
 
 type Saving = ReturnType<typeof overview>["measured"][number];
 
@@ -87,6 +89,13 @@ function OverviewBody({ snap }: { snap: Parameters<typeof overview>[0] }) {
                 </>
             }
             sub={`est ${compact(o.estBefore)} → ${compact(o.estAfter)}`}
+            viz={
+                <MiniBars
+                    values={o.measured.slice(0, 8).map((m) => m.saved)}
+                    label="saved per plugin"
+                    className="fill-delta-fg"
+                />
+            }
         />,
         <Kpi
             key="pct"
@@ -105,6 +114,12 @@ function OverviewBody({ snap }: { snap: Parameters<typeof overview>[0] }) {
             label="calls"
             value={fmt(snap.calls.length)}
             sub={`${o.failed} failed · p95 ${o.p95 == null ? "-" : `${o.p95.toFixed(0)} ms`}`}
+            viz={
+                <MiniBars
+                    values={o.buckets.map((b) => b.hook + b.mcp + b.proxy)}
+                    label="calls per bucket"
+                />
+            }
         />,
         <Kpi
             key="live"
@@ -116,6 +131,7 @@ function OverviewBody({ snap }: { snap: Parameters<typeof overview>[0] }) {
                 </>
             }
             sub={`${o.hosts} hosts`}
+            viz={<Sparkline values={o.liveSeries} label="sessions alive over the calls window" />}
         />,
         <Kpi
             key="on"
@@ -127,6 +143,7 @@ function OverviewBody({ snap }: { snap: Parameters<typeof overview>[0] }) {
                 </>
             }
             sub={`${snap.plugins.length - o.enabled} disabled`}
+            viz={<Bitset items={snap.plugins} />}
         />,
     ];
     return (
@@ -142,44 +159,58 @@ function OverviewBody({ snap }: { snap: Parameters<typeof overview>[0] }) {
                 </div>
             ))}
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">{kpis}</div>
-            <Panel title="savings by plugin" hint="Σ est before − after, measured plugins only">
-                <DataTable
-                    label="savings by plugin"
-                    rows={o.measured}
-                    columns={columns}
-                    getRowId={(r) => r.plugin.id}
-                    height={Math.min(320, 36 * Math.max(1, o.measured.length))}
-                    empty={
-                        <Empty
-                            title="No measured savings yet"
-                            hint="Plugins fill this in as they record Measurement rows."
-                        />
-                    }
-                />
-            </Panel>
-            <Panel title="token mix" hint={`${fmt(mixTotal)} tokens in the ledger window`}>
-                <div
-                    role="img"
-                    aria-label={mix.map(([k, v]) => `${k} ${pct(v / mixTotal, 0)}`).join(", ")}
-                    className="flex h-2 overflow-hidden rounded-full bg-surface-3"
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+                <CallsPanel o={o} calls={snap.calls.length} />
+                <Panel
+                    title="token mix"
+                    hint={`${fmt(mixTotal)} tokens in the ledger window`}
+                    className="xl:col-span-4"
                 >
-                    {mix.map(([k, v, cls]) => (
-                        <div
-                            key={k}
-                            className={cls}
-                            style={{ width: `${(v / mixTotal) * 100}%` }}
-                        />
-                    ))}
-                </div>
-                <ul className="flex flex-wrap gap-x-4 gap-y-1 text-2xs text-fg-muted">
-                    {mix.map(([k, v, cls]) => (
-                        <li key={k} className="flex items-center gap-1.5">
-                            <span aria-hidden="true" className={`size-2 rounded-full ${cls}`} />
-                            {k} {compact(v)}
-                        </li>
-                    ))}
-                </ul>
-            </Panel>
+                    <div
+                        role="img"
+                        aria-label={mix.map(([k, v]) => `${k} ${pct(v / mixTotal, 0)}`).join(", ")}
+                        className="flex h-2 overflow-hidden rounded-full bg-surface-3"
+                    >
+                        {mix.map(([k, v, cls]) => (
+                            <div
+                                key={k}
+                                className={cls}
+                                style={{ width: `${(v / mixTotal) * 100}%` }}
+                            />
+                        ))}
+                    </div>
+                    <ul className="flex flex-wrap gap-x-4 gap-y-1 text-2xs text-fg-muted">
+                        {mix.map(([k, v, cls]) => (
+                            <li key={k} className="flex items-center gap-1.5">
+                                <span aria-hidden="true" className={`size-2 rounded-full ${cls}`} />
+                                {k} {compact(v)}
+                            </li>
+                        ))}
+                    </ul>
+                </Panel>
+                <Panel
+                    title="savings by plugin"
+                    hint="Σ est before − after, measured plugins only"
+                    action={<PanelLink to="/plugins">plugins →</PanelLink>}
+                    className="xl:col-span-7"
+                >
+                    <DataTable
+                        label="savings by plugin"
+                        rows={o.measured}
+                        columns={columns}
+                        getRowId={(r) => r.plugin.id}
+                        height={Math.min(320, 36 * Math.max(1, o.measured.length))}
+                        empty={
+                            <Empty
+                                title="No measured savings yet"
+                                hint="Plugins fill this in as they record Measurement rows."
+                            />
+                        }
+                    />
+                </Panel>
+                <DoctorPanel o={o} />
+                <SessionsPanel o={o} />
+            </div>
         </div>
     );
 }
