@@ -56,6 +56,8 @@ Project programs and direct packages from the manifests.
 | vite | local | https://github.com/vitejs/vite | T310.1: SPA dev server + build (`just spa-dev` / `just spa-build`) |
 | @vitejs/plugin-react | local | https://github.com/vitejs/vite-plugin-react | T310.1: React fast refresh + JSX transform for Vite |
 | json-schema-to-typescript | local | https://github.com/bcherny/json-schema-to-typescript | T310.2: `web/src/api/snapshot.gen.ts` from the `/ws` JSON Schema (`npm run gen:api`) |
+| @tanstack/react-query | local | https://github.com/TanStack/query | T310.3: query cache the `/ws` snapshot is pushed into, plus the `set` / `expand` mutations |
+| vitest | local | https://github.com/vitest-dev/vitest | T310.3: web/src unit tests (`just spa-test`), run on web's own `vite.config.ts`, not the root `vitest.config.mjs` |
 | typescript | local | https://github.com/microsoft/TypeScript | T310.1: strict typecheck (`just spa-typecheck`) |
 | @types/react | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.1: React types |
 | @types/react-dom | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.1: React DOM types |

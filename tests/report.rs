@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T22.1: `rtok report --format md` renders the D23 model (D24). This file pins the
 //! document against a fixture store the test builds row by row, so every number in the
 //! output is traceable to a row it also knows: 7 calls (2 hook, 1 mcp timed, 4 proxy

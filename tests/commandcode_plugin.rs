@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The Command Code plugin tree is the install source `rtok agents install commandcode`
 //! links from: one `rtok-hook` script (event from its own link name) plus `mcp.sh`.
 //! Every event the installer writes must be one `adapt_commandcode` knows, and the

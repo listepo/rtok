@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! API proxy request/response parsing for each wire (Anthropic, OpenAI chat/responses,
 //! Gemini): session/model/usage extraction, SSE usage, request preparation, the tool-result,
 //! skill and live-blob views plugins rewrite, context edits, the semantic-cache key and the

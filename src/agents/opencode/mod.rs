@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! OpenCode installer (`rtok agents install opencode`, plan T11.5, T44.5).
 //!
 //! Three modules, one call path each (D21): `env.OPENAI_BASE_URL` points the host at the

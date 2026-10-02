@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T284: who is running and what each agent is doing — the one model behind `rtok agents
 //! sessions`, `rtok agents show` and `rtok agents status` (and, later, their MCP tools).
 //! Sessions come from the Sessions page's own read ([`Model::sessions`]); each gets its

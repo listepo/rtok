@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Optional LSP backend (T30.2). Native JSON-RPC over stdio.
 //! Spawns rust-analyzer / clangd / typescript-language-server from PATH (D6: not serena).
 
