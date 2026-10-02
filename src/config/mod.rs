@@ -174,12 +174,13 @@ section! {
 
 section! {
     /// `[agents.usage]` — `rtok agents usage` (T358): tokens and estimated cost per agent, day
-    /// and month. `source` is `rtok` until T358.2 adds the agents' own logs and makes `logs`
-    /// the default. `hosts` empty = every host; `since` / `until` are a date (`2026-09-01`, a
-    /// whole day in `tz`) or, for `since`, a duration (`30d`), empty = unbounded; `period` is
-    /// `monthly` or `daily`; `tz` is an IANA zone, empty = the system zone.
+    /// and month. `source` is `logs` (the agents' own session files, read from
+    /// `[stats] transcripts_dir` and `codex_dir`), `rtok` (the store) or `both`. `hosts` empty = every
+    /// host; `since` / `until` are a date (`2026-09-01`, a whole day in `tz`) or, for `since`, a
+    /// duration (`30d`), empty = unbounded; `period` is `monthly` or `daily`; `tz` is an IANA
+    /// zone, empty = the system zone.
     AgentsUsage {
-        source: String = s("rtok"),
+        source: String = s("logs"),
         hosts: Vec<String> = Vec::new(),
         since: String = String::new(),
         until: String = String::new(),
