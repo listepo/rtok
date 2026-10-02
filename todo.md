@@ -56,4 +56,3 @@
 - T346. Investigate: D27 "writing commands stay CLI-only" vs web write actions
 - T347. Investigate: D16 "one task = one PR" vs multi-PR execution plans
 - T348. Investigate: `--agent` means an agent id, a host, or both
-- T320. Fix the proxy usage/tokens test race
