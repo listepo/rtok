@@ -113,6 +113,14 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --instructions   Also run the instruction-file audit (T7.2)
       --json           JSON instead of the table
+      --fix            Remove broken hooks and the extra copies of duplicate hooks and MCP entries;
+                       prints the diff, writes only with --yes
+      --yes            With --fix: write the changes (a copy goes to `_backup/` first)
+      --dry-run        With --fix --yes: print the diffs and write nothing
+      --only <ONLY>    With --fix: limit it to these problems (repeatable; default: all of them)
+                       [possible values: broken-hooks, duplicate-hooks, duplicate-mcp]
+      --agent <HOST>   Check (and with --fix, repair) the hooks of one host only (an id of `rtok
+                       agents list`)
   -h, --help           Print help
 
 $ rtok info --help

@@ -366,3 +366,74 @@ fn config_validate_creates_the_default_file_but_not_an_explicit_one() {
         .clone();
     assert!(String::from_utf8_lossy(&out.stderr).contains(missing));
 }
+
+/// T331.5: `doctor --fix` is a dry run until `--yes`; then it backs the file up, drops only the
+/// broken hook and keeps every other byte.
+#[cfg(unix)] // POSIX hook paths
+#[test]
+fn doctor_fix_removes_only_the_broken_hook_after_a_backup() {
+    let home = tmp("doctor-fix");
+    let claude = home.join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let settings = claude.join("settings.json");
+    let raw = format!(
+        "{{\n  // mine\n  \"hooks\": {{\n    \"Stop\": [\n      {{ \"hooks\": [\n        {{ \"type\": \"command\", \"command\": \"{}/gone.sh\" }},\n        {{ \"type\": \"command\", \"command\": \"echo done\" }}\n      ] }}\n    ]\n  }}\n}}\n",
+        home.display()
+    );
+    fs::write(&settings, &raw).unwrap();
+    let run = |args: &[&str]| {
+        let mut c = cmd(args, &home);
+        c.current_dir(&home);
+        c.assert().get_output().clone()
+    };
+
+    let dry = run(&["doctor", "--fix"]);
+    assert_eq!(dry.status.code(), Some(0));
+    let text = String::from_utf8_lossy(&dry.stdout);
+    assert!(text.contains("dry run: nothing is written"), "{text}");
+    assert!(text.contains("would remove Stop"), "{text}");
+    assert_eq!(fs::read_to_string(&settings).unwrap(), raw);
+
+    let done = run(&["doctor", "--fix", "--yes"]);
+    assert_eq!(done.status.code(), Some(0), "{done:?}");
+    let text = String::from_utf8_lossy(&done.stdout);
+    assert!(text.contains("1 entry removed, 0 left"), "{text}");
+    let after = fs::read_to_string(&settings).unwrap();
+    assert!(
+        after.contains("// mine") && after.contains("echo done"),
+        "{after}"
+    );
+    assert!(!after.contains("gone.sh"), "{after}");
+    let backups: Vec<_> = fs::read_dir(claude.join("_backup")).unwrap().collect();
+    assert_eq!(backups.len(), 1);
+    let bak = backups[0].as_ref().unwrap().path();
+    assert_eq!(fs::read_to_string(bak).unwrap(), raw);
+
+    let again = run(&["doctor", "--fix", "--yes"]);
+    assert!(String::from_utf8_lossy(&again.stdout).contains("nothing to remove"));
+}
+
+/// T331.6: `--only duplicate-mcp` removes the extra copy of a server from the host's JSON and
+/// keeps the rest of the file byte for byte, after a backup.
+#[cfg(unix)] // POSIX command paths
+#[test]
+fn doctor_fix_removes_an_extra_mcp_copy_and_nothing_else() {
+    let home = tmp("doctor-fix-mcp");
+    let json = home.join(".claude.json");
+    let before = "{\n  \"theme\": \"dark\",\n  \"mcpServers\": {\n    \"a\": {\"command\": \"/bin/tool\"},\n    \"b\": {\"command\": \"/bin/tool\"}\n  }\n}\n";
+    fs::write(&json, before).unwrap();
+    let mut c = cmd(
+        &["doctor", "--fix", "--yes", "--only", "duplicate-mcp"],
+        &home,
+    );
+    c.current_dir(&home);
+    let out = c.assert().get_output().clone();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{text}");
+    assert!(text.contains("1 entry removed, 0 left"), "{text}");
+    assert_eq!(
+        fs::read_to_string(&json).unwrap(),
+        "{\n  \"theme\": \"dark\",\n  \"mcpServers\": {\n    \"a\": {\"command\": \"/bin/tool\"}\n  }\n}\n"
+    );
+    let _ = fs::remove_dir_all(&home);
+}

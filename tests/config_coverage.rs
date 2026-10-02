@@ -111,6 +111,12 @@ const ALLOW_KEYS: &[&str] = &[
     "setup.exit_code",
     // `agents usage --unpriced` (T358.1): which view one call prints, not a stored setting.
     "agents.usage.unpriced",
+    // `doctor --fix --yes --dry-run --only` (T331.5): same per-call rule as `worktree gc` —
+    // a stored `yes` would rewrite host configs without anyone typing it.
+    "doctor.fix",
+    "doctor.yes",
+    "doctor.dry_run",
+    "doctor.only",
 ];
 
 #[test]

@@ -148,8 +148,23 @@ enum Cmd {
         #[arg(long)]
         instructions: bool,
         /// JSON instead of the table
-        #[arg(long)]
+        #[arg(long, conflicts_with = "fix")]
         json: bool,
+        /// Remove broken hooks and the extra copies of duplicate hooks and MCP entries; prints the diff, writes only with --yes
+        #[arg(long)]
+        fix: bool,
+        /// With --fix: write the changes (a copy goes to `_backup/` first)
+        #[arg(long, requires = "fix")]
+        yes: bool,
+        /// With --fix --yes: print the diffs and write nothing
+        #[arg(long, requires = "yes")]
+        dry_run: bool,
+        /// With --fix: limit it to these problems (repeatable; default: all of them)
+        #[arg(long, requires = "fix", value_enum)]
+        only: Vec<FixClass>,
+        /// Check (and with --fix, repair) the hooks of one host only (an id of `rtok agents list`)
+        #[arg(long, value_name = "HOST")]
+        agent: Option<String>,
     },
     /// Git worktrees of this repository: owner, state and disk cost
     Worktree {
@@ -369,6 +384,20 @@ enum LogsCmd {
     Export,
     /// Print the last lines, then follow: new lines arrive above the old, newest first
     Watch,
+}
+
+/// `--only` for `rtok doctor --fix` (D14: a `ValueEnum`); each is a `Problem::kind` of the check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum FixClass {
+    BrokenHooks,
+    DuplicateHooks,
+    DuplicateMcp,
+}
+
+impl FixClass {
+    fn kind(self) -> &'static str {
+        crate::doctor::fix::KINDS[self as usize]
+    }
 }
 
 /// `--format` for `rtok report` (D14: a `ValueEnum`, like `demon`'s `Service`, so clap
@@ -1146,9 +1175,40 @@ pub fn run() -> Result<()> {
             )?;
             print!("{}", crate::bench::run(&cfg)?);
         }
-        Cmd::Doctor { instructions, json } => {
+        Cmd::Doctor {
+            instructions,
+            fix: true,
+            yes,
+            dry_run,
+            only,
+            agent,
+            ..
+        } => {
+            let agent = doctor_host(agent.as_deref())?;
             let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
-            let report = model::doctor(&cfg)?;
+            let kinds: Vec<&str> = if only.is_empty() {
+                crate::doctor::fix::KINDS.to_vec()
+            } else {
+                only.iter().map(|c| c.kind()).collect()
+            };
+            let (text, code) = crate::doctor::fix::run(&cfg, yes && !dry_run, agent, &kinds);
+            print!("{text}");
+            if code != 0 {
+                std::process::exit(code);
+            }
+        }
+        Cmd::Doctor {
+            instructions,
+            json,
+            agent,
+            ..
+        } => {
+            let agent = doctor_host(agent.as_deref())?;
+            let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
+            let mut report = model::doctor(&cfg)?;
+            report
+                .problems
+                .retain(|p| agent.is_none_or(|a| p.agent == a));
             if json {
                 print_json(&report)?;
             } else {
@@ -2292,6 +2352,14 @@ fn setup_flags(
     let mut flags = Dict::new();
     flags.insert("setup".into(), Value::from(setup));
     Some(flags)
+}
+
+/// `rtok doctor --agent <HOST>`: the host id, or an error naming the valid ones.
+fn doctor_host(agent: Option<&str>) -> Result<Option<&'static str>> {
+    agent
+        .map(crate::doctor::hooks::host_id)
+        .transpose()
+        .map_err(anyhow::Error::msg)
 }
 
 pub(crate) fn hook_host_flag(host: Option<String>) -> Option<figment::value::Dict> {

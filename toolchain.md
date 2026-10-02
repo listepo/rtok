@@ -105,6 +105,7 @@ Project programs and direct packages from the manifests.
 | owo-colors | local | https://crates.io/crates/owo-colors | Rust dependency |
 | pathdiff | local | https://crates.io/crates/pathdiff | Relative path between two paths |
 | printpdf | local | https://crates.io/crates/printpdf | Rust dependency |
+| proptest | local | https://crates.io/crates/proptest | T331.5: property test that `doctor --fix` leaves every byte outside the removed hook unchanged |
 | ratatui | local | https://crates.io/crates/ratatui | TUI |
 | regex | local | https://crates.io/crates/regex | Rust dependency |
 | reqwest | local | https://crates.io/crates/reqwest | HTTP |
@@ -116,6 +117,7 @@ Project programs and direct packages from the manifests.
 | semver | local | https://crates.io/crates/semver | T279: plugin version compare + `.rtok-plugin-version` (de)serialization |
 | serde | local | https://crates.io/crates/serde | Serialization |
 | schemars | local | https://github.com/GREsau/schemars | T310.2: JSON Schema of the `/ws` protocol, committed as `web/src/api/ws.schema.json` |
+| shlex | local | https://github.com/comex/rust-shlex | T331.1: POSIX word splitting of a hook command in `rtok doctor` |
 | serde_json | local | https://crates.io/crates/serde_json | JSON |
 | sha2 | local | https://crates.io/crates/sha2 | Rust dependency |
 | similar | local | https://crates.io/crates/similar | Rust dependency |
