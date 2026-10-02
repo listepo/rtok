@@ -2032,3 +2032,82 @@ One plugin `project` (D21: plugin + MCP as one unit), CLI and MCP with one call 
 - Measurement rows: bytes injected by priming and handoff vs. the reads they replace; no saving claim without them.
 
 Ideas filed: I-103 – I-107.
+
+## 29. What the native `Read` deny costs (T355, 2026-10-02)
+
+Source: a `sqlite3 .backup` copy of `~/.rtok/rtok.db` taken 2026-10-02 (rtok v0.10.0), hook rows from 2026-09-21 (first T127 deny text) to 2026-10-02. The deny is `src/plugins/read/hook.rs` `pre_tool`: native `Read` of a file over `plugins.read.native_max_bytes` (32,768) that was not just edited, unless `limit` ≤ 5.
+
+### 29.1 Method
+
+1. `h`: every `PreToolUse`/`PostToolUse` hook row with `tool_name`, the path/command argument, `tool_input.limit`, and the `tool_response` length (`PostToolUse` stdin carries it).
+2. `d`: `PreToolUse(Read)` rows whose response holds the T127 reason.
+3. `g`: per deny, the first `PostToolUse` in the same session within 300 s that reads the same file — rtok MCP `read` (`mcp__*rtok__read`, path equal or a suffix), native `Read`, or `Bash` `cat`/`sed -n`/`head`/`tail`/`nl`/`awk` naming the path — plus whether a `ToolSearch` came before the first rtok MCP call.
+4. Tokens are bytes / 4. Native ranged cost: 10.7 tokens per line, measured over the 1,082 allowed native `Read` calls with 5 < `limit` ≤ 300 in the same window. Native full-read cost: the first 2,000 lines of each denied file still on disk (+7 bytes per line for the `N\t` prefix), capped at 25,000 tokens (the host's `Read` limit).
+
+```sql
+-- sqlite3 rtok-copy.db < t355.sql   (temp tables only)
+CREATE TEMP TABLE h AS
+  SELECT c.id, c.session_id s, c.ts, c.name ev,
+         json_extract(io.request_json, '$.tool_name') tn,
+         coalesce(json_extract(io.request_json, '$.tool_input.file_path'),
+                  json_extract(io.request_json, '$.tool_input.path'),
+                  json_extract(io.request_json, '$.tool_input.command'), '') arg,
+         json_extract(io.request_json, '$.tool_input.limit') lim,
+         length(json_extract(io.request_json, '$.tool_response')) out,
+         length(json_extract(io.request_json, '$.tool_input')) inl,
+         length(json_extract(io.response_json, '$.hookSpecificOutput.permissionDecisionReason')) rl,
+         io.response_json LIKE '%use rtok read; before Edit%' deny
+  FROM calls c JOIN call_io io ON io.call_id = c.id
+  WHERE c.kind = 'hook' AND c.ts >= unixepoch('2026-09-21')
+    AND c.name IN ('PreToolUse', 'PostToolUse');
+CREATE INDEX temp.h_s ON h (s, ev, id);
+CREATE TEMP TABLE d AS
+  SELECT id, s, ts, arg p, inl + rl dlen FROM h WHERE ev = 'PreToolUse' AND tn = 'Read' AND deny;
+CREATE TEMP TABLE f AS
+  SELECT d.id, d.p,
+    (SELECT y.id FROM h y WHERE y.s = d.s AND y.ev = 'PostToolUse' AND y.id > d.id AND y.ts - d.ts < 300
+       AND ((y.tn LIKE 'mcp__%rtok__read' AND (y.arg = d.p OR d.p LIKE '%/' || y.arg))
+         OR (y.tn = 'Read' AND y.arg = d.p)
+         OR (y.tn = 'Bash' AND instr(y.arg, d.p) > 0
+             AND (y.arg GLOB '*[ |;&(]cat *' OR y.arg GLOB 'cat *' OR y.arg GLOB 'sed -n*' OR y.arg GLOB 'head *'
+                  OR y.arg GLOB 'tail *' OR y.arg GLOB 'nl *' OR y.arg GLOB 'awk *')))
+     ORDER BY y.id LIMIT 1) rid,
+    (SELECT count(*) FROM h y WHERE y.s = d.s AND y.ev = 'PostToolUse' AND y.id > d.id AND y.ts - d.ts < 300
+       AND y.tn = 'ToolSearch' AND y.id < coalesce((SELECT min(z.id) FROM h z WHERE z.s = d.s
+           AND z.ev = 'PostToolUse' AND z.id > d.id AND z.tn LIKE 'mcp__%rtok__%'), 0)) ts_n
+  FROM d;
+CREATE TEMP TABLE g AS
+  SELECT f.*, CASE WHEN y.id IS NULL THEN 'no read of the file within 5 min'
+                   WHEN y.tn LIKE 'mcp__%' THEN 'rtok read'
+                   WHEN y.tn = 'Read' AND y.lim IS NOT NULL THEN 'native Read with limit'
+                   WHEN y.tn = 'Read' THEN 'native Read, full'
+                   ELSE 'Bash cat/sed/head/tail' END how, coalesce(y.out, 0) out
+  FROM f LEFT JOIN h y ON y.id = f.rid;
+SELECT CASE WHEN x.lim IS NULL THEN 'unranged' ELSE 'ranged' END, g.how, count(*),
+       round(avg(g.out) / 4.0), sum(g.ts_n > 0)
+FROM g JOIN h x ON x.id = g.id GROUP BY 1, 2 ORDER BY 1, 3 DESC;
+```
+
+### 29.2 Numbers
+
+984 denies in 77 sessions. 687 (70 %) of the denied calls were already ranged (`limit` 6…2,000, mean 122 lines; 459 ≤ 100, 166 in 101–300, 62 > 300); 297 had no `limit`.
+
+| Denied call | Follow-up (first read of the same file ≤ 5 min) | Count | Follow-up tokens (mean) |
+| --- | --- | --- | --- |
+| ranged | rtok `read` | 258 | 1,929 |
+| ranged | no read | 277 | — |
+| ranged | native `Read` limit ≤ 5 (edit gate) | 145 | 54 |
+| ranged | `Bash` cat/sed/head/tail | 7 | 387 |
+| unranged | no read | 239 | — |
+| unranged | rtok `read` | 48 | 4,538 |
+| unranged | native `Read` with limit | 8 | 2,364 |
+| unranged | native full / `Bash` | 2 | 867 / 605 |
+
+- The deny itself: ~50 tokens (the call and the reason) and one more model turn. 541 denies (55 %) were followed by a `ToolSearch` before the first rtok MCP call — a second extra turn to load the deferred rtok tool schemas.
+- Ranged → rtok `read`: the native range asked for ≈ 112 lines × 10.7 ≈ 1,195 tokens; rtok returned 1,929. Net ≈ −780 tokens per deny, plus one or two turns.
+- Unranged → rtok `read`: native estimate median 24,005 tokens (capped mean 23,053; 76 of the 306 rtok-follow-up files still on disk, 34 of them at the 25,000 cap) against 4,538. Net ≈ +18,000 tokens per deny; 48 denies.
+- 516 denies (52 %) were not followed by any read of that file within 5 minutes: the agent went elsewhere (the most common next finished tools after a deny are `Bash`, 310, and `ToolSearch`, 246). Whether that is a saving or lost work cannot be told from the store.
+
+### 29.3 Recommendation
+
+Narrow the deny. A ranged native `Read` already costs less than the rtok `read` that replaces it, so the deny loses about 780 tokens and one or two turns on 70 % of its hits. Only an unranged read of a large file pays (about 18,000 tokens per deny). Proposed change (a separate task, not part of T355): let a native `Read` with `limit` ≤ 300 lines pass like the edit gate does, keep the deny for unranged reads and larger ranges, and write a `Measurement` row per deny so the saving is claimed from data rather than from this estimate.
