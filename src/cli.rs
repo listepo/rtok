@@ -1761,7 +1761,7 @@ pub fn run() -> Result<()> {
             let cx = crate::plugin::Runtime::open(cfg.clone(), "graph")?;
             match action {
                 GraphCmd::Index { path, dry_run } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let pb = crate::render::spinner("indexing");
                     let r = crate::plugins::graph::index::run_with(
                         &crate::plugin::Ctx::new(&cx),
@@ -1782,7 +1782,7 @@ pub fn run() -> Result<()> {
                     println!("{}", style::success(&summary));
                 }
                 GraphCmd::Dead { path, json } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let ctx = crate::plugin::Ctx::new(&cx);
                     if json {
                         let rows = crate::plugins::graph::dead_rows(&ctx, &root)?;
@@ -1800,7 +1800,7 @@ pub fn run() -> Result<()> {
                     to,
                     path,
                 } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let ctx = crate::plugin::Ctx::new(&cx);
                     print!(
                         "{}",
