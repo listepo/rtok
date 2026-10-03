@@ -374,6 +374,10 @@ impl Server {
                 plugin: "mcp",
                 def: worktrees::list_def(),
             },
+            Listed {
+                plugin: "mcp",
+                def: worktrees::remove_def(),
+            },
         ];
         let builtin: Vec<&str> = crate::plugins::all()
             .iter()
@@ -453,6 +457,9 @@ impl Server {
             "worktree_add" => self
                 .agent()
                 .and_then(|(agent, _)| worktrees::add(&self.cx, &agent, args)),
+            "worktree_remove" => self
+                .agent()
+                .and_then(|(agent, _)| worktrees::remove(&self.cx, &agent, args)),
             "worktree_list" => worktrees::list(&self.cx),
             _ => return invoke_text(&self.cx, name, args),
         };

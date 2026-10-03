@@ -10,7 +10,8 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
-use super::{Record, State, git, inventory};
+use super::{Record, State, claim, git, inventory};
+use crate::store::{AgentDetail, Store};
 
 /// Unlock, remove without `--force`, then delete the branch when `drop_branch`. A failed
 /// removal puts the lock back, so a half-done run never strips another run's protection.
@@ -102,7 +103,7 @@ pub fn run(cwd: &Path, target: &str, who: &Caller, keep_branch: bool) -> Result<
         (State::Unmerged, Some(_)) if keep_branch => {}
         (State::Unmerged, Some(b)) => bail!(
             "{shown}: {b} is not merged into {base}; check `gh pr view {b}`, or pass \
-             --keep-branch to remove the worktree and keep the branch"
+             --keep-branch (MCP: keep_branch) to remove the worktree and keep the branch"
         ),
         (State::Unmerged, None) => {
             bail!("{shown}: detached HEAD not merged into {base}; its commits would be lost")
@@ -115,6 +116,32 @@ pub fn run(cwd: &Path, target: &str, who: &Caller, keep_branch: bool) -> Result<
         branch: record.branch.clone(),
         note,
     })
+}
+
+/// `rtok worktree remove` and MCP `worktree_remove`: [`run`] for `agent` (named by `owner_flag`
+/// when it gives one), then release the claim. One path, so both surfaces refuse and release
+/// the same way. With neither an agent nor an owner there is no name to hold a lock by, so
+/// only an unlocked worktree goes.
+pub fn for_agent(
+    store: Option<&Store>,
+    cwd: &Path,
+    target: &str,
+    (agent, owner_flag): (Option<&AgentDetail>, Option<String>),
+    keep_branch: bool,
+) -> Result<Removed> {
+    let owner = match (owner_flag, agent) {
+        (None, None) => None,
+        (flag, agent) => Some(claim::owner(flag, agent, store)?),
+    };
+    let who = Caller {
+        agent: agent.map(|a| a.id.as_str()),
+        owner: owner.as_deref(),
+    };
+    let done = run(cwd, target, &who, keep_branch)?;
+    if let Some(Err(e)) = store.map(|s| s.release_worktree_claim(&done.path)) {
+        eprintln!("warning: claim not released: {e:#}");
+    }
+    Ok(done)
 }
 
 /// A task id names the lock's task or the branch `<task>[-<slug>]`, case aside.

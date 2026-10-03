@@ -25,7 +25,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T283.2 | todo | P1 | 2 | 0% | |
 | T283.3 | todo | P1 | 3 | 0% | |
 | T284 | in progress | P1 | 3 | 50% | Claude Code / claude-opus-5-5 |
-| T286 | in progress | P1 | 3 | 40% | Claude Code / claude-opus-5-5 |
 | T287 | in progress | P1 | 4 | 50% | Claude Code / claude-opus-5-5 |
 | T288 | in progress | P2 | 3 | 40% | Claude Code / claude-opus-5-5 |
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
@@ -486,22 +485,6 @@ Check: model unit tests over a seeded store (live, idle, ended, sub-agent nestin
 
 Execution (2026-09-27): two PRs. PR 1, cut on top of T283 PR 1 (#449): one model function over the store; `agents sessions` gains `agent`, `worktree` (cwd relative to the project until T285 lands), `activity`, `seen`, `state`, sub-agent nesting and `--all`; `agents show <id-prefix> [--json]`; `agents status "<text>"`; model unit tests on a seeded store and trycmd. PR 2, after T283 PR 2 and T285: MCP `agents_list` / `agent_show` / `agent_status_set`, the claimed-worktree and unread-message fields.
 Progress (2026-09-28): PR 1 is #470 (`agents sessions` columns, `agents show`, `agents status`, web model). Left: PR 2, the MCP tools (after T283 PR 2 and T285).
-
-### T286. `rtok worktree remove` and MCP `worktree_remove`: an agent removes its own worktree
-
-Depends on T285. Removal today exists only in bulk (`rtok worktree gc`) and in the external `wt.sh done` script; an agent that finished its task has no single-worktree command.
-
-Plan:
-1. Worktree `_worktrees/rtok-T286`.
-2. `rtok worktree remove <path|task-id> [--agent] [--json]` and MCP `worktree_remove {path|task}`: refuses (exit 1, reason on stderr / in the tool result) when the worktree has uncommitted or untracked files, is locked by another owner or another agent, or is the caller's cwd; never `--force`. Otherwise: unlock, `git worktree remove`, delete the local branch only when merged (squash-aware `is_merged`, `src/worktree/git.rs:57`), release the claim, print what happened and the one-line hint to delete the remote branch.
-3. An unmerged clean worktree: removed only with `--keep-branch` (the branch survives, nothing is lost); without it, refused with that hint.
-4. Extract the single-worktree removal that `gc` already does (`src/worktree/gc.rs:76`, lock restored on failure) into one function that `gc` and `remove` both call; no second copy.
-5. `skills/worktrees/SKILL.md` finish step switches from `gc` to `remove` for "my task is merged".
-
-Check: e2e in a scratch repo: merged clean → gone with branch; unmerged clean → refused, then removed with `--keep-branch`; dirty → refused; another agent's → refused; cwd → refused; gc tests unchanged and green after the extraction; MCP e2e; trycmd and gates; `just check`.
-
-Execution (2026-09-27): two PRs. PR 1, cut on top of T285 PR 1: extract the single-worktree removal from `gc` into one shared function; `rtok worktree remove <path|task-id> [--agent] [--keep-branch] [--json]` with the refusals above; the claim is released; the skill finish step changes; e2e tests in a scratch repo. PR 2, after T283 PR 2: MCP `worktree_remove`.
-Progress (2026-09-28): PR 1 on branch `t286-worktree-remove`, stacked on #471; its PR opens when #471 merges. Left: PR 2, MCP `worktree_remove` (after T283 PR 2).
 
 ### T287. Messages between agents and the user: `rtok agents send`, `rtok agents inbox`, MCP `agent_send`, `agent_inbox`
 
