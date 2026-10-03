@@ -217,7 +217,8 @@ fn walk(host: &str) -> Result<Shape, String> {
             .strip_prefix(dunce::canonicalize(&tmp).unwrap())
             .unwrap()
             .display()
-            .to_string(),
+            .to_string()
+            .replace('\\', "/"),
         branch: added["branch"].as_str().unwrap().into(),
         rows: shaped,
         inbox: "framed".into(),
