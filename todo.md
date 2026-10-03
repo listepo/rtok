@@ -17,7 +17,6 @@
 - T281. Probe: tie a host session's hooks and its rtok MCP server to one agent
 - T283. An agent learns its own rtok agent id
 - T283.3. MCP link rule (b): the nearest common host ancestor pid
-- T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
 - T288. Push unread messages to hooked agents
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
