@@ -39,8 +39,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T329.4 | todo | P2 | 4 | 0% | |
 | T329.5 | todo | P2 | 3 | 0% | |
 | T329.6 | todo | P2 | 3 | 0% | |
-| T329.7 | todo | P2 | 4 | 0% | |
-| T329.8 | todo | P2 | 3 | 0% | |
 | T329.9 | todo | P2 | 4 | 0% | |
 | T329.10 | todo | P3 | 3 | 0% | |
 | T329.11 | todo | P2 | 3 | 0% | |
@@ -940,18 +938,6 @@ Check: `dead` over A's scope spares B's function only A calls, selecting B alone
 T329 §4a: register the cwd of a hooked agent session, a worktree created or adopted through `rtok worktree` (T285, T289; display name shows the branch) and the root of any graph MCP call, origin `session|worktree|mcp`. Adds `[plugins.graph] auto_add_projects = true` to the config schema and `docs/config.md`. The hook path stays within its 10 ms budget (the registration is a deferred write). T289 is owned by another agent; stay out of `adopt`. Depends on T329.1.
 
 Check: a session in a new directory registers it with `auto_add_projects` on and does not with it off; a worktree shows its branch as the name; the hook still exits within 10 ms; `just check`.
-
-### T329.7. Reference discovery from manifests (Cargo, npm, Go, Python, submodules)
-
-T329 §4b sources, in the card's order: Cargo `path`/`[patch]`/out-of-root workspace members, npm/pnpm/yarn `file:`/`link:`/`workspace:`, Go `replace` and `go.work`, Python path dependencies, `.gitmodules`. A pure function from a project root to a list of `(directory, reason)`, plus warnings for paths that do not exist. Import-resolver references (the last source in the card) are left to a later sub-id once T329.9 lands. Fixture repos only. Depends on nothing but T329.1; no registry writes here.
-
-Check: fixture manifests for each source return the expected directories and reasons; a missing path is a warning; registry dependencies are not returned; `just check`.
-
-### T329.8. Following references: transitive, depth and project caps, auto-link lifecycle, remembered unlinks
-
-T329 §4b rules: register each referenced directory (origin `reference`), index it in the background, auto-link it, follow references transitively with `reference_depth` (default 3) and `max_auto_projects` (default 20) both reported, drop an auto link when its reference disappears on re-index while keeping the project, never re-create a link the user removed, never remove a manual link. Adds `auto_link_references`, `reference_depth` and `max_auto_projects` to the config schema and `docs/config.md`. Depends on T329.3, T329.7.
-
-Check: indexing A registers and links B and C, not D; `reference_depth = 1` stops at B and says so; removing the dependency drops the auto link but keeps B; an unlinked auto link is not re-created; `just check`.
 
 ### T329.9. Graph backend `auto`: LSP first, tree-sitter second, chosen per project and language
 
