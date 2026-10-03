@@ -2189,7 +2189,7 @@ FROM g JOIN h x ON x.id = g.id GROUP BY 1, 2 ORDER BY 1, 3 DESC;
 
 Narrow the deny. A ranged native `Read` already costs less than the rtok `read` that replaces it, so the deny loses about 780 tokens and one or two turns on 70 % of its hits. Only an unranged read of a large file pays (about 18,000 tokens per deny). Proposed change (a separate task, not part of T355): let a native `Read` with `limit` ≤ 300 lines pass like the edit gate does, keep the deny for unranged reads and larger ranges, and write a `Measurement` row per deny so the saving is claimed from data rather than from this estimate.
 
-## 30. Where each agent keeps its token counts (T358.3, 2026-10-03)
+## 30. Where each agent keeps its token counts (T358.3, T358.4, 2026-10-03)
 
 What `rtok agents usage --source logs` reads per host, from each host's own source or documentation. A repository is cited by commit, a documentation page by the day it was read. Anything backed only by a secondary source is marked **unverified**; the ccusage guide (https://ccusage.com/guide/, fetched 2026-10-02) was used as a lead for locations only.
 
@@ -2200,6 +2200,11 @@ What `rtok agents usage --source logs` reads per host, from each host's own sour
 | Copilot CLI | `modelMetrics` of `session.shutdown` in `session-state/*/events.jsonl` | supported, per session |
 | Gemini CLI | `tokens` of `gemini` messages in `tmp/*/chats/session-*.jsonl` (and legacy `.json`) | supported, not run on real data (no chats on this machine) |
 | Droid | none | `unsupported` |
+| pi | `usage` of entries in `sessions/*/*.jsonl` | supported, matches an independent sum on real files |
+| Kimi Code | `usage.record` lines of `sessions/*/*/agents/*/wire.jsonl` | supported, matches an independent sum on real files |
+| Grok | none | `unsupported` (T358.4) |
+| ZCode | none | `unsupported` (T358.4) |
+| Antigravity | none | `unsupported` (T358.4) |
 
 ### 30.1 OpenCode and Kilo
 
@@ -2224,3 +2229,31 @@ What `rtok agents usage --source logs` reads per host, from each host's own sour
 
 - Sessions are `~/.factory/sessions/<project folder>/<uuid>.jsonl` plus `<uuid>.settings.json`; the settings file holds "which model, how long it ran, token counts, autonomy mode" (https://github.com/Factory-AI/factory-plugins, commit `d362dc1823301bee56315bd73f22b5614392365c`, `plugins/core/skills/session-navigation/SKILL.md`). No Factory page read on 2026-10-03 (docs.factory.ai CLI settings and session API reference, the plugin above) names the keys, and `DROID_SESSIONS_DIR` is ccusage's variable, not one a Factory page documents. Reading it would be a guess, so the host is `unsupported` and listed in `skipped` when the directory has content. No Droid files exist on this machine.
 
+### 30.5 pi (T358.4)
+
+- https://github.com/earendil-works/pi (the former badlogic/pi-mono), commit `69f0be6f0a6ca1bf66a2a9cf59c821b632e6bca1`, `packages/coding-agent/docs/sessions.md`: sessions are stored under `~/.pi/agent/sessions/`, grouped by working directory; `--session-dir`, `PI_CODING_AGENT_SESSION_DIR` or the `sessionDir` setting moves them. `docs/environment-variables.md` names `PI_CODING_AGENT_DIR` as the agent folder.
+- `docs/session-format.md`: a session is JSONL, one entry per line, each with `id` and an ISO `timestamp`. An assistant `message` carries `provider`, `model` and `usage`; `compaction`, `branch_summary` and `usage` entries carry `usage` themselves, and the doc says they all "contribute to session token and cost totals". `docs/message-types.md`: `usage` is `{input, output, cacheRead, cacheWrite, totalTokens, cost}` and `reasoning`, when present, is already inside `output`, so it is not added again. A `usage` entry with an unknown `kind` is normal usage.
+- Not documented: whether a forked session copies the parent's entries with their ids. The reader counts an entry once by (`id`, `timestamp`) across all files, which is the same result either way. **unverified**
+- Checked on this machine on 2026-10-03: a read-only run of `rtok agents usage --source logs --host pi` against the real `~/.pi/agent/sessions` (10 files, 953 usage entries) and an independent `jq` sum of the same entries give identical totals for all four legs (input 8,063,051; cache read 129,106,459; cache write 0; output 744,047). No file content was copied.
+
+### 30.6 Kimi Code (T358.4)
+
+- https://github.com/MoonshotAI/kimi-code, commit `21406fb4c805cc8c715e6d1f16ad3fb5f25f4fe3`, `docs/en/configuration/data-locations.md`: the data root is `~/.kimi-code`, or `$KIMI_CODE_HOME` when set (`docs/en/configuration/env-vars.md`); sessions are under `sessions/<workDirKey>/<sessionId>/`.
+- `packages/agent-core-v2/src/agent/usage/usageOps.ts` and `src/session/usage/usageAgentModel.ts`: each LLM request is recorded as a `usage.record` wire line with `model`, `usage` (`inputOther`, `inputCacheRead`, `inputCacheCreation`, `output`) and `usageScope`, which is `turn` for a request a turn issued and `session` otherwise. Both are single requests that the agent's own totals add up, so the reader sums all of them. The wire files live at `agents/<agent>/wire.jsonl` (`docs/en/guides/sessions.md`); a sub-agent has its own, and counts toward the session above it. `time` is in milliseconds (the wire fixture in the repository's tests).
+- The archived MoonshotAI/kimi-cli keeps `~/.kimi` in a different layout; it is not read.
+- Checked on this machine on 2026-10-03: a read-only run against the real `~/.kimi-code/sessions` (306 wire files, 360 `usage.record` lines) and an independent `jq` sum give identical totals (input 3,398,492; cache read 33,477,393; cache write 0; output 250,065). No file content was copied.
+
+### 30.7 Grok (T358.4)
+
+- xAI's own guide, shipped in `~/.grok/docs/user-guide/17-sessions.md` of grok 1.0.34 (read 2026-10-03; `~/.grok/version.json`): sessions are `~/.grok/sessions/<encoded-cwd>/<session-id>/` (`$GROK_HOME` moves the base), and `signals.json` holds "token usage, tool/turn counters". It names no keys. The same page documents `grok usage <session-id>` ("Use this instead of reading session files") that prints per-session and per-turn tokens and cost as JSON.
+- Verdict: `unsupported`. The documented route is another program, which rtok does not run (D6), and the file's keys are not documented. Reading `signals.json` from observed keys would be a guess. If the creator accepts observed keys as a source, it is a small reader.
+
+### 30.8 ZCode (T358.4)
+
+- https://zcode.z.ai/en/docs/usage-stats (read 2026-10-03): "App Usage" reads "local ZCode session records". No path, file name or token field is given anywhere in the documentation read; `~/.zcode` exists on this machine but what it holds is not documented.
+- Verdict: `unsupported`; named in `skipped` when the directory has content.
+
+### 30.9 Antigravity (T358.4)
+
+- Google's Antigravity documentation (https://antigravity.google/docs, read 2026-10-03) says nothing about where Antigravity keeps conversations or token counts. `~/.gemini/antigravity` exists on this machine and holds only an MCP config.
+- Verdict: `unsupported`; named in `skipped` when the directory has content.

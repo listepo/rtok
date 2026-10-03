@@ -195,13 +195,19 @@ section! {
     /// `[agents.usage.dirs]` — where `rtok agents usage` reads each host's own records (T358.3):
     /// a list per host, every entry a directory. Claude Code and Codex keep reading `[stats]
     /// transcripts_dir` and `codex_dir`. A default the file leaves untouched yields to the host's
-    /// own relocation variable (`XDG_DATA_HOME`, `COPILOT_HOME`, `GEMINI_CLI_HOME`).
+    /// own relocation variable (`XDG_DATA_HOME`, `COPILOT_HOME`, `GEMINI_CLI_HOME`,
+    /// `PI_CODING_AGENT_SESSION_DIR`, `PI_CODING_AGENT_DIR`, `KIMI_CODE_HOME`, `GROK_HOME`).
     UsageDirs {
         opencode: Vec<PathBuf> = vec![p("~/.local/share/opencode")],
         kilo: Vec<PathBuf> = vec![p("~/.local/share/kilo")],
         copilot: Vec<PathBuf> = vec![p("~/.copilot/session-state")],
         gemini: Vec<PathBuf> = vec![p("~/.gemini/tmp")],
         droid: Vec<PathBuf> = vec![p("~/.factory/sessions")],
+        pi: Vec<PathBuf> = vec![p("~/.pi/agent/sessions")],
+        kimi: Vec<PathBuf> = vec![p("~/.kimi-code/sessions")],
+        grok: Vec<PathBuf> = vec![p("~/.grok/sessions")],
+        zcode: Vec<PathBuf> = vec![p("~/.zcode")],
+        antigravity: Vec<PathBuf> = vec![p("~/.gemini/antigravity")],
     }
 }
 
@@ -233,6 +239,23 @@ impl UsageDirs {
             &mut self.gemini,
             &base.gemini,
             abs("GEMINI_CLI_HOME").map(|d| d.join(".gemini").join("tmp")),
+        );
+        // pi: the sessions variable names the folder itself and outranks the agent-dir one.
+        moved(
+            &mut self.pi,
+            &base.pi,
+            abs("PI_CODING_AGENT_SESSION_DIR")
+                .or_else(|| abs("PI_CODING_AGENT_DIR").map(|d| d.join("sessions"))),
+        );
+        moved(
+            &mut self.kimi,
+            &base.kimi,
+            abs("KIMI_CODE_HOME").map(|d| d.join("sessions")),
+        );
+        moved(
+            &mut self.grok,
+            &base.grok,
+            abs("GROK_HOME").map(|d| d.join("sessions")),
         );
     }
 }
@@ -1208,6 +1231,11 @@ impl Config {
             ("copilot", &mut dirs.copilot),
             ("gemini", &mut dirs.gemini),
             ("droid", &mut dirs.droid),
+            ("pi", &mut dirs.pi),
+            ("kimi", &mut dirs.kimi),
+            ("grok", &mut dirs.grok),
+            ("zcode", &mut dirs.zcode),
+            ("antigravity", &mut dirs.antigravity),
         ] {
             out.extend(
                 list.iter_mut()
@@ -1360,6 +1388,8 @@ mod tests {
             "XDG_DATA_HOME" => Some(format!("{root}/data").into()),
             "COPILOT_HOME" => Some(format!("{root}/cop").into()),
             "GEMINI_CLI_HOME" => Some("relative/is/ignored".into()),
+            "PI_CODING_AGENT_DIR" => Some("/pi".into()),
+            "KIMI_CODE_HOME" => Some("/kimi".into()),
             _ => None,
         };
         let mut d = super::UsageDirs {
@@ -1377,6 +1407,18 @@ mod tests {
         assert_eq!(one(&d.kilo), ["/mine"]);
         assert_eq!(one(&d.gemini), ["~/.gemini/tmp"]);
         assert_eq!(one(&d.droid), ["~/.factory/sessions"]);
+        assert_eq!(one(&d.pi), ["/pi/sessions"]);
+        assert_eq!(one(&d.kimi), ["/kimi/sessions"]);
+        assert_eq!(one(&d.grok), ["~/.grok/sessions"]);
+        // The narrower pi variable names the folder itself and wins over the agent dir.
+        let narrow = |k: &str| match k {
+            "PI_CODING_AGENT_SESSION_DIR" => Some("/s".into()),
+            "PI_CODING_AGENT_DIR" => Some("/pi".into()),
+            _ => None,
+        };
+        let mut d = super::UsageDirs::default();
+        d.follow_env(narrow);
+        assert_eq!(one(&d.pi), ["/s"]);
     }
 
     use super::*;

@@ -53,6 +53,11 @@ kilo     = ["~/.local/share/kilo"]     # the kilo*.db files in it; an untouched 
 copilot  = ["~/.copilot/session-state"] # */events.jsonl; an untouched default follows $COPILOT_HOME
 gemini   = ["~/.gemini/tmp"]           # */chats/session-*; an untouched default follows $GEMINI_CLI_HOME
 droid    = ["~/.factory/sessions"]     # listed as unsupported when present: Factory does not document the token fields
+pi       = ["~/.pi/agent/sessions"]    # */*.jsonl; an untouched default follows $PI_CODING_AGENT_SESSION_DIR, else $PI_CODING_AGENT_DIR/sessions
+kimi     = ["~/.kimi-code/sessions"]   # Kimi Code: */*/agents/*/wire.jsonl; an untouched default follows $KIMI_CODE_HOME
+grok     = ["~/.grok/sessions"]        # listed as unsupported when present: xAI points at `grok usage`, which rtok does not run; follows $GROK_HOME
+zcode    = ["~/.zcode"]                # listed as unsupported when present: ZCode does not document its session records
+antigravity = ["~/.gemini/antigravity"] # listed as unsupported when present: Google does not document Antigravity's local data
 
 [mcp]                                 # rtok mcp
 tools                   = []          # [] = all tools from enabled plugins; else an allow-list; `expand` always stays listed (D4)

@@ -1,26 +1,29 @@
 bin.name = "rtok"
 args = "--config tests/trycmd/input/usage-logs.toml agents usage --by model --daily --tz Europe/Kyiv"
 stdout = """
-rtok agents usage: logs from 4 agents, up to 2026-10-02 (Europe/Kyiv)
+rtok agents usage: logs from 6 agents, up to 2026-10-02 (Europe/Kyiv)
 
   6.85M tokens
   $7.70 estimated cost
-  4 sessions
-  5 daily rows
+  6 sessions
+  7 daily rows
 
-! Cost is incomplete: 1 model has no price in [stats.prices], so its tokens are not in
+! Cost is incomplete: 3 models have no price in [stats.prices], so their tokens are not in
   the estimate. `rtok agents usage --unpriced` lists them.
 
-Model         Tokens Estimated cost
-gpt-x           3.2M          $6.00
-claude-test     3.1M          $1.70
-gemini-test      550          $0.00
-mystery-model   550K              -
+Model             Tokens Estimated cost
+gpt-x               3.2M          $6.00
+claude-test         3.1M          $1.70
+gemini-test          550          $0.00
+claude-haiku-4-5      50          $0.00
+mystery-model       550K              -
+claude-sonnet-4-5  1.43K              -
+kimi-k2              865              -
 
 Daily totals
 Day         Tokens Estimated cost
 2026-10-01    6.3M          $7.70
-2026-10-02 550.55K          $0.00
+2026-10-02 552.89K          $0.00
 """
 
 [env]
