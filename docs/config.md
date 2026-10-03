@@ -386,6 +386,9 @@ auto_index = true                     # true = every call walks the tree; false 
 auto_add_projects = true               # T329.6: register a directory in the project registry when a hooked session starts there, a worktree is made or adopted through `rtok worktree` (named by its branch), or a graph MCP call runs there; false = the registry changes only through the page and the CLI
 backend    = "tags"                   # tags | lsp: index backend; default tags; lsp spawns rust-analyzer/clangd/tsserver from PATH (P30)
 watch      = "off"                    # off | notify: background re-index inside `rtok mcp` (P8d)
+auto_link_references = true           # T329.8: follow references in manifests (Cargo path, npm file:/link:, go replace, Python path, submodules) into other directories, register and auto-link them
+reference_depth = 3                   # T329.8: reference levels followed from the project (A -> B is 1); reaching it is shown and logged
+max_auto_projects = 20                # T329.8: most projects references may add to the registry; reaching it is shown and logged
 
 [plugins.toon]
 enabled  = true

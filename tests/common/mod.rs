@@ -169,3 +169,21 @@ pub fn hold_store_writer(db: &Path, hold: Duration) -> std::thread::JoinHandle<(
     held_ack.recv().unwrap();
     holder
 }
+
+/// `README.md` plus every `docs/**/*.md`, relative to `root`. One walk for the docs lints
+/// (`public_numbers`, `docs_structure`) so they cannot disagree about which files are public.
+pub fn markdown_targets(root: &Path) -> Vec<std::path::PathBuf> {
+    let mut files = vec![std::path::PathBuf::from("README.md")];
+    let mut stack = vec![root.join("docs")];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().and_then(std::ffi::OsStr::to_str) == Some("md") {
+                files.push(path.strip_prefix(root).unwrap_or(&path).to_path_buf());
+            }
+        }
+    }
+    files
+}

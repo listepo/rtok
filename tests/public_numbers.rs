@@ -10,10 +10,12 @@
 //! count must equal `ls tests/*.rs`. `docs/report.md` is skipped (T22.0, out of scope);
 //! `EXEMPT_FIGURES` covers the "10 ms" fail-open budget.
 
+mod common;
+
+use common::markdown_targets;
 use regex::Regex;
-use std::ffi::OsStr;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// The fail-open hook budget (D1) — a design limit, not a measurement, so it needs no citation.
 const EXEMPT_FIGURES: &[&str] = &["10 ms"];
@@ -159,22 +161,6 @@ fn missing_citations(text: &str) -> Vec<(usize, String)> {
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-fn markdown_targets(root: &Path) -> Vec<PathBuf> {
-    let mut files = vec![PathBuf::from("README.md")];
-    let mut stack = vec![root.join("docs")];
-    while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().and_then(OsStr::to_str) == Some("md") {
-                files.push(path.strip_prefix(root).unwrap_or(&path).to_path_buf());
-            }
-        }
-    }
-    files
 }
 
 #[test]

@@ -30,8 +30,6 @@
 - T329. Graph page: project selector, auto-added projects and linked projects (epic)
 - T329.4. `project` argument and scoped traversal for symbol, callers, impact, explore and outline (CLI and MCP)
 - T329.5. Scoped `dead` and `affected`, whole-answer caps, watch across the scope
-- T329.7. Reference discovery from manifests (Cargo, npm, Go, Python, submodules)
-- T329.8. Following references: transitive, depth and project caps, auto-link lifecycle, remembered unlinks
 - T329.9. Graph backend `auto`: LSP first, tree-sitter second, chosen per project and language
 - T329.10. Graph text-search backend (rg/grep) including `ssh://` roots
 - T329.11. Graph capability cache: one probe per project until the process restarts
@@ -71,7 +69,3 @@
 - T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
 - T358.4. `rtok agents usage` readers: Grok, ZCode, Kimi, pi, Antigravity
 - T358.5. The Usage page on `rtok web` and `rtok tui`
-- T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
-- T361. `rtok memory import` reports success for a missing or unreadable file
-- T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal
-- T367. `rtok graph index <path>` exits 0 for a path that does not exist

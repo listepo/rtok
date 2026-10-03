@@ -835,6 +835,13 @@ section! {
         auto_add_projects: bool = true,
         backend: String = s("tags"),
         watch: String = s("off"),
+        /// T329.8: follow the references a project's manifests make to other directories on this
+        /// machine, register them and link them into the graph scope.
+        auto_link_references: bool = true,
+        /// T329.8: how many reference levels are followed from the project; 0 follows none.
+        reference_depth: u32 = 3,
+        /// T329.8: the most projects references may add to the registry.
+        max_auto_projects: u32 = 20,
         exclude: Vec<String> = vec![],
         include: Vec<String> = vec![],
         extensions: std::collections::HashMap<String, String> = std::collections::HashMap::new(),
