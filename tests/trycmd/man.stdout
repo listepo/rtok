@@ -29,7 +29,7 @@ rtok/-proxy(1)
 Local API proxy for ANTHROPIC_BASE_URL
 .TP
 rtok/-web(1)
-Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
+Local web UI over the same data as `rtok tui` (WebSocket API + React SPA)
 .TP
 rtok/-tui(1)
 Terminal UI over the same data as `rtok web` (D23: one model, two renderings)
