@@ -135,6 +135,21 @@ impl Store {
         )
     }
 
+    /// Delete the active auto links of `from` whose target is not in `keep`: the references its
+    /// manifests no longer name. A manual link and a remembered removal are never touched.
+    /// Returns how many were dropped.
+    pub fn drop_auto_links(&self, from: i32, keep: &[i32]) -> Result<usize> {
+        let mut conn = self.lock()?;
+        Ok(diesel::delete(
+            links::table
+                .filter(links::from_id.eq(from))
+                .filter(links::kind.eq("auto"))
+                .filter(links::unlinked.eq(0))
+                .filter(links::to_id.ne_all(keep)),
+        )
+        .execute(&mut *conn)?)
+    }
+
     /// Every active link, ordered by `(from, to)`.
     pub fn project_links(&self) -> Result<Vec<Link>> {
         let mut conn = self.lock()?;
@@ -297,6 +312,32 @@ mod tests {
             "a manual link brings it back"
         );
         assert_eq!(w.scope('A'), "AC");
+    }
+
+    #[test]
+    fn drop_auto_links_removes_only_active_auto_links_outside_keep() {
+        let w = world("drop");
+        w.link('A', 'B', LinkKind::Auto);
+        w.link('A', 'C', LinkKind::Auto);
+        w.link('A', 'D', LinkKind::Manual);
+        w.link('B', 'C', LinkKind::Auto);
+        assert_eq!(
+            w.store.drop_auto_links(w.id[&'A'], &[w.id[&'B']]).unwrap(),
+            1
+        );
+        let kept: Vec<(i32, i32)> = w
+            .store
+            .project_links()
+            .unwrap()
+            .iter()
+            .map(|l| (l.from, l.to))
+            .collect();
+        let (a, b, c, d) = (w.id[&'A'], w.id[&'B'], w.id[&'C'], w.id[&'D']);
+        assert_eq!(kept, [(a, b), (a, d), (b, c)]);
+        // A removal the user made stays remembered, so the link is not re-created later.
+        w.store.unlink_projects(a, b).unwrap();
+        assert_eq!(w.store.drop_auto_links(a, &[]).unwrap(), 0);
+        assert!(!w.link('A', 'B', LinkKind::Auto));
     }
 
     #[test]
