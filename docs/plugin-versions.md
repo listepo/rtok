@@ -210,7 +210,86 @@ CLI: Claude Code
 
 ## Listing outdated plugins
 
-`rtok agents outdated` is documented once T279.1 lands.
+`rtok agents outdated` lists the hosts whose rtok plugin is older than the running rtok, and
+only those. `rtok agents update --check` prints exactly the same thing, for anyone who looks
+under `update`. It reads local files only: no network, no host CLI call and no marketplace
+refresh, so it is fast and works offline. The target is always the running binary's own
+version (`rtok --version`).
+
+```console
+$ rtok agents outdated
+agent  installed available source
+claude 0.0.1     0.14.0    github
+
+run: rtok agents update claude
+```
+
+**What is listed.** Every host rtok supports is checked (the same registry as `agents list`),
+not only the ones in the receipt, so a plugin installed by hand or by an older rtok is found
+too. A host variant is a row when the plugin is installed there and its version is lower than
+the running rtok by SemVer precedence. Build metadata is ignored: a local `0.14.0+g12c7e91`
+on rtok `0.14.0` is current. The installed version is looked up in the same order as
+`agents update` ([the decision](#the-decision)): the `.rtok-plugin-version` file in the installed
+copy, then the receipt, then the host's own record (Claude's `installed_plugins.json`). The
+`source` column comes from the same lookup (`github`, `local`, `marketplace`).
+
+**What is hidden.** Hosts without the plugin, with the same version and with a newer version
+are not printed. A host with an older version that is installed but whose version nothing
+records (no version file, no receipt row, no usable host record) counts as `0.0.0` and shows as
+`legacy`; a host whose record does say a version, like `0.0.1` above, shows that version.
+
+```console
+$ rtok agents outdated
+agent  installed available source
+claude legacy    0.14.0    github
+
+run: rtok agents update claude
+```
+
+**Nothing to do.** Two messages, depending on whether anything is installed:
+
+```console
+$ rtok agents outdated
+all rtok plugins are up to date (1 installed, rtok 0.14.0)
+$ rtok agents outdated gemini
+no rtok plugins installed
+```
+
+**Selecting hosts.** Like `update`: an optional comma-separated host list
+(`rtok agents outdated claude,cursor`), and `--cli` / `--desktop` for one variant.
+
+**`--json`** prints one object and no human message, also when there is nothing to update
+(`outdated` is then empty, and `installed` counts the plugins that were checked):
+
+```console
+$ rtok agents outdated --json
+{"rtok":"0.14.0","outdated":[{"agent":"claude","variant":"cli","installed":"0.0.1","available":"0.14.0","source":"github","legacy":false}],"installed":1}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `rtok` | The running rtok version, the one every row is compared with. |
+| `outdated[].agent`, `.variant` | Host id and variant (`cli` or `desktop`). |
+| `outdated[].installed` | The installed version, or `legacy` when nothing records one. |
+| `outdated[].available` | The running rtok version. |
+| `outdated[].source` | `github`, `local` or `marketplace`. |
+| `outdated[].legacy` | `true` for a `legacy` row. |
+| `installed` | How many plugin installs were checked, outdated or not. |
+
+**`--exit-code`** exits 10 when at least one host is outdated and 0 otherwise. Without it the
+exit code is 0 either way, so a script that only reads the output keeps working:
+
+```console
+$ rtok agents outdated --json --exit-code; echo "exit=$?"
+{"rtok":"0.14.0","outdated":[{"agent":"claude","variant":"cli","installed":"0.0.1","available":"0.14.0","source":"github","legacy":false}],"installed":1}
+exit=10
+```
+
+**Why it works offline.** The available version is the running binary's own: the tag or
+catalog entry that matches this build carries the same `.rtok-plugin-version`
+(`tools/plugin-versions.sh --check` keeps it so), so there is nothing to ask a server. Only a
+local checkout can differ from the binary, and `update` reads that; `outdated` does not.
+The command never changes anything: to act on the list, run the `run:` line it prints.
 
 ## Releasing
 
