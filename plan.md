@@ -78,7 +78,9 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T345 | todo | research | 1 | 0% | |
 | T346 | todo | research | 1 | 0% | |
 | T359 | todo | P1 | 2 | 0% | |
-| T365 | todo | P3 | 3 | 0% | |
+| T361 | todo | P2 | 1 | 0% | |
+| T366 | todo | P3 | 1 | 0% | |
+| T367 | todo | P3 | 1 | 0% | |
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
 | T356 | in progress | P1 | 2 | 5% | Claude Code / claude-opus-5-5 |
@@ -1512,16 +1514,35 @@ Done when: the reference block closes with a bare ```` ``` ```` before the seman
 
 Check: a new docs-structure test fails on `main` @ `aecab806` (h2 → h4 at `[proxy.flex]`) and passes after the fix; `config_coverage` and `public_numbers` stay green; `just check`.
 
-### T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
+### T361. `rtok memory import` reports success for a missing or unreadable file
 
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). Values `config validate` rejects in the file are taken as-is from the environment: `RTOK_LOG_LEVEL=verbose` ranks as most severe in `crates/rtok-log` and silently drops everything below error, yet `rtok config validate` prints `ok`, so it cannot explain why logs went quiet. `ConfigCmd::Validate` (`src/cli.rs`) runs `validate::issues` on the file path only; env values come in through `layers::load` (`src/config/layers.rs`), which deserializes them with type checks and no value rules.
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A path typo, a directory, a permission error or a non-UTF-8 file all print `inserted 0  skipped 0  malformed 0` with exit 0, so scripts and agents believe the import ran. `src/plugins/memory/import.rs:57` is `std::fs::read_to_string(path).unwrap_or_default()`.
 
-Repro: `RTOK_LOG_LEVEL=verbose rtok config get log.level` prints `verbose`; `RTOK_LOG_LEVEL=verbose rtok config validate` prints `ok …/config.toml`, exit 0 (the same value in `config.toml` is reported).
+Repro: `rtok memory import /nonexistent.json; echo $?` prints the zero counts and `0`.
 
-Done when: `config validate` runs the same per-key rules over the merged config (file + project + env, `layers::load`) and names the source of each bad value (the data `config show --sources` already has). Split from the file check only if the change exceeds 300 LOC / 10 files.
+Done when: the read propagates its error with the path as context (`.with_context(|| path.display().to_string())?`, the pattern `src/config/validate.rs` already uses), so the command exits non-zero with `Error: /nonexistent.json: No such file or directory`.
 
-Check: a test with `RTOK_LOG_LEVEL=verbose` in the child env gets a non-zero `config validate` whose message names the env source; a clean env still prints `ok`; `just check`.
+Check: an import test with a missing path and one with a directory both return an error naming the path and insert nothing; existing `memory import` tests unchanged; `just check`.
 
+### T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A command killed by SIGKILL (OOM killer, timeout) or SIGTERM comes back as `1`, not `128+signal` (137 / 143), so agents and scripts cannot tell "killed" from "failed" and OOM kills in test runs hide. On Unix `ExitStatus::code()` is `None` for a signal death and both sites map `None` to `1`: `src/plugins/cmd/run.rs:298` (`out.code.unwrap_or(1)`) and `src/mcp/wrap.rs:90` (`code().unwrap_or(1)`).
+
+Repro: `rtok run -- sh -c 'kill -TERM $$'; echo $?` and `rtok run -- sh -c 'kill -KILL $$'; echo $?` print `1`; plain `sh -c 'kill -TERM $$'; echo $?` prints `143`.
+
+Done when: one shared helper maps a Unix signal death (`ExitStatusExt::signal()`) to `128 + sig` where `code()` is `None`, used by both sites; Windows behaviour unchanged.
+
+Check: Unix-only tests for `rtok run` and the `rtok mcp --` wrap path get `143` for SIGTERM and `137` for SIGKILL, and a normal non-zero exit keeps its code; `just check`.
+
+### T367. `rtok graph index <path>` exits 0 for a path that does not exist
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A typo prints `indexed 0 files · 0 rows …` with exit 0, so a script or agent thinks the index was built. `src/cli.rs` (the `graph index` arm, `index::run_with` at `:1684`) passes `path` as-is and the walker yields nothing for a missing root. The sibling graph subcommands in `src/cli.rs` and `src/plugins/graph/status.rs` resolve `path` the same unchecked way (suspected, not reproduced).
+
+Repro: `rtok graph index /nonexistent; echo $?` prints the zero counts and `0`.
+
+Done when: every graph subcommand that takes a path checks it is an existing directory (or canonicalizes with the path as context) before walking, and exits non-zero with `Error: /nonexistent: No such file or directory`; the T356 home/`/` refusal stays as it is.
+
+Check: tests for `graph index` and each sibling path-taking graph subcommand with a missing path exit non-zero naming the path; indexing a temp project is unchanged; `just check`.
 
 ### T356. Never index `$HOME` or `/` as a graph root
 

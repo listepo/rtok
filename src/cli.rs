@@ -1087,6 +1087,10 @@ pub fn run() -> Result<()> {
                     // also appended to the log.
                     let layer = config_file.as_deref().or(Some(&path));
                     let cfg = crate::config::layers::load(&home, layer, None).unwrap_or_default();
+                    // Values from the project file, `.env` and the environment skip the file check.
+                    errs.extend(validate::layered_issues(crate::config::layers::sourced(
+                        &crate::config::layers::figment(&home, layer, None),
+                    )));
                     errs.extend(validate::rules_issues(
                         &cfg.plugins.cmd.rules,
                         &cfg.plugins.cmd.rules_dir,
