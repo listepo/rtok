@@ -1,10 +1,11 @@
 agents.enabled = true
 agents.idle = 30m
 agents.push_bytes = 1024
+agents.usage.by = agent
 agents.usage.hosts = []
 agents.usage.period = monthly
 agents.usage.since = 
-agents.usage.source = rtok
+agents.usage.source = logs
 agents.usage.tz = 
 agents.usage.until = 
 bench.configs.a = bench/configs/legacy.json
