@@ -396,8 +396,8 @@ fn unmounted_volume(_path: &Path, _fs: &dyn Fs) -> Option<String> {
     None
 }
 
-/// Check every hook of Claude Code's settings files and enabled plugins, and of the JSON
-/// config files the other hosts' installers write. A file that does not exist is skipped; one
+/// Check every hook of Claude Code's settings files and enabled plugins, and of the JSON and
+/// TOML config files the other hosts' installers write. A file that does not exist is skipped; one
 /// that cannot be read or parsed is reported and left alone.
 pub fn check(cfg: &Config, p: &Probes) -> Vec<Problem> {
     let project = p.env.cwd().unwrap_or_default();
@@ -422,13 +422,20 @@ pub fn check(cfg: &Config, p: &Probes) -> Vec<Problem> {
         if !seen.insert(p.fs.canonical(source)) {
             continue;
         }
-        if let Some(doc) = scan(p, "claude", source, *rank, &claude, &mut acc) {
+        if let Some(doc) = scan(
+            p,
+            "claude",
+            source,
+            (*rank, Format::Json),
+            &claude,
+            &mut acc,
+        ) {
             enabled.extend(enabled_plugins(&doc));
         }
     }
-    for (agent, source) in host_sources(cfg) {
+    for (agent, source, format) in host_sources(cfg) {
         if seen.insert(p.fs.canonical(&source)) {
-            scan(p, agent, &source, RANK_USER, &other, &mut acc);
+            scan(p, agent, &source, (RANK_USER, format), &other, &mut acc);
         }
     }
     plugins(cfg, p, &enabled, &claude, &mut acc);
@@ -459,10 +466,14 @@ pub(super) struct Seen {
     pub rank: u8,
 }
 
-/// The JSON files every host but Claude Code keeps hooks in, as its installer names them, once
-/// each (Cursor's variants share theirs). Other formats wait for T331.8.
-fn host_sources(cfg: &Config) -> Vec<(&'static str, PathBuf)> {
-    let mut out = Vec::new();
+/// The hosts whose hooks live in a `config.toml`, each shape documented by the host (see
+/// [`toml_entries`]). Another host's TOML is not guessed at.
+const TOML_HOSTS: &[&str] = &["kimi", "codewhale", "codex"];
+
+/// The config files every host but Claude Code keeps hooks in, as its installer names them, once
+/// each (Cursor's variants share theirs): JSON, and the TOML of [`TOML_HOSTS`].
+fn host_sources(cfg: &Config) -> Vec<(&'static str, PathBuf, Format)> {
+    let mut out: Vec<(&'static str, PathBuf, Format)> = Vec::new();
     for agent in crate::agents::HOSTS
         .iter()
         .filter(|id| **id != "claude")
@@ -470,11 +481,14 @@ fn host_sources(cfg: &Config) -> Vec<(&'static str, PathBuf)> {
     {
         for v in agent.variants() {
             for path in agent.files(cfg, v.kind) {
-                let json = path
-                    .extension()
-                    .is_some_and(|e| e == "json" || e == "jsonc");
-                if json && !out.iter().any(|(_, seen)| *seen == path) {
-                    out.push((agent.id(), path));
+                let ext = path.extension().and_then(|e| e.to_str());
+                let format = match ext {
+                    Some("json" | "jsonc") => Format::Json,
+                    Some("toml") if TOML_HOSTS.contains(&agent.id()) => Format::Toml,
+                    _ => continue,
+                };
+                if !out.iter().any(|(_, seen, _)| *seen == path) {
+                    out.push((agent.id(), path, format));
                 }
             }
         }
@@ -529,7 +543,7 @@ fn plugins(cfg: &Config, p: &Probes, enabled: &BTreeSet<String>, claude: &Scope,
                 p,
                 "claude",
                 &dir.join("hooks/hooks.json"),
-                RANK_PLUGIN,
+                (RANK_PLUGIN, Format::Json),
                 &scope,
                 acc,
             );
@@ -537,17 +551,65 @@ fn plugins(cfg: &Config, p: &Probes, enabled: &BTreeSet<String>, claude: &Scope,
     }
 }
 
+/// How a hook file is written.
+#[derive(Clone, Copy, PartialEq)]
+enum Format {
+    Json,
+    Toml,
+}
+
+/// The document of `raw` as JSON, whichever the format, so one classification serves both.
+fn parse(raw: &str, format: Format) -> Result<Value, String> {
+    match format {
+        Format::Json => crate::agents::jsonc::parse(raw).map_err(|e| e.to_string()),
+        Format::Toml => raw
+            .parse::<toml_edit::DocumentMut>()
+            .map(|d| crate::agents::mcp::toml_item_to_json(d.as_item()))
+            .map_err(|e| e.to_string()),
+    }
+}
+
+/// The hooks of a TOML config. Kimi writes `[[hooks]]` tables and CodeWhale `[[hooks.hooks]]`,
+/// both `{event, matcher?, command}`; Codex's `[[hooks.<Event>]]` with nested
+/// `[[hooks.<Event>.hooks]]` has the settings.json shape and goes through [`entries`].
+fn toml_entries(doc: &Value) -> Vec<Entry> {
+    let flat = |list: &Value, prefix: &str| -> Vec<Entry> {
+        let text = |h: &Value, k: &str| h.get(k).and_then(Value::as_str).map(String::from);
+        list.as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+            .filter_map(|(i, h)| {
+                Some(Entry {
+                    event: text(h, "event").unwrap_or_default(),
+                    matcher: text(h, "matcher").filter(|m| !m.is_empty()),
+                    command: text(h, "command")?,
+                    key: format!("{prefix}[{i}]"),
+                })
+            })
+            .collect()
+    };
+    match doc.get("hooks") {
+        Some(list @ Value::Array(_)) => flat(list, "hooks"),
+        Some(Value::Object(o)) if o.get("hooks").is_some_and(Value::is_array) => {
+            flat(&o["hooks"], "hooks.hooks")
+        }
+        _ => entries(doc),
+    }
+}
+
 /// One config file: its hooks classified into `acc`. A plugin's file (`RANK_PLUGIN`) is not the
-/// user's to edit, so nothing in it is fixable. Returns the parsed document.
+/// user's to edit, and `--fix` edits JSON only, so nothing in those is fixable. Returns the
+/// parsed document.
 fn scan(
     p: &Probes,
     agent: &'static str,
     source: &Path,
-    rank: u8,
+    (rank, format): (u8, Format),
     scope: &Scope,
     acc: &mut Acc,
 ) -> Option<Value> {
-    let managed = rank == RANK_PLUGIN;
+    let editable = rank != RANK_PLUGIN && format == Format::Json;
     let raw = match p.fs.read(source) {
         Ok(raw) => raw,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
@@ -556,14 +618,18 @@ fn scan(
             return None;
         }
     };
-    let doc = match crate::agents::jsonc::parse(&raw) {
+    let doc = match parse(&raw, format) {
         Ok(doc) => doc,
         Err(e) => {
-            acc.problems.push(unreadable(agent, source, &e.to_string()));
+            acc.problems.push(unreadable(agent, source, &e));
             return None;
         }
     };
-    for e in entries(&doc) {
+    let found = match format {
+        Format::Json => entries(&doc),
+        Format::Toml => toml_entries(&doc),
+    };
+    for e in found {
         acc.seen.push(Seen {
             agent,
             source: source.display().to_string(),
@@ -576,7 +642,7 @@ fn scan(
         });
         let (kind, detail, fixable) = match classify(&e.command, p, scope) {
             Verdict::Ok => continue,
-            Verdict::Broken(d) => ("broken-hook", d, !managed),
+            Verdict::Broken(d) => ("broken-hook", d, editable),
             Verdict::Suspect(d) => ("suspect-hook", d, false),
             Verdict::Unverified(d) => ("unverified-hook", d, false),
         };
@@ -768,6 +834,9 @@ mod tests {
         c.setup.claude.settings_path = "/h/.claude/settings.json".into();
         c.setup.cursor.hooks_path = "/h/.cursor/hooks.json".into();
         c.setup.gemini.dir = "/h/.gemini".into();
+        c.setup.kimi.config_path = "/h/.kimi-code/config.toml".into();
+        c.setup.codewhale.dir = "/h/.codewhale".into();
+        c.setup.codex.config_path = "/h/.codex/config.toml".into();
         c
     }
 
@@ -1451,5 +1520,151 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// What the TOML hosts report, one `agent kind event [matcher] path fixable` line each.
+    fn toml_rows(m: &Mock) -> Vec<String> {
+        check_with(m)
+            .into_iter()
+            .map(|p| {
+                let matcher = p.matcher.map(|m| format!(" [{m}]")).unwrap_or_default();
+                format!(
+                    "{} {} {}{matcher} {} {}",
+                    p.agent, p.kind, p.event, p.path, p.fixable
+                )
+            })
+            .collect()
+    }
+
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
+    #[test]
+    fn kimi_toml_hooks_are_checked_by_their_array_index_and_never_fixable() {
+        let mut m = Mock::default();
+        m.script("/h/ok.sh", true);
+        m.files.insert(
+            "/h/.kimi-code/config.toml".into(),
+            r#"
+theme = "dark"
+
+[[hooks]]
+event = "PreToolUse"
+matcher = "Bash"
+command = "/h/gone.sh"
+timeout = 5
+
+[[hooks]]
+event = "Stop"
+command = "/h/ok.sh"
+
+[[hooks]]
+event = "SessionStart"
+matcher = ""
+command = "echo $(date)"
+"#
+            .into(),
+        );
+        assert_eq!(
+            toml_rows(&m),
+            [
+                "kimi broken-hook PreToolUse [Bash] hooks[0] false",
+                "kimi unverified-hook SessionStart hooks[2] false",
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codewhale_toml_hooks_use_the_nested_hooks_hooks_table() {
+        let mut m = Mock::default();
+        m.files.insert(
+            "/h/.codewhale/config.toml".into(),
+            r#"
+[hooks]
+enabled = true
+
+[[hooks.hooks]]
+name = "rtok"
+event = "message_submit"
+command = "/h/gone/rtok-hook UserPromptSubmit"
+timeout_secs = 5
+"#
+            .into(),
+        );
+        assert_eq!(
+            toml_rows(&m),
+            ["codewhale broken-hook message_submit hooks.hooks[0] false"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_inline_toml_hooks_keep_the_settings_shape() {
+        let mut m = Mock::default();
+        m.script("/h/ok.sh", true);
+        m.files.insert(
+            "/h/.codex/config.toml".into(),
+            r#"
+model = "gpt"
+
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/h/gone.sh"
+timeout = 30
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/h/ok.sh"
+
+[[hooks.Stop.hooks]]
+type = "mcp_tool"
+command = "/h/never-looked-at.sh"
+"#
+            .into(),
+        );
+        assert_eq!(
+            toml_rows(&m),
+            ["codex broken-hook PreToolUse [^Bash$] hooks.PreToolUse[0].hooks[0] false"]
+        );
+    }
+
+    #[test]
+    fn an_unparsable_toml_is_reported_and_a_valid_one_without_hooks_is_quiet() {
+        let mut m = Mock::default();
+        m.files.insert(
+            "/h/.kimi-code/config.toml".into(),
+            "[[hooks]\nevent = ".into(),
+        );
+        m.files
+            .insert("/h/.codex/config.toml".into(), "model = \"gpt\"\n".into());
+        let found = check_with(&m);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            (found[0].kind, found[0].agent),
+            ("unreadable-config", "kimi")
+        );
+        assert!(!found[0].fixable);
+    }
+
+    #[test]
+    fn a_toml_of_a_host_with_no_documented_hook_shape_is_not_read() {
+        let mut c = cfg();
+        c.setup.grok.config_path = "/h/.grok/config.toml".into();
+        let mut m = Mock::default();
+        m.files.insert(
+            "/h/.grok/config.toml".into(),
+            "[[hooks]]\nevent = \"Stop\"\ncommand = \"/h/gone.sh\"\n".into(),
+        );
+        let found = check(
+            &c,
+            &Probes {
+                fs: &m,
+                env: &m,
+                which: &m,
+            },
+        );
+        assert!(found.is_empty(), "{found:?}");
     }
 }

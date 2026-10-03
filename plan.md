@@ -51,7 +51,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T331.4 | todo | P1 | 4 | 0% | |
 | T331.6 | todo | P1 | 4 | 0% | |
 | T331.7 | todo | P2 | 3 | 0% | |
-| T331.8 | todo | P2 | 3 | 0% | |
 | T331.9 | todo | P2 | 3 | 0% | |
 | T332 | todo | research | 1 | 0% | |
 | T333 | todo | research | 1 | 0% | |
@@ -1236,12 +1235,6 @@ Check: the duplicate scenarios of "User selecting cleanup" and the combined case
 Part of T331. The terminal checklist with the injected `Prompt` trait (pre-unselected project files, toggles, change the kept copy, per-file diff, confirmation), the "Fix selected" action on the web doctor page (T310.7), `docs/agents.md` and the help text with `docs/ru/` and `docs/uk/`, the `proptest` invariants and the pseudo-terminal test. Depends on T331.6 and T310.7.
 
 Check: the scripted-prompt scenarios, the property tests, the pty test; `just check`.
-
-### T331.8. Doctor: hook files in TOML and other formats
-
-Part of T331. The T331.1 and T331.2 checks for the hosts whose hooks live outside JSON: Kimi (`config.toml` `[[hooks]]` blocks), CodeWhale (`[[hooks.hooks]]`), Codex (`config.toml`) and any other host whose installer writes hooks in TOML. Each shape maps to the same `Entry` (event, matcher, command, key path), read through the TOML library the project already uses, so the same classification applies and the entry path names the TOML table. Depends on T331.2.
-
-Check: one mocked scenario per TOML shape (broken, valid, unverified, an unparsable file reported and left alone); `just check`.
 
 ### T331.9. Doctor: `--agent <host>` and Windows hook rules
 

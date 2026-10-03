@@ -161,9 +161,12 @@ pub fn fix_broken(cfg: &Config, p: &Probes, w: &dyn Writer, apply: bool, keep: u
             continue;
         }
         if !problem.fixable {
-            report
-                .refused
-                .push((problem, "not a file of yours to edit"));
+            let why = if problem.source.ends_with(".toml") {
+                "TOML hook files are not edited yet"
+            } else {
+                "not a file of yours to edit"
+            };
+            report.refused.push((problem, why));
         } else if is_rtok_own(&problem.command) {
             report.refused.push((
                 problem,
@@ -724,5 +727,31 @@ mod tests {
             let quoted = format!("\"{command}\"");
             prop_assert!(!body.contains(&quoted));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_broken_toml_hook_is_reported_and_never_edited() {
+        let toml = "[[hooks]]\nevent = \"Stop\"\ncommand = \"/h/gone.sh\"\n";
+        let m = machine("{}");
+        m.files
+            .borrow_mut()
+            .insert("/h/.kimi-code/config.toml".into(), toml.into());
+        let mut c = cfg();
+        c.setup.kimi.config_path = "/h/.kimi-code/config.toml".into();
+        let probes = Probes {
+            fs: &m,
+            env: &m,
+            which: &m,
+        };
+        let r = fix_broken(&c, &probes, &m, true, 3);
+        assert!(r.files.is_empty(), "{r:?}");
+        assert_eq!(r.refused.len(), 1);
+        assert_eq!(r.refused[0].1, "TOML hook files are not edited yet");
+        assert_eq!(
+            m.files.borrow()[Path::new("/h/.kimi-code/config.toml")],
+            toml
+        );
+        assert!(m.backups.borrow().is_empty());
     }
 }
