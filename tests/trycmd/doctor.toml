@@ -4,7 +4,7 @@ stdout = """
 hooks 0
 hooks check none found
 mcp
-  rtok (15 tools, ~274 desc tokens) [CWD]/target/debug/rtok
+  rtok ([..] tools, ~[..] desc tokens) [..]
 proxy 
 proxy openai 
 BASH_MAX_OUTPUT_LENGTH (unset)

@@ -15,9 +15,10 @@
 - T277. Move rtok's MCP core into its own crate `crates/rtok-mcp`
 - T278. `rtok agents info <agent>` reports the real MCP state, not "mcp installed" by assumption
 - T279. One plugin version scheme for every install source (GitHub, local, marketplace), and `agents update` that skips an up-to-date plugin
-- T279.1. `rtok agents outdated`: list only the hosts whose rtok plugin is older than the running rtok
 - T281. Probe: tie a host session's hooks and its rtok MCP server to one agent
 - T283. An agent learns its own rtok agent id
+- T283.2. `--host <id>` in every host's MCP entry
+- T283.3. MCP link rule (b): the nearest common host ancestor pid
 - T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
 - T285. Worktree claims: `rtok worktree add` hands the worktree to the calling agent; MCP `worktree_add`
 - T286. `rtok worktree remove` and MCP `worktree_remove`: an agent removes its own worktree
@@ -26,7 +27,6 @@
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
 - T310. React SPA replaces the Slint web UI (epic)
-- T310.4. App shell: router, layout, theme, states
 - T310.5. UI kit + Storybook
 - T310.6. Pages: overview, plugins (toggle), calls (expand)
 - T310.7. Pages: sessions, doctor, logs
@@ -64,12 +64,11 @@
 - T348. Investigate: `--agent` means an agent id, a host, or both
 - T356. Never index `$HOME` or `/` as a graph root
 - T358. `rtok agents usage`: tokens and estimated cost across every coding agent
-- T358.2. `rtok agents usage --source logs|both` for Claude Code and Codex
 - T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
 - T358.4. `rtok agents usage` readers: Grok, ZCode, Kimi, pi, Antigravity
 - T358.5. The Usage page on `rtok web` and `rtok tui`
+- T358.6. `rtok agents usage`: `--by`, saved columns and the `skipped` list
 - T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
-- T362. `rtok config validate` fails with ENOENT on a fresh install
 - T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
 - T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
 - T367. `rtok graph index <path>` exits 0 for a path that does not exist

@@ -56,6 +56,10 @@ enum Cmd {
         /// JSON arguments for `--call`
         #[arg(long, value_name = "ARGS")]
         json: Option<String>,
+        /// The host this MCP entry belongs to (`claude`, `cursor`, `grok`, …): overlays `[hook] host` so
+        /// the process can find its rtok agent (T283.1)
+        #[arg(long, value_name = "HOST")]
+        host: Option<String>,
         /// Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`)
         #[arg(last = true)]
         wrap: Vec<String>,
@@ -666,12 +670,12 @@ enum AgentCmd {
         #[command(subcommand)]
         action: Option<SessionsCmd>,
     },
-    /// Tokens and estimated cost per agent and month (or day), from what passed through rtok
+    /// Tokens and estimated cost per agent and month (or day), from the agents' logs or rtok
     ///
     /// Prices come from `[stats.prices]`; a model without one counts in the tokens and is
     /// left out of the cost (`--unpriced` names those).
     Usage {
-        /// Data source: `rtok` (the store; the only one for now)
+        /// Data source: `logs` (the agents' own session files, the default), `rtok` (what passed through rtok) or `both`
         #[arg(long, value_name = "SOURCE")]
         source: Option<String>,
         /// Only these hosts, comma-separated (`claude,codex`)
@@ -1007,6 +1011,11 @@ pub fn run() -> Result<()> {
                     }
                 }
                 ConfigCmd::Validate { path } => {
+                    // T362: only the implicit default file is created, as `load_with` does;
+                    // a path the user typed must exist.
+                    if path.is_none() {
+                        Config::ensure_user_file(&home, config_file.as_deref())?;
+                    }
                     let path = path.unwrap_or(user);
                     let mut errs = validate::issues(&path)?;
                     // The filter drop-ins are deployment state, not part of the
@@ -1563,9 +1572,10 @@ pub fn run() -> Result<()> {
             action,
             call,
             json,
+            host,
             wrap,
         } => {
-            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let cfg = Config::load_with(config_file.as_deref(), hook_host_flag(host))?;
             if let Some(McpCmd::Ping {
                 agent,
                 cli,

@@ -39,13 +39,16 @@ pub struct Injected {
     pub turn: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Usage {
     pub input_tokens: u32,
     pub cache_creation_input_tokens: u32,
     pub cache_read_input_tokens: u32,
     pub output_tokens: u32,
     pub turn: u32,
+    /// Unix seconds of the line (T358.2: day and month buckets); 0 when it has none.
+    pub ts: i64,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,7 +205,12 @@ fn ingest(v: &Value, out: &mut Parsed) {
     if let Some(u) = usage_of(msg).or_else(|| usage_of(v))
         && is_turn
     {
-        out.usages.push(Usage { turn, ..u });
+        out.usages.push(Usage {
+            turn,
+            ts: line_ts(v),
+            model: msg.get("model").and_then(Value::as_str).map(str::to_string),
+            ..u
+        });
     }
     match msg.get("content") {
         Some(Value::String(s)) if ty == "assistant" && !s.is_empty() => {
@@ -299,6 +307,14 @@ fn push_image(x: &Value, tool_use_id: &str, turn: u32, out: &mut Parsed) {
     });
 }
 
+/// A line'"'"'s RFC 3339 `timestamp` as unix seconds; 0 when it has none or it does not parse.
+pub(crate) fn line_ts(v: &Value) -> i64 {
+    v.get("timestamp")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse::<jiff::Timestamp>().ok())
+        .map_or(0, |t| t.as_second())
+}
+
 fn usage_of(v: &Value) -> Option<Usage> {
     let u = v.get("usage")?.as_object()?;
     Some(Usage {
@@ -307,6 +323,8 @@ fn usage_of(v: &Value) -> Option<Usage> {
         cache_read_input_tokens: num(&u.get("cache_read_input_tokens")),
         output_tokens: num(&u.get("output_tokens")),
         turn: 0,
+        ts: 0,
+        model: None,
     })
 }
 
