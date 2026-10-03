@@ -22,7 +22,6 @@
 - T329. Graph page: project selector, auto-added projects and linked projects (epic)
 - T329.4. `project` argument and scoped traversal for symbol, callers, impact, explore and outline (CLI and MCP)
 - T329.5. Scoped `dead` and `affected`, whole-answer caps, watch across the scope
-- T329.6. Auto-adding projects rtok sees in use (sessions, worktrees, graph MCP calls) and its config keys
 - T329.9. Graph backend `auto`: LSP first, tree-sitter second, chosen per project and language
 - T329.10. Graph text-search backend (rg/grep) including `ssh://` roots
 - T329.11. Graph capability cache: one probe per project until the process restarts

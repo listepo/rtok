@@ -1339,7 +1339,15 @@ pub fn run() -> Result<()> {
             let agent = claim::caller(store.as_ref(), agent.as_deref())?;
             let cwd = std::env::current_dir()?;
             let root = claim::configured_root(&cfg.worktree.root);
-            let plan = claim::add(store.as_ref(), &cwd, root, id, agent.as_ref(), owner)?;
+            let plan = claim::add(
+                store.as_ref(),
+                &cwd,
+                root,
+                id,
+                agent.as_ref(),
+                owner,
+                cfg.plugins.graph.auto_add_projects,
+            )?;
             println!("{}", plan.path.display());
         }
         Cmd::Worktree {
@@ -1351,7 +1359,15 @@ pub fn run() -> Result<()> {
             let Some(agent) = claim::caller(store.as_ref(), agent.as_deref())? else {
                 bail!("no agent to bind: pass --agent or set RTOK_AGENT_ID");
             };
-            let done = claim::bind(store.as_ref(), &path, &agent, owner, None, false)?;
+            let done = claim::bind(
+                store.as_ref(),
+                &path,
+                &agent,
+                owner,
+                None,
+                false,
+                cfg.plugins.graph.auto_add_projects,
+            )?;
             println!("{}", done.path.display());
         }
         Cmd::Worktree {
@@ -1374,7 +1390,15 @@ pub fn run() -> Result<()> {
                 Some(path) => path,
                 None => std::env::current_dir()?,
             };
-            let done = claim::bind(store.as_ref(), &path, &agent, owner, task.as_deref(), true)?;
+            let done = claim::bind(
+                store.as_ref(),
+                &path,
+                &agent,
+                owner,
+                task.as_deref(),
+                true,
+                cfg.plugins.graph.auto_add_projects,
+            )?;
             if json {
                 print_json(&done)?;
             } else {

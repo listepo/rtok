@@ -711,6 +711,14 @@ fn invoke(cx: &Runtime, name: &str, args: &Value) -> Result<String> {
         "tree" => tree_files(cx, args),
         #[cfg(feature = "graph")]
         "symbol" | "callers" | "impact" | "outline" | "explore" => {
+            // T329.6: the root a graph call answers for is the project in use.
+            if cx.config.plugins.graph.auto_add_projects
+                && let Ok(root) = std::env::current_dir()
+            {
+                let _ = cx
+                    .store
+                    .auto_add_project(&root, crate::store::Origin::Mcp, None);
+            }
             crate::plugins::graph::call(&crate::plugin::Ctx::new(cx), name, args)
         }
         _ => Err(unknown_tool(name)),

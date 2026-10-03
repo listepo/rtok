@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 
 use super::{Owner, git, origin};
-use crate::store::{AgentDetail, Store};
+use crate::store::{AgentDetail, Origin, Store};
 
 /// The calling agent: `--agent <prefix>` (must resolve), else `RTOK_AGENT_ID` (T283; an id
 /// the store does not know is ignored), else none.
@@ -67,6 +67,17 @@ pub fn remember(store: Option<&Store>, path: &Path, agent: &str, task: &str) {
     }
 }
 
+/// T329.6: with `[plugins.graph] auto_add_projects`, the worktree becomes a project named by its
+/// branch. Best effort like [`remember`]: the lock and the claim already hold the worktree.
+fn register_project(store: Option<&Store>, auto_add: bool, path: &Path, branch: Option<&str>) {
+    let Some(store) = store.filter(|_| auto_add) else {
+        return;
+    };
+    if let Err(e) = store.auto_add_project(path, Origin::Worktree, branch) {
+        eprintln!("warning: project not registered: {e:#}");
+    }
+}
+
 /// The configured `[worktree] root`, or none while it is empty (the default beside the repo).
 pub fn configured_root(root: &Path) -> Option<&Path> {
     Some(root).filter(|r| !r.as_os_str().is_empty())
@@ -82,6 +93,7 @@ pub fn add(
     id: (&str, Option<&str>),
     agent: Option<&AgentDetail>,
     owner_flag: Option<String>,
+    auto_add: bool,
 ) -> Result<super::add::Plan> {
     let owner = owner(owner_flag, agent, store)?;
     let agent_id = agent.map(|a| a.id.as_str());
@@ -89,6 +101,7 @@ pub fn add(
     if let Some(agent) = agent_id {
         remember(store, &plan.path, agent, &plan.task);
     }
+    register_project(store, auto_add, &plan.path, Some(&plan.branch));
     Ok(plan)
 }
 
@@ -99,6 +112,9 @@ pub struct Adopted {
     pub task: String,
     pub origin: &'static str,
     pub locked: bool,
+    /// The branch the worktree has checked out; the project's name when auto-added.
+    #[serde(skip)]
+    pub branch: Option<String>,
 }
 
 /// `rtok worktree claim` / `adopt` and MCP `worktree_adopt`: bind the linked worktree that
@@ -170,6 +186,7 @@ pub fn run(
         task,
         origin,
         locked,
+        branch: record.branch.clone(),
     })
 }
 
@@ -181,9 +198,11 @@ pub fn bind(
     owner_flag: Option<String>,
     task: Option<&str>,
     spare_evicting: bool,
+    auto_add: bool,
 ) -> Result<Adopted> {
     let owner = owner(owner_flag, Some(agent), store)?;
     let done = run(path, (&owner, &agent.id), task, spare_evicting)?;
     remember(store, &done.path, &agent.id, &done.task);
+    register_project(store, auto_add, &done.path, done.branch.as_deref());
     Ok(done)
 }

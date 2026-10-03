@@ -902,6 +902,7 @@ section! {
         map_tokens: u32 = 0,
         body_lines: u32 = 40,
         auto_index: bool = true,
+        auto_add_projects: bool = true,
         backend: String = s("tags"),
         watch: String = s("off"),
         /// T329.8: follow the references a project's manifests make to other directories on this

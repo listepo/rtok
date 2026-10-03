@@ -2169,6 +2169,16 @@ Deviations: the card's "last error" index status is not shown, because nothing r
 Status: done 2026-10-03 · Model: Claude Code / sonnet-5
 
 
+## T329.6 — Auto-adding projects rtok sees in use (sessions, worktrees, graph MCP calls) and its config keys
+
+T329 §4a. With `[plugins.graph] auto_add_projects = true` (the default) a directory joins the project registry when a hooked session starts in it (origin `session`), when `rtok worktree add` creates a worktree or `rtok worktree adopt` / `claim` binds one, CLI or MCP (origin `worktree`, named by its branch), and when a graph MCP call runs in it (origin `mcp`). Off, the registry changes only through the CLI. The key is in the config schema and `docs/config.md`.
+
+Execution: `Store::auto_add_project` (`src/store/projects.rs`) wraps `register_project`, so the canonical dedup and the first-origin rule are unchanged. It skips a path that is not a directory, `/` and `$HOME` (`fs::is_unwalkable_root`), and names only the row it just created, so a manual add or a rename is never overwritten. The hook calls it on `SessionStart` only, as one best-effort upsert beside `register_agent`: a locked store skips it and the hook still exits as before, so there is no new queue. The MCP arm in `src/mcp.rs` calls it before `graph::call`. `claim::add` and `claim::bind` (the one path of the CLI and MCP) take an `auto_add` flag and call a private `register_project`; `Adopted` carries the branch for the name (not serialized).
+
+Check: `tests/project_auto_add.rs` (a session, a graph MCP call, and `worktree add` plus `adopt` each register with the key on and not with it off; worktrees are named by branch), `store::projects::tests::auto_add_skips_unwalkable_roots_and_never_renames_a_known_project`, `tests/latency.rs` `SessionStart` p95 under 10 ms with a real cwd (release only, as the other gates); `just check`.
+
+Deviations: the card asked for a deferred write; the hook already writes inline in the same way (`register_agent`), so registration is that one best-effort upsert rather than a hand-off. Hooks other than `SessionStart` do not register, to keep the per-event cost unchanged. The card's "stay out of `adopt`" line is obsolete: T289 is done and `adopt` registers through `claim::bind`.
+
 ## T329.3 — Project links and graph scope: `link`/`unlink`, cycle-safe scope, manual and auto kinds
 
 T329 Terms and §5. Migration `0028_project_links` adds directed links `(from_id, to_id, kind manual|auto, reason, unlinked)`, both ends cascading on delete so a removed project leaves no link behind, and a CHECK against self-links. `Store::link_projects`, `unlink_projects`, `project_links` and `project_scope` (new `src/store/project_links.rs`). `rtok graph projects link <project> [--from P] [--both] [--reason TEXT]` and `unlink <project> [--from P] [--both]` link from the selected project (or `--from`); the list gains each project's outgoing links (`links` count column, `links` array in `--json`).

@@ -31,3 +31,16 @@ pub fn commit(dir: &Path, file: &str) {
     run(dir, &["add", file]);
     run(dir, &["commit", "-q", "-m", file]);
 }
+
+/// A bare origin, a clone named `rtok` with one pushed commit, and the `_worktrees` root, all
+/// under `tmp`; the clone's canonical path.
+pub fn repo(tmp: &Path) -> std::path::PathBuf {
+    run(tmp, &["init", "-q", "--bare", "origin.git"]);
+    run(tmp, &["clone", "-q", "origin.git", "rtok"]);
+    let work = tmp.join("rtok");
+    commit(&work, "a.txt");
+    run(&work, &["push", "-q", "-u", "origin", "main"]);
+    run(&work, &["remote", "set-head", "origin", "main"]);
+    std::fs::create_dir_all(tmp.join("_worktrees")).unwrap();
+    work.canonicalize().unwrap()
+}
