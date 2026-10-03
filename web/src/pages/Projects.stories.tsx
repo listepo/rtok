@@ -66,3 +66,35 @@ export const SelectAgainstSampleServer: StoryObj = {
         await expect(header.queryByText("rtok")).toBeNull();
     },
 };
+
+export const WithLinks: Story = {
+    args: {
+        rows: [
+            project(1, "rtok", {
+                selected: true,
+                links: [
+                    { kind: "manual", name: "ketch", reason: "shared store", to: 2 },
+                    { kind: "auto", name: "web", reason: "path dependency", to: 3 },
+                ],
+            }),
+            project(2, "ketch"),
+            project(3, "web"),
+            project(4, "docs"),
+        ],
+    },
+};
+
+// Link both ways, then unlink one direction: the sample server applies each request.
+export const LinkAndUnlinkAgainstSampleServer: StoryObj = {
+    render: () => <Graph />,
+    decorators: [withData(connectSample)],
+    play: async ({ canvasElement }) => {
+        const links = within(await within(canvasElement).findByRole("region", { name: "links" }));
+        await userEvent.click(links.getByRole("button", { name: "unlink ketch" }));
+        await expect(await links.findByText(/is not linked to another project/)).toBeVisible();
+        await userEvent.selectOptions(links.getByLabelText("link to"), "ketch");
+        await userEvent.click(links.getByLabelText("both ways"));
+        await userEvent.click(links.getByRole("button", { name: "link" }));
+        await expect(await links.findByRole("button", { name: "unlink ketch" })).toBeVisible();
+    },
+};

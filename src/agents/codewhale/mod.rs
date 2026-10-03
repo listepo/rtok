@@ -170,7 +170,13 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
 /// `docs/MCP.md` shows (`env`/`disabled`/remote fields are optional and unused here).
 pub fn register_mcp(cfg: &Config) -> Result<String> {
     let cmd = super::rtok_command();
-    rtok_agent_sdk::register_mcp(&apply(cfg), &mcp_path(cfg), NAME, &cmd, &["mcp"])
+    rtok_agent_sdk::register_mcp(
+        &apply(cfg),
+        &mcp_path(cfg),
+        NAME,
+        &cmd,
+        &super::mcp_args("codewhale"),
+    )
 }
 
 /// Drop `mcpServers.rtok` from `mcp.json`.

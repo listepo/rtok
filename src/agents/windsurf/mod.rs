@@ -87,7 +87,7 @@ impl Agent for Windsurf {
 
 /// The `mcpServers.rtok` entry [`register_mcp`] writes.
 fn mcp_entry(cmd: &str) -> Value {
-    json!({"command": cmd, "args": ["mcp"]})
+    json!({"command": cmd, "args": super::mcp_args("windsurf")})
 }
 
 /// `mcpServers.rtok = {command, args}` in `mcp_config.json` — the stdio shape the Windsurf
@@ -100,7 +100,7 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
         "mcpServers",
         NAME,
         mcp_entry(&cmd),
-        &format!("{cmd} mcp"),
+        &super::mcp_summary(&cmd, "windsurf"),
     )
 }
 
@@ -139,7 +139,10 @@ mod tests {
         let out = register_mcp(&c).unwrap();
         assert_eq!(
             out,
-            format!("mcpServers.rtok: {} mcp", super::super::rtok_command())
+            format!(
+                "mcpServers.rtok: {} mcp --host windsurf",
+                super::super::rtok_command()
+            )
         );
         assert!(!path.exists());
         assert!(Windsurf.installed(&c, Kind::Desktop).is_empty());

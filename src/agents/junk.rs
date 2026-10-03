@@ -6,9 +6,9 @@
 //! left behind past `[log] files` and archive payloads past `core.retain_calls_days`. With
 //! `--yes` it also clears old hook bodies (`core.retain_hook_bodies_days`) and converts the
 //! store to incremental vacuum if it is not already (T352; `mcp`/`proxy` do the same in the
-//! background at session start). Dry run by default; `--yes` applies. Host junk
-//! (each app's own scratch/cache folders) is out of scope until the per-host map lands (plan
-//! T182 item 3) — this never touches a host directory.
+//! background at session start). Dry run by default; `--yes` applies. `clear` never touches a
+//! host directory. `list` (T330.1, T330.2) also shows every installed host's folders from
+//! the `junk_map` of `research.md` §22, read-only, sized with a per-agent time limit.
 //!
 //! Inventory for T182 found nothing else unbounded in `~/.rtok`: log rotation (`src/log.rs`)
 //! already caps generations on every write, archive retention (`Store::run_retention`) already
@@ -16,11 +16,14 @@
 //! `rtok.db`, not as loose files — this command makes the first two runnable on demand and
 //! reports what they would do before anyone applies them.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
+use super::junk_map::{Role, Roots, specs};
+use super::{Agent, HOSTS, host, present};
 use crate::config::Config;
 use crate::info::human_bytes;
 use crate::store::Store;
@@ -167,7 +170,19 @@ pub fn to_table(outcomes: &[Outcome], yes: bool) -> String {
 #[derive(Debug, Serialize)]
 pub struct Folder {
     pub path: String,
+    /// `data`, `temp`, `logs` or `cache` (`junk_map::Role`); rtok's own folders are `data`.
+    pub role: &'static str,
     pub size_bytes: u64,
+    /// A row of `research.md` §22 backs this path (D36). Anything else is listed read-only:
+    /// "not documented: not cleared".
+    pub documented: bool,
+    /// The other agents whose folder resolves to this same directory. It is sized once.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub shared_with: Vec<&'static str>,
+    /// Why the size may be low or the path is not what it looks like: permission denied, scan
+    /// timeout, or a symlink to the real folder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// One junk kind under an agent: what `clear` would remove, summed.
@@ -183,7 +198,12 @@ pub struct KindRow {
 #[derive(Debug, Serialize)]
 pub struct AgentJunk {
     pub name: &'static str,
+    /// A host from `agents::HOSTS`; `rtok` itself is the one row that is not.
+    pub host: bool,
+    pub installed: bool,
     pub folders: Vec<Folder>,
+    /// Disk usage of the folders, a folder nested in another one counted once.
+    pub total_bytes: u64,
     pub kinds: Vec<KindRow>,
     pub freed_default_bytes: u64,
 }
@@ -192,39 +212,71 @@ pub struct AgentJunk {
 #[derive(Debug, Serialize)]
 pub struct Report {
     pub agents: Vec<AgentJunk>,
+    /// Every folder once, however many agents share it.
+    pub total_bytes: u64,
     pub freed_default_bytes: u64,
 }
+
+/// What one walk found. A folder it could not read or finish is a lower bound, never an error.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Usage {
+    pub bytes: u64,
+    pub denied: bool,
+    pub timed_out: bool,
+}
+
+/// How long one agent's folders may take to size before the rest is reported as a lower bound
+/// (a huge cache on a network volume must not hang `list`).
+pub const AGENT_SCAN_LIMIT: Duration = Duration::from_secs(10);
 
 /// Disk usage, not apparent size: allocated blocks on Unix so sparse files and APFS clones are
 /// not over-counted, a hard link once. Elsewhere it is the apparent size with every link
 /// counted, because std has no stable file id to dedupe by there. A symlink costs itself and is
 /// never followed, so a link out of an agent folder cannot pull foreign bytes into the total.
 pub fn disk_usage(path: &Path) -> u64 {
-    fn walk(path: &Path, seen: &mut HashSet<(u64, u64)>) -> u64 {
-        let Ok(meta) = std::fs::symlink_metadata(path) else {
-            return 0;
+    disk_usage_until(path, None).bytes
+}
+
+/// [`disk_usage`] that stops at `deadline` and reports a directory it was not allowed to read.
+pub fn disk_usage_until(path: &Path, deadline: Option<Instant>) -> Usage {
+    fn walk(path: &Path, seen: &mut HashSet<(u64, u64)>, deadline: Option<Instant>, u: &mut Usage) {
+        if u.timed_out || deadline.is_some_and(|d| Instant::now() >= d) {
+            u.timed_out = true;
+            return;
+        }
+        let meta = match std::fs::symlink_metadata(path) {
+            Ok(m) => m,
+            Err(e) => {
+                u.denied |= e.kind() == std::io::ErrorKind::PermissionDenied;
+                return;
+            }
         };
-        let mut total = 0;
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
             if meta.nlink() < 2 || seen.insert((meta.dev(), meta.ino())) {
-                total += meta.blocks() * 512;
+                u.bytes += meta.blocks() * 512;
             }
         }
         #[cfg(not(unix))]
         {
             let _ = &seen;
-            total += meta.len();
+            u.bytes += meta.len();
         }
         if meta.is_dir() {
-            for entry in std::fs::read_dir(path).into_iter().flatten().flatten() {
-                total += walk(&entry.path(), seen);
+            match std::fs::read_dir(path) {
+                Ok(entries) => {
+                    for entry in entries.flatten() {
+                        walk(&entry.path(), seen, deadline, u);
+                    }
+                }
+                Err(e) => u.denied |= e.kind() == std::io::ErrorKind::PermissionDenied,
             }
         }
-        total
     }
-    walk(path, &mut HashSet::new())
+    let mut usage = Usage::default();
+    walk(path, &mut HashSet::new(), deadline, &mut usage);
+    usage
 }
 
 /// The directories rtok's junk lives in: the log directory and the archive directory. One
@@ -244,13 +296,180 @@ fn rtok_folders(cfg: &Config) -> Vec<Folder> {
         .map(|d| Folder {
             size_bytes: disk_usage(&d),
             path: d.display().to_string(),
+            role: "data",
+            documented: true,
+            shared_with: Vec::new(),
+            note: None,
         })
         .collect()
 }
 
-/// Read-only: the same [`scan`] `clear` runs, summed per kind. Only rtok's own junk exists
-/// until the per-host map is wired (T330.2), so there is one agent row.
+/// A folder a host writes, before it is sized.
+struct Found {
+    path: PathBuf,
+    role: Role,
+    documented: bool,
+}
+
+/// The folders of one host that exist: the §22 map, then the folders its own config files sit
+/// in (a host with no §22 row, Cursor, still shows where its settings live, read-only). A
+/// config-file folder inside a folder already found is dropped so a byte is not listed twice,
+/// and the home directory itself is never a folder (Aider's files sit directly in it).
+fn host_folders(a: &dyn Agent, cfg: &Config, roots: &Roots) -> Vec<Found> {
+    let mut found: Vec<Found> = Vec::new();
+    for s in specs(a.id()) {
+        let path = roots.resolve(&s.path);
+        let known = found.iter().any(|f| f.path == path);
+        if !known && std::fs::symlink_metadata(&path).is_ok() {
+            found.push(Found {
+                path,
+                role: s.role,
+                documented: s.documented,
+            });
+        }
+    }
+    let mut parents: Vec<PathBuf> = a
+        .variants()
+        .iter()
+        .flat_map(|v| a.markers(cfg, v.kind))
+        .filter_map(|p| p.parent().map(Path::to_path_buf))
+        .filter(|d| d.parent().is_some() && d != roots.home() && d.is_dir())
+        .collect();
+    parents.sort_by_key(|d| d.components().count());
+    for d in parents {
+        if !found.iter().any(|f| d.starts_with(&f.path)) {
+            found.push(Found {
+                path: d,
+                role: Role::Data,
+                documented: false,
+            });
+        }
+    }
+    found.sort_by(|x, y| x.path.cmp(&y.path));
+    found
+}
+
+/// What the real path of `path` is, when it is a symlink: the folder is sized at its target
+/// (the link itself costs nothing) and the listing says so.
+fn symlink_target(path: &Path) -> Option<PathBuf> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    meta.file_type()
+        .is_symlink()
+        .then(|| std::fs::canonicalize(path).ok())
+        .flatten()
+}
+
+/// Every host of `HOSTS` as an agent row: installed ones, or all of them with `all`. The
+/// folders are sized once however many agents share them, each agent within `limit`.
+fn host_rows(
+    cfg: &Config,
+    roots: &Roots,
+    all: bool,
+    limit: Duration,
+) -> (Vec<AgentJunk>, BTreeMap<PathBuf, u64>) {
+    let mut rows: Vec<AgentJunk> = Vec::new();
+    let mut sized: HashMap<PathBuf, Usage> = HashMap::new();
+    // Canonical folder -> the agents that own it, for the "shared with" note.
+    let mut owners: HashMap<PathBuf, Vec<&'static str>> = HashMap::new();
+    let mut keys: Vec<Vec<PathBuf>> = Vec::new();
+    for &id in HOSTS {
+        let Some(a) = host(id) else { continue };
+        let installed = a.variants().iter().any(|v| present(a, v, cfg));
+        if !installed && !all {
+            continue;
+        }
+        let deadline = Instant::now() + limit;
+        let mut folders = Vec::new();
+        let mut agent_keys = Vec::new();
+        for f in host_folders(a, cfg, roots) {
+            let target = symlink_target(&f.path);
+            let key = target.clone().unwrap_or_else(|| f.path.clone());
+            let usage = *sized
+                .entry(key.clone())
+                .or_insert_with(|| disk_usage_until(&key, Some(deadline)));
+            let mut notes = Vec::new();
+            if let Some(t) = &target {
+                notes.push(format!("symlink to {}", t.display()));
+            }
+            if usage.denied {
+                notes.push("permission denied: size is a lower bound".into());
+            }
+            if usage.timed_out {
+                notes.push(format!(
+                    "scan stopped after {}s: size is a lower bound",
+                    limit.as_secs()
+                ));
+            }
+            owners.entry(key.clone()).or_default().push(a.id());
+            agent_keys.push(key);
+            folders.push(Folder {
+                path: f.path.display().to_string(),
+                role: f.role.as_str(),
+                size_bytes: usage.bytes,
+                documented: f.documented,
+                shared_with: Vec::new(),
+                note: (!notes.is_empty()).then(|| notes.join("; ")),
+            });
+        }
+        keys.push(agent_keys);
+        rows.push(AgentJunk {
+            name: a.id(),
+            host: true,
+            installed,
+            folders,
+            total_bytes: 0,
+            kinds: Vec::new(),
+            freed_default_bytes: 0,
+        });
+    }
+    for (row, agent_keys) in rows.iter_mut().zip(&keys) {
+        for (folder, key) in row.folders.iter_mut().zip(agent_keys) {
+            folder.shared_with = owners[key]
+                .iter()
+                .copied()
+                .filter(|n| *n != row.name)
+                .collect();
+        }
+        row.total_bytes = top_level_bytes(
+            row.folders
+                .iter()
+                .zip(agent_keys)
+                .map(|(f, k)| (k.as_path(), f.size_bytes)),
+        );
+    }
+    let by_key = sized.into_iter().map(|(k, u)| (k, u.bytes)).collect();
+    (rows, by_key)
+}
+
+/// The sum of the folders that are not inside another listed folder, so a nested log folder
+/// is not added on top of its data home.
+fn top_level_bytes<'a>(folders: impl Iterator<Item = (&'a Path, u64)> + Clone) -> u64 {
+    let all: Vec<&Path> = folders.clone().map(|(p, _)| p).collect();
+    folders
+        .filter(|(p, _)| !all.iter().any(|o| o != p && p.starts_with(o)))
+        .map(|(_, b)| b)
+        .sum()
+}
+
+/// Which hosts a [`report`] covers.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Options {
+    /// Also hosts that are not installed (their rows have no folders unless one is left over).
+    pub all: bool,
+}
+
+/// Read-only: the same [`scan`] `clear` runs, summed per kind for rtok, plus every installed
+/// host's folders (T330.2). Nothing a host writes is cleared yet (T330.3).
 pub fn report(cfg: &Config) -> Report {
+    report_with(
+        cfg,
+        &Roots::from_env(),
+        Options::default(),
+        AGENT_SCAN_LIMIT,
+    )
+}
+
+pub fn report_with(cfg: &Config, roots: &Roots, opts: Options, limit: Duration) -> Report {
     let outcomes = scan(cfg);
     let kinds: Vec<KindRow> = ["log", "archive"]
         .into_iter()
@@ -266,25 +485,71 @@ pub fn report(cfg: &Config) -> Report {
         })
         .collect();
     let freed = kinds.iter().map(|k| k.size_bytes).sum();
+    let rtok_folders = rtok_folders(cfg);
+    let rtok_total = rtok_folders.iter().map(|f| f.size_bytes).sum::<u64>();
+    let mut agents = vec![AgentJunk {
+        name: "rtok",
+        host: false,
+        installed: true,
+        folders: rtok_folders,
+        total_bytes: rtok_total,
+        kinds,
+        freed_default_bytes: freed,
+    }];
+    let (hosts, mut by_key) = host_rows(cfg, roots, opts.all, limit);
+    agents.extend(hosts);
+    for f in &agents[0].folders {
+        by_key.insert(PathBuf::from(&f.path), f.size_bytes);
+    }
+    // Each directory once, however many agents list it, and a nested one inside its parent.
+    let total_bytes = top_level_bytes(by_key.iter().map(|(p, b)| (p.as_path(), *b)));
     Report {
-        agents: vec![AgentJunk {
-            name: "rtok",
-            folders: rtok_folders(cfg),
-            kinds,
-            freed_default_bytes: freed,
-        }],
+        agents,
+        total_bytes,
         freed_default_bytes: freed,
     }
 }
 
-/// Text of `agents junk list` and of the Hosts page's junk section; `exact` prints raw bytes.
-pub fn to_list(report: &Report, exact: bool) -> String {
+/// `text` as an OSC 8 hyperlink to the folder, for a terminal that renders it. A path that is
+/// not absolute has no `file://` URL and stays plain.
+fn folder_link(path: &str, text: &str) -> String {
+    match url::Url::from_file_path(path) {
+        Ok(u) => format!("\x1b]8;;{u}\x1b\\{text}\x1b]8;;\x1b\\"),
+        Err(()) => text.to_string(),
+    }
+}
+
+/// Text of `agents junk list` and of the Hosts page's junk section; `exact` prints raw bytes,
+/// `links` wraps each folder path in an OSC 8 link (only for a terminal).
+pub fn to_list(report: &Report, exact: bool, links: bool) -> String {
     let size = |n: u64| if exact { n.to_string() } else { human_bytes(n) };
     let mut out = String::new();
     for a in &report.agents {
-        out.push_str(&format!("{}\n", a.name));
+        out.push_str(a.name);
+        if a.host && !a.installed {
+            out.push_str(" (not installed)");
+        }
+        out.push('\n');
         for f in &a.folders {
-            out.push_str(&format!("  {}  {}\n", f.path, size(f.size_bytes)));
+            let path = if links {
+                folder_link(&f.path, &f.path)
+            } else {
+                f.path.clone()
+            };
+            out.push_str(&format!("  {path}  {}  {}", f.role, size(f.size_bytes)));
+            if !f.documented {
+                out.push_str("  not documented: not cleared");
+            }
+            if !f.shared_with.is_empty() {
+                out.push_str(&format!("  shared with {}", f.shared_with.join(", ")));
+            }
+            if let Some(note) = &f.note {
+                out.push_str(&format!("  ({note})"));
+            }
+            out.push('\n');
+        }
+        if a.host && a.folders.is_empty() {
+            out.push_str("  no folders found\n");
         }
         for k in &a.kinds {
             out.push_str(&format!(
@@ -295,13 +560,16 @@ pub fn to_list(report: &Report, exact: bool) -> String {
                 size(k.size_bytes)
             ));
         }
-        out.push_str(&format!(
-            "  Freed by `clear`: {}\n",
-            size(a.freed_default_bytes)
-        ));
+        if !a.host || !a.kinds.is_empty() {
+            out.push_str(&format!(
+                "  Freed by `clear`: {}\n",
+                size(a.freed_default_bytes)
+            ));
+        }
     }
     out.push_str(&format!(
-        "total\n  Freed by `clear`: {}\n",
+        "total\n  Folders: {}\n  Freed by `clear`: {}\n",
+        size(report.total_bytes),
         size(report.freed_default_bytes)
     ));
     out
@@ -450,8 +718,199 @@ mod tests {
                 .any(|f| f.path == logs.display().to_string())
         );
 
-        let text = to_list(&report, true);
+        let text = to_list(&report, true, false);
         assert!(text.contains("log (safe): 2 items, 12"), "{text}");
         assert!(text.contains("Freed by `clear`: 12"), "{text}");
+    }
+    fn write(path: &Path, bytes: usize) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, vec![b'x'; bytes]).unwrap();
+    }
+
+    /// Roots over a fixture home with `env` as the only environment.
+    fn roots(home: &Path, env: &[(&str, PathBuf)]) -> Roots {
+        let env: Vec<(String, PathBuf)> = env
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        Roots::new(home.to_path_buf(), move |k| {
+            env.iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| v.clone().into())
+        })
+    }
+
+    fn agent<'a>(r: &'a Report, name: &str) -> &'a AgentJunk {
+        r.agents
+            .iter()
+            .find(|a| a.name == name)
+            .unwrap_or_else(|| panic!("no `{name}` row"))
+    }
+
+    fn folder<'a>(a: &'a AgentJunk, path: &Path) -> &'a Folder {
+        let want = path.display().to_string();
+        a.folders
+            .iter()
+            .find(|f| f.path == want)
+            .unwrap_or_else(|| panic!("`{}` has no folder {want}: {:?}", a.name, a.folders))
+    }
+
+    #[cfg(unix)]
+    /// T330.2: Claude Code, Cursor and Codex under a fixture home. §22's rows are documented,
+    /// Cursor's folders are not, and a symlink out of a folder is not followed.
+    #[test]
+    fn host_rows_list_their_folders_with_sizes_and_the_documented_mark() {
+        let (cfg, dir) = crate::testutil::config("junk-hosts");
+        let outside = dir.join("outside");
+        write(&outside.join("big"), 1 << 20);
+        let claude = dir.join(".claude");
+        write(&claude.join("settings.json"), 10);
+        write(&claude.join("debug/a.log"), 100);
+        std::os::unix::fs::symlink(&outside, claude.join("link")).unwrap();
+        write(&dir.join(".cursor/hooks.json"), 10);
+        let cursor_data = dir.join("Library/Application Support/Cursor");
+        write(&cursor_data.join("state"), 10);
+        write(&dir.join(".codex/log/codex.log"), 10);
+        write(&dir.join(".codex/config.toml"), 10);
+
+        let report = report_with(
+            &cfg,
+            &roots(&dir, &[]),
+            Options::default(),
+            AGENT_SCAN_LIMIT,
+        );
+
+        let c = agent(&report, "claude");
+        let home = folder(c, &claude);
+        assert_eq!((home.role, home.documented), ("data", true));
+        assert_eq!(home.size_bytes, disk_usage(&claude));
+        assert!(
+            home.size_bytes < 512 * 1024,
+            "the link out of the folder was followed: {}",
+            home.size_bytes
+        );
+        let logs = folder(c, &claude.join("debug"));
+        assert_eq!((logs.role, logs.documented), ("logs", true));
+        assert_eq!(logs.size_bytes, disk_usage(&claude.join("debug")));
+        // The debug log is inside the data home, so the agent total does not add it twice.
+        assert_eq!(c.total_bytes, home.size_bytes);
+
+        let cur = agent(&report, "cursor");
+        assert!(cur.folders.len() >= 2, "{:?}", cur.folders);
+        assert!(
+            cur.folders.iter().all(|f| !f.documented),
+            "{:?}",
+            cur.folders
+        );
+        let app = folder(cur, &cursor_data);
+        assert_eq!(app.size_bytes, disk_usage(&cursor_data));
+        assert!(folder(cur, &dir.join(".cursor")).size_bytes > 0);
+
+        let x = agent(&report, "codex");
+        assert_eq!(folder(x, &dir.join(".codex/log")).role, "logs");
+        assert!(folder(x, &dir.join(".codex")).documented);
+
+        let text = to_list(&report, true, false);
+        assert!(
+            text.contains(&format!(
+                "{}  data  {}  not documented: not cleared",
+                cursor_data.display(),
+                app.size_bytes
+            )),
+            "{text}"
+        );
+        assert!(!text.contains("\x1b]8"), "no link off a terminal: {text}");
+        let linked = to_list(&report, true, true);
+        assert!(linked.contains("\x1b]8;;file://"), "{linked}");
+    }
+
+    /// An override that points two hosts at one directory: it is listed under both with a
+    /// "shared with" note and counted once in the report total.
+    #[test]
+    fn a_folder_two_agents_share_is_sized_once_and_marked_shared() {
+        let (mut cfg, dir) = crate::testutil::config("junk-shared");
+        // rtok's own folders must not be the fixture home, which holds the shared folder.
+        cfg.log.path = dir.join("none/rtok.log");
+        cfg.core.archive_dir = dir.join("none/archive");
+        let shared = dir.join("shared");
+        write(&shared.join("blob"), 64 * 1024);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+        std::fs::create_dir_all(dir.join(".codex")).unwrap();
+        let env = [
+            ("CLAUDE_CONFIG_DIR", shared.clone()),
+            ("CODEX_HOME", shared.clone()),
+        ];
+
+        let report = report_with(
+            &cfg,
+            &roots(&dir, &env),
+            Options::default(),
+            AGENT_SCAN_LIMIT,
+        );
+
+        let c = folder(agent(&report, "claude"), &shared);
+        let x = folder(agent(&report, "codex"), &shared);
+        assert_eq!(c.shared_with, vec!["codex"]);
+        assert_eq!(x.shared_with, vec!["claude"]);
+        assert_eq!(c.size_bytes, x.size_bytes);
+        let both = agent(&report, "claude").total_bytes + agent(&report, "codex").total_bytes;
+        assert!(
+            report.total_bytes < both,
+            "{} !< {both}",
+            report.total_bytes
+        );
+        assert!(to_list(&report, false, false).contains("shared with codex"));
+    }
+
+    #[test]
+    fn all_adds_hosts_that_are_not_installed_and_the_default_skips_them() {
+        let (cfg, dir) = crate::testutil::config("junk-all");
+        let r = roots(&dir, &[]);
+        let names = |report: &Report| report.agents.len();
+
+        let some = report_with(&cfg, &r, Options::default(), AGENT_SCAN_LIMIT);
+        let every = report_with(&cfg, &r, Options { all: true }, AGENT_SCAN_LIMIT);
+
+        assert_eq!(every.agents.len(), HOSTS.len() + 1, "rtok plus every host");
+        assert!(names(&some) < names(&every));
+        let absent = every
+            .agents
+            .iter()
+            .find(|a| a.host && !a.installed)
+            .unwrap();
+        assert!(absent.folders.is_empty());
+        assert!(
+            to_list(&every, false, false).contains(&format!("{} (not installed)", absent.name))
+        );
+    }
+
+    #[test]
+    fn a_scan_past_its_limit_is_reported_not_fatal() {
+        let (cfg, dir) = crate::testutil::config("junk-timeout");
+        write(&dir.join(".claude/settings.json"), 10);
+
+        let report = report_with(&cfg, &roots(&dir, &[]), Options::default(), Duration::ZERO);
+
+        let note = folder(agent(&report, "claude"), &dir.join(".claude"))
+            .note
+            .clone();
+        assert!(note.is_some_and(|n| n.contains("scan stopped")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_folder_is_reported_not_fatal() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_cfg, dir) = crate::testutil::config("junk-denied");
+        let locked = dir.join("locked");
+        write(&locked.join("f"), 10);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let usage = disk_usage_until(&locked, None);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // A superuser reads it anyway, which is not the case under test.
+        if !usage.denied {
+            assert!(usage.bytes > 0);
+        }
+        assert!(usage.denied || usage.bytes > 4096);
     }
 }

@@ -505,6 +505,25 @@ enum WorktreeCmd {
         #[arg(long)]
         owner: Option<String>,
     },
+    /// Bind the worktree you are in (made by a host's own tool) to your agent. A worktree in a
+    /// pool its host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only
+    Adopt {
+        /// The worktree, or a directory inside it; defaults to the current directory
+        path: Option<PathBuf>,
+        /// The task id, when the lock and the branch do not name one (a detached HEAD)
+        #[arg(long)]
+        task: Option<String>,
+        /// The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`
+        #[arg(long)]
+        agent: Option<String>,
+        /// The owner the lock names, as `<provider> / <model>`. Defaults to `<host> / <model>`
+        /// of the agent
+        #[arg(long)]
+        owner: Option<String>,
+        /// Print the result as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Remove your own finished worktree: unlock, `git worktree remove`, delete the branch
     /// when merged, release the claim; refuses dirty, foreign-locked or current worktrees
     Remove {
@@ -774,7 +793,7 @@ enum AgentCmd {
         #[arg(long)]
         json: bool,
     },
-    /// Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear
+    /// Junk and agent folders: `list` shows rtok's and every installed host's folders with sizes, `clear` removes rtok's own junk
     Junk {
         #[command(subcommand)]
         action: JunkCmd,
@@ -832,6 +851,9 @@ enum JunkCmd {
         /// Exact byte counts instead of KB/MB/GB
         #[arg(long)]
         bytes: bool,
+        /// Also the hosts that are not installed
+        #[arg(long)]
+        all: bool,
     },
     /// List what `agents junk clear` would remove; `--yes` applies it
     Clear {
@@ -1145,6 +1167,16 @@ pub fn run() -> Result<()> {
             }
         }
         Cmd::Hook { serve: true, .. } => crate::hooks::resident::serve()?,
+        // T159: these two events answer with a path and an exit code, not the JSON the hook
+        // dispatcher writes, so they skip it.
+        Cmd::Hook {
+            event: Some(event), ..
+        } if crate::worktree::host::handles(&event) => {
+            let cfg = Config::load_lenient(config_file.as_deref(), None);
+            if let Some(out) = crate::worktree::host::run(&event, io::stdin(), &cfg)? {
+                println!("{out}");
+            }
+        }
         Cmd::Hook { event, host, .. } => {
             let cfg = Config::load_lenient(config_file.as_deref(), hook_host_flag(host));
             crate::hooks::run(&event.unwrap_or_default(), io::stdin(), io::stdout(), &cfg);
@@ -1272,11 +1304,11 @@ pub fn run() -> Result<()> {
         } => {
             use crate::worktree::claim;
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let root = Some(cfg.worktree.root.as_path()).filter(|r| !r.as_os_str().is_empty());
             let id = (task.as_str(), slug.as_deref());
             let store = crate::store::Store::open(&cfg.core.db_path).ok();
             let agent = claim::caller(store.as_ref(), agent.as_deref())?;
             let cwd = std::env::current_dir()?;
+            let root = claim::configured_root(&cfg.worktree.root);
             let plan = claim::add(store.as_ref(), &cwd, root, id, agent.as_ref(), owner)?;
             println!("{}", plan.path.display());
         }
@@ -1289,10 +1321,35 @@ pub fn run() -> Result<()> {
             let Some(agent) = claim::caller(store.as_ref(), agent.as_deref())? else {
                 bail!("no agent to bind: pass --agent or set RTOK_AGENT_ID");
             };
-            let owner = claim::owner(owner, Some(&agent), store.as_ref())?;
-            let (path, task) = claim::run(&path, &owner, &agent.id)?;
-            claim::remember(store.as_ref(), &path, &agent.id, &task);
-            println!("{}", path.display());
+            let done = claim::bind(store.as_ref(), &path, &agent, owner, None, false)?;
+            println!("{}", done.path.display());
+        }
+        Cmd::Worktree {
+            action:
+                WorktreeCmd::Adopt {
+                    path,
+                    task,
+                    agent,
+                    owner,
+                    json,
+                },
+        } => {
+            use crate::worktree::claim;
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            let Some(agent) = claim::caller(store.as_ref(), agent.as_deref())? else {
+                bail!("no agent to bind: pass --agent or set RTOK_AGENT_ID");
+            };
+            let path = match path {
+                Some(path) => path,
+                None => std::env::current_dir()?,
+            };
+            let done = claim::bind(store.as_ref(), &path, &agent, owner, task.as_deref(), true)?;
+            if json {
+                print_json(&done)?;
+            } else {
+                println!("{}", done.path.display());
+            }
         }
         Cmd::Worktree {
             action:
@@ -1308,24 +1365,14 @@ pub fn run() -> Result<()> {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let store = crate::store::Store::open(&cfg.core.db_path).ok();
             let agent = claim::caller(store.as_ref(), agent.as_deref())?;
-            // No agent and no `--owner`: no name to hold a lock by, so only an unlocked one goes.
-            let owner = match (owner, &agent) {
-                (None, None) => None,
-                (owner, agent) => Some(claim::owner(owner, agent.as_ref(), store.as_ref())?),
-            };
-            let who = remove::Caller {
-                agent: agent.as_ref().map(|a| a.id.as_str()),
-                owner: owner.as_deref(),
-            };
             let cwd = std::env::current_dir()?;
-            let done = remove::run(&cwd, &target, &who, keep_branch)?;
-            let released = store.as_ref().map(|s| s.release_worktree_claim(&done.path));
-            if let Some(Err(e)) = released {
-                eprintln!(
-                    "{}",
-                    style::warn(&format!("warning: claim not released: {e:#}"))
-                );
-            }
+            let done = remove::for_agent(
+                store.as_ref(),
+                &cwd,
+                &target,
+                (agent.as_ref(), owner),
+                keep_branch,
+            )?;
             if json {
                 print_json(&done)?;
             } else {
@@ -1574,14 +1621,20 @@ pub fn run() -> Result<()> {
                 }
             }
             AgentCmd::Junk {
-                action: JunkCmd::List { json, bytes },
+                action: JunkCmd::List { json, bytes, all },
             } => {
                 let cfg = Config::load_with(config_file.as_deref(), None)?;
-                let report = crate::agents::junk::report(&cfg);
+                let report = crate::agents::junk::report_with(
+                    &cfg,
+                    &crate::agents::junk_map::Roots::from_env(),
+                    crate::agents::junk::Options { all },
+                    crate::agents::junk::AGENT_SCAN_LIMIT,
+                );
                 if json {
                     print_json(&report)?;
                 } else {
-                    print!("{}", crate::agents::junk::to_list(&report, bytes));
+                    let links = io::stdout().is_terminal();
+                    print!("{}", crate::agents::junk::to_list(&report, bytes, links));
                 }
             }
             AgentCmd::Junk {
@@ -2080,6 +2133,11 @@ pub fn run() -> Result<()> {
             since,
             ai,
         } => {
+            // As for `stats`: the flag is parsed before it merges into `report.since`, so a later
+            // parse error can only come from the config or the environment and says so.
+            if let Some(s) = &since {
+                crate::measure::stats::parse_since(s)?;
+            }
             let cfg =
                 Config::load_with(config_file.as_deref(), report_flags(format, out, since, ai))?;
             // D24: the command picks the renderer and the sink; every number was already
