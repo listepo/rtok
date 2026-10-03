@@ -14,7 +14,7 @@ exist — including rtok's own.
 
 ## Install
 
-macOS on Apple silicon or Intel, and Linux x86-64. The script is POSIX `sh`, so it behaves the
+macOS on Apple silicon, and Linux x86-64. The script is POSIX `sh`, so it behaves the
 same whether your shell is bash or zsh; it puts `rtok` in `~/.cargo/bin`.
 
 ```bash

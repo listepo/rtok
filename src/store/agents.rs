@@ -330,6 +330,17 @@ impl Store {
             .collect())
     }
 
+    /// Test-only: place `last_seen` at an exact time, so a fixture can say "seen before the
+    /// MCP process started" without sleeping.
+    #[cfg(test)]
+    pub(crate) fn set_agent_last_seen(&self, id: &str, ts: i64) -> Result<()> {
+        let mut conn = self.lock()?;
+        diesel::update(agents::table.filter(agents::id.eq(id)))
+            .set(agents::last_seen.eq(ts))
+            .execute(&mut *conn)?;
+        Ok(())
+    }
+
     /// Test/debug: one row by its exact id. `pub(crate)` so `hooks::mod`'s dispatch-level
     /// fixture tests can assert on what a full hook run wrote (T282).
     #[cfg(test)]

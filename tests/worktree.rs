@@ -290,7 +290,9 @@ fn worktrees_page_shows_a_locked_worktree_s_owner() {
     let cfg = rtok::testutil::config_file_in(&tmp);
     let prev = std::env::current_dir().unwrap();
     std::env::set_current_dir(&work).unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    // The read runs `git worktree list` on a background thread; on a loaded machine (parallel
+    // cargo builds, a full nextest run) it has taken over 10 s, so the bound is generous.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     let page = loop {
         let page = rtok::web::model::snapshot(&cfg)
             .worktrees
@@ -872,6 +874,131 @@ fn remove_takes_only_the_caller_s_own_clean_worktree() {
         assert!(tmp.join(name).exists(), "{name}");
     }
     let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// One `rtok mcp` session: `initialize`, then `hooks_fire` (the session's hooks registering
+/// its agent: a cwd link only trusts a row seen since the process started), then `calls` as
+/// `tools/call`s; `(isError, text)` of each answer.
+fn mcp_session(
+    home: &Path,
+    cwd: &Path,
+    hooks_fire: impl FnOnce(),
+    calls: &[(&str, &str)],
+) -> Vec<(bool, String)> {
+    use std::io::{BufRead as _, Write as _};
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
+        .args(["mcp", "--host", "claude"])
+        .current_dir(cwd)
+        .env("HOME", home)
+        .env_remove("RTOK_AGENT_ID")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("rtok spawns");
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+    let init = r#"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}"#;
+    writeln!(stdin, "{init}").unwrap();
+    // The answer proves the process is up, so its start time is behind us.
+    stdout.read_line(&mut String::new()).unwrap();
+    hooks_fire();
+    for (i, (name, args)) in calls.iter().enumerate() {
+        let id = i + 1;
+        let call = format!(
+            r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{{"name":"{name}","arguments":{args}}}}}"#
+        );
+        writeln!(stdin, "{call}").unwrap();
+    }
+    drop(stdin);
+    let answers: Vec<serde_json::Value> = stdout
+        .lines()
+        .map_while(Result::ok)
+        .filter_map(|l| serde_json::from_str(&l).ok())
+        .collect();
+    child.wait().unwrap();
+    (1..=calls.len())
+        .map(|id| {
+            let v = answers.iter().find(|a| a["id"] == id).expect("an answer");
+            (
+                v["result"]["isError"] == true,
+                v["result"]["content"][0]["text"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            )
+        })
+        .collect()
+}
+
+/// T285 PR 2: MCP `worktree_add` creates the worktree for the session's linked agent (lock
+/// and claim row name it, as on the CLI) and `worktree_list` shows it bound; a session that
+/// is linked to no agent gets an error and creates nothing.
+#[test]
+fn mcp_worktree_tools_act_for_the_linked_agent() {
+    let tmp = rtok::testutil::tmp_dir("worktree-mcp");
+    run(&tmp, &["init", "-q", "--bare", "origin.git"]);
+    run(&tmp, &["clone", "-q", "origin.git", "rtok"]);
+    let work = tmp.join("rtok");
+    commit(&work, "a.txt");
+    run(&work, &["push", "-q", "-u", "origin", "main"]);
+    run(&work, &["remote", "set-head", "origin", "main"]);
+    std::fs::create_dir_all(tmp.join("_worktrees")).unwrap();
+    let (store, _) = agents(&tmp, &[]);
+    let claude = store.host_id("claude").unwrap().unwrap();
+    let cwd = work.canonicalize().unwrap();
+    let calls = [
+        ("worktree_add", r#"{"task":"t9","slug":"mcp"}"#),
+        ("worktree_list", "{}"),
+        ("worktree_add", r#"{"task":"t9"}"#),
+    ];
+    let mut me = String::new();
+    let hooks = || {
+        me = store
+            .register_agent(claude, "sess-mcp", None, cwd.to_str(), None)
+            .unwrap();
+    };
+    let got = mcp_session(&tmp, &work, hooks, &calls);
+    let (is_err, text) = &got[0];
+    assert!(!is_err, "{text}");
+    let added: serde_json::Value = serde_json::from_str(text).unwrap();
+    assert_eq!(added["branch"], "t9-mcp");
+    assert_eq!(added["agent"], me);
+    assert!(Path::new(added["path"].as_str().unwrap()).is_dir());
+    let lock = lock_of(&work, "rtok-t9");
+    assert_eq!(lock.agent.as_deref(), Some(me.as_str()));
+    let real = Path::new(added["path"].as_str().unwrap())
+        .canonicalize()
+        .unwrap()
+        .display()
+        .to_string();
+    assert_eq!(store.open_worktree_claims().unwrap(), [(real, me.clone())]);
+
+    let (is_err, text) = &got[1];
+    assert!(!is_err, "{text}");
+    let rows: serde_json::Value = serde_json::from_str(text).unwrap();
+    let row = by_name(&rows, "rtok-t9");
+    assert_eq!(
+        (&row["agent"]["id"], &row["agent"]["state"]),
+        (&serde_json::json!(me), &serde_json::json!("live"))
+    );
+
+    let (is_err, text) = &got[2];
+    assert!(*is_err && text.contains("already exists"), "{text}");
+
+    // No agent row for this cwd: the worktree has no one to belong to.
+    let elsewhere = tmp.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let got = mcp_session(
+        &tmp,
+        &elsewhere,
+        || (),
+        &[("worktree_add", r#"{"task":"t10"}"#)],
+    );
+    assert!(
+        got[0].0 && got[0].1 == "not linked to an agent session",
+        "{got:?}"
+    );
+    assert_eq!(inventory(&work).unwrap().len(), 2);
 }
 
 /// The payload Claude Code sends a command hook (`research.md` §18.3, docs checked 2026-10-02).

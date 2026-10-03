@@ -80,7 +80,8 @@ fn create(p: &Payload, cfg: &Config, store: Option<&Store>) -> Result<PathBuf> {
     }
     let agent = session_agent(store, p);
     let owner = agent.is_none().then(|| HOST.to_string());
-    let plan = claim::add(cfg, store, cwd, (&p.name, None), (owner, agent.as_ref()))?;
+    let root = claim::configured_root(&cfg.worktree.root);
+    let plan = claim::add(store, cwd, root, (&p.name, None), agent.as_ref(), owner)?;
     Ok(native(plan.path))
 }
 

@@ -43,6 +43,7 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 '--call=[Call one listed tool and print the text result (pi /`registerTool/` shim, T70.3)]:TOOL:_default' /
 '--json=[JSON arguments for /`--call/`]:ARGS:_default' /
+'--host=[The host this MCP entry belongs to (/`claude/`, /`cursor/`, /`grok/`, …)/: overlays /`/[hook/] host/` so the process can find its rtok agent (T283.1)]:HOST:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '-h[Print help]' /
 '--help[Print help]' /
@@ -453,10 +454,11 @@ esac
 ;;
 (usage)
 _arguments "${_arguments_options[@]}" : /
-'--source=[Data source/: /`rtok/` (the store; the only one for now)]:SOURCE:_default' /
+'--source=[Data source/: /`logs/` (the agents'/'' own session files, the default), /`rtok/` (what passed through rtok) or /`both/`]:SOURCE:_default' /
 '--host=[Only these hosts, comma-separated (/`claude,codex/`)]:IDS:_default' /
 '--since=[From a date (/`2026-09-01/`, whole days in /`--tz/`) or a duration back from now (/`30d/`)]:DATE|DUR:_default' /
 '--until=[Through this date, inclusive]:DATE:_default' /
+'--by=[Middle table grouping/: /`agent/` (the default) or /`model/`]:AGENT|MODEL:_default' /
 '--tz=[IANA time zone for day and month boundaries (default/: the system zone)]:ZONE:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '(--monthly)--daily[Bottom table by day]' /
@@ -482,7 +484,16 @@ _arguments "${_arguments_options[@]}" : /
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:rtok-agents-junk-command-$line[1]:"
         case $line[1] in
-            (clear)
+            (list)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of the text]' /
+'--bytes[Exact byte counts instead of KB/MB/GB]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(clear)
 _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--yes[Apply; without it this is a dry run that changes nothing]' /
@@ -503,7 +514,11 @@ _arguments "${_arguments_options[@]}" : /
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:rtok-agents-junk-help-command-$line[1]:"
         case $line[1] in
-            (clear)
+            (list)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(clear)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -636,7 +651,11 @@ _arguments "${_arguments_options[@]}" : /
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:rtok-agents-help-junk-command-$line[1]:"
         case $line[1] in
-            (clear)
+            (list)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(clear)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -833,10 +852,11 @@ esac
 ;;
 (usage)
 _arguments "${_arguments_options[@]}" : /
-'--source=[Data source/: /`rtok/` (the store; the only one for now)]:SOURCE:_default' /
+'--source=[Data source/: /`logs/` (the agents'/'' own session files, the default), /`rtok/` (what passed through rtok) or /`both/`]:SOURCE:_default' /
 '--host=[Only these hosts, comma-separated (/`claude,codex/`)]:IDS:_default' /
 '--since=[From a date (/`2026-09-01/`, whole days in /`--tz/`) or a duration back from now (/`30d/`)]:DATE|DUR:_default' /
 '--until=[Through this date, inclusive]:DATE:_default' /
+'--by=[Middle table grouping/: /`agent/` (the default) or /`model/`]:AGENT|MODEL:_default' /
 '--tz=[IANA time zone for day and month boundaries (default/: the system zone)]:ZONE:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '(--monthly)--daily[Bottom table by day]' /
@@ -862,7 +882,16 @@ _arguments "${_arguments_options[@]}" : /
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:rtok-agents-junk-command-$line[1]:"
         case $line[1] in
-            (clear)
+            (list)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of the text]' /
+'--bytes[Exact byte counts instead of KB/MB/GB]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(clear)
 _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--yes[Apply; without it this is a dry run that changes nothing]' /
@@ -883,7 +912,11 @@ _arguments "${_arguments_options[@]}" : /
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:rtok-agents-junk-help-command-$line[1]:"
         case $line[1] in
-            (clear)
+            (list)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(clear)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -1016,7 +1049,11 @@ _arguments "${_arguments_options[@]}" : /
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:rtok-agents-help-junk-command-$line[1]:"
         case $line[1] in
-            (clear)
+            (list)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(clear)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -2050,7 +2087,11 @@ _arguments "${_arguments_options[@]}" : /
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:rtok-help-agents-junk-command-$line[1]:"
         case $line[1] in
-            (clear)
+            (list)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(clear)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -2434,8 +2475,8 @@ _rtok__subcmd__agents_commands() {
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
-'usage:Tokens and estimated cost per agent and month (or day), from what passed through rtok' /
-'junk:Junk rtok owns under its own home/: log siblings and archive payloads past retention' /
+'usage:Tokens and estimated cost per agent and month (or day), from the agents'/'' logs or rtok' /
+'junk:Junk rtok owns under its own home (log siblings, archive payloads past retention)/: list or clear' /
 'whoami:This session'/''s own rtok agent id (T283, D34)/: /`RTOK_AGENT_ID/`, resolved through the store' /
 'show:One agent by id prefix/: host, model, ids, parent and sub-agents, cwd, activity, status' /
 'status:Say what this agent (/`RTOK_AGENT_ID/`) is busy with/: plain text, at most 120 chars' /
@@ -2455,8 +2496,8 @@ _rtok__subcmd__agents__subcmd__help_commands() {
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
-'usage:Tokens and estimated cost per agent and month (or day), from what passed through rtok' /
-'junk:Junk rtok owns under its own home/: log siblings and archive payloads past retention' /
+'usage:Tokens and estimated cost per agent and month (or day), from the agents'/'' logs or rtok' /
+'junk:Junk rtok owns under its own home (log siblings, archive payloads past retention)/: list or clear' /
 'whoami:This session'/''s own rtok agent id (T283, D34)/: /`RTOK_AGENT_ID/`, resolved through the store' /
 'show:One agent by id prefix/: host, model, ids, parent and sub-agents, cwd, activity, status' /
 'status:Say what this agent (/`RTOK_AGENT_ID/`) is busy with/: plain text, at most 120 chars' /
@@ -2489,6 +2530,7 @@ _rtok__subcmd__agents__subcmd__help__subcmd__install_commands() {
 (( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__junk_commands] )) ||
 _rtok__subcmd__agents__subcmd__help__subcmd__junk_commands() {
     local commands; commands=(
+'list:Folders, junk kinds and sizes per agent, and the space /`agents junk clear/` would free' /
 'clear:List what /`agents junk clear/` would remove; /`--yes/` applies it' /
     )
     _describe -t commands 'rtok agents help junk commands' commands "$@"
@@ -2497,6 +2539,11 @@ _rtok__subcmd__agents__subcmd__help__subcmd__junk_commands() {
 _rtok__subcmd__agents__subcmd__help__subcmd__junk__subcmd__clear_commands() {
     local commands; commands=()
     _describe -t commands 'rtok agents help junk clear commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__junk__subcmd__list_commands] )) ||
+_rtok__subcmd__agents__subcmd__help__subcmd__junk__subcmd__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents help junk list commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__list_commands] )) ||
 _rtok__subcmd__agents__subcmd__help__subcmd__list_commands() {
@@ -2573,6 +2620,7 @@ _rtok__subcmd__agents__subcmd__install_commands() {
 (( $+functions[_rtok__subcmd__agents__subcmd__junk_commands] )) ||
 _rtok__subcmd__agents__subcmd__junk_commands() {
     local commands; commands=(
+'list:Folders, junk kinds and sizes per agent, and the space /`agents junk clear/` would free' /
 'clear:List what /`agents junk clear/` would remove; /`--yes/` applies it' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
@@ -2586,6 +2634,7 @@ _rtok__subcmd__agents__subcmd__junk__subcmd__clear_commands() {
 (( $+functions[_rtok__subcmd__agents__subcmd__junk__subcmd__help_commands] )) ||
 _rtok__subcmd__agents__subcmd__junk__subcmd__help_commands() {
     local commands; commands=(
+'list:Folders, junk kinds and sizes per agent, and the space /`agents junk clear/` would free' /
 'clear:List what /`agents junk clear/` would remove; /`--yes/` applies it' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
@@ -2600,6 +2649,16 @@ _rtok__subcmd__agents__subcmd__junk__subcmd__help__subcmd__clear_commands() {
 _rtok__subcmd__agents__subcmd__junk__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'rtok agents junk help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__junk__subcmd__help__subcmd__list_commands] )) ||
+_rtok__subcmd__agents__subcmd__junk__subcmd__help__subcmd__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents junk help list commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__junk__subcmd__list_commands] )) ||
+_rtok__subcmd__agents__subcmd__junk__subcmd__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents junk list commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__agents__subcmd__list_commands] )) ||
 _rtok__subcmd__agents__subcmd__list_commands() {
@@ -3087,8 +3146,8 @@ _rtok__subcmd__help__subcmd__agents_commands() {
 'list:Every known app/: kind and name, path and version, config files, rtok modules' /
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
-'usage:Tokens and estimated cost per agent and month (or day), from what passed through rtok' /
-'junk:Junk rtok owns under its own home/: log siblings and archive payloads past retention' /
+'usage:Tokens and estimated cost per agent and month (or day), from the agents'/'' logs or rtok' /
+'junk:Junk rtok owns under its own home (log siblings, archive payloads past retention)/: list or clear' /
 'whoami:This session'/''s own rtok agent id (T283, D34)/: /`RTOK_AGENT_ID/`, resolved through the store' /
 'show:One agent by id prefix/: host, model, ids, parent and sub-agents, cwd, activity, status' /
 'status:Say what this agent (/`RTOK_AGENT_ID/`) is busy with/: plain text, at most 120 chars' /
@@ -3115,6 +3174,7 @@ _rtok__subcmd__help__subcmd__agents__subcmd__install_commands() {
 (( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__junk_commands] )) ||
 _rtok__subcmd__help__subcmd__agents__subcmd__junk_commands() {
     local commands; commands=(
+'list:Folders, junk kinds and sizes per agent, and the space /`agents junk clear/` would free' /
 'clear:List what /`agents junk clear/` would remove; /`--yes/` applies it' /
     )
     _describe -t commands 'rtok help agents junk commands' commands "$@"
@@ -3123,6 +3183,11 @@ _rtok__subcmd__help__subcmd__agents__subcmd__junk_commands() {
 _rtok__subcmd__help__subcmd__agents__subcmd__junk__subcmd__clear_commands() {
     local commands; commands=()
     _describe -t commands 'rtok help agents junk clear commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__junk__subcmd__list_commands] )) ||
+_rtok__subcmd__help__subcmd__agents__subcmd__junk__subcmd__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help agents junk list commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__list_commands] )) ||
 _rtok__subcmd__help__subcmd__agents__subcmd__list_commands() {

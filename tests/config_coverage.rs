@@ -99,6 +99,8 @@ const ALLOW_KEYS: &[&str] = &[
     // stored value would delete without anyone typing it, and it must not share `setup.yes`,
     // which confirms a different destructive action (`agents install --replace`).
     "junk.yes",
+    // `agents junk list --bytes` (T330.1): how one call prints sizes, not a stored setting.
+    "junk.bytes",
     // `rtok mcp ping --timeout` (T275.1): one call's wait, default 60s, not a stored setting.
     "mcp.ping.timeout_s",
     // `agents send --all-live` / `agents inbox --unread` (T287): who gets one message and
@@ -190,6 +192,8 @@ fn config_key(path: &[&str], long: &str) -> String {
         ["agents", ..] => format!("setup.{name}"),
         // `rtok dashboard` is the hidden deprecated spelling of `rtok web`; one table, `[web]`.
         ["dashboard", ..] => format!("web.{name}"),
+        // `rtok mcp --host` (T283.1) overlays `[hook] host`, as `rtok hook --host` does.
+        ["mcp"] if name == "host" => "hook.host".into(),
         ["run", ..] | ["filter", ..] => match name {
             "shell" => "plugins.cmd.shell".into(),
             "no_trailer" => "plugins.cmd.trailer_min_lines".into(),

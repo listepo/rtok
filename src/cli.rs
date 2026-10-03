@@ -56,6 +56,10 @@ enum Cmd {
         /// JSON arguments for `--call`
         #[arg(long, value_name = "ARGS")]
         json: Option<String>,
+        /// The host this MCP entry belongs to (`claude`, `cursor`, `grok`, …): overlays `[hook] host` so
+        /// the process can find its rtok agent (T283.1)
+        #[arg(long, value_name = "HOST")]
+        host: Option<String>,
         /// Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`)
         #[arg(last = true)]
         wrap: Vec<String>,
@@ -666,12 +670,12 @@ enum AgentCmd {
         #[command(subcommand)]
         action: Option<SessionsCmd>,
     },
-    /// Tokens and estimated cost per agent and month (or day), from what passed through rtok
+    /// Tokens and estimated cost per agent and month (or day), from the agents' logs or rtok
     ///
     /// Prices come from `[stats.prices]`; a model without one counts in the tokens and is
     /// left out of the cost (`--unpriced` names those).
     Usage {
-        /// Data source: `rtok` (the store; the only one for now)
+        /// Data source: `logs` (the agents' own session files, the default), `rtok` (what passed through rtok) or `both`
         #[arg(long, value_name = "SOURCE")]
         source: Option<String>,
         /// Only these hosts, comma-separated (`claude,codex`)
@@ -689,6 +693,9 @@ enum AgentCmd {
         /// Bottom table by month (the default)
         #[arg(long)]
         monthly: bool,
+        /// Middle table grouping: `agent` (the default) or `model`
+        #[arg(long, value_name = "AGENT|MODEL")]
+        by: Option<String>,
         /// IANA time zone for day and month boundaries (default: the system zone)
         #[arg(long, value_name = "ZONE")]
         tz: Option<String>,
@@ -699,7 +706,7 @@ enum AgentCmd {
         #[arg(long)]
         json: bool,
     },
-    /// Junk rtok owns under its own home: log siblings and archive payloads past retention
+    /// Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear
     Junk {
         #[command(subcommand)]
         action: JunkCmd,
@@ -749,6 +756,15 @@ enum AgentCmd {
 
 #[derive(Subcommand)]
 enum JunkCmd {
+    /// Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free
+    List {
+        /// JSON instead of the text
+        #[arg(long)]
+        json: bool,
+        /// Exact byte counts instead of KB/MB/GB
+        #[arg(long)]
+        bytes: bool,
+    },
     /// List what `agents junk clear` would remove; `--yes` applies it
     Clear {
         /// Apply; without it this is a dry run that changes nothing
@@ -1021,6 +1037,10 @@ pub fn run() -> Result<()> {
                     // also appended to the log.
                     let layer = config_file.as_deref().or(Some(&path));
                     let cfg = crate::config::layers::load(&home, layer, None).unwrap_or_default();
+                    // Values from the project file, `.env` and the environment skip the file check.
+                    errs.extend(validate::layered_issues(crate::config::layers::sourced(
+                        &crate::config::layers::figment(&home, layer, None),
+                    )));
                     errs.extend(validate::rules_issues(
                         &cfg.plugins.cmd.rules,
                         &cfg.plugins.cmd.rules_dir,
@@ -1082,6 +1102,11 @@ pub fn run() -> Result<()> {
             cache,
             price,
         } => {
+            // The flag is parsed here, before it merges into `stats.since`, so a later parse error
+            // can only come from the config or the environment and says so.
+            if let Some(s) = &since {
+                crate::measure::stats::parse_since(s)?;
+            }
             let cfg = Config::load_with(
                 config_file.as_deref(),
                 stats_flags(since, json, plugin.clone(), compare.clone(), price),
@@ -1176,8 +1201,8 @@ pub fn run() -> Result<()> {
             let store = crate::store::Store::open(&cfg.core.db_path).ok();
             let agent = claim::caller(store.as_ref(), agent.as_deref())?;
             let cwd = std::env::current_dir()?;
-            let who = (owner, agent.as_ref());
-            let plan = claim::add(&cfg, store.as_ref(), &cwd, id, who)?;
+            let root = claim::configured_root(&cfg.worktree.root);
+            let plan = claim::add(store.as_ref(), &cwd, root, id, agent.as_ref(), owner)?;
             println!("{}", plan.path.display());
         }
         Cmd::Worktree {
@@ -1236,16 +1261,13 @@ pub fn run() -> Result<()> {
             action: WorktreeCmd::List { json },
         } => {
             let mut rows = crate::worktree::list::rows(&std::env::current_dir()?)?;
-            // T154: ownership from the sessions the hooks recorded. The listing must not
-            // depend on the store — without one it prints without attribution.
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            if let Ok(store) = crate::store::Store::open(&cfg.core.db_path)
-                && let Ok(seen) = store.sessions_by_cwd()
-            {
-                crate::worktree::list::attribute(&mut rows, &seen);
-                // T285: the bound agent's host and state; a store error leaves the ids bare.
-                let _ = crate::worktree::list::bind(&mut rows, &store, &cfg.agents.idle);
-            }
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            crate::worktree::list::attribute_with_store(
+                &mut rows,
+                store.as_ref(),
+                &cfg.agents.idle,
+            );
             if json {
                 print_json(&rows)?;
             } else {
@@ -1447,6 +1469,7 @@ pub fn run() -> Result<()> {
                 until,
                 daily,
                 monthly,
+                by,
                 tz,
                 unpriced,
                 json,
@@ -1458,17 +1481,32 @@ pub fn run() -> Result<()> {
                     ("since", since),
                     ("until", until),
                     ("period", period.map(str::to_string)),
+                    ("by", by),
                     ("tz", tz),
                 ]);
                 let cfg = Config::load_with(config_file.as_deref(), flags)?;
                 let store = crate::store::Store::open(&cfg.core.db_path)?;
                 let report = crate::agents::usage::report(&cfg, &store, crate::log::now() as i64)?;
+                for s in &report.skipped {
+                    eprintln!("skipped {}: {} in {}", s.host, s.reason, s.path.display());
+                }
                 if json {
                     print_json(&report)?;
                 } else if unpriced {
                     print!("{}", report.unpriced_text());
                 } else {
                     print!("{}", report.to_text());
+                }
+            }
+            AgentCmd::Junk {
+                action: JunkCmd::List { json, bytes },
+            } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let report = crate::agents::junk::report(&cfg);
+                if json {
+                    print_json(&report)?;
+                } else {
+                    print!("{}", crate::agents::junk::to_list(&report, bytes));
                 }
             }
             AgentCmd::Junk {
@@ -1573,9 +1611,10 @@ pub fn run() -> Result<()> {
             action,
             call,
             json,
+            host,
             wrap,
         } => {
-            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let cfg = Config::load_with(config_file.as_deref(), hook_host_flag(host))?;
             if let Some(McpCmd::Ping {
                 agent,
                 cli,
@@ -1756,7 +1795,7 @@ pub fn run() -> Result<()> {
             let cx = crate::plugin::Runtime::open(cfg.clone(), "graph")?;
             match action {
                 GraphCmd::Index { path, dry_run } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let pb = crate::render::spinner("indexing");
                     let r = crate::plugins::graph::index::run_with(
                         &crate::plugin::Ctx::new(&cx),
@@ -1777,7 +1816,7 @@ pub fn run() -> Result<()> {
                     println!("{}", style::success(&summary));
                 }
                 GraphCmd::Dead { path, json } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let ctx = crate::plugin::Ctx::new(&cx);
                     if json {
                         let rows = crate::plugins::graph::dead_rows(&ctx, &root)?;
@@ -1795,7 +1834,7 @@ pub fn run() -> Result<()> {
                     to,
                     path,
                 } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let ctx = crate::plugin::Ctx::new(&cx);
                     print!(
                         "{}",
