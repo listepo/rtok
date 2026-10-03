@@ -137,7 +137,7 @@ pub fn run(
         (None, Some(o), _) => o.task.clone(),
         (None, None, Some(branch)) => branch.split('-').next().unwrap_or(branch).to_string(),
         (None, None, None) => bail!(
-            "{}: no lock and no branch to name its task; pass --task",
+            "{}: no lock and no branch to name its task; name it with --task (MCP: `task`)",
             path.display()
         ),
     };

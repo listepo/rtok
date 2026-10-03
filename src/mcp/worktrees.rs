@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
-//! T285 (D34): MCP `worktree_add`, `worktree_list` and `worktree_remove`, the
+//! T285 (D34): MCP `worktree_add`, `worktree_list`, `worktree_remove` and `worktree_adopt` (T289.2), the
 //! agent-facing side of `rtok worktree add` / `list` / `remove`. They call the same functions as the CLI; the only
 //! difference is who the agent is: the MCP session's link (T283.1), never an argument, so a
 //! model cannot claim a worktree in another agent's name or pick its own lock owner.
@@ -38,6 +38,14 @@ pub fn remove_def() -> ToolDef {
     }
 }
 
+pub fn adopt_def() -> ToolDef {
+    ToolDef {
+        name: "worktree_adopt",
+        description: "Bind a worktree your host made (not worktree_add) to this session's agent: the one holding path (default: the server's cwd). Returns {path, task, origin, locked}. task names it when the branch cannot (a detached HEAD). Never takes another agent's.",
+        input_schema: json!({"type":"object","properties":{"path":{"type":"string","description":"the worktree or a directory inside it"},"task":{"type":"string"}}}),
+    }
+}
+
 fn arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
     args.get(key)
         .and_then(Value::as_str)
@@ -66,6 +74,15 @@ pub fn add(cx: &Runtime, agent: &AgentDetail, args: &Value) -> Result<String> {
         "note": "work only inside `path`; remove it with `worktree_remove` when merged",
     })
     .to_string())
+}
+
+pub fn adopt(cx: &Runtime, agent: &AgentDetail, args: &Value) -> Result<String> {
+    let path = match arg(args, "path") {
+        Some(path) => std::env::current_dir()?.join(path),
+        None => std::env::current_dir()?,
+    };
+    let done = claim::bind(Some(&cx.store), &path, agent, None, arg(args, "task"), true)?;
+    Ok(serde_json::to_string(&done)?)
 }
 
 pub fn remove(cx: &Runtime, agent: &AgentDetail, args: &Value) -> Result<String> {
