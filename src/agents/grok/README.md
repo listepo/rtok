@@ -35,7 +35,7 @@ imports Claude's hooks, see above).
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | no | Grok fires one hook set — the plugin's, or rtok's Claude hooks through [compat.claude] hooks — and setup adds no second (D21) |
-| mcp | yes | `[mcp_servers.rtok]` → `rtok mcp` in `config.toml`, Grok's documented shape; independent of the plugin (T275/D33), skipped only while `[compat.claude] mcps` already covers it (off with `[setup] mcp = false`) |
+| mcp | yes | `[mcp_servers.rtok]` → `rtok mcp --host grok` in `config.toml`, Grok's documented shape; independent of the plugin (T275/D33), skipped only while `[compat.claude] mcps` already covers it (off with `[setup] mcp = false`) |
 | plugin | `--yes` | install prints `grok plugin install <resolved plugins/grok> --trust` behind the flag — rtok never writes `~/.grok/plugins/`, that store is Grok's; it ships hooks only (T275/D33) |
 | proxy | no | Grok Build providers live in its own settings tables; setup does not edit them |
 

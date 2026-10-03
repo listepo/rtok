@@ -200,7 +200,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
 
 /// The `mcpServers.rtok` entry [`register_mcp`] writes.
 fn mcp_entry(cmd: &str) -> Value {
-    json!({"command": cmd, "args": ["mcp"]})
+    json!({"command": cmd, "args": super::mcp_args("kimi")})
 }
 
 /// `mcpServers.rtok = {command, args}` in `mcp.json` — Kimi's documented shape carries no `type`.
@@ -212,7 +212,7 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
         "mcpServers",
         NAME,
         mcp_entry(&cmd),
-        &format!("{cmd} mcp"),
+        &super::mcp_summary(&cmd, "kimi"),
     )
 }
 
@@ -664,5 +664,20 @@ command = \"/old/store/rtok/v0.1.0/rtok hook PreToolUse\"\ntimeout = 1\n\n\
             || register_mcp(&c),
         );
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_entry_without_host_is_upgraded_and_still_removable() {
+        let (c, cfg_path) = cfg("legacy-host", false);
+        let path = mcp_path(&c);
+        crate::agents::mcp::assert_legacy_entry_upgraded(
+            &path,
+            r#"{"mcpServers":{"other":{"command":"x"},"rtok":{"command":"rtok","args":["mcp"]}}}"#,
+            "kimi",
+            &["\"other\""],
+            || register_mcp(&c),
+            || unregister_mcp(&c),
+        );
+        let _ = fs::remove_dir_all(cfg_path.parent().unwrap());
     }
 }

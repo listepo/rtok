@@ -22,6 +22,8 @@ pub mod wrap;
 
 pub mod ping;
 
+mod worktrees;
+
 use crate::agents::link;
 use crate::config::Config;
 use crate::plugin::{Runtime, ToolDef};
@@ -347,6 +349,16 @@ impl Server {
                 plugin: "mcp",
                 def: whoami_def(),
             },
+            // T285: the worktree tools act for the linked agent, so like `whoami` they are
+            // this process's own, not a plugin's; unlike it, `[mcp] tools` can narrow them.
+            Listed {
+                plugin: "mcp",
+                def: worktrees::add_def(),
+            },
+            Listed {
+                plugin: "mcp",
+                def: worktrees::list_def(),
+            },
         ];
         let builtin: Vec<&str> = crate::plugins::all()
             .iter()
@@ -422,16 +434,22 @@ impl Server {
 
     /// `invoke` plus the tools that need this process's own state.
     fn invoke_text(&self, name: &str, args: &Value) -> (String, bool) {
-        if name == "whoami" {
-            return match self.whoami() {
-                Ok(t) => (t, true),
-                Err(e) => (e.to_string(), false),
-            };
+        let own = match name {
+            "whoami" => self.whoami(),
+            "worktree_add" => self
+                .agent()
+                .and_then(|(agent, _)| worktrees::add(&self.cx, &agent, args)),
+            "worktree_list" => worktrees::list(&self.cx),
+            _ => return invoke_text(&self.cx, name, args),
+        };
+        match own {
+            Ok(t) => (t, true),
+            Err(e) => (e.to_string(), false),
         }
-        invoke_text(&self.cx, name, args)
     }
 
-    fn whoami(&self) -> Result<String> {
+    /// The agent this session is linked to, or the reason it is not.
+    fn agent(&self) -> Result<(crate::store::AgentDetail, link::Rule)> {
         let (id, rule) = match self.link() {
             link::Link::Linked { id, rule } => (id, rule),
             link::Link::Ambiguous(ids) => {
@@ -449,12 +467,18 @@ impl Server {
         let Some(d) = self.cx.store.agent_detail(&id)? else {
             bail!("not linked to an agent session");
         };
+        Ok((d, rule))
+    }
+
+    fn whoami(&self) -> Result<String> {
+        let (d, rule) = self.agent()?;
+        let id = &d.id;
         let worktrees: Vec<String> = self
             .cx
             .store
             .open_worktree_claims()?
             .into_iter()
-            .filter(|(_, agent)| *agent == id)
+            .filter(|(_, agent)| agent == id)
             .map(|(path, _)| path)
             .collect();
         Ok(json!({

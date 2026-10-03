@@ -336,6 +336,43 @@ fn info_counts_error_lines_and_json_parses() {
     let _ = fs::remove_dir_all(&home);
 }
 
+/// T367: every path-taking graph subcommand fails on a missing path, naming it, before walking.
+#[test]
+fn graph_subcommands_reject_a_missing_path() {
+    let home = tmp("graph-missing-home");
+    let missing = home.join("nonexistent");
+    let missing = missing.to_str().unwrap();
+    for args in [
+        vec!["graph", "index", missing],
+        vec!["graph", "dead", missing],
+        vec!["graph", "status", missing],
+        vec!["graph", "impact", "main", missing],
+    ] {
+        let out = cmd(&args, &home).assert().failure().get_output().clone();
+        let err = String::from_utf8_lossy(&out.stderr);
+        // Only the path: the OS error text differs (Windows says "cannot find the file").
+        assert!(err.contains(missing), "{args:?}: {err}");
+        assert!(out.stdout.is_empty(), "{args:?}: {:?}", out.stdout);
+    }
+}
+
+#[test]
+fn graph_index_rejects_a_file_path_and_still_indexes_a_project() {
+    let home = tmp("graph-file-home");
+    let project = tmp("graph-project");
+    let file = project.join("a.rs");
+    fs::write(&file, "fn alpha() {}\n").unwrap();
+    let err = cmd(&["graph", "index", file.to_str().unwrap()], &home)
+        .assert()
+        .failure()
+        .get_output()
+        .stderr
+        .clone();
+    assert!(String::from_utf8_lossy(&err).contains("not a directory"));
+    let out = ok(&["graph", "index", project.to_str().unwrap()], &home);
+    assert!(out.contains("indexed 1 files"), "{out}");
+}
+
 /// T362: the first `config validate` on an empty HOME creates the default file like every other
 /// subcommand, while a path the user typed must exist.
 #[test]
@@ -365,4 +402,35 @@ fn config_validate_creates_the_default_file_but_not_an_explicit_one() {
         .get_output()
         .clone();
     assert!(String::from_utf8_lossy(&out.stderr).contains(missing));
+}
+
+/// T365: a value `config validate` rejects in the file is rejected the same way when it arrives
+/// through the environment, and the message names that layer.
+#[test]
+fn config_validate_checks_env_overrides_and_names_the_layer() {
+    let home = tmp("config-validate-env");
+    let validate = |level: Option<&str>| {
+        let mut c = cmd(&["config", "validate"], &home);
+        c.env_remove("RTOK_CONFIG").env_remove("RTOK_LOG_LEVEL");
+        if let Some(level) = level {
+            c.env("RTOK_LOG_LEVEL", level);
+        }
+        c.assert().get_output().clone()
+    };
+
+    let clean = validate(None);
+    assert!(clean.status.success());
+    assert!(String::from_utf8_lossy(&clean.stdout).starts_with("ok "));
+
+    let good = validate(Some("debug"));
+    assert!(good.status.success(), "{good:?}");
+
+    let bad = validate(Some("verbose"));
+    assert!(!bad.status.success());
+    let stderr = String::from_utf8_lossy(&bad.stderr);
+    assert!(
+        stderr.contains("env: log.level must be error, warn, info, or debug"),
+        "{stderr}"
+    );
+    let _ = fs::remove_dir_all(&home);
 }
