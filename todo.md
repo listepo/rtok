@@ -27,7 +27,6 @@
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
 - T310. React SPA replaces the Slint web UI (epic)
-- T310.5. UI kit + Storybook
 - T310.6. Pages: overview, plugins (toggle), calls (expand)
 - T310.7. Pages: sessions, doctor, logs
 - T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
@@ -66,8 +65,5 @@
 - T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
 - T358.4. `rtok agents usage` readers: Grok, ZCode, Kimi, pi, Antigravity
 - T358.5. The Usage page on `rtok web` and `rtok tui`
-- T358.6. `rtok agents usage`: `--by`, saved columns and the `skipped` list
 - T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
-- T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
 - T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
-- T367. `rtok graph index <path>` exits 0 for a path that does not exist
