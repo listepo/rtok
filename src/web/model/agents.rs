@@ -9,6 +9,7 @@
 
 use anyhow::{Result, bail};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::Path;
 
 use super::Model;
@@ -50,9 +51,13 @@ pub struct AgentView {
     pub detail: AgentDetail,
     /// The session's newest model; `None` for a sub-agent or when no call recorded one.
     pub model: Option<String>,
-    /// `cwd` relative to its checkout, named by the checkout's directory (T285 swaps in
-    /// the claimed worktree).
+    /// The claimed worktree's directory name (T285), else `cwd` relative to its checkout,
+    /// named by the checkout's directory.
     pub worktree: Option<String>,
+    /// Every worktree path this agent holds an open claim on (T285).
+    pub worktrees: Vec<String>,
+    /// Messages sent to this agent that it has not read (T287).
+    pub unread: i64,
     pub state: AgentState,
     pub sub_agents: Vec<AgentView>,
 }
@@ -105,6 +110,8 @@ fn tree(
     let state = AgentState::of(r.ended_at, r.last_seen, now, idle);
     (all || state != AgentState::Ended).then(|| AgentView {
         worktree: r.cwd.as_deref().map(worktree_label),
+        worktrees: Vec::new(),
+        unread: 0,
         state,
         model: None,
         sub_agents: rows
@@ -165,7 +172,33 @@ pub fn agent_sessions(cfg: &Config, all: bool, now: i64) -> Result<Vec<SessionVi
     let sessions = Model::new(cfg, Some(&store)).sessions(0);
     let ids: Vec<String> = sessions.iter().map(|s| s.id.clone()).collect();
     let agents = store.agents_of_sessions(&ids)?;
-    Ok(session_views(sessions, &agents, now, idle, all))
+    let mut views = session_views(sessions, &agents, now, idle, all);
+    enrich(&store, views.iter_mut().filter_map(|s| s.agent.as_mut()))?;
+    Ok(views)
+}
+
+/// Fill what the `agents`/`sessions` rows do not hold: the open worktree claims (T285) and the
+/// unread message count (T287), two queries for the whole listing. A claimed worktree's
+/// directory name replaces the cwd label, as the T284 card says T285 does.
+fn enrich<'a>(store: &Store, views: impl Iterator<Item = &'a mut AgentView>) -> Result<()> {
+    fn fill(v: &mut AgentView, claims: &[(String, String)], unread: &HashMap<String, i64>) {
+        v.worktrees = claims
+            .iter()
+            .filter(|(_, agent)| *agent == v.detail.id)
+            .map(|(path, _)| path.clone())
+            .collect();
+        let named = v.worktrees.first().and_then(|p| Path::new(p).file_name());
+        if let Some(name) = named {
+            v.worktree = Some(name.to_string_lossy().into_owned());
+        }
+        v.unread = unread.get(&v.detail.id).copied().unwrap_or(0);
+        for sub in &mut v.sub_agents {
+            fill(sub, claims, unread);
+        }
+    }
+    let (claims, unread) = (store.open_worktree_claims()?, store.unread_counts()?);
+    views.for_each(|v| fill(v, &claims, &unread));
+    Ok(())
 }
 
 fn find(views: &[AgentView], id: &str) -> Option<AgentView> {
@@ -196,7 +229,9 @@ pub fn agent_show(cfg: &Config, prefix: &str, now: i64) -> Result<AgentView> {
     let mut rows = store.agent_children(&id)?;
     rows.insert(0, me);
     let idle = idle_secs(&cfg.agents.idle)?;
-    find(&nest(&rows, now, idle, true), &id).ok_or_else(|| anyhow::anyhow!("agent {id} vanished"))
+    let mut built = nest(&rows, now, idle, true);
+    enrich(&store, built.iter_mut())?;
+    find(&built, &id).ok_or_else(|| anyhow::anyhow!("agent {id} vanished"))
 }
 
 /// Longest status text an agent may set, in chars (after cleaning).
@@ -270,6 +305,45 @@ mod tests {
             last_activity: 0,
             ended_at: ended,
         }
+    }
+
+    #[test]
+    fn claims_and_unread_counts_fill_each_agent_and_its_sub_agents() {
+        let store = Store::open_in_memory().unwrap();
+        let claude = store.host_id("claude").unwrap().unwrap();
+        let a = store
+            .register_agent(claude, "s1", None, Some("/repo"), None)
+            .unwrap();
+        let b = store
+            .register_agent(claude, "s2", None, Some("/repo"), None)
+            .unwrap();
+        let sub = store
+            .register_agent(claude, "s1", Some("sub"), Some("/repo"), None)
+            .unwrap();
+        store.claim_worktree("/wt/rtok-t9", &a, "t9").unwrap();
+        store.send_message(Some(&b), &a, "hi").unwrap();
+        store.send_message(Some(&b), &sub, "you too").unwrap();
+        store.send_message(None, &a, "again").unwrap();
+        store.inbox(&a, true, true).unwrap();
+        store.send_message(None, &a, "new").unwrap();
+
+        let rows = [a.as_str(), b.as_str(), sub.as_str()].map(|id| store.agent_detail(id));
+        let rows: Vec<AgentDetail> = rows.into_iter().map(|r| r.unwrap().unwrap()).collect();
+        let mut views = nest(&rows, i64::MAX, 60, true);
+        enrich(&store, views.iter_mut()).unwrap();
+        let by = |id: &str| find(&views, id).unwrap();
+        assert_eq!(
+            (by(&a).unread, by(&a).worktree.as_deref()),
+            (1, Some("rtok-t9"))
+        );
+        assert_eq!(by(&a).worktrees, ["/wt/rtok-t9"]);
+        assert_eq!((by(&b).unread, by(&b).worktrees.len()), (0, 0));
+        assert_eq!(by(&sub).unread, 1, "a sub-agent is filled too");
+        assert_eq!(
+            by(&b).worktree.as_deref(),
+            Some("/repo"),
+            "no claim keeps the cwd label"
+        );
     }
 
     #[test]

@@ -189,7 +189,13 @@ pub(crate) fn mcp_path(cfg: &Config) -> PathBuf {
 /// Register `rtok mcp` in `~/.cursor/mcp.json` (sibling of `hooks.json`).
 pub fn register_mcp(cfg: &Config) -> Result<String> {
     let cmd = super::rtok_command();
-    rtok_agent_sdk::register_mcp(&apply(cfg), &mcp_path(cfg), "rtok", &cmd, &["mcp"])
+    rtok_agent_sdk::register_mcp(
+        &apply(cfg),
+        &mcp_path(cfg),
+        "rtok",
+        &cmd,
+        &super::mcp_args("cursor"),
+    )
 }
 
 /// Drop `mcpServers.rtok` from `~/.cursor/mcp.json` (`rtok agents remove cursor`).

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
-//! T285 (D34): MCP `worktree_add` and `worktree_list`, the agent-facing side of
-//! `rtok worktree add` / `list`. They call the same functions as the CLI; the only
+//! T285 (D34): MCP `worktree_add`, `worktree_list`, `worktree_remove` and `worktree_adopt` (T289.2), the
+//! agent-facing side of `rtok worktree add` / `list` / `remove`. They call the same functions as the CLI; the only
 //! difference is who the agent is: the MCP session's link (T283.1), never an argument, so a
 //! model cannot claim a worktree in another agent's name or pick its own lock owner.
 
@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::plugin::{Runtime, ToolDef};
 use crate::store::AgentDetail;
-use crate::worktree::{claim, list};
+use crate::worktree::{claim, list, remove};
 
 pub fn add_def() -> ToolDef {
     ToolDef {
@@ -30,6 +30,22 @@ pub fn list_def() -> ToolDef {
     }
 }
 
+pub fn remove_def() -> ToolDef {
+    ToolDef {
+        name: "worktree_remove",
+        description: "Remove this agent's own finished worktree by path or task id, with its branch when merged. Refuses a dirty or unmerged worktree (keep_branch removes an unmerged clean one and keeps the branch), another agent's, and the cwd. Never forces.",
+        input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"task":{"type":"string"},"keep_branch":{"type":"boolean"}}}),
+    }
+}
+
+pub fn adopt_def() -> ToolDef {
+    ToolDef {
+        name: "worktree_adopt",
+        description: "Bind a worktree your host made (not worktree_add) to this session's agent: the one holding path (default: the server's cwd). Returns {path, task, origin, locked}. task names it when the branch cannot (a detached HEAD). Never takes another agent's.",
+        input_schema: json!({"type":"object","properties":{"path":{"type":"string","description":"the worktree or a directory inside it"},"task":{"type":"string"}}}),
+    }
+}
+
 fn arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
     args.get(key)
         .and_then(Value::as_str)
@@ -40,8 +56,7 @@ pub fn add(cx: &Runtime, agent: &AgentDetail, args: &Value) -> Result<String> {
     let Some(task) = arg(args, "task") else {
         bail!("`task` is required, e.g. T12");
     };
-    let cfg = &cx.config.worktree;
-    let root = Some(cfg.root.as_path()).filter(|r| !r.as_os_str().is_empty());
+    let root = claim::configured_root(&cx.config.worktree.root);
     let cwd = std::env::current_dir()?;
     let plan = claim::add(
         Some(&cx.store),
@@ -59,6 +74,30 @@ pub fn add(cx: &Runtime, agent: &AgentDetail, args: &Value) -> Result<String> {
         "note": "work only inside `path`; remove it with `worktree_remove` when merged",
     })
     .to_string())
+}
+
+pub fn adopt(cx: &Runtime, agent: &AgentDetail, args: &Value) -> Result<String> {
+    let path = match arg(args, "path") {
+        Some(path) => std::env::current_dir()?.join(path),
+        None => std::env::current_dir()?,
+    };
+    let done = claim::bind(Some(&cx.store), &path, agent, None, arg(args, "task"), true)?;
+    Ok(serde_json::to_string(&done)?)
+}
+
+pub fn remove(cx: &Runtime, agent: &AgentDetail, args: &Value) -> Result<String> {
+    let Some(target) = arg(args, "path").or_else(|| arg(args, "task")) else {
+        bail!("`path` or `task` is required");
+    };
+    let keep_branch = args["keep_branch"].as_bool().unwrap_or(false);
+    let done = remove::for_agent(
+        Some(&cx.store),
+        &std::env::current_dir()?,
+        target,
+        (Some(agent), None),
+        keep_branch,
+    )?;
+    Ok(serde_json::to_string(&done)?)
 }
 
 pub fn list(cx: &Runtime) -> Result<String> {

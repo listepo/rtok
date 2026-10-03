@@ -47,6 +47,7 @@ fn main() -> ExitCode {
         host,
         cwd,
         stdin,
+        pid: Some(std::process::id()),
     };
     let frame = req.encode();
     let (tx, rx) = mpsc::channel();

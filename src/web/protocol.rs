@@ -39,16 +39,30 @@ pub enum ClientMessage {
     Expand { expand: String },
     /// Flip an allowlisted boolean key (`plugins.<id>.enabled`).
     Set { set: SetRequest },
-    /// Change the project registry (T329.12): select a project.
+    /// Change the project registry (T329.12, T329.20): select a project, or link two of them.
     Project { project: ProjectRequest },
 }
 
-/// The registry writes the graph page offers (links come with T329.20); `<project>` is an id or a
+/// The registry writes the graph page offers; `<project>` is an id or a
 /// root path, as in `rtok graph projects`.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(tag = "action", rename_all = "lowercase")]
 pub enum ProjectRequest {
-    Select { project: String },
+    Select {
+        project: String,
+    },
+    Link {
+        from: String,
+        to: String,
+        #[serde(default)]
+        both: bool,
+    },
+    Unlink {
+        from: String,
+        to: String,
+        #[serde(default)]
+        both: bool,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -116,6 +130,14 @@ mod tests {
             m,
             ClientMessage::Project {
                 project: ProjectRequest::Select { .. }
+            }
+        ));
+        let m: ClientMessage =
+            serde_json::from_str(r#"{"project":{"action":"link","from":"1","to":"2"}}"#).unwrap();
+        assert!(matches!(
+            m,
+            ClientMessage::Project {
+                project: ProjectRequest::Link { both: false, .. }
             }
         ));
         assert!(serde_json::from_str::<ClientMessage>(r#"{"project":{"action":"drop"}}"#).is_err());

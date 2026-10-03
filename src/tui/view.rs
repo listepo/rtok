@@ -184,6 +184,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
         "config" => frame.render_widget(config_page(app), area),
         "services" => frame.render_widget(services_page(app), area),
         "worktrees" => frame.render_widget(worktrees_page(app), area),
+        "usage" => frame.render_widget(usage_page(app), area),
         page => unreachable!("page `{page}` has no TUI body — surface_parity holds the list"),
     }
 }
@@ -478,6 +479,13 @@ fn worktrees_page(app: &App) -> Paragraph<'static> {
         return empty("worktrees did not answer this tick — `rtok worktree list` has the details");
     };
     Paragraph::new(text.clone())
+}
+
+/// The model's Usage page (T358.5): `rtok agents usage`'s screen, verbatim — the snapshot
+/// carries the report's own text, so the tui sums nothing. Reads happen off the tick: the
+/// text says "reading usage…" until the first one lands, and why when one fails.
+fn usage_page(app: &App) -> Paragraph<'static> {
+    Paragraph::new(app.snapshot().agent_usage.text.clone())
 }
 
 /// The model's Calls page (T15.5): the ledger's recent rows, newest first — surface,
@@ -1053,6 +1061,22 @@ mod tests {
             }
             assert!(screen.contains(line), "line `{line}` is on screen");
         }
+    }
+
+    /// T358.5: the Usage tab shows the snapshot's `agent_usage.text`, the CLI's own screen.
+    #[test]
+    fn usage_tab_renders_the_cli_screen() {
+        let cfg = config();
+        let mut app = App::new(&cfg);
+        while app.page() != "usage" {
+            app.key(KeyCode::Right, KeyModifiers::NONE);
+        }
+        let mut snap = crate::web::model::snapshot(&cfg);
+        snap.agent_usage.text = "rtok agents usage: logs from 2 agents\n  1.2M tokens\n".into();
+        app.refresh(snap);
+        let screen = screen(&app);
+        assert!(screen.contains("logs from 2 agents"), "{screen}");
+        assert!(screen.contains("1.2M tokens"), "{screen}");
     }
 
     /// The bar's guards: nothing saved is no bar.
