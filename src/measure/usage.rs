@@ -10,20 +10,59 @@
 
 use super::{codex, jsonl, subagents};
 use crate::store::UsageSlice;
-use std::path::Path;
+use serde::Serialize;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-/// Claude Code transcripts under `dir`, requests stamped at or after `since` (unix seconds).
-/// A sub-agent transcript counts toward its parent's session, like `rtok stats` attributes it.
-pub fn claude_slices(dir: &Path, since: i64) -> Vec<UsageSlice> {
+/// A host whose session files exist but could not be read: named once, counted nowhere.
+#[derive(Debug, Clone, Serialize)]
+pub struct Skipped {
+    pub host: String,
+    pub reason: &'static str,
+    pub path: PathBuf,
+}
+
+/// Everything `--source logs` read, and the hosts it had to skip.
+#[derive(Debug, Default)]
+pub struct Logs {
+    pub slices: Vec<UsageSlice>,
+    pub skipped: Vec<Skipped>,
+}
+
+/// Claude Code (`claude_dir`) and Codex (`codex_dir`) requests stamped at or after `since`.
+pub fn read(claude_dir: &Path, codex_dir: &Path, since: i64) -> Logs {
+    let mut logs = Logs::default();
+    for (host, (slices, bad)) in [
+        ("claude", claude_slices(claude_dir, since)),
+        ("codex", codex_slices(codex_dir, since)),
+    ] {
+        logs.slices.extend(slices);
+        logs.skipped.extend(bad.map(|path| Skipped {
+            host: host.into(),
+            reason: "unknown format",
+            path,
+        }));
+    }
+    logs
+}
+
+/// Claude Code transcripts under `dir`, requests stamped at or after `since` (unix seconds),
+/// and the first transcript that was unreadable or held no JSON line. A sub-agent transcript
+/// counts toward its parent's session, like `rtok stats` attributes it.
+fn claude_slices(dir: &Path, since: i64) -> (Vec<UsageSlice>, Option<PathBuf>) {
     let mut paths = codex::jsonl_paths(dir, mtime_cutoff(since));
     paths.sort();
     let mut out = Vec::new();
+    let mut unreadable = None;
     for p in paths {
         // One unreadable transcript is skipped, not fatal (fail open).
         let Ok(parsed) = jsonl::parse_path(&p) else {
+            unreadable.get_or_insert(p);
             continue;
         };
+        if parsed.lines > 0 && parsed.malformed == parsed.lines {
+            unreadable.get_or_insert(p.clone());
+        }
         let owner = if subagents::is_subagent(&p) {
             p.parent().and_then(Path::parent)
         } else {
@@ -50,12 +89,14 @@ pub fn claude_slices(dir: &Path, since: i64) -> Vec<UsageSlice> {
             ));
         }
     }
-    out
+    (out, unreadable)
 }
 
-/// Codex rollouts under `dir`, requests stamped at or after `since`.
-pub fn codex_slices(dir: &Path, since: i64) -> Vec<UsageSlice> {
-    codex::requests(dir, mtime_cutoff(since))
+/// Codex rollouts under `dir`, requests stamped at or after `since`, and the first rollout
+/// that was unreadable or held no JSON line.
+fn codex_slices(dir: &Path, since: i64) -> (Vec<UsageSlice>, Option<PathBuf>) {
+    let (requests, unreadable) = codex::requests(dir, mtime_cutoff(since));
+    let slices = requests
         .into_iter()
         .filter_map(|r| {
             slice(
@@ -68,7 +109,8 @@ pub fn codex_slices(dir: &Path, since: i64) -> Vec<UsageSlice> {
                 since,
             )
         })
-        .collect()
+        .collect();
+    (slices, unreadable)
 }
 
 /// A file untouched since before `since` cannot hold a later request: skip it unread.
@@ -154,7 +196,7 @@ mod tests {
             claude_line("m3", "2026-10-01T01:00:00Z", "claude-haiku-4", [1, 2, 3, 4]),
         )
         .unwrap();
-        let mut rows = claude_slices(&dir, 0);
+        let mut rows = claude_slices(&dir, 0).0;
         rows.sort_by_key(|r| r.ts);
         assert_eq!(rows.len(), 2);
         assert_eq!(
@@ -170,7 +212,7 @@ mod tests {
             (10, 5, 2)
         );
         assert_eq!((rows[1].session.as_str(), rows[1].cache_create), ("s1", 2));
-        assert_eq!(claude_slices(&dir, 1_790_812_000).len(), 1);
+        assert_eq!(claude_slices(&dir, 1_790_812_000).0.len(), 1);
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -191,7 +233,7 @@ mod tests {
         ]
         .join("\n");
         fs::write(dir.join("rollout-a.jsonl"), body).unwrap();
-        let rows = codex_slices(&dir, 0);
+        let rows = codex_slices(&dir, 0).0;
         assert_eq!(rows.len(), 1);
         let r = &rows[0];
         assert_eq!(

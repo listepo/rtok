@@ -13,12 +13,15 @@ stdout = """
     "output": 0,
     "cost_usd": null,
     "sessions": 0,
-    "daily_rows": 0
+    "daily_rows": 0,
+    "saved_tokens": 0,
+    "saved_usd": null
   },
   "unpriced_models": 0,
   "unpriced": [],
   "agents": [],
-  "periods": []
+  "periods": [],
+  "skipped": []
 }
 """
 

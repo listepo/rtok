@@ -899,6 +899,16 @@ Execution: `web/src/pages.ts` holds the one page list (id plus the `Snapshot` fi
 
 Result (2026-10-03, Claude Code / sonnet-5): the SPA now has an app shell on top of the T310.3 data layer. One `PAGES` list drives the route tree (`/` redirects to `/overview`, an unknown path shows "Page not found"), the sidebar and the bottom tab bar, so a page cannot be routable and missing from the nav; every link is a plain focusable anchor, the heading takes focus after each navigation and a skip link targets `#main`. Hash history keeps `?sample` in the real query string (a path router drops it on the first navigation) and needs no server fallback. The theme toggle reads and writes `rtok-theme` (system default, tracks the OS while unset, tolerates blocked storage); the orb is the WebGL shader from `design/html/js/orb.js` with the CSS gradient as first paint and fallback, off under reduced motion or `rtok-orb=off`, one still frame while the tab is hidden. `Loading`, `Empty`, `ErrorState` and `Offline` are the shared states: offline is driven by `useConnection()` and the snapshot's `error` becomes an alert banner. Vitest (happy-dom + Testing Library, 12 new tests) covers the route tree, keyboard-reachable navigation, theme persistence across a fresh mount, the four states and the orb fallback. Not done here: per-page icons (only 9 of the design's icons are in `web/assets/icons`, so the nav is text-only until the UI kit T310.5) and the settings dialog for the orb and opaque-panel switches.
 
+### T310.5. UI kit + Storybook
+
+Storybook 10 (`@storybook/react-vite`, addon-vitest, addon-a11y): Panel, Kpi, Pill, Switch, Search, Chip, Sparkline, DataTable (TanStack Table + Virtual) with stories for every state; stories run as Vitest browser tests.
+
+Check: `storybook build` succeeds; stories run as Vitest browser tests with no a11y violations.
+
+Execution: components in `web/src/ui/` (one file each plus `*.stories.tsx`), styled from `design/html` tokens and `components.html`; Storybook config in `web/.storybook/` (theme toolbar switching the app's `data-theme`, axe violations set to fail); `web/vite.config.ts` gets two Vitest projects, `unit` (the existing tests, `npm test`) and `storybook` (browser mode, `npm run test:stories`); `just spa-stories` and `just spa-storybook` wrap them.
+
+Result (2026-10-03, Claude Code / sonnet-5): `Panel`, `Kpi`, `Pill`, `Switch`, `Search`, `Chip`, `Sparkline` and a virtualized `DataTable` (TanStack Table v9 `useTable` for the model, TanStack Virtual for the rows, ARIA table roles with `aria-rowcount`/`aria-rowindex`, keyboard-selectable rows, loading/empty/error slots through the shared states) live in `web/src/ui/`; `Icon` inlines the bundled SVGs and the sidebar uses it for the pages that have one (calls, doctor, logs, overview, plugins, sessions, skills; the design has no icons for stats, graph, hosts, config, services and worktrees, so those keep an empty slot). 48 stories cover every state (off/on/disabled, tones in dark and light, flat/short sparklines, 10,000-row table, empty/loading/failed table, offline/error/empty/loading panels) and five have play functions (switch, chip and search interaction, row windowing, keyboard row selection). `storybook build` succeeds and all 48 stories pass as Vitest browser tests with axe violations set to fail; the run found and fixed one real violation (the table's scroll region was not keyboard-focusable). The browser project needs Chromium: `npx playwright install chromium`, or `SPA_BROWSER_CHANNEL=chrome` to use an installed Chrome. CI wiring is T310.11.
+
 ### T80. `rtok web` from an installed binary 404s the whole UI
 
 Do (2026-09-21): `src/web/mod.rs` resolved the Slint bundle as `env!("CARGO_MANIFEST_DIR")/crates/rtok-webui/pkg` — baked at compile time, so the v0.3.2 ketch binary looked for CI's `/Users/runner/work/rtok/rtok/crates/rtok-webui/pkg`. That directory exists on no user machine, `pkg.is_dir()` was false, `/pkg` was never mounted, and the dashboard answered `/` 200 with a blank canvas while `GET /pkg/rtok_webui.js` 404'd, saying nothing about why. `pkg_dir` now resolves at run time and returns an `Option`: `RTOK_WEB_PKG`, then `pkg/` beside the executable (where a release archive unpacks), then `share/rtok/pkg` beside and one level above `bin/`, then the source tree as the dev fallback. `app` splits into `app_with_pkg(state, Option<PathBuf>)` so both surfaces are testable without touching the process environment (same reason as T78's handed-in gate). With no bundle, `/pkg/{*path}` answers 503 with the paths tried and how to build one, and `serve` prints that same text once at startup — one string, two places.
@@ -7593,6 +7603,23 @@ Result (2026-10-03, Claude Code / sonnet-5): `rtok agents usage` now defaults to
 Status: done 2026-10-03
 Model: Claude Code / claude-sonnet-5
 
+### T358.6. `rtok agents usage`: `--by`, saved columns and the `skipped` list
+
+Scope: what T358.1 and T358.2 left out of the screen. `--by agent|model` (config `[agents.usage] by`); for `--source rtok|both` the saved tokens and saved estimate columns and the `rtok saved` summary line from the `measurements` ledger (T358 "`rtok` — what passed through rtok"); in `both`, the agents that appear only in the store next to the logs' agents, with logged tokens 0; the JSON `skipped` field and the stderr line for a host whose files exist but cannot be parsed.
+
+Check: the T358 Check items for `--by`, the saved columns and `both` coverage on fixture homes and a fixture store; `just check`.
+
+Execution:
+
+1. Stack on T358.2 (#660). `Store::measurement_saved_by_host(since, until)` sums the ledger's `est_before - est_after` per session in the window through Diesel and maps sessions to hosts (the host map is now one helper shared with `usage_slices`); `measurement_totals` has no window or session, so it could not serve.
+2. `agents::usage::report` takes `by`, fills `saved` per agent and in the totals (valued at the average input price that host's requests paid), lists store-only agents in `both`, and carries `skipped`; `measure::usage::read` and `codex::requests` report the first unreadable file per host.
+3. Unit tests, a trycmd case for `--by model`, goldens, `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `--by model` swaps the middle table for model rows (raw ids, dearest first; JSON `models`). For `--source rtok` and `both` the agent table gains `Saved tokens` and `Saved est.`, the summary gains `rtok saved N tokens (≈ $X)`, and JSON gains `saved_tokens` and `saved_usd` on each agent and in `totals`; the net saving counts an `expand` row as a cost, so it can go negative, and `saved_usd` is `null` when none of that host's models has a price. `both` also lists agents that only passed through rtok (no logged tokens, coverage `-`). A Claude Code or Codex dir whose files are unreadable or hold no JSON line is named once on stderr (`skipped claude: unknown format in <path>`) and in JSON `skipped`, and counts nowhere. Config `[agents.usage] by` and `--by` have their `default.toml` and `docs/config.md` rows. Checked: unit tests for the net ledger per agent and total, the window, the price rate and a negative `expand`; `--by model`; the store-only agent in `both`; `skipped` and its host filter; the stable JSON field names; a trycmd golden for `--by model --daily`. Not done: the saved estimate uses one average input rate per host (not per model); the `measurements` ledger has no host column, so a session with no host row is in the total only.
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
+
 ### T325. Bash rewrite keeps `cd` in the host shell; shell-state builtins stay unwrapped
 
 Found by a bug-hunt pass over `src/plugins/cmd/hook.rs`. The PreToolUse rewrite turned `cd crates/x && cargo test` into `rtok run -- 'cd crates/x && cargo test'`, so the `cd` ran in `rtok run`'s child shell. Hosts that keep the shell's cwd between Bash calls (Claude Code) lost it: the next call ran in the old directory. `export`, `source`, `unset`, `alias`, `pushd`/`popd` had the same problem.
@@ -7747,6 +7774,18 @@ Execution plan:
 
 Status: done 2026-10-02
 Model: Claude Code / claude-opus-5-5
+
+### T367. `rtok graph index <path>` exits 0 for a path that does not exist
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A typo prints `indexed 0 files · 0 rows …` with exit 0, so a script or agent thinks the index was built. `src/cli.rs` (the `graph index` arm, `index::run_with` at `:1684`) passes `path` as-is and the walker yields nothing for a missing root. The sibling graph subcommands in `src/cli.rs` and `src/plugins/graph/status.rs` resolve `path` the same unchecked way (suspected, not reproduced).
+
+Repro: `rtok graph index /nonexistent; echo $?` prints the zero counts and `0`.
+
+Done when: every graph subcommand that takes a path checks it is an existing directory (or canonicalizes with the path as context) before walking, and exits non-zero with `Error: /nonexistent: No such file or directory`; the T356 home/`/` refusal stays as it is.
+
+Check: tests for `graph index` and each sibling path-taking graph subcommand with a missing path exit non-zero naming the path; indexing a temp project is unchanged; `just check`.
+
+**Result (2026-10-03, Claude Code / sonnet-5):** one `graph::cli_root` helper (`src/plugins/graph/mod.rs`) resolves the path (cwd by default) and fails on a missing or non-directory path with `<path>: No such file or directory (os error 2)` / `<path>: not a directory` before any walk; `graph index`, `dead`, `impact` (`src/cli.rs`) and `status` (`graph::status::run`) all call it. `index::run_with` keeps the T356 refusal of `/` and `$HOME` unchanged. Checked by two e2e tests in `tests/commands_e2e.rs` (a missing path for all four subcommands exits non-zero naming the path with empty stdout; a file path is rejected and a temp project still indexes) and `just check`.
 
 ### T357. rtok links `rtok-hook` next to itself on PATH
 
