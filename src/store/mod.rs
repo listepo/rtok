@@ -21,7 +21,9 @@ mod sql_ext;
 // Symbol index (graph plugin) — SQLite only (D18 loser deleted; P39: Ladybug/Grafeo removed).
 mod symbols;
 // T329.1: the graph project registry.
+mod project_links;
 mod projects;
+pub use project_links::{Link, LinkKind};
 pub use projects::{Origin, Project, Resolved, canon_root};
 // T285: which agent a worktree is bound to (the git lock stays the source of truth).
 mod worktree_claims;

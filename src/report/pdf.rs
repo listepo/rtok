@@ -827,6 +827,7 @@ mod tests {
                 skills: None,
                 overlaps: vec![],
                 agents: vec![],
+                problems: vec![],
             },
             recommendations: vec![],
         }

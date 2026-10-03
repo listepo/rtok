@@ -52,7 +52,7 @@ Options:
   -h, --help                 Print help
 
 $ rtok web --help
-Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
+Local web UI over the same data as `rtok tui` (WebSocket API + React SPA)
 
 Usage: rtok web [OPTIONS]
 
@@ -140,8 +140,8 @@ Commands:
   info       One host: the same block `agents list` prints, just for that app
   sessions   What is running in this project: host, provider, model, tokens, start, run time
   usage      Tokens and estimated cost per agent and month (or day), from the agents' logs or rtok
-  junk       Junk rtok owns under its own home (log siblings, archive payloads past retention): list
-             or clear
+  junk       Junk and agent folders: `list` shows rtok's and every installed host's folders with
+             sizes, `clear` removes rtok's own junk
   whoami     This session's own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the
              store
   show       One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status
@@ -341,7 +341,8 @@ Options:
           Print help (see a summary with '-h')
 
 $ rtok agents junk --help
-Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear
+Junk and agent folders: `list` shows rtok's and every installed host's folders with sizes, `clear`
+removes rtok's own junk
 
 Usage: rtok agents junk [OPTIONS] <COMMAND>
 
@@ -363,6 +364,7 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --json           JSON instead of the text
       --bytes          Exact byte counts instead of KB/MB/GB
+      --all            Also the hosts that are not installed
   -h, --help           Print help
 
 $ rtok agents junk clear --help
@@ -733,6 +735,7 @@ Commands:
   dead      List unreferenced private definitions (skips pub, trait impls, tests, macros)
   status    Index health for the current or given root (T68.3)
   impact    Symbol impact or call paths to a target (T68.4)
+  projects  The project registry: list, add, remove, select (T329.2)
   affected  Tests that reach files changed in git (`git diff --name-only`)
   help      Print this message or the help of the given subcommand(s)
 

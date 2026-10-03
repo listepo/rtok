@@ -22,6 +22,7 @@ pub mod wrap;
 
 pub mod ping;
 
+mod messages;
 mod worktrees;
 
 use crate::agents::link;
@@ -89,6 +90,21 @@ pub fn run(cfg: &Config) -> Result<()> {
                     )
                 });
             }
+        }
+        // T329.8: register, link and index what the project's manifests reference, off the
+        // request path so `initialize` and the first tool call are not delayed. Detached with its
+        // own connection: EOF must not wait for up to `max_auto_projects` indexes, and a cut-off
+        // index is only pending files the next run picks up.
+        #[cfg(feature = "graph")]
+        if let Ok(root) = std::env::current_dir() {
+            let cfg = cfg.clone();
+            std::thread::spawn(move || {
+                let Ok(cx) = crate::plugin::Runtime::open(cfg, "graph-refs") else {
+                    return;
+                };
+                let followed = crate::plugins::graph::follow::refresh(&cx, &root);
+                crate::plugins::graph::follow::index_new(&cx, &followed);
+            });
         }
         let res: Result<()> = (|| {
             let mut stdin = std::io::stdin().lock();
@@ -359,6 +375,18 @@ impl Server {
                 plugin: "mcp",
                 def: worktrees::list_def(),
             },
+            Listed {
+                plugin: "mcp",
+                def: worktrees::remove_def(),
+            },
+            Listed {
+                plugin: "mcp",
+                def: messages::send_def(),
+            },
+            Listed {
+                plugin: "mcp",
+                def: messages::inbox_def(),
+            },
         ];
         let builtin: Vec<&str> = crate::plugins::all()
             .iter()
@@ -438,6 +466,15 @@ impl Server {
             "worktree_add" => self
                 .agent()
                 .and_then(|(agent, _)| worktrees::add(&self.cx, &agent, args)),
+            "worktree_remove" => self
+                .agent()
+                .and_then(|(agent, _)| worktrees::remove(&self.cx, &agent, args)),
+            "agent_send" => self
+                .agent()
+                .and_then(|(agent, _)| messages::send(&self.cx, &agent, args)),
+            "agent_inbox" => self
+                .agent()
+                .and_then(|(agent, _)| messages::inbox(&self.cx, &agent, args)),
             "worktree_list" => worktrees::list(&self.cx),
             _ => return invoke_text(&self.cx, name, args),
         };

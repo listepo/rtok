@@ -8,6 +8,8 @@
 use std::path::Path;
 use std::process::Command;
 
+mod common;
+
 use rtok::worktree::{Entry, State, git, inventory};
 
 fn run(dir: &Path, args: &[&str]) -> String {
@@ -876,60 +878,6 @@ fn remove_takes_only_the_caller_s_own_clean_worktree() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-/// One `rtok mcp` session: `initialize`, then `hooks_fire` (the session's hooks registering
-/// its agent: a cwd link only trusts a row seen since the process started), then `calls` as
-/// `tools/call`s; `(isError, text)` of each answer.
-fn mcp_session(
-    home: &Path,
-    cwd: &Path,
-    hooks_fire: impl FnOnce(),
-    calls: &[(&str, &str)],
-) -> Vec<(bool, String)> {
-    use std::io::{BufRead as _, Write as _};
-    let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
-        .args(["mcp", "--host", "claude"])
-        .current_dir(cwd)
-        .env("HOME", home)
-        .env_remove("RTOK_AGENT_ID")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("rtok spawns");
-    let mut stdin = child.stdin.take().unwrap();
-    let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
-    let init = r#"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}"#;
-    writeln!(stdin, "{init}").unwrap();
-    // The answer proves the process is up, so its start time is behind us.
-    stdout.read_line(&mut String::new()).unwrap();
-    hooks_fire();
-    for (i, (name, args)) in calls.iter().enumerate() {
-        let id = i + 1;
-        let call = format!(
-            r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{{"name":"{name}","arguments":{args}}}}}"#
-        );
-        writeln!(stdin, "{call}").unwrap();
-    }
-    drop(stdin);
-    let answers: Vec<serde_json::Value> = stdout
-        .lines()
-        .map_while(Result::ok)
-        .filter_map(|l| serde_json::from_str(&l).ok())
-        .collect();
-    child.wait().unwrap();
-    (1..=calls.len())
-        .map(|id| {
-            let v = answers.iter().find(|a| a["id"] == id).expect("an answer");
-            (
-                v["result"]["isError"] == true,
-                v["result"]["content"][0]["text"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_string(),
-            )
-        })
-        .collect()
-}
-
 /// T285 PR 2: MCP `worktree_add` creates the worktree for the session's linked agent (lock
 /// and claim row name it, as on the CLI) and `worktree_list` shows it bound; a session that
 /// is linked to no agent gets an error and creates nothing.
@@ -957,7 +905,7 @@ fn mcp_worktree_tools_act_for_the_linked_agent() {
             .register_agent(claude, "sess-mcp", None, cwd.to_str(), None)
             .unwrap();
     };
-    let got = mcp_session(&tmp, &work, hooks, &calls);
+    let got = common::mcp::session(&tmp, &work, hooks, &calls);
     let (is_err, text) = &got[0];
     assert!(!is_err, "{text}");
     let added: serde_json::Value = serde_json::from_str(text).unwrap();
@@ -988,7 +936,7 @@ fn mcp_worktree_tools_act_for_the_linked_agent() {
     // No agent row for this cwd: the worktree has no one to belong to.
     let elsewhere = tmp.join("elsewhere");
     std::fs::create_dir_all(&elsewhere).unwrap();
-    let got = mcp_session(
+    let got = common::mcp::session(
         &tmp,
         &elsewhere,
         || (),
@@ -999,4 +947,360 @@ fn mcp_worktree_tools_act_for_the_linked_agent() {
         "{got:?}"
     );
     assert_eq!(inventory(&work).unwrap().len(), 2);
+}
+
+/// T286 PR 2: MCP `worktree_remove` for the linked agent: a merged clean worktree goes with
+/// its branch; an unmerged one is refused until `keep_branch`; another agent's lock and a
+/// call that names nothing are refused.
+#[test]
+fn mcp_worktree_remove_takes_only_the_linked_agent_s_clean_worktree() {
+    let tmp = rtok::testutil::tmp_dir("worktree-mcp-remove");
+    run(&tmp, &["init", "-q", "--bare", "origin.git"]);
+    run(&tmp, &["clone", "-q", "origin.git", "work"]);
+    let work = tmp.join("work");
+    commit(&work, "a.txt");
+    run(&work, &["push", "-q", "-u", "origin", "main"]);
+    run(&work, &["remote", "set-head", "origin", "main"]);
+    let (store, ids) = agents(&tmp, &["sess-other"]);
+    let claude = store.host_id("claude").unwrap().unwrap();
+    let cwd = work.canonicalize().unwrap();
+    let register = || {
+        store
+            .register_agent(claude, "sess-me", None, cwd.to_str(), None)
+            .unwrap()
+    };
+    let me = register();
+    let lock = |task: &str, agent: &str| format!("claude | {task} | 2026-10-03 | agent {agent}");
+    add(&work, "done", Some(&lock("t1", &me)));
+    add(&work, "open", Some(&lock("t2", &me)));
+    add(&work, "theirs", Some(&lock("t3", &ids[0])));
+    commit(&tmp.join("wt-done"), "done.txt");
+    commit(&tmp.join("wt-open"), "open.txt");
+    squash(&work, "t-done");
+    run(&work, &["push", "-q", "origin", "main"]);
+
+    let calls = [
+        ("worktree_remove", r#"{"task":"t1"}"#),
+        ("worktree_remove", r#"{"task":"t2"}"#),
+        ("worktree_remove", r#"{"task":"t2","keep_branch":true}"#),
+        ("worktree_remove", r#"{"task":"t3"}"#),
+        ("worktree_remove", "{}"),
+    ];
+    let got = common::mcp::session(&tmp, &work, || drop(register()), &calls);
+    let branch = |name: &str| !run(&work, &["branch", "--list", name]).is_empty();
+    assert!(!got[0].0, "{}", got[0].1);
+    assert!(got[0].1.contains("removed with its branch"), "{}", got[0].1);
+    assert!(!tmp.join("wt-done").exists() && !branch("t-done"));
+    assert!(got[1].0 && got[1].1.contains("not merged"), "{}", got[1].1);
+    assert!(!got[2].0, "{}", got[2].1);
+    assert!(!tmp.join("wt-open").exists() && branch("t-open"));
+    assert!(got[3].0 && got[3].1.contains("locked by"), "{}", got[3].1);
+    assert!(tmp.join("wt-theirs").exists());
+    assert!(got[4].0 && got[4].1.contains("required"), "{}", got[4].1);
+}
+
+/// The payload Claude Code sends a command hook (`research.md` §18.3, docs checked 2026-10-02).
+fn host_payload(event: &str, session: &str, cwd: &Path, extra: serde_json::Value) -> Vec<u8> {
+    let mut v = serde_json::json!({
+        "session_id": session,
+        "transcript_path": "/t.jsonl",
+        "cwd": cwd,
+        "hook_event_name": event,
+    });
+    v.as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    v.to_string().into_bytes()
+}
+
+fn hook(
+    home: &Path,
+    cwd: &Path,
+    event: &str,
+    session: &str,
+    extra: serde_json::Value,
+) -> std::process::Output {
+    let stdin = host_payload(event, session, cwd, extra);
+    rtok_in(home, cwd, &["hook", event], &stdin)
+}
+
+fn origin_clone(tmp: &Path, name: &str) -> std::path::PathBuf {
+    run(tmp, &["init", "-q", "--bare", "origin.git"]);
+    run(tmp, &["clone", "-q", "origin.git", name]);
+    let work = tmp.join(name);
+    commit(&work, "a.txt");
+    run(&work, &["push", "-q", "-u", "origin", "main"]);
+    run(&work, &["remote", "set-head", "origin", "main"]);
+    work
+}
+
+/// T159: `WorktreeCreate` goes through `worktree add` — one location, one name, the session's
+/// agent on the lock and the claim — and answers with the path alone on stdout.
+#[test]
+fn worktree_create_hook_returns_the_add_path_bound_to_the_session_agent() {
+    let tmp = rtok::testutil::tmp_dir("worktree-hook-create");
+    let work = origin_clone(&tmp, "rtok");
+    std::fs::create_dir_all(tmp.join("_worktrees")).unwrap();
+    let (store, ids) = agents(&tmp, &["sess-host"]);
+    let create = |name: &str| {
+        let extra = serde_json::json!({"name": name});
+        hook(&tmp, &work, "WorktreeCreate", "sess-host", extra)
+    };
+
+    let out = create("bold-oak-a3f2");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    let path = std::str::from_utf8(&out.stdout)
+        .unwrap()
+        .trim_end()
+        .to_string();
+    let want = tmp.join("_worktrees/rtok-bold-oak-a3f2");
+    assert_eq!(
+        Path::new(&path).canonicalize().unwrap(),
+        want.canonicalize().unwrap()
+    );
+    let lock = lock_of(&work, "rtok-bold-oak-a3f2");
+    assert_eq!(
+        (lock.owner.as_str(), lock.agent.as_deref()),
+        ("claude", Some(ids[0].as_str()))
+    );
+    let claims = store.open_worktree_claims().unwrap();
+    assert_eq!(
+        claims,
+        [(
+            want.canonicalize().unwrap().display().to_string(),
+            ids[0].clone()
+        )]
+    );
+
+    // A resumed `--worktree bold-oak-a3f2` asks again and gets the same worktree.
+    let again = create("bold-oak-a3f2");
+    assert_eq!(
+        again.stdout,
+        out.stdout,
+        "{}",
+        String::from_utf8_lossy(&again.stderr)
+    );
+    assert_eq!(inventory(&work).unwrap().len(), 2);
+
+    // A name `add` refuses fails the hook (non-zero, nothing printed); the launcher falls back.
+    let bad = create("two words");
+    assert!(!bad.status.success() && bad.stdout.is_empty());
+    assert_eq!(inventory(&work).unwrap().len(), 2);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// T159 (D31): whatever goes wrong inside rtok, `scripts/worktree.sh` still hands the host a
+/// usable worktree at the host's own default path, and exits 0.
+#[cfg(unix)]
+#[test]
+fn worktree_launcher_creates_a_plain_worktree_when_rtok_cannot() {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::process::Stdio;
+
+    let tmp = rtok::testutil::tmp_dir("worktree-hook-launcher");
+    let work = origin_clone(&tmp, "rtok");
+    let bin = |name: &str, body: &str| {
+        let dir = tmp.join(format!("bin-{name}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("rtok");
+        std::fs::write(&file, format!("#!/bin/sh\ncat >/dev/null\n{body}\n")).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        dir
+    };
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/claude/scripts/worktree.sh");
+    let launch = |dir: &Path, event: &str, extra: serde_json::Value| {
+        let mut child = Command::new("/bin/sh")
+            .arg(&script)
+            .arg(event)
+            .env("HOME", &tmp)
+            .env("PATH", format!("{}:/usr/bin:/bin", dir.display()))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let stdin = host_payload(event, "sess-launch", &work, extra);
+        child.stdin.take().unwrap().write_all(&stdin).unwrap();
+        child.wait_with_output().unwrap()
+    };
+    let same =
+        |a: &str, b: &Path| Path::new(a).canonicalize().unwrap() == b.canonicalize().unwrap();
+
+    // rtok fails: the plain worktree on `worktree-<name>`, a name made safe for a path.
+    let failing = bin("failing", "echo boom >&2; exit 1");
+    let out = launch(
+        &failing,
+        "WorktreeCreate",
+        serde_json::json!({"name": "feature/auth"}),
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    let plain = work.join(".claude/worktrees/feature-auth");
+    assert!(
+        same(std::str::from_utf8(&out.stdout).unwrap().trim_end(), &plain),
+        "{out:?}"
+    );
+    assert_eq!(
+        run(&plain, &["rev-parse", "--abbrev-ref", "HEAD"]).trim(),
+        "worktree-feature-auth"
+    );
+
+    // An rtok too old to know the event answers `{}`: not a path, so the same fallback.
+    let old = bin("old", "echo '{}'");
+    let out = launch(
+        &old,
+        "WorktreeCreate",
+        serde_json::json!({"name": "second"}),
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(work.join(".claude/worktrees/second/.git").exists());
+
+    // The real rtok on PATH: the T158 location, no `.claude/worktrees` entry.
+    let real = tmp.join("bin-real");
+    std::fs::create_dir_all(&real).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_rtok"), real.join("rtok")).unwrap();
+    let out = launch(
+        &real,
+        "WorktreeCreate",
+        serde_json::json!({"name": "third"}),
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    let want = tmp.join("_worktrees/rtok-third");
+    assert!(
+        same(std::str::from_utf8(&out.stdout).unwrap().trim_end(), &want),
+        "{out:?}"
+    );
+    assert!(!work.join(".claude/worktrees/third").exists());
+
+    // Remove: no rtok means plain `git worktree remove`, never forced.
+    let none = tmp.join("bin-none");
+    std::fs::create_dir_all(&none).unwrap();
+    std::fs::write(plain.join("new.txt"), "x").unwrap();
+    let path = serde_json::json!({"worktree_path": plain});
+    let kept = launch(&none, "WorktreeRemove", path.clone());
+    assert!(!kept.status.success() && plain.exists());
+    std::fs::remove_file(plain.join("new.txt")).unwrap();
+    let gone = launch(&none, "WorktreeRemove", path);
+    assert!(gone.status.success() && !plain.exists());
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// T159: `WorktreeRemove` removes a clean worktree its session owns, keeps a dirty one and a
+/// foreign-locked one with the reason on stderr, and sheds the tagged cache in all three.
+#[test]
+fn worktree_remove_hook_removes_only_what_the_session_owns_and_cleans_caches() {
+    let tmp = rtok::testutil::tmp_dir("worktree-hook-remove");
+    let work = origin_clone(&tmp, "work");
+    std::fs::write(work.join(".git/info/exclude"), "target/\n").unwrap();
+    let (store, ids) = agents(&tmp, &["sess-me", "sess-other"]);
+    let (me, other) = (ids[0].as_str(), ids[1].as_str());
+    let claude = store.host_id("claude").unwrap().unwrap();
+    // A sub-agent's worktree is removed under its parent's `session_id`.
+    let sub = store
+        .register_agent(claude, "sess-me", Some("sub-1"), None, None)
+        .unwrap();
+    let lock = |task: &str, agent: &str| format!("claude | {task} | 2026-10-02 | agent {agent}");
+    add(&work, "done", Some(&lock("t1", me)));
+    add(&work, "open", Some(&lock("t2", me)));
+    add(&work, "dirty", Some(&lock("t3", me)));
+    add(&work, "theirs", Some(&lock("t4", other)));
+    add(&work, "sub", Some(&lock("t5", &sub)));
+    commit(&tmp.join("wt-done"), "done.txt");
+    commit(&tmp.join("wt-open"), "open.txt");
+    std::fs::write(tmp.join("wt-dirty/new.txt"), "x").unwrap();
+    squash(&work, "t-done");
+    run(&work, &["push", "-q", "origin", "main"]);
+    let tag = "Signature: 8a477f597d28d172789f06886806bc55\n";
+    for name in ["done", "open", "dirty", "theirs", "sub"] {
+        let target = tmp.join(format!("wt-{name}/target"));
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("CACHEDIR.TAG"), tag).unwrap();
+        std::fs::write(target.join("bin"), [0; 64]).unwrap();
+    }
+    let done = tmp.join("wt-done").canonicalize().unwrap();
+    store
+        .claim_worktree(&done.display().to_string(), me, "t1")
+        .unwrap();
+    let remove = |name: &str| {
+        let path = tmp.join(format!("wt-{name}"));
+        // The session's cwd is the worktree itself: the realistic case, and one `worktree
+        // remove` refuses, so the hook must run from the main checkout.
+        hook(
+            &tmp,
+            &path,
+            "WorktreeRemove",
+            "sess-me",
+            serde_json::json!({"worktree_path": path}),
+        )
+    };
+    let branch = |name: &str| !run(&work, &["branch", "--list", name]).is_empty();
+    let kept = |name: &str, why: &str| {
+        let out = remove(name);
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.status.code() == Some(1) && err.contains(why),
+            "{name}: {err}"
+        );
+        assert!(tmp.join(format!("wt-{name}")).exists());
+        assert!(
+            !tmp.join(format!("wt-{name}/target")).exists(),
+            "{name}: cache stays"
+        );
+    };
+
+    let out = remove("done");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.stdout.is_empty(), "the host reads only the exit code");
+    assert!(!done.exists() && !branch("t-done"));
+    assert!(store.open_worktree_claims().unwrap().is_empty());
+
+    let out = remove("open");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !tmp.join("wt-open").exists() && branch("t-open"),
+        "unmerged: worktree goes, branch stays"
+    );
+
+    let out = remove("sub");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!tmp.join("wt-sub").exists());
+
+    kept("dirty", "uncommitted or untracked");
+    assert!(
+        tmp.join("wt-dirty/new.txt").exists(),
+        "the work itself is untouched"
+    );
+    kept("theirs", other);
+
+    let out = hook(
+        &tmp,
+        &work,
+        "WorktreeRemove",
+        "sess-me",
+        serde_json::json!({"worktree_path": done}),
+    );
+    assert!(
+        out.status.success(),
+        "a worktree that is already gone counts as removed"
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
 }

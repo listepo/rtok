@@ -107,13 +107,25 @@ idle       = "30m"                    # `live()`'s window: no `ended_at` and `la
 push_bytes = 1024                     # framed messages pushed per UserPromptSubmit/PostToolUse; the rest → "and N more" (T288)
 
 [agents.usage]                        # rtok agents usage (T358)
-source = "logs"                       # logs = the agents' own session files (Claude Code, Codex); rtok = what passed through rtok; both
+source = "logs"                       # logs = the agents' own session files (Claude Code, Codex, OpenCode, Kilo, Copilot CLI, Gemini CLI); rtok = what passed through rtok; both
 hosts  = []                           # [] = every host; else host ids, e.g. ["claude", "codex"]
 since  = ""                           # "" = all time; a date (2026-09-01, whole days in tz) or a duration (30d)
 until  = ""                           # "" = through today; a date, inclusive
 period = "monthly"                    # monthly | daily: the bottom table
 by     = "agent"                      # agent | model: what the middle table groups by
 tz     = ""                           # IANA zone for day and month boundaries; "" = the system zone
+
+[agents.usage.dirs]                   # where `rtok agents usage` reads each host's own records (T358.3); Claude Code and Codex use [stats] transcripts_dir / codex_dir
+opencode = ["~/.local/share/opencode"] # the opencode*.db files in it; an untouched default follows $XDG_DATA_HOME
+kilo     = ["~/.local/share/kilo"]     # the kilo*.db files in it; an untouched default follows $XDG_DATA_HOME
+copilot  = ["~/.copilot/session-state"] # */events.jsonl; an untouched default follows $COPILOT_HOME
+gemini   = ["~/.gemini/tmp"]           # */chats/session-*; an untouched default follows $GEMINI_CLI_HOME
+droid    = ["~/.factory/sessions"]     # listed as unsupported when present: Factory does not document the token fields
+pi       = ["~/.pi/agent/sessions"]    # */*.jsonl; an untouched default follows $PI_CODING_AGENT_SESSION_DIR, else $PI_CODING_AGENT_DIR/sessions
+kimi     = ["~/.kimi-code/sessions"]   # Kimi Code: */*/agents/*/wire.jsonl; an untouched default follows $KIMI_CODE_HOME
+grok     = ["~/.grok/sessions"]        # listed as unsupported when present: xAI points at `grok usage`, which rtok does not run; follows $GROK_HOME
+zcode    = ["~/.zcode"]                # listed as unsupported when present: ZCode does not document its session records
+antigravity = ["~/.gemini/antigravity"] # listed as unsupported when present: Google does not document Antigravity's local data
 
 [mcp]                                 # rtok mcp
 tools                   = []          # [] = all tools from enabled plugins; else an allow-list; `expand` always stays listed (D4)
@@ -385,6 +397,9 @@ body_lines = 40                       # symbol(): source lines shown per definit
 auto_index = true                     # true = every call walks the tree; false = index once, then `rtok graph index` or the watcher (a hook-staled file reads as missing until then)
 backend    = "tags"                   # tags | lsp: index backend; default tags; lsp spawns rust-analyzer/clangd/tsserver from PATH (P30)
 watch      = "off"                    # off | notify: background re-index inside `rtok mcp` (P8d)
+auto_link_references = true           # T329.8: follow references in manifests (Cargo path, npm file:/link:, go replace, Python path, submodules) into other directories, register and auto-link them
+reference_depth = 3                   # T329.8: reference levels followed from the project (A -> B is 1); reaching it is shown and logged
+max_auto_projects = 20                # T329.8: most projects references may add to the registry; reaching it is shown and logged
 
 [plugins.toon]
 enabled  = true
@@ -566,7 +581,7 @@ Unset keeps Mozilla roots only. `rtok hook` never opens TLS.
 | `agents remove` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
 | `agents list` | — | reads the host configs and `<bin> --version` (`--json` is the reading row) |
 | `agents whoami` | — | reads `RTOK_AGENT_ID` and resolves it through the store (T283); no key, no `setup.*` (`--json` is the reading row) |
-| `agents usage` | `--source`, `--host`, `--since`, `--until`, `--daily` / `--monthly`, `--tz` | `agents.usage.source`, `.hosts`, `.since`, `.until`, `.period`, `.tz` (`--unpriced` picks the view of one call, `--json` is the reading row) |
+| `agents usage` | `--source`, `--host`, `--since`, `--until`, `--daily` / `--monthly`, `--tz` | `agents.usage.source`, `.hosts`, `.since`, `.until`, `.period`, `.tz`, plus `.dirs.<host>` with no flag (`--unpriced` picks the view of one call, `--json` is the reading row) |
 | `agents sessions` | `--all` | (action: also lists ended sessions; live vs idle follows `agents.idle`) |
 | `agents show` | — | resolves an id prefix through the store (T284); live vs idle follows `agents.idle` (`--json` is the reading row) |
 | `agents status` | — | writes the calling agent's (`RTOK_AGENT_ID`) status text, ≤ 120 chars (T284); no key |

@@ -69,6 +69,8 @@ svg.chart{background:#fafafa;margin:1rem 0}
 <h2 id="doctor">Doctor</h2>
 <p>Live probes (the <code>rtok doctor</code> page), not store rows.</p>
 <pre><code>hooks 0
+hooks check none found
+duplicate hooks none found
 mcp
 proxy 
 proxy openai 
