@@ -266,6 +266,20 @@ pub fn rows(cwd: &Path) -> anyhow::Result<Vec<Row>> {
     Ok(rows)
 }
 
+/// What the store knows about `rows`: T154's inferred session per worktree, then T285's bound
+/// agent. The listing must not depend on the store, so without one (or on a store error) the
+/// rows stay unattributed. Shared by `rtok worktree list` and MCP `worktree_list`. The caller
+/// scans first and opens the store after: a store opened under a worktree's own directory
+/// would otherwise show up in that worktree's scan.
+pub fn attribute_with_store(rows: &mut [Row], store: Option<&crate::store::Store>, idle: &str) {
+    if let Some(store) = store
+        && let Ok(seen) = store.sessions_by_cwd()
+    {
+        attribute(rows, &seen);
+        let _ = bind(rows, store, idle);
+    }
+}
+
 pub fn to_table(rows: &[Row], now: SystemTime) -> String {
     let now = now.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let dash = || "-".to_string();

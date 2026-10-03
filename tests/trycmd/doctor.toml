@@ -106,6 +106,7 @@ agents
     − hooks   not supported: the GitHub Copilot app does not document hooks; the shared hooks/rtok.json is written for the CLI
     ✗ mcp     not installed
     − proxy   not supported: Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy
+    − plugin  not supported: the GitHub Copilot app does not document plugin installs; `copilot plugin` serves the CLI
 ...
 """
 
