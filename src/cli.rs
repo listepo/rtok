@@ -79,7 +79,7 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
+    /// Local web UI over the same data as `rtok tui` (WebSocket API + React SPA)
     Web {
         /// Override `[web] host`
         #[arg(long)]
@@ -1854,6 +1854,9 @@ pub fn run() -> Result<()> {
                         r.extension_mapped,
                     );
                     println!("{}", style::success(&summary));
+                    if !dry_run {
+                        crate::plugins::graph::follow::report(&cx, &root);
+                    }
                 }
                 GraphCmd::Dead { path, json } => {
                     let root = crate::plugins::graph::cli_root(path)?;

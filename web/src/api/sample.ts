@@ -39,7 +39,7 @@ const doctor: Report = {
       host: "claude-code",
       kind: "cli",
       modules: [
-        { name: "hook", note: "", state: "installed" },
+        { name: "hooks", note: "", state: "installed" },
         { name: "mcp", note: "", state: "installed" },
         { name: "proxy", note: "rtok agent setup --proxy", state: "not_installed" },
       ],
