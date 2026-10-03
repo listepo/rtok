@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
-//! T81/T111: the web UI ships inside the release binary, and the places that say so
+//! T81/T111/T310.9: the web UI ships inside the release binary, and the places that say so
 //! stay in step. Pure file reads — the release itself is built in CI, but a dropped
-//! embed guard, a hand-edited `release.yml` or a drifted size gate is caught here.
+//! embed guard, a hand-edited `release.yml` or a SPA build that stops feeding `build.rs` is
+//! caught here.
 
 use std::path::{Path, PathBuf};
 
@@ -17,14 +18,14 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-/// T111: a ketch install keeps only the executable, so the bundle is compiled in.
-/// The release job must demand it — otherwise `build.rs` quietly embeds nothing.
+/// A ketch install keeps only the executable, so the SPA is compiled in. The release job must
+/// demand it — otherwise `build.rs` quietly embeds the "UI not built" placeholder.
 #[test]
-fn the_release_build_requires_the_embedded_bundle() {
+fn the_release_build_requires_the_embedded_spa() {
     let build = read("build.rs");
     assert!(
-        build.contains(r#"Ok("require")"#) && build.contains("rtok_web_embed"),
-        "build.rs no longer embeds the bundle or no longer honours RTOK_WEB_EMBED=require"
+        build.contains(r#"Ok("require")"#) && build.contains("web/dist"),
+        "build.rs no longer embeds web/dist or no longer honours RTOK_WEB_EMBED=require"
     );
     for rel in [".github/build-setup.yml", ".github/workflows/release.yml"] {
         assert!(
@@ -34,25 +35,46 @@ fn the_release_build_requires_the_embedded_bundle() {
     }
     let manifest = read("Cargo.toml");
     assert!(
-        !manifest.contains(r#""crates/rtok-webui/pkg/""#),
-        "the archive would carry a second copy of the embedded bundle"
+        !manifest.contains(r#""web/dist/""#),
+        "the archive would carry a second copy of the embedded SPA"
     );
 }
 
-/// One script builds the bundle for `just web` and for the release job; CI passes
-/// `--require` so a missing wasm-pack fails the release instead of shipping an
-/// archive without a UI.
+/// The SPA is built before the first cargo step of the release job, in every matrix job; the
+/// `require` flag is exported by the same step, so a failed build cannot fall through to a
+/// placeholder release.
 #[test]
-fn the_release_job_builds_the_bundle_and_refuses_to_skip_it() {
+fn the_release_job_builds_the_spa_before_cargo() {
+    for rel in [".github/build-setup.yml", ".github/workflows/release.yml"] {
+        let text = read(rel);
+        let spa = text
+            .find("npm --prefix web run build")
+            .unwrap_or_else(|| panic!("{rel} no longer builds the SPA"));
+        assert!(
+            text.contains("npm --prefix web ci"),
+            "{rel} builds the SPA without a locked install"
+        );
+        let cargo = text
+            .find("cargo build --locked")
+            .unwrap_or_else(|| panic!("{rel}: no cargo build step"));
+        assert!(spa < cargo, "{rel} builds the SPA after cargo has started");
+    }
     let setup = read(".github/build-setup.yml");
     assert!(
-        setup.contains("tools/webui-bundle.sh --require"),
-        "the dist build-setup no longer builds the bundle"
+        setup.contains("install_args: rust node"),
+        "the release job no longer installs node from mise.toml"
     );
-    assert!(
-        setup.contains("tool: wasm-pack"),
-        "the dist build-setup no longer installs wasm-pack"
-    );
+}
+
+/// CI builds the SPA before the tests that read it, so they see the SPA and not the placeholder.
+#[test]
+fn ci_builds_the_spa_before_the_test_suite() {
+    let ci = read(".github/workflows/ci.yml");
+    let spa = ci
+        .find("just spa-install spa-build")
+        .expect("ci builds the SPA");
+    let test = ci.find("- run: just test").expect("ci runs the tests");
+    assert!(spa < test, "ci.yml builds the SPA after the tests");
 }
 
 /// `release.yml` is generated from `dist-workspace.toml` + `build-setup.yml`
@@ -62,44 +84,53 @@ fn the_release_job_builds_the_bundle_and_refuses_to_skip_it() {
 fn the_generated_workflow_is_in_step_with_build_setup() {
     let release = read(".github/workflows/release.yml");
     assert!(
-        release.contains("tools/webui-bundle.sh --require"),
+        release.contains("npm --prefix web run build") && release.contains("\"rust node\""),
         "run `just dist-generate` and commit .github/workflows/release.yml"
     );
 }
 
-/// The script gates the bundle at the same number `tests/web_wasm.rs` asserts —
-/// two copies of the T60.7 measurement, so they are held together here.
+/// `vite build` writes `web/dist`, which `build.rs` embeds; `precompress.mjs` runs after it so
+/// the `.br`/`.gz` files are in the same directory.
 #[test]
-fn the_script_gate_matches_the_measured_size_gate() {
-    let script = read("tools/webui-bundle.sh");
-    let gate = script
+fn the_spa_build_writes_where_build_rs_embeds_it() {
+    let package = read("web/package.json");
+    let build = package
         .lines()
-        .find_map(|l| l.trim().strip_prefix("gate="))
-        .expect("gate= in tools/webui-bundle.sh");
-    let test = read("tests/web_wasm.rs");
-    let measured = test
-        .lines()
-        .find_map(|l| l.split("WASM_SIZE_GATE: u64 = ").nth(1))
-        .expect("WASM_SIZE_GATE in tests/web_wasm.rs")
-        .trim_end_matches(';')
-        .replace('_', "");
-    assert_eq!(gate, measured, "T60.7 gate drifted between script and test");
-}
-
-/// A bundle built here must be the one `build.rs` embeds: the script writes into
-/// the directory it reads. Skipped when nothing has been built yet.
-#[test]
-fn a_built_bundle_lands_where_build_rs_embeds_it() {
-    let pkg = repo("crates/rtok-webui/pkg");
-    if !Path::new(&pkg).is_dir() {
-        eprintln!("skip: no bundle built — run `just web-bundle`");
+        .find(|l| l.contains(r#""build":"#))
+        .expect("build script in web/package.json");
+    assert!(
+        build.find("vite build") < build.find("scripts/precompress.mjs")
+            && build.contains("scripts/precompress.mjs"),
+        "npm run build must precompress after vite build: {build}"
+    );
+    assert!(
+        read("web/vite.config.ts").contains(r#"outDir: "dist""#),
+        "vite no longer builds into web/dist"
+    );
+    let dist = repo("web/dist");
+    if !Path::new(&dist).is_dir() {
+        eprintln!("skip: no SPA built — run `just spa-build`");
         return;
     }
-    for name in ["rtok_webui.js", "rtok_webui_bg.wasm"] {
+    assert!(
+        dist.join("index.html").is_file(),
+        "index.html missing from web/dist"
+    );
+    assert!(
+        dist.join("index.html.br").is_file() && dist.join("index.html.gz").is_file(),
+        "web/dist lacks the precompressed index"
+    );
+}
+
+/// The CSP forbids inline scripts, so the pre-paint theme script must stay a file.
+#[test]
+fn the_spa_index_has_no_inline_script() {
+    let index = read("web/index.html");
+    for tag in index.split("<script").skip(1) {
+        let open = tag.split('>').next().unwrap_or("");
         assert!(
-            pkg.join(name).is_file(),
-            "{name} missing from {}",
-            pkg.display()
+            open.contains("src="),
+            "web/index.html has an inline <script>, which the CSP in src/web/spa.rs blocks"
         );
     }
 }

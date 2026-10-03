@@ -10,7 +10,8 @@ use std::sync::Arc;
 
 use rtok::config::Config;
 use rtok::testutil::config_file_in;
-use rtok::web::{DashState, app};
+use rtok::web::spa::{self, Assets};
+use rtok::web::{DashState, app, app_with_assets};
 
 async fn serve(
     label: &str,
@@ -53,7 +54,7 @@ async fn web_health_and_index() {
         .text()
         .await
         .expect("html");
-    assert!(html.contains("canvas"), "{html}");
+    assert!(html.contains("id=\"root\"") || spa::embedded_is_placeholder());
     task.abort();
 }
 
@@ -331,85 +332,211 @@ async fn ws_upgrade_rejects_foreign_origin() {
     task.abort();
 }
 
-/// T80: the bundle directory is resolved at run time. An installed binary has no
-/// source tree, and a 404 there reads as a broken build — the surface must say what
-/// is missing and still serve the API.
-async fn serve_pkg(
+/// T310.9: the SPA's source is injected, so every serving rule is checked against a fixture
+/// `dist/` (the layout `vite build` + `precompress.mjs` write) without reading
+/// the process environment or depending on a built `web/dist`.
+const INDEX_HTML: &str = "<!doctype html><div id=\"root\"></div>";
+
+fn fixture_dist(label: &str) -> std::path::PathBuf {
+    let dist = std::env::temp_dir().join(format!("rtok-dist-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dist);
+    std::fs::create_dir_all(dist.join("assets")).expect("dist dir");
+    std::fs::write(dist.join("index.html"), INDEX_HTML).expect("index");
+    std::fs::write(dist.join("assets/app-1a2b3c.js"), "export default 1;\n").expect("js");
+    std::fs::write(dist.join("assets/app-1a2b3c.js.br"), b"BR-BYTES").expect("br");
+    std::fs::write(dist.join("assets/app-1a2b3c.js.gz"), b"GZ-BYTES").expect("gz");
+    dist
+}
+
+async fn serve_assets(
     label: &str,
-    pkg: rtok::web::Pkg,
+    assets: Assets,
 ) -> (String, tokio::task::JoinHandle<std::io::Result<()>>) {
-    let dir = std::env::temp_dir().join(format!("rtok-pkg-{label}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rtok-spa-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let cfg = config_file_in(&dir);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
     let addr = listener.local_addr().expect("addr").to_string();
-    let app = rtok::web::app_with_pkg(Arc::new(DashState::new(cfg)), pkg);
+    let app = app_with_assets(Arc::new(DashState::new(cfg)), assets);
     let task = tokio::spawn(axum::serve(listener, app).into_future());
     (addr, task)
 }
 
 #[tokio::test]
-async fn web_serves_the_resolved_pkg_dir() {
-    let pkg = std::env::temp_dir().join(format!("rtok-pkg-src-{}", std::process::id()));
-    std::fs::create_dir_all(&pkg).expect("pkg dir");
-    std::fs::write(pkg.join("rtok_webui.js"), "export default 1;\n").expect("bundle");
-    let (addr, task) = serve_pkg("present", rtok::web::Pkg::Dir(pkg.clone())).await;
-    let res = reqwest::get(format!("http://{addr}/pkg/rtok_webui.js"))
+async fn the_index_is_revalidated_and_carries_a_csp() {
+    let dist = fixture_dist("index");
+    let (addr, task) = serve_assets("index", Assets::Dir(dist.clone())).await;
+    let res = reqwest::get(format!("http://{addr}/"))
         .await
-        .expect("pkg");
+        .expect("index");
     assert_eq!(res.status(), 200);
-    assert!(res.text().await.expect("body").contains("export default"));
+    let h = res.headers();
+    assert!(h["content-type"].to_str().unwrap().starts_with("text/html"));
+    assert_eq!(h["cache-control"], "no-cache");
+    assert_eq!(h["x-content-type-options"], "nosniff");
+    let csp = h["content-security-policy"].to_str().unwrap().to_string();
+    assert!(
+        csp.contains("script-src 'self';"),
+        "no inline scripts: {csp}"
+    );
+    assert!(csp.contains("connect-src 'self'") && csp.contains("frame-ancestors 'none'"));
+    assert_eq!(res.text().await.expect("body"), INDEX_HTML);
     task.abort();
-    let _ = std::fs::remove_dir_all(&pkg);
+    let _ = std::fs::remove_dir_all(&dist);
 }
 
 #[tokio::test]
-async fn web_without_a_bundle_says_so_instead_of_404() {
-    let (addr, task) = serve_pkg("missing", rtok::web::Pkg::Missing).await;
-    let res = reqwest::get(format!("http://{addr}/pkg/rtok_webui.js"))
-        .await
-        .expect("pkg");
-    assert_eq!(res.status(), 503);
-    let body = res.text().await.expect("body");
-    // A fixed message: echoing the response body into the panic is CodeQL `rust/log-injection`.
+async fn hashed_assets_are_immutable_and_precompressed_variants_follow_the_client() {
+    let dist = fixture_dist("assets");
+    let (addr, task) = serve_assets("assets", Assets::Dir(dist.clone())).await;
+    let url = format!("http://{addr}/assets/app-1a2b3c.js");
+    let client = reqwest::Client::new();
+    let get = |accept: Option<&'static str>| {
+        let mut req = client.get(&url);
+        if let Some(a) = accept {
+            req = req.header("accept-encoding", a);
+        }
+        async move { req.send().await.expect("asset") }
+    };
+
+    let plain = get(None).await;
+    assert_eq!(plain.status(), 200);
     assert!(
-        body.contains("RTOK_WEB_PKG"),
-        "503 body does not name RTOK_WEB_PKG"
+        plain.headers()["content-type"]
+            .to_str()
+            .unwrap()
+            .contains("javascript")
     );
+    assert_eq!(
+        plain.headers()["cache-control"],
+        "public, max-age=31536000, immutable"
+    );
+    assert!(plain.headers().get("content-encoding").is_none());
+    assert_eq!(
+        plain.bytes().await.unwrap().as_ref(),
+        b"export default 1;\n"
+    );
+
+    let br = get(Some("gzip, br")).await;
+    assert_eq!(br.headers()["content-encoding"], "br");
+    assert!(
+        br.headers()["content-type"]
+            .to_str()
+            .unwrap()
+            .contains("javascript")
+    );
+    assert_eq!(br.headers()["vary"], "Accept-Encoding");
+    assert_eq!(br.bytes().await.unwrap().as_ref(), b"BR-BYTES");
+
+    let gz = get(Some("gzip")).await;
+    assert_eq!(gz.headers()["content-encoding"], "gzip");
+    assert_eq!(gz.bytes().await.unwrap().as_ref(), b"GZ-BYTES");
+
+    let refused = get(Some("br;q=0, gzip;q=0")).await;
+    assert!(refused.headers().get("content-encoding").is_none());
+
+    // The variants exist only through negotiation.
+    let direct = reqwest::get(format!("{url}.br")).await.expect("variant");
+    assert_eq!(direct.status(), 404);
+    task.abort();
+    let _ = std::fs::remove_dir_all(&dist);
+}
+
+#[tokio::test]
+async fn page_routes_fall_back_to_the_index_but_api_and_files_do_not() {
+    let dist = fixture_dist("fallback");
+    let (addr, task) = serve_assets("fallback", Assets::Dir(dist.clone())).await;
+    let status = |path: &'static str| {
+        let url = format!("http://{addr}{path}");
+        async move { reqwest::get(url).await.expect("get") }
+    };
+    let page = status("/sessions/abc").await;
+    assert_eq!(page.status(), 200);
+    assert_eq!(page.headers()["cache-control"], "no-cache");
+    assert_eq!(page.text().await.unwrap(), INDEX_HTML);
+    for path in [
+        "/ws/x",
+        "/api/nope",
+        "/assets/missing",
+        "/missing.png",
+        "/a/b.js",
+    ] {
+        assert_eq!(status(path).await.status(), 404, "{path}");
+    }
+    let health = status("/health").await;
+    assert_eq!(health.status(), 200);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&health.text().await.unwrap()).unwrap()["ok"],
+        true
+    );
+    let post = reqwest::Client::new()
+        .post(format!("http://{addr}/"))
+        .send()
+        .await
+        .expect("post");
+    assert_eq!(post.status(), 405);
+    task.abort();
+    let _ = std::fs::remove_dir_all(&dist);
+}
+
+#[tokio::test]
+async fn a_dist_without_an_index_says_so_and_keeps_the_api_up() {
+    let dist = fixture_dist("noindex");
+    std::fs::remove_file(dist.join("index.html")).expect("rm index");
+    let (addr, task) = serve_assets("noindex", Assets::Dir(dist.clone())).await;
+    let res = reqwest::get(format!("http://{addr}/"))
+        .await
+        .expect("index");
+    assert_eq!(res.status(), 503);
+    // A fixed check: echoing the body into the panic is CodeQL `rust/log-injection`.
+    assert!(res.text().await.expect("body").contains("RTOK_WEB_DIST"));
     let health = reqwest::get(format!("http://{addr}/health"))
         .await
         .expect("health");
     assert_eq!(health.status(), 200, "the API stays up without the UI");
     task.abort();
+    let _ = std::fs::remove_dir_all(&dist);
 }
 
-/// T111: a ketch install has only the binary, so the bundle rides inside it. Skipped
-/// when this build had no bundle to embed (`build.rs` found no `pkg/`).
+/// The embedded copy is what a ketch install serves. Its `ETag` is the compile-time digest, so
+/// a repeat request revalidates to a 304; when `web/dist` is built, `/` is that exact file.
 #[tokio::test]
-async fn web_serves_the_embedded_bundle() {
-    let Some((mime, bytes)) = rtok::web::embedded::get("rtok_webui_bg.wasm") else {
-        eprintln!("skip: built without a bundle — run `just web-bundle`");
-        return;
-    };
-    assert_eq!(mime, "application/wasm");
-    let (addr, task) = serve_pkg("embedded", rtok::web::Pkg::Embedded).await;
-    let res = reqwest::get(format!("http://{addr}/pkg/rtok_webui_bg.wasm"))
+async fn the_embedded_ui_revalidates_by_etag_and_matches_web_dist() {
+    let (addr, task) = serve_assets("embedded", Assets::Embedded).await;
+    let url = format!("http://{addr}/");
+    let first = reqwest::get(&url).await.expect("index");
+    assert_eq!(first.status(), 200);
+    let etag = first.headers()["etag"].to_str().unwrap().to_string();
+    let body = first.bytes().await.expect("body");
+    let again = reqwest::Client::new()
+        .get(&url)
+        .header("if-none-match", &etag)
+        .send()
         .await
-        .expect("wasm");
-    assert_eq!(res.status(), 200);
-    assert_eq!(res.headers()["content-type"], "application/wasm");
-    let body = res.bytes().await.expect("body");
-    assert!(body.starts_with(b"\0asm") && body.len() == bytes.len());
-    let js = reqwest::get(format!("http://{addr}/pkg/rtok_webui.js"))
-        .await
-        .expect("js");
-    assert_eq!(js.status(), 200);
-    let other = reqwest::get(format!("http://{addr}/pkg/nope.js"))
-        .await
-        .expect("other");
-    assert_eq!(other.status(), 404);
+        .expect("again");
+    assert_eq!(again.status(), 304);
+    assert!(again.headers()["content-security-policy"].to_str().is_ok());
+
+    let built = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("web/dist/index.html");
+    match std::fs::read(&built) {
+        Ok(file) => {
+            assert!(
+                !spa::embedded_is_placeholder(),
+                "web/dist exists but was not embedded"
+            );
+            assert_eq!(
+                body.as_ref(),
+                file.as_slice(),
+                "embedded index != web/dist/index.html"
+            );
+        }
+        Err(_) => {
+            assert!(spa::embedded_is_placeholder());
+            assert!(String::from_utf8_lossy(&body).contains("just web"));
+        }
+    }
     task.abort();
 }
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
-// Ported from `spark()` in design/html/js/admin.js.
+// Inline SVG sparkline.
 export function Sparkline({
     values,
     label,
