@@ -1256,7 +1256,12 @@ fn hosts_page_text(cfg: &Config) -> String {
     static HOSTS: Background<String> = Background::new();
     let cfg = cfg.clone();
     HOSTS
-        .get(DOCTOR_SNAPSHOT_TTL, move || crate::agents::list(&cfg))
+        .get(DOCTOR_SNAPSHOT_TTL, move || {
+            // T330.1: the junk list rides this page (D27), in the same background read as the
+            // host probes, so its disk walk never blocks a tick.
+            let junk = crate::agents::junk::to_list(&crate::agents::junk::report(&cfg), false);
+            format!("{}\njunk\n{junk}", crate::agents::list(&cfg))
+        })
         .unwrap_or_else(|| "probing hosts…\n".to_string())
 }
 
