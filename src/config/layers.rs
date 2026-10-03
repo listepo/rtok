@@ -555,7 +555,9 @@ fn legacy_source_for(fig: &Figment, key: &str) -> Option<String> {
     fig.find_metadata(legacy).map(|m| m.name.to_string())
 }
 
-pub fn entries(fig: &Figment) -> Vec<(String, String, String)> {
+/// Every effective leaf as `(dotted key, value, source layer)`, sorted: the typed data behind
+/// [`entries`], which only renders it. `config validate` runs the value rules over it.
+pub(crate) fn sourced(fig: &Figment) -> Vec<(String, Value, String)> {
     let table = env_leaf_table();
     let mut keys: Vec<&String> = table.values().map(|(dotted, _)| dotted).collect();
     keys.sort();
@@ -573,11 +575,20 @@ pub fn entries(fig: &Figment) -> Vec<(String, String, String)> {
             } else {
                 source
             };
+            Some((key.clone(), value, source))
+        })
+        .collect()
+}
+
+pub fn entries(fig: &Figment) -> Vec<(String, String, String)> {
+    sourced(fig)
+        .into_iter()
+        .map(|(key, value, source)| {
             let mut shown = display(&value);
             if SECRET_KEYS.contains(&key.as_str()) && !shown.is_empty() {
                 shown = "<redacted>".into();
             }
-            Some((key.clone(), shown, source))
+            (key, shown, source)
         })
         .collect()
 }

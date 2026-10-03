@@ -142,3 +142,89 @@ fn bad_targets_fail_and_a_missing_root_is_listed_but_cannot_be_selected() {
     ok(&home, &["graph", "projects", "remove", "1"]);
     assert!(list(&home).is_empty());
 }
+
+fn links_of(rows: &[Value], name: &str) -> Vec<String> {
+    by_name(rows, name)["links"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["name"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn link_unlink_from_the_selected_project_index_the_target_and_die_with_a_removed_project() {
+    let home = fixture("links");
+    let dirs: Vec<PathBuf> = ["a", "b", "c", "d"].iter().map(|n| home.join(n)).collect();
+    for d in &dirs {
+        fs::create_dir_all(d).unwrap();
+    }
+    fs::write(dirs[1].join("lib.rs"), "fn shared() {}\n").unwrap();
+    for d in &dirs {
+        ok(&home, &["graph", "projects", "add", d.to_str().unwrap()]);
+    }
+    let sel = |p: &str| ok(&home, &["graph", "projects", "select", p]);
+    sel("1");
+    assert_eq!(by_name(&list(&home), "b")["state"], "not indexed");
+
+    let linked = ok(
+        &home,
+        &[
+            "graph",
+            "projects",
+            "link",
+            "2",
+            "--reason",
+            "path dependency",
+        ],
+    );
+    assert!(linked.contains("linked a -> b"), "{linked}");
+    assert_eq!(
+        by_name(&list(&home), "b")["state"],
+        "ok",
+        "linking indexed the target"
+    );
+    assert!(ok(&home, &["graph", "projects", "link", "2"]).contains("already linked"));
+    ok(&home, &["graph", "projects", "link", "3", "--from", "2"]);
+    ok(&home, &["graph", "projects", "link", "4", "--both"]);
+
+    let rows = list(&home);
+    assert_eq!(links_of(&rows, "a"), ["b", "d"]);
+    assert_eq!(links_of(&rows, "b"), ["c"]);
+    assert_eq!(links_of(&rows, "d"), ["a"]);
+    let first = &by_name(&rows, "a")["links"][0];
+    assert_eq!(
+        (first["kind"].as_str(), first["reason"].as_str()),
+        (Some("manual"), Some("path dependency"))
+    );
+
+    let json = ok(&home, &["graph", "projects", "link", "3", "--json"]);
+    assert_eq!(
+        serde_json::from_str::<Value>(&json).unwrap()[0]["changed"],
+        true
+    );
+    assert!(
+        !rtok(&home, &["graph", "projects", "link", "1"])
+            .status
+            .success(),
+        "no self link"
+    );
+    assert!(
+        !rtok(&home, &["graph", "projects", "link", "9999"])
+            .status
+            .success()
+    );
+
+    assert!(ok(&home, &["graph", "projects", "unlink", "3"]).contains("unlinked a -> c"));
+    assert!(ok(&home, &["graph", "projects", "unlink", "3"]).contains("was not linked"));
+    ok(&home, &["graph", "projects", "unlink", "4", "--both"]);
+    assert_eq!(links_of(&list(&home), "a"), ["b"]);
+
+    ok(&home, &["graph", "projects", "remove", "2"]);
+    let rows = list(&home);
+    assert!(
+        links_of(&rows, "a").is_empty(),
+        "a removed project takes its links with it"
+    );
+    assert!(links_of(&rows, "c").is_empty());
+}

@@ -346,7 +346,7 @@ Batch, Flex, and model routing on the proxy (pass-through vs rewrite, what is pl
 | `rtok plugins` | list plugins: id, enabled, surfaces |
 | `rtok config show --sources` | show effective configuration and its source |
 | `rtok graph index [path]` | build the symbol index for a tree |
-| `rtok graph projects` | list the registered projects with their index status (`add`, `select` and `remove` change the registry) |
+| `rtok graph projects` | list the registered projects with their index status (`add`, `select`, `remove`, `link` and `unlink` change the registry) |
 | `rtok memory import <file>` | import notes as JSONL |
 | `rtok memory export [--project <name>]` | print notes as the JSONL `import` reads; session checkpoints stay behind |
 | `rtok memory retire <id> [--superseded-by <id>]` | tombstone a note: never recalled or searched, body kept |
