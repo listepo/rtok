@@ -151,10 +151,12 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
         by @ ("agent" | "model") => by,
         other => bail!("agents.usage.by `{other}`: expected `agent` or `model`"),
     };
-    if let Some(bad) = o.hosts.iter().find(|h| !super::HOSTS.contains(&h.as_str())) {
+    // Droid is not a host rtok installs into (`HOSTS`), but its sessions are on the machine.
+    let known: Vec<&str> = super::HOSTS.iter().copied().chain(["droid"]).collect();
+    if let Some(bad) = o.hosts.iter().find(|h| !known.contains(&h.as_str())) {
         bail!(
             "unknown host `{bad}` in agents.usage.hosts; known: {}",
-            super::HOSTS.join(", ")
+            known.join(", ")
         );
     }
     let tz = zone(&o.tz)?;
@@ -172,7 +174,7 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
     let wanted = |h: &str| o.hosts.is_empty() || o.hosts.iter().any(|w| w == h);
     let mut skipped = Vec::new();
     let mut from_logs = || {
-        let mut l = read(&cfg.stats.transcripts_dir, &cfg.stats.codex_dir, since);
+        let mut l = read(cfg, since);
         l.slices.retain(|b| b.ts < until);
         skipped = l.skipped.into_iter().filter(|s| wanted(&s.host)).collect();
         l.slices
@@ -1001,6 +1003,9 @@ Month   Tokens Estimated cost
         assert_eq!(r.totals.row.tokens, 3_600_000);
         cfg.agents.usage.until = "2026-10-01".into();
         assert_eq!(report(&cfg, &store, 0).unwrap().totals.row.tokens, 0);
+        // Droid is not in `HOSTS` yet is a host here: it is listed as unsupported, not refused.
+        cfg.agents.usage.hosts = vec!["droid".into()];
+        assert!(report(&cfg, &store, 0).is_ok());
         for (key, value) in [
             ("hosts", "nope"),
             ("tz", "Mars/Base"),

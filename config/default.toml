@@ -39,13 +39,20 @@ enabled = true                        # false = hooks skip agent register/touch/
 idle    = "30m"                       # `live()`'s window: no `ended_at` and `last_seen` within this of now
 
 [agents.usage]                        # rtok agents usage (T358)
-source = "logs"                       # logs = the agents' own session files (Claude Code, Codex); rtok = what passed through rtok; both
+source = "logs"                       # logs = the agents' own session files (Claude Code, Codex, OpenCode, Kilo, Copilot CLI, Gemini CLI); rtok = what passed through rtok; both
 hosts  = []                           # [] = every host; else host ids, e.g. ["claude", "codex"]
 since  = ""                           # "" = all time; a date (2026-09-01, whole days in tz) or a duration (30d)
 until  = ""                           # "" = through today; a date, inclusive
 period = "monthly"                    # monthly | daily: the bottom table
 by     = "agent"                      # agent | model: what the middle table groups by
 tz     = ""                           # IANA zone for day and month boundaries; "" = the system zone
+
+[agents.usage.dirs]                   # where `rtok agents usage` reads each host's own records (T358.3); Claude Code and Codex use [stats] transcripts_dir / codex_dir
+opencode = ["~/.local/share/opencode"] # the opencode*.db files in it; an untouched default follows $XDG_DATA_HOME
+kilo     = ["~/.local/share/kilo"]     # the kilo*.db files in it; an untouched default follows $XDG_DATA_HOME
+copilot  = ["~/.copilot/session-state"] # */events.jsonl; an untouched default follows $COPILOT_HOME
+gemini   = ["~/.gemini/tmp"]           # */chats/session-*; an untouched default follows $GEMINI_CLI_HOME
+droid    = ["~/.factory/sessions"]     # listed as unsupported when present: Factory does not document the token fields
 
 [mcp]                                 # rtok mcp
 tools                   = []          # [] = all tools from enabled plugins; else an allow-list; `expand` always stays listed (D4)

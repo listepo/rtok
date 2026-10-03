@@ -7931,6 +7931,19 @@ Result (2026-10-03, Claude Code / sonnet-5): `--by model` swaps the middle table
 Status: done 2026-10-03
 Model: Claude Code / claude-sonnet-5
 
+### T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
+
+Scope: the T358.3 bullet under "Split when claiming" in T358, plus the `[agents.usage.dirs]` config keys (T358.2 reads Claude Code and Codex from the existing `[stats] transcripts_dir` and `codex_dir`).
+
+Check: one fixture per host pins its totals; each reader was run against that host's real files once; `just check`.
+
+Execution (formats from primary sources only, cited in `research.md`): (1) `[agents.usage.dirs]`: one list per host (`opencode`, `kilo`, `copilot`, `gemini`, `droid`), defaults `~/...`; host-native env overrides (`XDG_DATA_HOME`, `COPILOT_HOME`, `GEMINI_CLI_HOME`) replace a default that the config file left untouched. (2) OpenCode and Kilo: their SQLite `message.data` JSON (`tokens`, `modelID`, `time.created`), read through Diesel on a read-only connection with a `diesel::table!` of the foreign schema. (3) Copilot CLI: the `modelMetrics` of `session.shutdown` in `session-state/*/events.jsonl` (per-request `assistant.usage` is ephemeral and never written). (4) Gemini CLI: `tokens` of the `gemini` records in `tmp/*/chats/**/*.jsonl` and legacy `.json`. (5) Droid: the only primary source (Factory's `session-navigation` skill) names `<uuid>.settings.json` as holding token counts but not its fields, so the host is listed as `unsupported` in `skipped`, never guessed. (6) Fixtures in unit tests (temp dirs, a tiny Diesel-built SQLite file); one read-only manual run per installed host against its real files, matched or not. Verify with the targeted tests, then `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `[agents.usage.dirs]` (one list per host: `opencode`, `kilo`, `copilot`, `gemini`, `droid`) and four readers in `src/measure/usage/`: OpenCode and Kilo from the `message.data` JSON of their SQLite files (a read-only Diesel connection on a `diesel::table!` of the foreign schema), Copilot CLI from the `modelMetrics` of `session.shutdown` (the per-request event is never written to disk, so a session that never shut down counts nothing), Gemini CLI from the `tokens` of `gemini` messages in the chat JSONL and the legacy `.json`. Droid is listed in `skipped` as `unsupported` when `~/.factory/sessions` has content: Factory documents that `<uuid>.settings.json` holds token counts but not its keys. An untouched default follows `XDG_DATA_HOME`, `COPILOT_HOME` or `GEMINI_CLI_HOME`; a key the file sets wins. Formats and sources are in `research.md` section 30, which also corrects the `measure::codex` note that `opencode.db` has no token counts. Real files, read-only: OpenCode matched an independent sum of its database on all four legs; Copilot CLI printed exactly the `usage` totals of its one shut-down log; Kilo (a database with no messages), Gemini CLI (no chats) and Droid (no files) are not installed with data here, so those three are pinned by fixtures only. Unverified assumptions are listed in section 30.2 (Copilot `inputTokens` includes the cache legs; its `tokenDetails` block disagrees with `usage`).
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
+
 ### T358.5. The Usage page on `rtok web` and `rtok tui`
 
 Scope: the T358.5 bullet under "Split when claiming" in T358. T358.1 lists `agents usage` in `EXEMPT` in `tests/surface_parity.rs` with this task as the reason; this task moves it to `COMMAND_PAGES`.

@@ -1,12 +1,12 @@
 bin.name = "rtok"
 args = "--config tests/trycmd/input/usage-logs.toml agents usage --tz Europe/Kyiv"
 stdout = """
-rtok agents usage: logs from 2 agents, up to 2026-10-02 (Europe/Kyiv)
+rtok agents usage: logs from 4 agents, up to 2026-10-02 (Europe/Kyiv)
 
   6.85M tokens
   $7.70 estimated cost
-  2 sessions
-  3 daily rows
+  4 sessions
+  5 daily rows
 
 ! Cost is incomplete: 1 model has no price in [stats.prices], so its tokens are not in
   the estimate. `rtok agents usage --unpriced` lists them.
@@ -14,6 +14,8 @@ rtok agents usage: logs from 2 agents, up to 2026-10-02 (Europe/Kyiv)
 Agent       Tokens Estimated cost
 Codex         3.2M          $6.00
 Claude Code  3.65M          $1.70
+Copilot CLI  1.08K          $0.00
+Gemini CLI     550          $0.00
 
 Monthly totals
 Month   Tokens Estimated cost

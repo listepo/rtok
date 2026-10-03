@@ -13,3 +13,17 @@ input = 2.0
 cache_write = 2.0
 cache_read = 0.0
 output = 10.0
+
+[stats.prices."gemini-test"]
+input = 1.0
+cache_write = 1.0
+cache_read = 0.25
+output = 4.0
+
+# Every host named, so a run never reaches this machine's own agent folders.
+[agents.usage.dirs]
+opencode = ["tests/trycmd/input/usage-logs/opencode"]
+kilo = ["tests/trycmd/input/usage-logs/kilo"]
+copilot = ["tests/trycmd/input/usage-logs/copilot"]
+gemini = ["tests/trycmd/input/usage-logs/gemini"]
+droid = ["tests/trycmd/input/usage-logs/droid"]
