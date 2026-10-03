@@ -44,7 +44,7 @@
 - T330.2. Junk: every host as an agent row, folders from `research.md` §22
 - T330.3. Junk: `cache`, `temp`, `build`, `locks`, `swap` kinds and rtok's own caches
 - T330.4. Junk `clear`: `--agent`, `--kind`, `--include review`, `--older-than`, `--trash`, re-check, exit codes
-- T330.5. Junk: review kinds (`sessions`, `stale-worktrees`, `stale-tokens`, `crash-dumps`, `snapshots`, `logs`, `deps`, `backups`, `index`) and `[agents.junk]` config
+- T330.5. Junk: review and explicit kinds (`sessions`, `stale-worktrees`, `crash-dumps`, `snapshots`, `logs`, `deps`, `backups`, `index`) and `[agents.junk]` config
 - T330.6. Junk: item breakdown, `doctor` line, web card
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
 - T331.3. Doctor: duplicate hooks
@@ -60,8 +60,6 @@
 - T335. Investigate: graph text mode spawns `rg`/`grep`/`ssh` vs D6/D18
 - T336. Investigate: T329: default project for CLI/MCP is the selected project or the cwd
 - T337. Investigate: T329: capability cache never re-probes vs alerts/health that need re-probing
-- T338. Investigate: T330 deletes sessions, tokens and snapshots vs research.md §22 "never junk"
-- T339. Investigate: T330 scans only §22 paths vs heuristic cache detection
 - T340. Investigate: T330 "never touch rtok.db" vs clearing rows inside it
 - T341. Investigate: T330 worktree removal vs T153 (prune, orphans) and its own edge case
 - T342. Investigate: T330 build/cache clearing vs T152 tagged-cache rules
