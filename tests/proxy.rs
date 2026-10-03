@@ -1830,10 +1830,10 @@ const T612_SESSION: &str = "sess-t612";
 
 fn t612_skill_body() -> String {
     let lines: Vec<String> = (1..=400)
-        .map(|i| format!("slint line {i}: widget docs and examples for the skill body"))
+        .map(|i| format!("pixel line {i}: widget docs and examples for the skill body"))
         .collect();
     format!(
-        "Base directory for this skill: /s/slint\n\n# Slint\n{}",
+        "Base directory for this skill: /s/pixel\n\n# Pixel\n{}",
         lines.join("\n")
     )
 }
@@ -1845,7 +1845,7 @@ fn t612_request() -> Vec<u8> {
         "metadata": {"user_id": T612_SESSION},
         "messages": [
             {"role":"user","content":[
-                {"type":"tool_result","tool_use_id":"toolu_skill","content":"Launching skill: slint"},
+                {"type":"tool_result","tool_use_id":"toolu_skill","content":"Launching skill: pixel"},
                 {"type":"text","text": t612_skill_body()}
             ]},
             {"role":"assistant","content":"ok"},
@@ -1895,13 +1895,13 @@ async fn proxy_compress_archives_skill_bodies_outside_keep_turns() {
         .expect("skill text");
     assert!(
         pointer.starts_with("[archived ")
-            && pointer.contains("skill slint")
+            && pointer.contains("skill pixel")
             && pointer.contains("expand("),
         "{pointer:.120}"
     );
     assert_eq!(
         body["messages"][0]["content"][0]["content"].as_str(),
-        Some("Launching skill: slint"),
+        Some("Launching skill: pixel"),
         "the Launching skill result stays"
     );
     assert_eq!(

@@ -1,0 +1,29 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/usage-logs.toml agents usage --tz Europe/Kyiv"
+stdout = """
+rtok agents usage: logs from 2 agents, up to 2026-10-02 (Europe/Kyiv)
+
+  6.85M tokens
+  $7.70 estimated cost
+  2 sessions
+  3 daily rows
+
+! Cost is incomplete: 1 model has no price in [stats.prices], so its tokens are not in
+  the estimate. `rtok agents usage --unpriced` lists them.
+
+Agent       Tokens Estimated cost
+Codex         3.2M          $6.00
+Claude Code  3.65M          $1.70
+
+Monthly totals
+Month   Tokens Estimated cost
+2026-10  6.85M          $7.70
+"""
+
+# The logs are fixture files; HOME and RTOK_HOME are isolated and the env is cleared.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t358-2-agents-usage-logs"
+RTOK_HOME = "target/tmp/t358-2-agents-usage-logs"

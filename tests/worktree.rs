@@ -292,7 +292,9 @@ fn worktrees_page_shows_a_locked_worktree_s_owner() {
     let cfg = rtok::testutil::config_file_in(&tmp);
     let prev = std::env::current_dir().unwrap();
     std::env::set_current_dir(&work).unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    // The read runs `git worktree list` on a background thread; on a loaded machine (parallel
+    // cargo builds, a full nextest run) it has taken over 10 s, so the bound is generous.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     let page = loop {
         let page = rtok::web::model::snapshot(&cfg)
             .worktrees
