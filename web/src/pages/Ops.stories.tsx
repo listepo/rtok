@@ -1,14 +1,10 @@
-// Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
-
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
 import { connectSample, sampleSnapshot } from "../api/sample";
 import { Doctor } from "./Doctor";
 import { Logs } from "./Logs";
 import { Sessions } from "./Sessions";
-import { serve, withData } from "./storyKit";
+import { serve, withData } from "./storyData";
 
 const sample = serve(sampleSnapshot);
 

@@ -5,9 +5,22 @@
 // Offline data source (`?sample`) and the snapshot fixture shared by Storybook, Vitest and
 // offline e2e. Typed as `Snapshot`, so a schema change breaks `tsc` here instead of drifting.
 import type { Connect, Connection } from "./ws";
-import { call, plugin, stats } from "./sampleRows";
+import { call, plugin, project, stats } from "./sampleRows";
+import { applyProject } from "../pages/projectLogic";
 import { mockMachine } from "./sampleDoctor";
 import type { Report, Snapshot } from "./snapshot.gen";
+// The text pages have no live source offline, so `?sample` shows the same made-up text the
+// page stories use; every value is sample data.
+import {
+  configText,
+  graphText,
+  hostsText,
+  servicesText,
+  skillRows,
+  skillsHeader,
+  statsText,
+  worktreesText,
+} from "../pages/textFixtures";
 
 const shellStats = {
   cache_create: 1_200,
@@ -157,10 +170,17 @@ export const sampleSnapshot: Snapshot = {
       ts: 1_790_000_000,
     }),
   ],
-  config: "plugins.shell.enabled = true",
+  config: configText,
   doctor,
-  graph: null,
-  hosts: "claude-code  1.0.0  hook, mcp",
+  graph: graphText,
+  projects: [
+    project(1, "rtok", {
+      selected: true,
+      links: [{ kind: "manual", name: "ketch", reason: "shared store", to: 2 }],
+    }),
+    project(2, "ketch", { state: "stale", index: null }),
+  ],
+  hosts: hostsText,
   logs: [
     "rtok hook PostToolUse ok 4 ms",
     "2026-10-02 12:03:20 ERROR hook/PreToolUse: plugin shell panicked: index not built",
@@ -193,7 +213,7 @@ export const sampleSnapshot: Snapshot = {
     plugin("budget", { enabled: false, surfaces: ["proxy"], summary: "Injection budget." }),
   ],
   ref_ids: { "2": "sample-archive-id", "10": "sample-archive-read", "13": "sample-archive-graph" },
-  services: null,
+  services: servicesText,
   sessions: [
     {
       api: "openai",
@@ -241,8 +261,8 @@ export const sampleSnapshot: Snapshot = {
       started_at: 1_789_999_200,
     },
   ],
-  skills: { header: "0 skills listed", rows: [] },
-  stats: null,
+  skills: { header: skillsHeader, rows: skillRows },
+  stats: statsText,
   usage: {
     cache_create: 1_200,
     cache_read: 48_000,
@@ -254,7 +274,7 @@ export const sampleSnapshot: Snapshot = {
     rows: 42,
     turns: [4_000, 6_500, 9_000, 7_200, 11_000, 14_000, 12_500, 16_000],
   },
-  worktrees: null,
+  worktrees: worktreesText,
 };
 
 export const isSampleRequested = (search: string): boolean =>
@@ -283,6 +303,14 @@ export const connectSample: Connect = (handlers) => {
       if ("expand" in message) {
         const { expand: id } = message;
         later(() => handlers.onFrame({ type: "expand", id, text: `sample payload for ${id}` }));
+        return true;
+      }
+      if ("project" in message) {
+        snapshot = {
+          ...snapshot,
+          projects: applyProject(snapshot.projects ?? [], message.project),
+        };
+        later(emit);
         return true;
       }
       if ("doctor" in message) {

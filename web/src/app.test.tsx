@@ -118,13 +118,13 @@ describe("shared states", () => {
     });
 
     test("empty when the page's data is empty", async () => {
-        mount(server("open", { ...sampleSnapshot, hosts: "" }), "/hosts");
-        expect(await screen.findByText("No hosts data yet")).toBeTruthy();
+        mount(server("open", { ...sampleSnapshot, calls: [] }), "/calls");
+        expect(await screen.findByText("No calls yet")).toBeTruthy();
     });
 
     test("data shows no state panel", async () => {
-        mount(server("open", sampleSnapshot), "/hosts");
-        expect(await screen.findByText("loaded")).toBeTruthy();
+        mount(server("open", sampleSnapshot), "/calls");
+        expect(await screen.findByText("calls (newest first)")).toBeTruthy();
         expect(screen.queryByRole("alert")).toBeNull();
     });
 });
