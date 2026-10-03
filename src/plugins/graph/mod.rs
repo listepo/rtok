@@ -29,8 +29,10 @@ use rtok_plugin_sdk::{
     Surface, ToolDef,
 };
 
+pub mod follow;
 pub mod index;
 pub mod lsp;
+pub mod projects;
 pub mod status;
 pub mod walk;
 pub mod watch;

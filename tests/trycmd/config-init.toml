@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,345 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -333,6 +333,9 @@ target/tmp/t60-2-config-init.toml
 +auto_index = true                     # every symbol/callers/impact call walks the tree; false = index once, then `rtok graph index` or the watcher
 +backend    = "tags"                   # tags | lsp: index backend; default tags; lsp spawns rust-analyzer/clangd/tsserver from PATH (P30)
 +watch      = "off"                    # off | notify (P8d): background re-index inside `rtok mcp`
++auto_link_references = true           # T329.8: follow references in manifests (Cargo path, npm file:/link:, go replace, Python path, submodules) into other directories, register and auto-link them
++reference_depth = 3                   # T329.8: reference levels followed from the project (A -> B is 1); reaching it is shown and logged
++max_auto_projects = 20                # T329.8: most projects references may add to the registry; reaching it is shown and logged
 +exclude    = []                       # gitignore-style paths dropped from the walk (T68.10)
 +include    = []                       # gitignore-style paths forced back in (T68.10)
 +extensions = {}                       # ext = "grammar" remap for custom suffixes (T68.10)

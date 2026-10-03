@@ -392,6 +392,9 @@ body_lines = 40                       # symbol(): source lines shown per definit
 auto_index = true                     # true = every call walks the tree; false = index once, then `rtok graph index` or the watcher (a hook-staled file reads as missing until then)
 backend    = "tags"                   # tags | lsp: index backend; default tags; lsp spawns rust-analyzer/clangd/tsserver from PATH (P30)
 watch      = "off"                    # off | notify: background re-index inside `rtok mcp` (P8d)
+auto_link_references = true           # T329.8: follow references in manifests (Cargo path, npm file:/link:, go replace, Python path, submodules) into other directories, register and auto-link them
+reference_depth = 3                   # T329.8: reference levels followed from the project (A -> B is 1); reaching it is shown and logged
+max_auto_projects = 20                # T329.8: most projects references may add to the registry; reaching it is shown and logged
 
 [plugins.toon]
 enabled  = true

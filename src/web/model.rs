@@ -74,6 +74,10 @@ pub struct Snapshot {
     /// this tick (no re-indexing). `None` when the `graph` feature is off or the store
     /// read failed.
     pub graph: Option<String>,
+    /// Project registry (T329.12): every registered project with its index state and links,
+    /// the same rows `rtok graph projects --json` prints. `None` when the `graph` feature is
+    /// off or the store read failed.
+    pub projects: Option<Vec<ProjectRow>>,
     /// Hosts page (T231): `agents list`'s blocks — kind, detected version, installed
     /// surfaces, config path — one per known host variant (D27), so `agents list` /
     /// `agents info` can join `COMMAND_PAGES`. [`hosts_page_text`] reuses the same
@@ -112,7 +116,7 @@ pub struct Stats {
 /// The Overview page (T15.3): the usage totals plus what the tab draws from them —
 /// context-token-turns and the per-turn series behind the sparkline. The totals stay
 /// flat under the `usage` key, so the `/ws` frame keeps the shape P19 pinned and the
-/// Slint UI reads on untouched.
+/// SPA reads on untouched.
 #[derive(Debug, Default, Serialize, JsonSchema)]
 pub struct Overview {
     #[serde(flatten)]
@@ -1180,6 +1184,24 @@ fn graph_page_text(cfg: &Config) -> Option<String> {
     Some(out)
 }
 
+/// What `/ws` carries per project; with `graph` off the registry is never built.
+#[cfg(feature = "graph")]
+pub use crate::plugins::graph::projects::ProjectRow;
+#[cfg(not(feature = "graph"))]
+#[derive(Debug, Serialize, JsonSchema)]
+pub enum ProjectRow {}
+
+#[cfg(feature = "graph")]
+fn project_rows(cfg: &Config) -> Option<Vec<ProjectRow>> {
+    let rt = crate::plugin::Runtime::open(cfg.clone(), "web-projects").ok()?;
+    crate::plugins::graph::projects::rows(&rt).ok()
+}
+
+#[cfg(not(feature = "graph"))]
+fn project_rows(_cfg: &Config) -> Option<Vec<ProjectRow>> {
+    None
+}
+
 #[cfg(not(feature = "graph"))]
 fn graph_page_text(_cfg: &Config) -> Option<String> {
     None
@@ -1234,7 +1256,12 @@ fn hosts_page_text(cfg: &Config) -> String {
     static HOSTS: Background<String> = Background::new();
     let cfg = cfg.clone();
     HOSTS
-        .get(DOCTOR_SNAPSHOT_TTL, move || crate::agents::list(&cfg))
+        .get(DOCTOR_SNAPSHOT_TTL, move || {
+            // T330.1: the junk list rides this page (D27), in the same background read as the
+            // host probes, so its disk walk never blocks a tick.
+            let junk = crate::agents::junk::to_list(&crate::agents::junk::report(&cfg), false);
+            format!("{}\njunk\n{junk}", crate::agents::list(&cfg))
+        })
         .unwrap_or_else(|| "probing hosts…\n".to_string())
 }
 
@@ -1392,6 +1419,8 @@ impl<'a> Model<'a> {
             stats: stats_text,
             // T230: reads the store on this tick — see `graph_page_text`.
             graph: graph_page_text(self.cfg),
+            // T329.12: the registry, read fresh each tick so a second tab sees a selection.
+            projects: project_rows(self.cfg),
             // T231: cached in the background — see `hosts_page_text`.
             hosts: hosts_page_text(self.cfg),
             // T228: reads the layered figment fresh each tick — see `config_page_text`.
