@@ -6,7 +6,6 @@ import { focusRing } from "../ui/cx";
 import { hm } from "./format";
 import { SURFACES, type Bucket, type Surface } from "./model";
 
-// Ported from `callsChart()` in design/html/js/admin.js.
 const W = 720;
 const H = 180;
 const PAD = { l: 32, r: 8, t: 8, b: 22 };

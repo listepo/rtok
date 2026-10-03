@@ -572,7 +572,7 @@ export interface Overview {
  * The Overview page (T15.3): the usage totals plus what the tab draws from them —
  * context-token-turns and the per-turn series behind the sparkline. The totals stay
  * flat under the `usage` key, so the `/ws` frame keeps the shape P19 pinned and the
- * Slint UI reads on untouched.
+ * SPA reads on untouched.
  *
  * This interface was referenced by `WsProtocol`'s JSON-Schema
  * via the `definition` "Overview".

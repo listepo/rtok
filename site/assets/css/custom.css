@@ -83,7 +83,7 @@
 
 /* =============================================================================
    Responsive — Bitset B layout / density only
-   Breakpoints (shared with Slint RtokTheme):
+   Breakpoints (the same ones the web/ SPA uses):
      sm  / mobile:        < 640px
      md  / tablet:        640–1023px
      lg  / desktop:       1024–1439px
