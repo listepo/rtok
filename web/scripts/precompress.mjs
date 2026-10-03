@@ -8,8 +8,11 @@
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("../dist", import.meta.url).pathname;
+// fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/a/..." and
+// readdirSync resolves it to "D:\\D:\\a\\...".
+const root = fileURLToPath(new URL("../dist", import.meta.url));
 // Already-compressed formats (woff2, png, ...) gain nothing and would double the binary.
 const TEXT = new Set([".html", ".js", ".css", ".svg", ".json", ".txt", ".map"]);
 const MIN_BYTES = 256;
