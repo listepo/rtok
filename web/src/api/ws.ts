@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Typed client for the `/ws` contract (T310.2). Transport-agnostic on purpose: the socket
 // constructor and timers are injectable so Vitest drives it without a server or a browser.
 import type { ClientMessage, ServerFrame, Snapshot } from "./snapshot.gen";

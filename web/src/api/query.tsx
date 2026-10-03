@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // TanStack Query wiring for the `/ws` stream (T310.3). The server pushes, so the snapshot
 // lives in the query cache (written by `setQueryData`, never fetched) and every page reads
 // it through `useSnapshot`.
