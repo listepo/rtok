@@ -95,7 +95,7 @@ fn worktrees_skill_names_only_commands_rtok_worktree_has() {
         }
         seen.push(sub);
     }
-    for sub in ["add", "list", "gc", "clean"] {
+    for sub in ["add", "adopt", "list", "gc", "clean"] {
         assert!(
             seen.contains(&sub),
             "the skill must show `rtok worktree {sub}`"
