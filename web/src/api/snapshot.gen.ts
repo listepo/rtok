@@ -13,7 +13,21 @@ export type ClientMessage =
     }
   | {
       set: SetRequest;
+    }
+  | {
+      project: ProjectRequest;
     };
+/**
+ * The registry writes the graph page offers (links come with T329.20); `<project>` is an id or a
+ * root path, as in `rtok graph projects`.
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "ProjectRequest".
+ */
+export type ProjectRequest = {
+  action: "select";
+  project: string;
+};
 /**
  * A frame the server pushes besides the [`Snapshot`] itself.
  *
@@ -35,6 +49,18 @@ export type ServerFrame =
  * via the `definition` "ModuleState".
  */
 export type ModuleState = "installed" | "not_installed" | "not_supported";
+/**
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "LinkKind".
+ */
+export type LinkKind = "manual" | "auto";
+/**
+ * How a project got into the registry (T329 §1).
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Origin".
+ */
+export type Origin = "manual" | "session" | "worktree" | "mcp" | "reference";
 
 /**
  * Root of the schema: one property per direction, so every type lands in `$defs` once.
@@ -107,6 +133,12 @@ export interface Snapshot {
    * Plugins page: one entry per catalogue plugin.
    */
   plugins: PluginPage[];
+  /**
+   * Project registry (T329.12): every registered project with its index state and links,
+   * the same rows `rtok graph projects --json` prints. `None` when the `graph` feature is
+   * off or the store read failed.
+   */
+  projects: ProjectRow[] | null;
   /**
    * Archive ids keyed by `calls[].id` (T60.4). Both surfaces read this map; neither
    * queries the store for an expand handle (D23 / D27).
@@ -373,6 +405,51 @@ export interface Stats {
   input: number;
   output: number;
   rows: number;
+}
+/**
+ * One registry row as `graph projects` prints it and the `/ws` snapshot carries it.
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "ProjectRow".
+ */
+export interface ProjectRow {
+  created_at: number;
+  id: number;
+  index: ProjectIndex | null;
+  last_used_at: number;
+  links: ProjectLink[];
+  missing: boolean;
+  name: string;
+  origin: Origin;
+  root: string;
+  selected: boolean;
+  state: string;
+}
+/**
+ * `graph status` numbers for one project; absent for a missing root, which has nothing
+ * readable to count.
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "ProjectIndex".
+ */
+export interface ProjectIndex {
+  files: number;
+  indexed_at: number | null;
+  pending: number;
+  rows: number;
+  watch: string;
+}
+/**
+ * One outgoing link of a project.
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "ProjectLink".
+ */
+export interface ProjectLink {
+  kind: LinkKind;
+  name: string;
+  reason: string | null;
+  to: number;
 }
 /**
  * One session's totals ([`Store::session_totals`], T25.1) — the rendering input of the
