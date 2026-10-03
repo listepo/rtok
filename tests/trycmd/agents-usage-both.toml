@@ -1,0 +1,58 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/usage-logs.toml agents usage --source both --json --host codex --tz UTC"
+stdout = """
+{
+  "source": "both",
+  "tz": "UTC",
+  "through": "2026-10-01",
+  "totals": {
+    "tokens": 3200000,
+    "input": 2000000,
+    "cache_write": 0,
+    "cache_read": 1000000,
+    "output": 200000,
+    "cost_usd": 6.0,
+    "sessions": 1,
+    "daily_rows": 1,
+    "saved_tokens": 0,
+    "saved_usd": null
+  },
+  "unpriced_models": 0,
+  "unpriced": [],
+  "agents": [
+    {
+      "host": "codex",
+      "name": "Codex",
+      "tokens": 3200000,
+      "input": 2000000,
+      "cache_write": 0,
+      "cache_read": 1000000,
+      "output": 200000,
+      "cost_usd": 6.0,
+      "through_rtok_tokens": 0,
+      "coverage": 0.0,
+      "saved_tokens": 0,
+      "saved_usd": null
+    }
+  ],
+  "periods": [
+    {
+      "period": "2026-10",
+      "tokens": 3200000,
+      "input": 2000000,
+      "cache_write": 0,
+      "cache_read": 1000000,
+      "output": 200000,
+      "cost_usd": 6.0
+    }
+  ],
+  "skipped": []
+}
+"""
+
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t358-2-agents-usage-both"
+RTOK_HOME = "target/tmp/t358-2-agents-usage-both"

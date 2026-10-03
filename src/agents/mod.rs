@@ -29,6 +29,7 @@ pub mod junk;
 pub mod junk_map;
 pub mod kilo;
 pub mod kimi;
+pub mod link;
 pub(crate) mod mcp;
 pub mod mimo;
 pub mod omp;

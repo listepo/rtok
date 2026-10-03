@@ -34,6 +34,8 @@ Options:
       --call <TOOL>    Call one listed tool and print the text result (pi `registerTool` shim,
                        T70.3)
       --json <ARGS>    JSON arguments for `--call`
+      --host <HOST>    The host this MCP entry belongs to (`claude`, `cursor`, `grok`, …): overlays
+                       `[hook] host` so the process can find its rtok agent (T283.1)
   -h, --help           Print help
 
 $ rtok proxy --help
@@ -293,7 +295,7 @@ Options:
   -h, --help           Print help
 
 $ rtok agents usage --help
-Tokens and estimated cost per agent and month (or day), from what passed through rtok
+Tokens and estimated cost per agent and month (or day), from the agents' logs or rtok
 
 Prices come from `[stats.prices]`; a model without one counts in the tokens and is left out of the
 cost (`--unpriced` names those).
@@ -305,7 +307,8 @@ Options:
           User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
 
       --source <SOURCE>
-          Data source: `rtok` (the store; the only one for now)
+          Data source: `logs` (the agents' own session files, the default), `rtok` (what passed
+          through rtok) or `both`
 
       --host <IDS>
           Only these hosts, comma-separated (`claude,codex`)
@@ -321,6 +324,9 @@ Options:
 
       --monthly
           Bottom table by month (the default)
+
+      --by <AGENT|MODEL>
+          Middle table grouping: `agent` (the default) or `model`
 
       --tz <ZONE>
           IANA time zone for day and month boundaries (default: the system zone)

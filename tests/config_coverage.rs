@@ -192,6 +192,8 @@ fn config_key(path: &[&str], long: &str) -> String {
         ["agents", ..] => format!("setup.{name}"),
         // `rtok dashboard` is the hidden deprecated spelling of `rtok web`; one table, `[web]`.
         ["dashboard", ..] => format!("web.{name}"),
+        // `rtok mcp --host` (T283.1) overlays `[hook] host`, as `rtok hook --host` does.
+        ["mcp"] if name == "host" => "hook.host".into(),
         ["run", ..] | ["filter", ..] => match name {
             "shell" => "plugins.cmd.shell".into(),
             "no_trailer" => "plugins.cmd.trailer_min_lines".into(),

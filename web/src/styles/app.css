@@ -108,3 +108,11 @@
   .glass { background: var(--rtok-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 html.opaque .glass { background: var(--rtok-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* Orb strength per theme and viewport, values from design/html/css/app.css. */
+:root { --orb-opacity: 0.22; }
+:root.dark, :root[data-theme="dark"] { --orb-opacity: 0.42; }
+@media (max-width: 767px) {
+  :root { --orb-opacity: 0.14; }
+  :root.dark, :root[data-theme="dark"] { --orb-opacity: 0.35; }
+}

@@ -69,6 +69,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;mcp' {
             [CompletionResult]::new('--call', '--call', [CompletionResultType]::ParameterName, 'Call one listed tool and print the text result (pi `registerTool` shim, T70.3)')
             [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON arguments for `--call`')
+            [CompletionResult]::new('--host', '--host', [CompletionResultType]::ParameterName, 'The host this MCP entry belongs to (`claude`, `cursor`, `grok`, …): overlays `[hook] host` so the process can find its rtok agent (T283.1)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
@@ -508,10 +509,11 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agents;usage' {
-            [CompletionResult]::new('--source', '--source', [CompletionResultType]::ParameterName, 'Data source: `rtok` (the store; the only one for now)')
+            [CompletionResult]::new('--source', '--source', [CompletionResultType]::ParameterName, 'Data source: `logs` (the agents'' own session files, the default), `rtok` (what passed through rtok) or `both`')
             [CompletionResult]::new('--host', '--host', [CompletionResultType]::ParameterName, 'Only these hosts, comma-separated (`claude,codex`)')
             [CompletionResult]::new('--since', '--since', [CompletionResultType]::ParameterName, 'From a date (`2026-09-01`, whole days in `--tz`) or a duration back from now (`30d`)')
             [CompletionResult]::new('--until', '--until', [CompletionResultType]::ParameterName, 'Through this date, inclusive')
+            [CompletionResult]::new('--by', '--by', [CompletionResultType]::ParameterName, 'Middle table grouping: `agent` (the default) or `model`')
             [CompletionResult]::new('--tz', '--tz', [CompletionResultType]::ParameterName, 'IANA time zone for day and month boundaries (default: the system zone)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--daily', '--daily', [CompletionResultType]::ParameterName, 'Bottom table by day')
@@ -523,10 +525,11 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agent;usage' {
-            [CompletionResult]::new('--source', '--source', [CompletionResultType]::ParameterName, 'Data source: `rtok` (the store; the only one for now)')
+            [CompletionResult]::new('--source', '--source', [CompletionResultType]::ParameterName, 'Data source: `logs` (the agents'' own session files, the default), `rtok` (what passed through rtok) or `both`')
             [CompletionResult]::new('--host', '--host', [CompletionResultType]::ParameterName, 'Only these hosts, comma-separated (`claude,codex`)')
             [CompletionResult]::new('--since', '--since', [CompletionResultType]::ParameterName, 'From a date (`2026-09-01`, whole days in `--tz`) or a duration back from now (`30d`)')
             [CompletionResult]::new('--until', '--until', [CompletionResultType]::ParameterName, 'Through this date, inclusive')
+            [CompletionResult]::new('--by', '--by', [CompletionResultType]::ParameterName, 'Middle table grouping: `agent` (the default) or `model`')
             [CompletionResult]::new('--tz', '--tz', [CompletionResultType]::ParameterName, 'IANA time zone for day and month boundaries (default: the system zone)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--daily', '--daily', [CompletionResultType]::ParameterName, 'Bottom table by day')
