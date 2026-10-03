@@ -20,6 +20,7 @@ import {
   statsText,
   worktreesText,
 } from "../pages/textFixtures";
+import { usageBoth, usagePage } from "../pages/usageFixtures";
 
 const shellStats = {
   cache_create: 1_200,
@@ -66,6 +67,7 @@ const session = "sample-session";
 
 export const sampleSnapshot: Snapshot = {
   type: "snapshot",
+  agent_usage: usagePage(usageBoth),
   calls: [
     call(14, {
       surface: "proxy",

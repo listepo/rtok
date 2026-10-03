@@ -72,6 +72,7 @@ second line</td></tr>
 <p>Live probes (the <code>rtok doctor</code> page), not store rows.</p>
 <pre><code>hooks 0
 hooks check none found
+duplicate hooks none found
 mcp
 proxy &lt;script&gt;alert(1)&lt;/script&gt; | `tick`
 second line

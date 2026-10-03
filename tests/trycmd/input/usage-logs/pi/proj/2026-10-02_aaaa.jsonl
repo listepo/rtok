@@ -1,0 +1,4 @@
+{"type": "session", "id": "pi-1", "timestamp": "2026-10-02T09:00:00.000Z"}
+{"type": "message", "id": "u1", "timestamp": "2026-10-02T09:00:01.000Z", "message": {"role": "user", "content": "hi"}}
+{"type": "message", "id": "a1", "timestamp": "2026-10-02T09:00:05.000Z", "message": {"role": "assistant", "provider": "anthropic", "model": "claude-sonnet-4-5", "usage": {"input": 300, "output": 50, "cacheRead": 1000, "cacheWrite": 80, "totalTokens": 1430}}}
+{"type": "compaction", "id": "c1", "timestamp": "2026-10-02T09:30:00.000Z", "provider": "anthropic", "model": "claude-haiku-4-5", "usage": {"input": 40, "output": 10, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 50}}
