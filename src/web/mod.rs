@@ -448,7 +448,14 @@ async fn socket_loop(mut socket: WebSocket, state: Arc<DashState>) {
                 match msg {
                     Some(Ok(Message::Close(_))) | None => break,
                     Some(Ok(Message::Text(text))) => {
-                        if let Some(reply) = inbound(&state, text.as_str())
+                        // A registry write can index a project, so it runs off the executor.
+                        let st = state.clone();
+                        let text = text.to_string();
+                        let reply = tokio::task::spawn_blocking(move || inbound(&st, &text))
+                            .await
+                            .ok()
+                            .flatten();
+                        if let Some(reply) = reply
                             && socket.send(Message::text(reply)).await.is_err()
                         {
                             break;
@@ -477,7 +484,20 @@ fn inbound(state: &DashState, text: &str) -> Option<String> {
                 None => message_frame(&format!("unknown archive id: {id}")),
             });
         }
+        Ok(ClientMessage::Project { project }) => {
+            let cfg = state
+                .cfg
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            return project_write(&cfg, project)
+                .err()
+                .map(|e| message_frame(&format!("{e:#}")));
+        }
         Ok(ClientMessage::Set { set }) => set,
+        Err(_) if v.get("project").is_some() => {
+            return Some(message_frame("unknown project request"));
+        }
         Err(_) if v.get("set").is_some() => {
             return Some(message_frame("set needs a string key and a bool value"));
         }
@@ -497,6 +517,20 @@ fn inbound(state: &DashState, text: &str) -> Option<String> {
         }
         Err(e) => Some(message_frame(&format!("config set {key}: {e:#}"))),
     }
+}
+
+#[cfg(feature = "graph")]
+fn project_write(cfg: &Config, req: protocol::ProjectRequest) -> Result<()> {
+    use crate::plugins::graph::projects::{Action, run};
+    use protocol::ProjectRequest as R;
+    let rt = crate::plugin::Runtime::open(cfg.clone(), "web-projects")?;
+    let R::Select { project } = req;
+    run(&rt, Action::Select(project), false).map(|_| ())
+}
+
+#[cfg(not(feature = "graph"))]
+fn project_write(_cfg: &Config, _req: protocol::ProjectRequest) -> Result<()> {
+    anyhow::bail!("the graph feature is not built in")
 }
 
 /// `plugins.<id>.enabled` for a catalogue id (D23: Registry, not a second list).

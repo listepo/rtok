@@ -11,7 +11,7 @@ import { richSnapshot } from "./fixtures";
 import { callBuckets, doctorChecks, overview, tokensOf } from "./model";
 import { matchesPlugin } from "./Plugins";
 import { matchesCall } from "./Calls";
-import { mount, serving } from "./testing";
+import { mount, serving } from "./testHelpers";
 
 afterEach(cleanup);
 

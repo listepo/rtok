@@ -8,7 +8,7 @@ import { Calls } from "./Calls";
 import { richSnapshot } from "./fixtures";
 import { Overview } from "./Overview";
 import { Plugins } from "./Plugins";
-import { serve, withData } from "./storyKit";
+import { serve, withData } from "./storyData";
 
 const rich = serve(richSnapshot);
 const loading = serve(null);

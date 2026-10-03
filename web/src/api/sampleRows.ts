@@ -4,7 +4,7 @@
 
 // Row builders for sample data, shared by `?sample` and the page fixtures so a new snapshot
 // field is defaulted in one place.
-import type { CallRow, PluginPage, Stats } from "./snapshot.gen";
+import type { CallRow, PluginPage, ProjectRow, Stats } from "./snapshot.gen";
 
 export const plugin = (id: string, over: Partial<PluginPage> = {}): PluginPage => ({
   enabled: true,
@@ -48,5 +48,20 @@ export const call = (id: number, over: Partial<CallRow> = {}): CallRow => ({
   session: "sample-session",
   surface: "hook",
   ts: 1_790_000_000 + id * 30,
+  ...over,
+});
+
+export const project = (id: number, name: string, over: Partial<ProjectRow> = {}): ProjectRow => ({
+  created_at: 1,
+  id,
+  index: { files: 12, indexed_at: 1, pending: 0, rows: 340, watch: "off" },
+  last_used_at: 1,
+  links: [],
+  missing: false,
+  name,
+  origin: "manual",
+  root: `/work/${name}`,
+  selected: false,
+  state: "ok",
   ...over,
 });

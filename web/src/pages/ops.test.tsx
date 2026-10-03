@@ -8,7 +8,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { sampleSnapshot } from "../api/sample";
 import { richSnapshot } from "./fixtures";
 import { matchesLog, matchesSession, parseLog } from "./model";
-import { mount, serving } from "./testing";
+import { mount, serving } from "./testHelpers";
 
 afterEach(cleanup);
 
