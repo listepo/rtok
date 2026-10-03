@@ -372,8 +372,30 @@ fn fix_file(
     fix
 }
 
+/// One line per selected entry the engine will not remove.
+pub fn refusals(r: &FixReport) -> Vec<String> {
+    let line = |(p, why): &(Problem, &str)| {
+        format!(
+            "not removed: {} `{}` in {}: {why}",
+            label(p),
+            p.command,
+            p.source
+        )
+    };
+    r.refused.iter().map(line).collect()
+}
+
+/// The diffs of the files a planned run would change, and why a file is skipped.
+pub fn diffs(r: &FixReport) -> String {
+    let shown = r.files.iter().map(|f| match &f.outcome {
+        Outcome::Skipped(why) => format!("{}: skipped: {why}\n", f.source.display()),
+        _ => f.diff.clone(),
+    });
+    shown.collect()
+}
+
 /// What a finding is called in the text: a hook by event and matcher, a server by its path.
-fn label(p: &Problem) -> String {
+pub fn label(p: &Problem) -> String {
     match (p.kind, p.matcher.as_deref()) {
         ("duplicate-mcp", _) => format!("mcp {}", p.path),
         (_, Some(m)) => format!("{}[{m}]", p.event),
@@ -411,13 +433,8 @@ pub fn render(r: &FixReport, apply: bool) -> String {
             Outcome::Failed(why) => out.push_str(&format!("  failed: {why}\n")),
         }
     }
-    for (p, why) in &r.refused {
-        out.push_str(&format!(
-            "not removed: {} `{}` in {}: {why}\n",
-            label(p),
-            p.command,
-            p.source
-        ));
+    for line in refusals(r) {
+        out.push_str(&format!("{line}\n"));
     }
     if apply {
         let done: usize = r
@@ -441,24 +458,30 @@ pub fn run(
     kinds: &[&str],
     prompt: Option<&mut dyn Prompt>,
 ) -> (String, i32) {
+    on_this_machine(|probes, w| {
+        let o = Opts {
+            keep: cfg.setup.backup_files as usize,
+            agent,
+            kinds,
+        };
+        match prompt.filter(|_| !apply) {
+            Some(prompt) => interactive(cfg, probes, w, &o, prompt),
+            None => {
+                let r = fix_for(cfg, probes, w, apply, o.keep, agent, kinds);
+                (render(&r, apply), r.exit_code())
+            }
+        }
+    })
+}
+
+/// `f` over this machine's files, environment, `PATH` and the real backup-and-write.
+pub fn on_this_machine<R>(f: impl FnOnce(&Probes, &dyn Writer) -> R) -> R {
     let probes = Probes {
         fs: &super::probe::RealFs,
         env: &super::probe::RealEnv,
         which: &super::probe::RealWhich,
     };
-    let w = &super::probe::RealWriter;
-    let o = Opts {
-        keep: cfg.setup.backup_files as usize,
-        agent,
-        kinds,
-    };
-    match prompt.filter(|_| !apply) {
-        Some(prompt) => interactive(cfg, &probes, w, &o, prompt),
-        None => {
-            let r = fix_for(cfg, &probes, w, apply, o.keep, agent, kinds);
-            (render(&r, apply), r.exit_code())
-        }
-    }
+    f(&probes, &super::probe::RealWriter)
 }
 
 /// The checklist, then the write of what the user confirmed. Cancelling writes nothing.
@@ -471,28 +494,14 @@ pub fn interactive(
 ) -> (String, i32) {
     let mut found = candidates(cfg, p, o.agent);
     let (cwd, home) = (p.env.cwd(), p.env.home());
-    // A project's shared file reaches teammates; its `.local` files and the user's own do not.
-    let shared = |x: &Problem| {
-        let path = Path::new(&x.source);
-        cwd.as_deref().is_some_and(|c| {
-            path.starts_with(c)
-                && home.as_deref() != Some(c)
-                && !path
-                    .file_name()
-                    .is_some_and(|n| n.to_string_lossy().contains(".local"))
-        })
-    };
+    let shared = checklist::shared_in(cwd.as_deref(), home.as_deref());
     if !found.iter().any(|x| removable(x, o.kinds)) {
         let r = fix_found(cfg, p, w, false, o, found, &BTreeSet::new());
         return (render(&r, false), 0);
     }
     let preview = |all: &[Problem], skip: &BTreeSet<(String, String)>| {
         let plan = fix_found(cfg, p, w, false, o, all.to_vec(), skip);
-        let shown = plan.files.iter().map(|f| match &f.outcome {
-            Outcome::Skipped(why) => format!("{}: skipped: {why}\n", f.source.display()),
-            _ => f.diff.clone(),
-        });
-        shown.collect::<String>()
+        diffs(&plan)
     };
     match checklist::run(&mut found, o.kinds, &shared, &preview, prompt) {
         Choice::Cancel => ("cancelled: nothing was written\n".into(), 0),
@@ -504,7 +513,7 @@ pub fn interactive(
 }
 
 #[cfg(test)]
-mod tests {
+pub(in crate::doctor) mod tests {
     use super::*;
     use crate::doctor::probe::{Env, Fs, PathKind, Which};
     use proptest::prelude::*;
@@ -514,8 +523,8 @@ mod tests {
 
     /// An in-memory machine whose files the `Writer` side can change.
     #[derive(Default)]
-    struct Machine {
-        files: RefCell<BTreeMap<PathBuf, String>>,
+    pub(in crate::doctor) struct Machine {
+        pub(in crate::doctor) files: RefCell<BTreeMap<PathBuf, String>>,
         fail_backup: bool,
         fail_write: bool,
         /// Rewrites the file when it is read for the `race_at`-th time (an editor saving in
@@ -523,7 +532,7 @@ mod tests {
         race: RefCell<Option<(PathBuf, String)>>,
         race_at: Cell<usize>,
         reads: RefCell<usize>,
-        backups: RefCell<Vec<PathBuf>>,
+        pub(in crate::doctor) backups: RefCell<Vec<PathBuf>>,
     }
 
     impl Fs for Machine {
@@ -587,9 +596,9 @@ mod tests {
         }
     }
 
-    const SETTINGS: &str = "/h/.claude/settings.json";
+    pub(in crate::doctor) const SETTINGS: &str = "/h/.claude/settings.json";
 
-    fn cfg() -> Config {
+    pub(in crate::doctor) fn cfg() -> Config {
         let mut c = Config::default();
         c.doctor.settings_path = SETTINGS.into();
         c.setup.claude.settings_path = SETTINGS.into();
@@ -600,7 +609,7 @@ mod tests {
         c
     }
 
-    fn machine(settings: &str) -> Machine {
+    pub(in crate::doctor) fn machine(settings: &str) -> Machine {
         let m = Machine::default();
         m.files
             .borrow_mut()
@@ -627,11 +636,11 @@ mod tests {
         fix_for(&cfg(), &probes, m, apply, 3, None, only)
     }
 
-    fn put(m: &Machine, path: &str, body: &str) {
+    pub(in crate::doctor) fn put(m: &Machine, path: &str, body: &str) {
         m.files.borrow_mut().insert(path.into(), body.into());
     }
 
-    fn text(m: &Machine, path: &str) -> String {
+    pub(in crate::doctor) fn text(m: &Machine, path: &str) -> String {
         m.files
             .borrow()
             .get(Path::new(path))
@@ -640,13 +649,13 @@ mod tests {
     }
 
     /// The same valid hook in the user's and in the project's settings.
-    const USER_DUP: &str = r#"{
+    pub(in crate::doctor) const USER_DUP: &str = r#"{
   // mine
   "theme": "dark",
   "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "/h/.claude/settings.json"}]}]}
 }
 "#;
-    const PROJECT_DUP: &str = r#"{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "/h/.claude/settings.json"}]}]}}"#;
+    pub(in crate::doctor) const PROJECT_DUP: &str = r#"{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "/h/.claude/settings.json"}]}]}}"#;
 
     #[cfg(unix)] // POSIX paths and command words
     #[test]
@@ -807,7 +816,7 @@ mod tests {
         (text, script)
     }
 
-    const BROKEN: &str =
+    pub(in crate::doctor) const BROKEN: &str =
         r#"{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "/h/gone/old.sh"}]}]}}"#;
 
     #[cfg(unix)]

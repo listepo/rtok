@@ -7,6 +7,7 @@
 import type { Connect, Connection } from "./ws";
 import { call, plugin, project, stats } from "./sampleRows";
 import { applyProject } from "../pages/projectLogic";
+import { mockMachine } from "./sampleDoctor";
 import type { Report, Snapshot } from "./snapshot.gen";
 // The text pages have no live source offline, so `?sample` shows the same made-up text the
 // page stories use; every value is sample data.
@@ -283,6 +284,7 @@ export const isSampleRequested = (search: string): boolean =>
 
 export const connectSample: Connect = (handlers) => {
   let snapshot = structuredClone(sampleSnapshot);
+  const machine = mockMachine();
   let stopped = false;
   // Frames land on a microtask so callers can register a reply handler after `send`.
   const later = (fn: () => void) =>
@@ -311,6 +313,15 @@ export const connectSample: Connect = (handlers) => {
           projects: applyProject(snapshot.projects ?? [], message.project),
         };
         later(emit);
+        return true;
+      }
+      if ("doctor" in message) {
+        const { action, selection } = message.doctor;
+        later(() =>
+          action === "plan"
+            ? handlers.onFrame({ type: "doctorplan", plan: machine.plan(selection) })
+            : handlers.onFrame({ type: "doctorfixed", fixed: machine.apply(selection) }),
+        );
         return true;
       }
       const { key, value } = message.set;

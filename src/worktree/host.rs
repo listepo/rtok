@@ -81,7 +81,16 @@ fn create(p: &Payload, cfg: &Config, store: Option<&Store>) -> Result<PathBuf> {
     let agent = session_agent(store, p);
     let owner = agent.is_none().then(|| HOST.to_string());
     let root = claim::configured_root(&cfg.worktree.root);
-    let plan = claim::add(store, cwd, root, (&p.name, None), agent.as_ref(), owner)?;
+    let auto_add = cfg.plugins.graph.auto_add_projects;
+    let plan = claim::add(
+        store,
+        cwd,
+        root,
+        (&p.name, None),
+        agent.as_ref(),
+        owner,
+        auto_add,
+    )?;
     Ok(native(plan.path))
 }
 

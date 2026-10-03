@@ -16,6 +16,9 @@ export type ClientMessage =
     }
   | {
       project: ProjectRequest;
+    }
+  | {
+      doctor: DoctorRequest;
     };
 /**
  * The registry writes the graph page offers; `<project>` is an id or a
@@ -42,6 +45,11 @@ export type ProjectRequest =
       to: string;
     };
 /**
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "DoctorAction".
+ */
+export type DoctorAction = "plan" | "apply";
+/**
  * A frame the server pushes besides the [`Snapshot`] itself.
  *
  * This interface was referenced by `WsProtocol`'s JSON-Schema
@@ -56,6 +64,14 @@ export type ServerFrame =
       id: string;
       text: string;
       type: "expand";
+    }
+  | {
+      plan: Plan;
+      type: "doctorplan";
+    }
+  | {
+      fixed: Fixed;
+      type: "doctorfixed";
     };
 /**
  * This interface was referenced by `WsProtocol`'s JSON-Schema
@@ -90,6 +106,93 @@ export interface WsProtocol {
 export interface SetRequest {
   key: string;
   value: boolean;
+}
+/**
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "DoctorRequest".
+ */
+export interface DoctorRequest {
+  action: DoctorAction;
+  selection: Selection;
+}
+/**
+ * What the user changed since the defaults.
+ */
+export interface Selection {
+  /**
+   * Entries made the kept copy of their duplicate.
+   */
+  keep: Ref[];
+  /**
+   * Entries whose selection is the opposite of their default.
+   */
+  toggled: Ref[];
+}
+/**
+ * An entry as the page names it: the file and the key path inside it.
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Ref".
+ */
+export interface Ref {
+  path: string;
+  source: string;
+}
+/**
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Plan".
+ */
+export interface Plan {
+  /**
+   * The diff of every file the selection would change.
+   */
+  diff: string;
+  items: Item[];
+  /**
+   * Selected entries the engine will not remove, with why.
+   */
+  refused: string[];
+}
+/**
+ * One line of the checklist.
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Item".
+ */
+export interface Item {
+  agent: string;
+  /**
+   * Whether this copy may be made the kept one.
+   */
+  can_keep: boolean;
+  detail: string;
+  /**
+   * The file that holds the copy kept instead, for a duplicate.
+   */
+  kept_in: string | null;
+  kind: string;
+  /**
+   * What the entry runs or is called.
+   */
+  label: string;
+  path: string;
+  selected: boolean;
+  /**
+   * In a project's shared file: starts unselected.
+   */
+  shared: boolean;
+  source: string;
+}
+/**
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Fixed".
+ */
+export interface Fixed {
+  /**
+   * 1 when a selected entry was skipped or failed.
+   */
+  code: number;
+  text: string;
 }
 /**
  * Everything a surface needs for one refresh. `Default` is the empty frame a surface
@@ -766,6 +869,22 @@ export interface Overview1 {
    * sessions this is session order, not wall-clock order.
    */
   turns: number[];
+}
+/**
+ * What the user changed since the defaults.
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Selection".
+ */
+export interface Selection1 {
+  /**
+   * Entries made the kept copy of their duplicate.
+   */
+  keep: Ref[];
+  /**
+   * Entries whose selection is the opposite of their default.
+   */
+  toggled: Ref[];
 }
 /**
  * Skills page (T63.1, D23): one row per skill the host lists.

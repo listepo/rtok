@@ -130,3 +130,31 @@ describe("logs", () => {
         expect(await screen.findByText("No logs yet")).toBeTruthy();
     });
 });
+
+describe("doctor fix", () => {
+    test("select, diff and confirm go through the mocked machine", async () => {
+        const { connectSample } = await import("../api/sample");
+        mount(connectSample, "/doctor");
+        const panel = within(await screen.findByRole("region", { name: "fix" }));
+        const project = await panel.findByRole("checkbox", {
+            name: /stop\.sh in \/work\/app\/\.claude/,
+        });
+        expect((project as HTMLInputElement).checked).toBe(false);
+        expect(panel.getByLabelText("diff").textContent).not.toContain("/work/app");
+
+        fireEvent.click(project);
+        await within(await screen.findByRole("region", { name: "fix" })).findByText(
+            /Fix selected \(3\)/,
+        );
+        expect(panel.getByLabelText("diff").textContent).toContain("/work/app");
+
+        fireEvent.click(panel.getByText(/Fix selected \(3\)/));
+        expect(panel.getByText("Write 3 entries?")).toBeTruthy();
+        fireEvent.click(panel.getByText("Cancel"));
+        expect(panel.queryByText("Write 3 entries?")).toBeNull();
+
+        fireEvent.click(panel.getByText(/Fix selected \(3\)/));
+        fireEvent.click(panel.getByText("Confirm"));
+        expect((await panel.findByRole("status")).textContent).toContain("3 entries removed");
+    });
+});

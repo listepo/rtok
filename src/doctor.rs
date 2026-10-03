@@ -29,6 +29,7 @@ pub mod hooks;
 mod mcp_dupes;
 mod mcp_fix;
 pub mod probe;
+pub mod web;
 
 /// What `rtok doctor` found, as data.
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]

@@ -15,7 +15,7 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use common::git::{commit, run};
+use common::git::{repo, run};
 use rtok::agents::{self, link};
 
 /// `rtok <args>` under `home` as the agent `agent`, with `stdin`; `(success, stdout, stderr)`.
@@ -50,18 +50,6 @@ fn rtok(
     let out = child.wait_with_output().unwrap();
     let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
     (out.status.success(), text(&out.stdout) + &text(&out.stderr))
-}
-
-/// A bare origin, a clone named `rtok` with one pushed commit, and the `_worktrees` root.
-fn repo(tmp: &Path) -> PathBuf {
-    run(tmp, &["init", "-q", "--bare", "origin.git"]);
-    run(tmp, &["clone", "-q", "origin.git", "rtok"]);
-    let work = tmp.join("rtok");
-    commit(&work, "a.txt");
-    run(&work, &["push", "-q", "-u", "origin", "main"]);
-    run(&work, &["remote", "set-head", "origin", "main"]);
-    std::fs::create_dir_all(tmp.join("_worktrees")).unwrap();
-    work.canonicalize().unwrap()
 }
 
 /// What one host's walk produced, with everything host-specific (ids, the scratch path, the

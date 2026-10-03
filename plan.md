@@ -28,7 +28,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T329 | todo | P2 | 5 | 0% | |
 | T329.4 | todo | P2 | 4 | 0% | |
 | T329.5 | todo | P2 | 3 | 0% | |
-| T329.6 | todo | P2 | 3 | 0% | |
 | T329.9 | todo | P2 | 4 | 0% | |
 | T329.10 | todo | P3 | 3 | 0% | |
 | T329.11 | todo | P2 | 3 | 0% | |
@@ -46,7 +45,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T330.6 | todo | P3 | 3 | 0% | |
 | T331 | todo | P1 | 4 | 0% | |
 | T331.10 | todo | P2 | 2 | 0% | |
-| T331.12 | todo | P2 | 2 | 0% | |
 | T332 | todo | research | 1 | 0% | |
 | T333 | todo | research | 1 | 0% | |
 | T334 | todo | research | 1 | 0% | |
@@ -476,6 +474,7 @@ Open questions (2026-10-03, Claude Code / sonnet-5; not started, ask the creator
 2. The host-config formats must come from primary sources before any writer: the `.cursor/worktrees.json` shape (`setup-worktree*` values), where Devin/Windsurf read `post_setup_worktree` (project vs user `hooks.json`), and Kilo's `.kilo/setup-script` is a plain script, so "our entry only" needs a marked block. `research.md` §26 names the keys but not the exact file shapes.
 3. Whether a git lock breaks a host's own eviction is still the T281 live probe; the scripts must go through `adopt`, which already skips the lock in evicting pools.
 
+
 ### T310. React SPA replaces the Slint web UI (epic)
 
 `rtok web` draws its admin with Slint compiled to WASM on one `<canvas>` (`crates/rtok-webui`, D20). The creator chose to replace it with a React SPA in `web/`. Stack (creator's picks): React 19, TanStack (Router, Query, Table, Virtual, Form where a page needs it), Vite 8, Vitest 5, Tailwind CSS v4, Storybook 10, Playwright e2e. Data stays the `/ws` snapshot of D23; its TypeScript types are generated from the Rust types (`schemars` → JSON Schema → TS), so Rust stays the one source of truth. The visual reference is `design/html/` (all 13 pages, tokens, icons, fonts) and the `web/` prototype. When the SPA covers every page, `crates/rtok-webui`, the WASM build in CI/release, `design/html/` and the HTML prototype are deleted. One subtask = one PR (≤300 LOC hand-written, ≤10 files; lockfiles and generated files excepted).
@@ -490,7 +489,7 @@ Ivan, 2026-10-01: in the web UI's graph tab, the graph is built for a project th
 
 Today the graph plugin (`src/plugins/graph/`) always works on one root: the process's current directory. The index is keyed by that root (`index::canon(root)` in `src/store/symbols.rs`), and the MCP tools `symbol`, `callers`, `impact`, `outline` and `explore`, plus `dead` and `affected`, only see that root. The graph page shows the same single root (`root .`). There is no way to pick another project and no way to follow a call into a dependency's source.
 
-Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.21 in dependency order (T329.1 to T329.3, T329.12 and T329.20 are already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
+Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.21 in dependency order (T329.1 to T329.3, T329.6, T329.12, T329.13 and T329.20 are already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
 
 #### Terms
 
@@ -817,11 +816,6 @@ T329 §6 (second half): `dead` over the scope (a symbol in B used only from A is
 
 Check: `dead` over A's scope spares B's function only A calls, selecting B alone reports it; `affected` maps per project; an MCP reply stays under the cap with three linked projects; an edit in C updates its index under `watch`; `just check`.
 
-### T329.6. Auto-adding projects rtok sees in use (sessions, worktrees, graph MCP calls) and its config keys
-
-T329 §4a: register the cwd of a hooked agent session, a worktree created or adopted through `rtok worktree` (T285, T289; display name shows the branch) and the root of any graph MCP call, origin `session|worktree|mcp`. Adds `[plugins.graph] auto_add_projects = true` to the config schema and `docs/config.md`. The hook path stays within its 10 ms budget (the registration is a deferred write). T289 is owned by another agent; stay out of `adopt`. Depends on T329.1.
-
-Check: a session in a new directory registers it with `auto_add_projects` on and does not with it off; a worktree shows its branch as the name; the hook still exits within 10 ms; `just check`.
 
 ### T329.9. Graph backend `auto`: LSP first, tree-sitter second, chosen per project and language
 
@@ -1198,12 +1192,6 @@ Split (epic, too large for one PR: three detectors, a fix engine, an interactive
 Part of T331. T331.4 leaves rtok's own MCP server out of the duplicate check, because what to report depends on the T332 and T333 decisions (the T331 keep rule against D33/T275: a plugin serving MCP while a config entry also exists, and the Claude `plugin:rtok:rtok` namespacing). Once those are decided, include rtok's own entry (detected with `rtok_agent_sdk::runs_bin` and `agents::is_rtok_bin`, as T331.4 does to exclude it) in the detector and the keep recommendation of T331.4, with the decided rules. Depends on T331.4, T332 and T333.
 
 Check: the rtok scenarios of "Duplicate MCP entries" in T331 per host once T332 and T333 are decided; `just check`.
-
-### T331.12. Doctor: "Fix selected" on the web doctor page
-
-Part of T331. The web doctor page (T310.7) lists the fixable items of `rtok doctor --fix` with the same defaults as the terminal checklist (shared project files unselected), lets the user toggle them and change the kept copy of a duplicate, shows the diff per file, and writes only after a confirmation, through the same `doctor::fix` engine and its refusals. Depends on T331.7 and T310.7.
-
-Check: the selection and refusal scenarios against the page's backend with a mocked machine; `just check`.
 
 ### T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 

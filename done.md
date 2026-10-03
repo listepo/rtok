@@ -2169,6 +2169,16 @@ Deviations: the card's "last error" index status is not shown, because nothing r
 Status: done 2026-10-03 · Model: Claude Code / sonnet-5
 
 
+## T329.6 — Auto-adding projects rtok sees in use (sessions, worktrees, graph MCP calls) and its config keys
+
+T329 §4a. With `[plugins.graph] auto_add_projects = true` (the default) a directory joins the project registry when a hooked session starts in it (origin `session`), when `rtok worktree add` creates a worktree or `rtok worktree adopt` / `claim` binds one, CLI or MCP (origin `worktree`, named by its branch), and when a graph MCP call runs in it (origin `mcp`). Off, the registry changes only through the CLI. The key is in the config schema and `docs/config.md`.
+
+Execution: `Store::auto_add_project` (`src/store/projects.rs`) wraps `register_project`, so the canonical dedup and the first-origin rule are unchanged. It skips a path that is not a directory, `/` and `$HOME` (`fs::is_unwalkable_root`), and names only the row it just created, so a manual add or a rename is never overwritten. The hook calls it on `SessionStart` only, as one best-effort upsert beside `register_agent`: a locked store skips it and the hook still exits as before, so there is no new queue. The MCP arm in `src/mcp.rs` calls it before `graph::call`. `claim::add` and `claim::bind` (the one path of the CLI and MCP) take an `auto_add` flag and call a private `register_project`; `Adopted` carries the branch for the name (not serialized).
+
+Check: `tests/project_auto_add.rs` (a session, a graph MCP call, and `worktree add` plus `adopt` each register with the key on and not with it off; worktrees are named by branch), `store::projects::tests::auto_add_skips_unwalkable_roots_and_never_renames_a_known_project`, `tests/latency.rs` `SessionStart` p95 under 10 ms with a real cwd (release only, as the other gates); `just check`.
+
+Deviations: the card asked for a deferred write; the hook already writes inline in the same way (`register_agent`), so registration is that one best-effort upsert rather than a hand-off. Hooks other than `SessionStart` do not register, to keep the per-event cost unchanged. The card's "stay out of `adopt`" line is obsolete: T289 is done and `adopt` registers through `claim::bind`.
+
 ## T329.3 — Project links and graph scope: `link`/`unlink`, cycle-safe scope, manual and auto kinds
 
 T329 Terms and §5. Migration `0028_project_links` adds directed links `(from_id, to_id, kind manual|auto, reason, unlinked)`, both ends cascading on delete so a removed project leaves no link behind, and a CHECK against self-links. `Store::link_projects`, `unlink_projects`, `project_links` and `project_scope` (new `src/store/project_links.rs`). `rtok graph projects link <project> [--from P] [--both] [--reason TEXT]` and `unlink <project> [--from P] [--both]` link from the selected project (or `--from`); the list gains each project's outgoing links (`links` count column, `links` array in `--json`).
@@ -4984,6 +4994,17 @@ Check: the scripted-prompt scenarios, the property tests, the pty test; `just ch
 Execution (2026-10-03): (1) `doctor::checklist` holds the `Prompt` trait (`ask(screen) -> Option<line>`), the `Terminal` implementation (stdout and stdin) and the line-based checklist: a number toggles an item, `k N` makes copy N the kept one of its duplicate, `d` shows the diff of the current selection, `y` shows it again and asks `Write N change(s)? [y/N]`, `q` or the end of input cancels. A hook that is both broken and an extra copy is one line. Items in a shared project file (under the working directory, not `.local`, and the working directory is not `$HOME`) start unselected. (2) `fix::fix_found` is the T331.6 pipeline over a list of findings minus the deselected `(source, path)` keys; `fix_for` is now a wrapper, and `fix::interactive` runs the checklist and then `fix_found` with the writer. `fixable` of a duplicate now means "may be removed when it is not the kept copy" (the file is the user's JSON), so a swapped keep stays removable; a kept copy the user may not edit, a server the host resolves by scope, and a broken hook refuse `k`. (3) The CLI opens the checklist only when `--fix` runs without `--yes` on a terminal for both stdin and stdout; pipes, CI and `--yes` keep the dry run and the default selection of T331.6. (4) No prompt crate was added: the project has none and the checklist is line-based. `portable-pty` is a dev-dependency for the pseudo-terminal test.
 
 Result: `rtok doctor --fix` on a terminal asks what to remove and writes only what was confirmed. Tests: scripted-prompt scenarios (project file unselected, toggles, cancel, EOF, `n` at the confirmation, unknown answers, `k N`, refusals), a proptest over random answer lists (a duplicate never loses its last copy, an unrelated hook never moves), and two tests on a real pseudo-terminal (confirm and write, quit and write nothing).
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5-5
+
+### T331.12. Doctor: "Fix selected" on the web doctor page
+
+Part of T331. The web doctor page (T310.7) lists the fixable items of `rtok doctor --fix` with the same defaults as the terminal checklist (shared project files unselected), lets the user toggle them and change the kept copy of a duplicate, shows the diff per file, and writes only after a confirmation, through the same `doctor::fix` engine and its refusals. Depends on T331.7 and T310.7.
+
+Check: the selection and refusal scenarios against the page's backend with a mocked machine; `just check`.
+
+Result: the web doctor page has a "Fix selected" panel. `/ws` takes `{"doctor":{"action":"plan"|"apply","selection":{keep,toggled}}}` and answers `doctorplan` (items, per-file diff, refusals) or `doctorfixed` (the report and exit code). The server keeps no session: every request carries the kept-copy swaps and the toggles relative to the defaults and the checklist is rebuilt each time, so a stale list cannot be applied. Only `apply` writes, through the same `fix_found` pipeline (backup into `_backup/`, atomic write, re-parse guard, the same refusals). The terminal and the web share one default-selection rule (`checklist::shared_in`, `checklist::defaults`). The origin guard of the `/ws` upgrade covers the new messages like `set`. Tests: 5 Rust unit tests on the mock machine (`doctor::web`), a real-socket e2e (`tests/web_e2e.rs`), 6 reducer and 4 api/page Vitest tests, and a browser story with a play function (select, diff, confirm) on the mocked machine in `web/src/api/sampleDoctor.ts`.
 
 Status: done 2026-10-03
 Model: Claude Code / claude-sonnet-5-5

@@ -5,6 +5,7 @@ import { Panel } from "../ui/Panel";
 import { Pill } from "../ui/Pill";
 import { compact, fmt, pct } from "./format";
 import { doctorChecks, MODULES, type CheckState } from "./model";
+import { DoctorFix } from "./DoctorFix";
 import { CheckPill, Kv, WithSnapshot } from "./parts";
 
 const SUMMARY = [
@@ -65,6 +66,7 @@ function DoctorBody({ snap }: { snap: Snapshot }) {
                 {checksPanel}
                 {d && <Details d={d} />}
             </div>
+            <DoctorFix />
         </div>
     );
 }
