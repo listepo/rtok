@@ -756,7 +756,7 @@ enum AgentCmd {
         #[arg(long)]
         json: bool,
     },
-    /// Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear
+    /// Junk and agent folders: `list` shows rtok's and every installed host's folders with sizes, `clear` removes rtok's own junk
     Junk {
         #[command(subcommand)]
         action: JunkCmd,
@@ -814,6 +814,9 @@ enum JunkCmd {
         /// Exact byte counts instead of KB/MB/GB
         #[arg(long)]
         bytes: bool,
+        /// Also the hosts that are not installed
+        #[arg(long)]
+        all: bool,
     },
     /// List what `agents junk clear` would remove; `--yes` applies it
     Clear {
@@ -1549,14 +1552,20 @@ pub fn run() -> Result<()> {
                 }
             }
             AgentCmd::Junk {
-                action: JunkCmd::List { json, bytes },
+                action: JunkCmd::List { json, bytes, all },
             } => {
                 let cfg = Config::load_with(config_file.as_deref(), None)?;
-                let report = crate::agents::junk::report(&cfg);
+                let report = crate::agents::junk::report_with(
+                    &cfg,
+                    &crate::agents::junk_map::Roots::from_env(),
+                    crate::agents::junk::Options { all },
+                    crate::agents::junk::AGENT_SCAN_LIMIT,
+                );
                 if json {
                     print_json(&report)?;
                 } else {
-                    print!("{}", crate::agents::junk::to_list(&report, bytes));
+                    let links = io::stdout().is_terminal();
+                    print!("{}", crate::agents::junk::to_list(&report, bytes, links));
                 }
             }
             AgentCmd::Junk {

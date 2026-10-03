@@ -991,7 +991,8 @@ const DOCTOR_SNAPSHOT_TTL: std::time::Duration = std::time::Duration::from_secs(
 
 /// How long a snapshot may reuse the last worktrees read (T232): the walk takes tens
 /// of seconds per pass in a checkout with a built `target/`, so reusing
-/// `DOCTOR_SNAPSHOT_TTL` would re-walk almost continuously in an open tui/web.
+/// `DOCTOR_SNAPSHOT_TTL` would re-walk almost continuously in an open tui/web. The junk
+/// section of the Hosts page (T330.2) walks agent folders and reuses it for the same reason.
 const WORKTREES_TTL: Duration = Duration::from_secs(300);
 
 /// Snapshot-only doctor: same [`doctor`] probes, cached briefly so `rtok tui` / `rtok web`
@@ -1268,18 +1269,26 @@ impl<T: Clone + Send + 'static> Background<T> {
 /// `agents list` spawns one `--version` per host variant (T168) — too slow for a 2 s
 /// snapshot tick — so this reuses [`Background`]: a cold or stale entry never blocks
 /// the tick, and the tick renders the last known text, or "probing hosts…" before the
-/// first probe lands.
+/// first probe lands. The junk section below it has its own cache, [`WORKTREES_TTL`].
 fn hosts_page_text(cfg: &Config) -> String {
     static HOSTS: Background<String> = Background::new();
-    let cfg = cfg.clone();
-    HOSTS
-        .get(DOCTOR_SNAPSHOT_TTL, move || {
-            // T330.1: the junk list rides this page (D27), in the same background read as the
-            // host probes, so its disk walk never blocks a tick.
-            let junk = crate::agents::junk::to_list(&crate::agents::junk::report(&cfg), false);
-            format!("{}\njunk\n{junk}", crate::agents::list(&cfg))
+    static JUNK: Background<String> = Background::new();
+    let hosts_cfg = cfg.clone();
+    let Some(hosts) = HOSTS.get(DOCTOR_SNAPSHOT_TTL, move || crate::agents::list(&hosts_cfg))
+    else {
+        return "probing hosts…\n".to_string();
+    };
+    // T330.1: the junk list rides this page (D27). It walks every installed host's folders
+    // (up to `AGENT_SCAN_LIMIT` each), so it has its own slow cache: on the 30 s host-probe
+    // TTL an open tui or web would re-walk the disk almost nonstop (the T232 worktrees case).
+    let junk_cfg = cfg.clone();
+    let junk = JUNK
+        .get(WORKTREES_TTL, move || {
+            let report = crate::agents::junk::report(&junk_cfg);
+            crate::agents::junk::to_list(&report, false, false)
         })
-        .unwrap_or_else(|| "probing hosts…\n".to_string())
+        .unwrap_or_else(|| "measuring folders…\n".to_string());
+    format!("{hosts}\njunk\n{junk}")
 }
 
 /// The Config page (T228): [`config_entries`]'s rows, the same ones `config
