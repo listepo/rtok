@@ -20,6 +20,36 @@ Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree uncha
 
 Result (2026-09-26, Cursor / grok 4.7): live check passed under a throwaway `HOME` (real `~/.config/kilo` and `~/.local/share/kilo` unchanged). `rtok agents install kilo --yes` linked `plugins/opencode/rtok.ts` and wrote `mcp.rtok`. Kilo 7.7.5 rejected the old bare-function default export (`failed to load plugin` / `plugin config hook failed`); the shared plugin now exports `{ id: "rtok", server }` and rewrites bash in `tool.execute.before` to `rtok run -- '…'`. `kilo run --auto -m vercel/alibaba/qwen3.5-flash` invoked bash with `rtok run -- 'echo rtok-t97'`; tool output carried the expand trailer; `RTOK_HOME=… rtok stats --plugin cmd --json` showed one `cmd`/`rule` row (`ref_id` `echo:301a303c…`). OpenAI env key had no credits; Vercel AI Gateway worked. Extension (b) not re-probed here — same files as CLI. Unit: `agents::kilo` 6/6, `opencode_plugin`+`filter` 6/6 (vitest 21/21), `readme_tables_match_support` green.
 
+### T279.1. `rtok agents outdated`: list only the hosts whose rtok plugin is older than the running rtok
+
+Name: `rtok agents outdated`, the word `npm outdated`, `cargo outdated` and `brew outdated` use for exactly this list, next to the `agents list` / `info` / `update` it belongs with. `rtok agents update --check` is an alias that prints the same thing (for people who look under `update`). `versions` was rejected: it reads as "show every version", while this command hides everything that needs no action.
+
+Behaviour:
+- Walks every host rtok supports (the host registry `agents list` uses), not only the ones in the receipt, so a plugin installed by hand or by an older rtok is found too.
+- For each host it reads the installed plugin's version with T279 step 2's lookup: `.rtok-plugin-version` in the installed copy, then the receipt, then the host's own record (Claude `installed_plugins.json`). The source comes from the same lookup (`github`, `local`, `marketplace`).
+- Target version is the running binary's `CARGO_PKG_VERSION`. The command reads local files only: no network, no host CLI call, no marketplace refresh, so it is fast and works offline.
+- A host is listed only when the plugin is installed and its version is lower than the target by SemVer, ignoring build metadata (a local `0.10.0+g12c7e91` on rtok `0.10.0` is current). An install with no version file and no recorded version counts as `0.0.0` and is listed as `legacy`. Hosts without the plugin, with the same version, or with a newer one are not printed.
+- Selection flags as in `update`: an optional host list (`rtok agents outdated claude,cursor`), `--cli` / `--desktop`.
+
+Output:
+- A table with columns `agent`, `installed`, `available`, `source`, one row per outdated host and variant, for example `claude  0.0.1  0.10.0  github` and `gemini  legacy  0.10.0  marketplace`. A footer names the next step: `run: rtok agents update claude,gemini`.
+- Nothing to update, some plugins installed: `all rtok plugins are up to date (3 installed, rtok 0.10.0)`.
+- No plugin installed anywhere: `no rtok plugins installed`.
+- `--json`: `{"rtok":"0.10.0","outdated":[{"agent":"claude","variant":"cli","installed":"0.0.1","available":"0.10.0","source":"github","legacy":false}],"installed":3}`, with `outdated` empty in both "nothing to do" cases; the human messages are not printed.
+- Exit code 0 by default, so scripts that only read the output keep working; `--exit-code` returns 10 when at least one host is outdated, for CI and hooks.
+
+Implementation: one function `outdated(cfg, selection) -> Vec<Outdated>` built on T279's version lookup and comparison (the same pure function `update` uses, so both always agree on "outdated"); the table uses the existing `render` table helpers; the `demon` and web UI can call the same function later for an "updates available" badge.
+
+Tests (`Vfs` fixtures): no plugins prints `no rtok plugins installed` and `outdated: []`; all current prints the up-to-date line; one outdated and one current prints only the outdated row; a legacy install without a version file is listed as `legacy`; a newer installed plugin is not listed; local build metadata on the same version is not listed; `--json` matches the schema above; `--exit-code` gives 10 and 0 in the matching cases; `agents update --check` output equals `agents outdated`; no host CLI is spawned (fake CLI on `PATH` logs nothing).
+
+Documentation and tests (required): this command has its own section in `docs/plugin-versions.md` (T279 step 7, section 6) and its cases in T279 step 8 (the `outdated` and `offline` groups, the `--exit-code` and alias checks). T279.1 is not done until both are in and green.
+
+Check: on the creator's machine today `rtok agents outdated` prints `claude 0.0.1 0.10.0 github`; after `rtok agents update claude` it prints the up-to-date line; `just check`.
+
+Execution: the code landed earlier through `fb214cf9` ("merge open pull requests into main", the work of the closed PR #513): `src/agents/outdated.rs` (`outdated`/`report`/`print_human`), the `agents outdated` subcommand and `agents update --check` in `src/cli.rs`, the `src/ui/agents.rs` wording, the `docs/agents.md` section and the first `outdated_*` tests in `tests/plugin_versions.rs`. This PR verifies that code against the card item by item and closes the card: it fixes the one behavioural mismatch found, closes the test gaps the card names, and writes the `docs/plugin-versions.md` section the card requires. Fixture homes only, no real agent.
+
+Result (2026-10-03, Claude Code / sonnet-5): checked against `fb214cf9`: the no-plugins and all-current messages, the table columns, the `run: rtok agents update <hosts>` footer, `--json` schema, `--exit-code` 10/0, host list and `--cli`/`--desktop` selection, `update --check` equal to `outdated`, SemVer comparison that ignores build metadata and hides newer installs, and the surface_parity, `cli_trycmd`, `completions`/man and `config_coverage` gates (all green without a golden change, the CLI surface did not change). Mismatch fixed: a Claude install with no version file but a dated host record (`installed_plugins.json` says `0.0.1`) was printed as `legacy`; the card lists `legacy` only when nothing records a version, and its Check prints `claude 0.0.1 0.10.0 github`, so `installed_row` now treats a receipt row or a parseable host-record version as recorded (JSON `legacy: false`, `installed: "0.0.1"`); `agents info`'s "legacy (no version file)" is a different state and is unchanged. Test gaps closed in `tests/plugin_versions.rs`: the "no host CLI is spawned" test had no fake CLI on `PATH`, so it could not fail; it now puts logging shims for `claude`, `codex`, `gemini`, `cursor-agent` and `copilot` first on `PATH` (unix) and asserts the log is empty after a run that lists a row, and every `run_outdated` call points `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` at a closed port (the card's offline case); the legacy test uses an install with no recorded version and checks the human row and the JSON; the all-current case also checks `--json --exit-code` (`outdated: []`, exit 0, `installed: 2`). `docs/plugin-versions.md` "Listing outdated plugins" (the placeholder) is written from real runs against a fixture home: what is listed and hidden, `legacy`, both "nothing to do" messages, host selection, `--json` fields, `--exit-code`, why it works offline; `docs/agents.md` links to it, `README.md` and `docs/release.md` already linked the page, and `CHANGELOG.md` is generated from commit subjects. Fail-first: with the old `outdated.rs` the json and mixed-table tests fail, with the fix they pass. Checked: `tests/plugin_versions.rs` 16 passed (9 `outdated_*`), the rest of 33 across `plugin_versions`, `surface_parity` and `config_coverage` passed, `cli_trycmd` and `completions` 6 passed; the touched binary run against a fixture home printed the table, the up-to-date line, `no rtok plugins installed`, the `legacy` row and `exit=10`. Not done: nothing the card requires; the T279 progress note's open items (the installed copy's version file is only read through the install probe, Codex, Copilot and Gemini are not wired into the plugin lookup) belong to T279 itself, so `agents outdated` lists those hosts only as far as T279's lookup knows them.
+
 ### T163. Replace raw SQL in `src/store/` with Diesel's query builder
 
 Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 104 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2 (`symbols.rs`'s 15 are done — T163.1). Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`; creator approved wiring it into rtok on 2026-09-23). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
@@ -387,6 +417,30 @@ Done when: float range rules (`as_float()`) reject `threshold` and `delta_max_ra
 Check: new negative cases in the validate tests for all three keys (`-1`, `0`, `5`, `-3`, `openai`) plus the accepted defaults; `config set` of each bad value exits non-zero and leaves the file unchanged; `just check`.
 
 Result (2026-10-03, Claude Code / sonnet-5): `src/config/validate.rs` gains `UNIT_RATIO_KEYS` (`plugins.proxy.semantic_cache.threshold`, `plugins.read.delta_max_ratio`), checked as `(0, 1]` for floats and integers alike (NaN, 0, negatives and values above 1 are rejected), and `plugins.proxy.semantic_cache.embed_backend` joins `CHOICES` with the only supported value `hash`. `config set` already re-runs `issues_in` on the edited text, so it uses the same table and a refused value leaves the file untouched. Checked: new test `unit_ratio_keys_and_embed_backend_are_range_checked` (`-1`, `0`, `5`, `1.5`, `-3`, `0.0`, `openai` rejected by validate; `-1`, `0`, `5`, `-3`, `openai` rejected by `set` with the file byte-identical; `0.99`, `1`, `0.6`, `hash` accepted), `cargo test --lib config::validate` 16 passed, `just check`.
+
+### T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). `stats.since = "7x"` passes `config set` and `config validate`; then `rtok stats` fails with `Error: bad --since unit in 7x`, `rtok report` silently falls back to 30 days, `doctor` silently skips its check (`.ok()?` in `src/doctor.rs`), and the web/TUI model returns the error (`?` in `src/web/model.rs`). `src/config/validate.rs` has no rule for `stats.since`; the only parser, `measure::stats::parse_since` (`src/measure/stats.rs:799,803`), hard-codes `--since` in its messages.
+
+Repro: `rtok config set stats.since 7x` (exit 0), `rtok config validate` (`ok`, exit 0), `rtok stats` (`Error: bad --since unit in 7x`, exit 1).
+
+Done when: `validate.rs` runs `measure::stats::parse_since` on `stats.since` (accepts `<n>`, `<n>d`, `<n>h`), so `set` and `validate` reject `7x`; `parse_since` names its source (`stats.since` vs `--since`) in the error.
+
+Check: validate tests reject `7x` / `d` / `-1d` for `stats.since` and accept `30d`, `12h`, `7`; a `parse_since` unit test asserts the message names `stats.since` when it comes from config and `--since` from the flag; `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `measure::stats::parse_since_from(s, source)` is the one parser and names its source in every error (`bad stats.since 7x`, `bad stats.since unit in 7x`, `stats.since 99999999999999999d is out of range`); `parse_since(s)` keeps the `--since` wording for the flag. `src/config/validate.rs` runs it on `stats.since`, so `config validate` reports `7x`, `d`, `-1d` and the empty string with `file:line`, and `config set` refuses them through the same `issues_in` (file unchanged). The readers that take the config value (`web::model::stats_report` and `memory_status`, `report_window` as `report.since`, `doctor`) pass their source; `rtok stats --since` is parsed in `Cmd::Stats` before it merges into the config, so an error from the merged value can only come from the config or `RTOK_STATS_SINCE` and says so. Checked: `a_malformed_stats_since_is_rejected` (rejects `7x`, `d`, `-1d`, empty; accepts `30d`, `12h`, `7`; `set` refuses `7x` and leaves the file byte-identical), `parse_since_names_its_source`, the existing `bad-args` trycmd for `--since 5x` unchanged, `cargo test --lib` 20 passed for the three filters, `just check`.
+
+### T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). Values `config validate` rejects in the file are taken as-is from the environment: `RTOK_LOG_LEVEL=verbose` ranks as most severe in `crates/rtok-log` and silently drops everything below error, yet `rtok config validate` prints `ok`, so it cannot explain why logs went quiet. `ConfigCmd::Validate` (`src/cli.rs`) runs `validate::issues` on the file path only; env values come in through `layers::load` (`src/config/layers.rs`), which deserializes them with type checks and no value rules.
+
+Repro: `RTOK_LOG_LEVEL=verbose rtok config get log.level` prints `verbose`; `RTOK_LOG_LEVEL=verbose rtok config validate` prints `ok …/config.toml`, exit 0 (the same value in `config.toml` is reported).
+
+Done when: `config validate` runs the same per-key rules over the merged config (file + project + env, `layers::load`) and names the source of each bad value (the data `config show --sources` already has). Split from the file check only if the change exceeds 300 LOC / 10 files.
+
+Check: a test with `RTOK_LOG_LEVEL=verbose` in the child env gets a non-zero `config validate` whose message names the env source; a clean env still prints `ok`; `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `layers::sourced(fig)` now returns the typed `(key, value, source layer)` triples that `layers::entries` used to render straight to strings (`entries` is a thin renderer over it, so `config show --sources` is unchanged). `validate::layered_issues` takes the triples whose layer is not `default` or `user` (project file, `.env`, environment), rebuilds each layer as a small TOML document and runs it through the existing `issues_in`, so the one rule table in `validate.rs` applies and no rule is copied; a message reads `env: log.level must be error, warn, info, or debug`. The `ConfigCmd::Validate` arm adds those issues to the file's. The user file is not re-reported (`issues` already read it with real line numbers). Checked: unit test `layered_values_are_checked_and_name_their_layer` (it caught a `to_i128` None for unsigned numbers, which would have skipped every unsigned key such as `proxy.port`), e2e `config_validate_checks_env_overrides_and_names_the_layer` (`RTOK_LOG_LEVEL=verbose` in the child env exits non-zero naming `env`; `debug` and a clean env print `ok`), `just check`.
 
 ### T225. Debug log on stderr: `log` + `env_logger` behind `RUST_LOG`, tailspin viewer
 
@@ -832,6 +886,26 @@ Check: Vitest covers frame parsing, reconnect with backoff, `set`/`expand` mutat
 Execution: `web/src/api/ws.ts` — a transport-agnostic client (injected `WebSocket` constructor, same-origin `ws`/`wss` URL, capped exponential backoff, `connecting|open|closed` state) that parses the three server frame kinds against `snapshot.gen.ts`; `web/src/api/sample.ts` — a `Snapshot`-typed fixture and the `?sample` source with the same interface; `web/src/api/query.ts` — `QueryClient` wiring (`setQueryData` on each snapshot), `useSnapshot`, `useConnection`, `useSetMutation`, `useExpandMutation` (resolves on the matching `expand` frame, rejects on timeout). `App.tsx` mounts the provider and shows the connection state on sample data. Deps: `@tanstack/react-query`; dev `vitest` (+ a DOM env only if a render test needs it), rows in `toolchain.md`. `npm test` and `just spa-test`; wiring into CI is T310.11. Verify: `just spa-test`, `just spa-typecheck`, `just spa-build`, `just js`, the built page on `?sample` in a browser.
 
 Result (2026-10-03, Claude Code / claude-opus-5-5): `web/src/api/ws.ts` (`connectWs`: injectable socket and location, same-origin `ws`/`wss`, backoff 500 ms doubling to a 10 s cap and reset on open; `parseFrame` keeps a failed tick's `{"type":"snapshot","error"}` apart from a full `Snapshot` and drops malformed frames), `web/src/api/sample.ts` (`Snapshot`-typed fixture, `?sample` source with the same `Connect` interface), `web/src/api/query.tsx` (`createApi` writes pushed frames into the query cache, `DataProvider`, `useSnapshot`/`useConnection`/`useServerMessage` as `skipToken` cache-only queries, `useSetMutation`, `useExpandMutation`; a server `message` or a closed link fails every expand in flight because refusals do not name their request). `App.tsx` shows the connection state and the plugin list. Deps: `@tanstack/react-query` 5.104.1, `vitest` 5.0.3 (dev); `just spa-test`. Check: Vitest 28/28; `just spa-typecheck`, `just js`, `just spa-build`; the built page on `vite preview` shows `Connection: open` and the sample plugins on `?sample`, and `Connection: closed` with no server. No render-level test yet (no DOM env); CI wiring is T310.11.
+
+### T310.4. App shell: router, layout, theme, states
+
+TanStack Router (code-based route tree built from one page list), sidebar/top bar from `design/html`, theme toggle (`rtok-theme` in localStorage, system default), the orb background, reduced motion, and shared loading/empty/error/offline states.
+
+Check: Vitest covers the route tree built from the page list, theme persistence across reload and the four shared states; every route reachable by keyboard.
+
+Execution: `web/src/pages.ts` holds the one page list (id plus the `Snapshot` field it reads, mirroring `model::pages()`); `web/src/router.tsx` builds the code-based route tree from it (index redirect, per-page placeholder reading `useSnapshot`) on hash history; `web/src/Shell.tsx` is the layout (skip link, sidebar that becomes a bottom tab bar on phones, top bar with connection and theme toggle, focus moved to the page heading on navigation); `web/src/theme.ts`, `web/src/Orb.tsx` + `web/src/orbGl.ts` and `web/src/states.tsx` carry the theme, the orb and the four shared states; `web/src/app.test.tsx` covers them under happy-dom.
+
+Result (2026-10-03, Claude Code / sonnet-5): the SPA now has an app shell on top of the T310.3 data layer. One `PAGES` list drives the route tree (`/` redirects to `/overview`, an unknown path shows "Page not found"), the sidebar and the bottom tab bar, so a page cannot be routable and missing from the nav; every link is a plain focusable anchor, the heading takes focus after each navigation and a skip link targets `#main`. Hash history keeps `?sample` in the real query string (a path router drops it on the first navigation) and needs no server fallback. The theme toggle reads and writes `rtok-theme` (system default, tracks the OS while unset, tolerates blocked storage); the orb is the WebGL shader from `design/html/js/orb.js` with the CSS gradient as first paint and fallback, off under reduced motion or `rtok-orb=off`, one still frame while the tab is hidden. `Loading`, `Empty`, `ErrorState` and `Offline` are the shared states: offline is driven by `useConnection()` and the snapshot's `error` becomes an alert banner. Vitest (happy-dom + Testing Library, 12 new tests) covers the route tree, keyboard-reachable navigation, theme persistence across a fresh mount, the four states and the orb fallback. Not done here: per-page icons (only 9 of the design's icons are in `web/assets/icons`, so the nav is text-only until the UI kit T310.5) and the settings dialog for the orb and opaque-panel switches.
+
+### T310.5. UI kit + Storybook
+
+Storybook 10 (`@storybook/react-vite`, addon-vitest, addon-a11y): Panel, Kpi, Pill, Switch, Search, Chip, Sparkline, DataTable (TanStack Table + Virtual) with stories for every state; stories run as Vitest browser tests.
+
+Check: `storybook build` succeeds; stories run as Vitest browser tests with no a11y violations.
+
+Execution: components in `web/src/ui/` (one file each plus `*.stories.tsx`), styled from `design/html` tokens and `components.html`; Storybook config in `web/.storybook/` (theme toolbar switching the app's `data-theme`, axe violations set to fail); `web/vite.config.ts` gets two Vitest projects, `unit` (the existing tests, `npm test`) and `storybook` (browser mode, `npm run test:stories`); `just spa-stories` and `just spa-storybook` wrap them.
+
+Result (2026-10-03, Claude Code / sonnet-5): `Panel`, `Kpi`, `Pill`, `Switch`, `Search`, `Chip`, `Sparkline` and a virtualized `DataTable` (TanStack Table v9 `useTable` for the model, TanStack Virtual for the rows, ARIA table roles with `aria-rowcount`/`aria-rowindex`, keyboard-selectable rows, loading/empty/error slots through the shared states) live in `web/src/ui/`; `Icon` inlines the bundled SVGs and the sidebar uses it for the pages that have one (calls, doctor, logs, overview, plugins, sessions, skills; the design has no icons for stats, graph, hosts, config, services and worktrees, so those keep an empty slot). 48 stories cover every state (off/on/disabled, tones in dark and light, flat/short sparklines, 10,000-row table, empty/loading/failed table, offline/error/empty/loading panels) and five have play functions (switch, chip and search interaction, row windowing, keyboard row selection). `storybook build` succeeds and all 48 stories pass as Vitest browser tests with axe violations set to fail; the run found and fixed one real violation (the table's scroll region was not keyboard-focusable). The browser project needs Chromium: `npx playwright install chromium`, or `SPA_BROWSER_CHANNEL=chrome` to use an installed Chrome. CI wiring is T310.11.
 
 ### T80. `rtok web` from an installed binary 404s the whole UI
 
@@ -1980,6 +2054,19 @@ Found by the 2026-10-01 bug hunt. `graph::lsp::kind_name` mapped LSP SymbolKind 
 Fix: `kind_name` follows the spec; a `has_test_attr` helper walks the whole attribute/comment block above a definition (`#[test`, `#[cfg(test`, `#[rstest`, `#[case`, any `::test`); the skill id is cut on chars; a lone overflowing title is halved until the index fits, and dropped only if an empty title still does not.
 
 Check: `kind_name_follows_the_lsp_symbol_kind_numbers`, `dead_lists_only_the_private_orphan` (new `param.rs` fixture), `a_non_ascii_skill_id_is_shortened_on_a_char_boundary`, `a_single_long_title_cannot_break_the_index_cap`; `just check`.
+
+## T329.1 — Project registry in the store: `projects` table, canonical dedup, selection, missing, remove
+
+T329 §1 and the storage half of §2, with no CLI, links or page (those are T329.2 onward). Migration `0027_projects` creates `projects` (id, canonical root, optional display name, origin `manual|session|worktree|mcp|reference`, created and last-used times, `selected`) with a partial unique index so at most one row is selected, and backfills one project per root already in the symbol index, the most recently indexed one selected, so an existing store keeps working. `Store` gets `register_project`, `projects`, `project`, `project_by_root`, `rename_project`, `selected_project`, `select_project`, `resolve_project` and `remove_project`.
+
+Execution: `migrations/0027_projects/up.sql`, `src/store/projects.rs` (new), `schema.rs`, `schema_snapshot.txt`. Roots are canonicalised with `graph::index::canon`, the key the symbol index already uses, so symlinks and `..` spellings are one project and the first origin stands. "Missing" is read from the filesystem on every call, never stored. `resolve_project(cwd)` keeps a live stored selection, otherwise selects the cwd's registered project and reports `fell_back` when it replaced a stored selection that is gone. `remove_project` drops the project's `symbols`, `extractor` and `symbol_stale` rows and the registry row in one transaction and never touches files.
+
+Check: `projects::tests` (dedup through symlink and `..`, selection exclusivity and unknown id, rename, missing, cwd fallback, remove leaving other roots' index alone) and `migration_0027_registers_the_roots_the_store_already_indexed` (previous-schema db, selected = newest `indexed_at`, empty store gets no project); schema snapshot re-blessed; `just check`.
+
+Deviations: none from the card; the registry stores no index status (rows, files, pending, watch, last error), which T329.2 computes from the index when it lists projects.
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet-5
+
 
 ## T48.7 — aider host
 
@@ -6047,6 +6134,7 @@ Result: New Worktrees page ("worktrees","worktrees") on both surfaces: model::wo
 
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
+
 ### T183. Python utility: publish host plugins to marketplaces (per agent, via CI)
 
 Creator request 2026-09-22 (voice): a single Python script that publishes an agent plugin to a marketplace — only for hosts that support marketplace publishing. For each AirTalk/rtok host that has this capability, implement a corresponding Python module with that host's publish logic. Invoking the script with the key `all` or a specific agent name deploys/publishes that agent's plugin to its marketplace via CI, triggered from Python.
@@ -6974,6 +7062,18 @@ Result: Added `rtok agents junk clear`: a dry run by default, `--yes` applies, `
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
+### T330.1. `rtok agents junk list`: rtok's own junk with folders, sizes and space freed
+
+First slice of T330 (too large for one PR: complexity 4, six areas). Adds the read-only `rtok agents junk list [--json] [--bytes]` over the junk `clear` already knows (the T182 `rtok-own` kind: `rtok.log.<N>` past `[log] files`, archive payloads past `core.retain_calls_days`): one `rtok` agent row with its folders (the log and archive directories, disk usage: allocated blocks, a hard link once, symlinks not followed), each kind with items and size, and "Freed by `clear`". The list is a section of the Hosts page text (`web::model::hosts_page_text`), so `agents junk list` maps to the `hosts` page in `surface_parity` (D27). `clear` is unchanged.
+
+Done when: `list` prints the `rtok` row with exact sizes (`--bytes`) equal to what the `clear` dry run plans; `--json` carries `agents[] { name, folders[], kinds[], freed_default_bytes }` and `freed_default_bytes`; `list` deletes nothing; the Hosts page shows the same text; `surface_parity`, `config_coverage` and the trycmd fence pass.
+
+Check: `tests/agents_junk.rs` (fixture home: stale log, JSON and `--bytes`, file still there), unit tests in `src/agents/junk.rs` (disk usage with a hard link and a symlink, report sums equal the plan); `just check`.
+
+Execution: `src/agents/junk.rs` gets `Report`/`AgentJunk`/`Folder`/`KindRow`, `disk_usage`, `report(cfg)` (built from `scan`, no second scan) and `to_list`; `src/cli.rs` gets `JunkCmd::List`; `src/web/model.rs` appends the text to the cached hosts page; `tests/surface_parity.rs` maps the command to `hosts` and gates `--json`; `tests/config_coverage.rs` allows `junk.bytes`; trycmd/completions regenerated.
+
+**Result (2026-10-03, Claude Code / sonnet-5):** `rtok agents junk list [--json] [--bytes]` (`src/agents/junk.rs`, `src/cli.rs`) prints the `rtok` row: its log and archive directories with disk usage (allocated blocks on Unix, a hard link once, symlinks not followed; a directory nested in another is folded), each kind with items and size, and "Freed by `clear`", built from the same `scan` the `clear` dry run uses so the numbers match. `--json` carries `agents[] { name, folders[], kinds[], freed_default_bytes }` and `freed_default_bytes`. The text is also appended to the Hosts page (`web::model::hosts_page_text`, inside the existing background read), so `surface_parity` maps `agents junk list` to `hosts` and gates its `--json`; `config_coverage` allows `junk.bytes`. `clear` is untouched. Checked by two unit tests in `src/agents/junk.rs` (hard link and symlink in `disk_usage`; report sums equal the plan and the text), one e2e test in `tests/agents_junk.rs` (JSON and `--bytes` on a fixture home, nothing deleted) and `just check`. The remaining slices are T330.2 to T330.6.
+
 ### T248. Plugin READMEs must link the host's official documentation
 
 Creator's request 2026-09-24: every agent plugin package's `README.md` must link the host's official documentation.
@@ -7574,6 +7674,40 @@ Result (2026-10-03, Claude Code / sonnet-5): `rtok agents usage` now prints the 
 Status: done 2026-10-03
 Model: Claude Code / claude-sonnet-5
 
+### T358.2. `rtok agents usage --source logs|both` for Claude Code and Codex
+
+Scope: the T358.2 bullet under "Split when claiming" in T358 (`--source logs` for Claude Code and Codex on the existing transcript readers, and `--source both`), plus the `source` default flip to `logs` and display names. Moved to T358.6 to stay near 300 LOC: `--by agent|model`, the saved columns and `rtok saved` line, the JSON `skipped` field, and agents that exist only in the store when `both` is used. `[agents.usage.dirs]` moves to T358.3: the two hosts here read the existing `[stats] transcripts_dir` and `codex_dir`.
+
+Check: the T358 Check items for `logs` and `both` on fixture homes for Claude Code and Codex; `just check`.
+
+Execution:
+
+1. Stack on T358.1 (#656). `jsonl::Usage` gains `ts` and `model` (the parser already dedups streamed messages by `message.id`); `codex::requests` returns one record per `token_count` line and `codex::collect` sums it, so there is one Codex parser.
+2. `measure::usage` turns both into `UsageSlice` rows (sub-agent transcripts join the parent's session); `agents::usage::report` takes its rows from the logs, the store, or both and fills `through_rtok_tokens` and `coverage` per agent for `both`.
+3. Fixture logs under `tests/trycmd/input/usage-logs/`, unit tests, trycmd goldens, `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `rtok agents usage` now defaults to `--source logs`: the Claude Code transcripts (`[stats] transcripts_dir`) and Codex rollouts (`[stats] codex_dir`) are read on the fly, never written to the store, and bucketed per request by day and month in `--tz`, priced through `[stats.prices]` like the `rtok` source. Agents print with their display names (`Claude Code`, `Codex`; JSON carries `host` and `name`). `--source both` keeps the logs' totals and costs and adds `Through rtok` and `Coverage` columns (JSON `through_rtok_tokens`, `coverage`), so an agent that bypasses the proxy reads low. Reused, not rewritten: `jsonl::parse_path` (message-id dedup), `codex::jsonl_paths`, `subagents::is_subagent`, `stats::row_cost` and `parse_since`. Known limits: a Claude Code session resumed into a second file is counted in both (dedup is per file, as in `rtok stats`); a request with no parsable timestamp is left out. Checked: unit tests for both readers (streamed duplicate, `<synthetic>` zero turn, sub-agent session, model from the latest `turn_context`, unparsable timestamp), logs totals with one unpriced model across the UTC and Kyiv month edge, `both` coverage, trycmd cases `agents-usage-logs` and `agents-usage-both` on fixture files, `config_coverage` and `surface_parity`.
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
+
+### T358.6. `rtok agents usage`: `--by`, saved columns and the `skipped` list
+
+Scope: what T358.1 and T358.2 left out of the screen. `--by agent|model` (config `[agents.usage] by`); for `--source rtok|both` the saved tokens and saved estimate columns and the `rtok saved` summary line from the `measurements` ledger (T358 "`rtok` — what passed through rtok"); in `both`, the agents that appear only in the store next to the logs' agents, with logged tokens 0; the JSON `skipped` field and the stderr line for a host whose files exist but cannot be parsed.
+
+Check: the T358 Check items for `--by`, the saved columns and `both` coverage on fixture homes and a fixture store; `just check`.
+
+Execution:
+
+1. Stack on T358.2 (#660). `Store::measurement_saved_by_host(since, until)` sums the ledger's `est_before - est_after` per session in the window through Diesel and maps sessions to hosts (the host map is now one helper shared with `usage_slices`); `measurement_totals` has no window or session, so it could not serve.
+2. `agents::usage::report` takes `by`, fills `saved` per agent and in the totals (valued at the average input price that host's requests paid), lists store-only agents in `both`, and carries `skipped`; `measure::usage::read` and `codex::requests` report the first unreadable file per host.
+3. Unit tests, a trycmd case for `--by model`, goldens, `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `--by model` swaps the middle table for model rows (raw ids, dearest first; JSON `models`). For `--source rtok` and `both` the agent table gains `Saved tokens` and `Saved est.`, the summary gains `rtok saved N tokens (≈ $X)`, and JSON gains `saved_tokens` and `saved_usd` on each agent and in `totals`; the net saving counts an `expand` row as a cost, so it can go negative, and `saved_usd` is `null` when none of that host's models has a price. `both` also lists agents that only passed through rtok (no logged tokens, coverage `-`). A Claude Code or Codex dir whose files are unreadable or hold no JSON line is named once on stderr (`skipped claude: unknown format in <path>`) and in JSON `skipped`, and counts nowhere. Config `[agents.usage] by` and `--by` have their `default.toml` and `docs/config.md` rows. Checked: unit tests for the net ledger per agent and total, the window, the price rate and a negative `expand`; `--by model`; the store-only agent in `both`; `skipped` and its host filter; the stable JSON field names; a trycmd golden for `--by model --daily`. Not done: the saved estimate uses one average input rate per host (not per model); the `measurements` ledger has no host column, so a session with no host row is in the total only.
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
+
 ### T325. Bash rewrite keeps `cd` in the host shell; shell-state builtins stay unwrapped
 
 Found by a bug-hunt pass over `src/plugins/cmd/hook.rs`. The PreToolUse rewrite turned `cd crates/x && cargo test` into `rtok run -- 'cd crates/x && cargo test'`, so the `cd` ran in `rtok run`'s child shell. Hosts that keep the shell's cwd between Bash calls (Claude Code) lost it: the next call ran in the old directory. `export`, `source`, `unset`, `alias`, `pushd`/`popd` had the same problem.
@@ -7728,6 +7862,18 @@ Execution plan:
 
 Status: done 2026-10-02
 Model: Claude Code / claude-opus-5-5
+
+### T367. `rtok graph index <path>` exits 0 for a path that does not exist
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A typo prints `indexed 0 files · 0 rows …` with exit 0, so a script or agent thinks the index was built. `src/cli.rs` (the `graph index` arm, `index::run_with` at `:1684`) passes `path` as-is and the walker yields nothing for a missing root. The sibling graph subcommands in `src/cli.rs` and `src/plugins/graph/status.rs` resolve `path` the same unchecked way (suspected, not reproduced).
+
+Repro: `rtok graph index /nonexistent; echo $?` prints the zero counts and `0`.
+
+Done when: every graph subcommand that takes a path checks it is an existing directory (or canonicalizes with the path as context) before walking, and exits non-zero with `Error: /nonexistent: No such file or directory`; the T356 home/`/` refusal stays as it is.
+
+Check: tests for `graph index` and each sibling path-taking graph subcommand with a missing path exit non-zero naming the path; indexing a temp project is unchanged; `just check`.
+
+**Result (2026-10-03, Claude Code / sonnet-5):** one `graph::cli_root` helper (`src/plugins/graph/mod.rs`) resolves the path (cwd by default) and fails on a missing or non-directory path with `<path>: No such file or directory (os error 2)` / `<path>: not a directory` before any walk; `graph index`, `dead`, `impact` (`src/cli.rs`) and `status` (`graph::status::run`) all call it. `index::run_with` keeps the T356 refusal of `/` and `$HOME` unchanged. Checked by two e2e tests in `tests/commands_e2e.rs` (a missing path for all four subcommands exits non-zero naming the path with empty stdout; a file path is rejected and a temp project still indexes) and `just check`.
 
 ### T357. rtok links `rtok-hook` next to itself on PATH
 
