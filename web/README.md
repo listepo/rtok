@@ -1,7 +1,7 @@
 # web/
 
 The rtok admin SPA: Vite + React + TypeScript, styled from the design tokens in
-`design/html/css/` (copied into `src/styles/`). It talks to `rtok web` over `/ws`
+`src/styles/tokens.css`. It talks to `rtok web` over `/ws`
 and `/health` (see `src/web/model.rs` for the snapshot contract).
 
 `rtok web` serves it (T310.9): `build.rs` embeds `web/dist/` in the binary, so an installed

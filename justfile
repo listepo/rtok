@@ -60,8 +60,7 @@ js:
 js-fmt:
     {{oxfmt}} {{js_files}}
 
-# T310.1: the rtok admin SPA in web/ (Vite + React + TypeScript), separate from `just check`
-# until it covers the same screens as crates/rtok-webui.
+# T310.1: the rtok admin SPA in web/ (Vite + React + TypeScript), embedded by build.rs (T310.9).
 spa-install:
     {{npm}} --prefix web ci
 
@@ -219,16 +218,6 @@ web host="127.0.0.1" port="3333":
     [ -d web/node_modules ] || {{npm}} --prefix web ci
     {{npm}} --prefix web run build
     RTOK_WEB_DIST=web/dist {{cargo}} run -q -- web --host {{host}} --port {{port}}
-
-# The Slint WASM bundle; nothing embeds or serves it since T310.9 and T310.12 deletes it.
-web-bundle:
-    tools/webui-bundle.sh --compress
-
-# `crates/rtok-webui` is excluded from the workspace, so `just check` never compiles
-# it — a wasm-only break reaches main unseen (T81 hit one). CI runs this.
-webui-check:
-    rustup target add wasm32-unknown-unknown
-    {{cargo}} check --manifest-path crates/rtok-webui/Cargo.toml --target wasm32-unknown-unknown
 
 # cargo-fuzz targets in fuzz/ (fuzz/README.md). Nightly for this build only; not in `check`.
 # `just fuzz` lists them, `just fuzz <target> [secs]` runs one, `just fuzz all [secs]` each in turn.

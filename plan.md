@@ -32,7 +32,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
 | T310 | todo | P1 | 5 | 0% | |
-| T310.12 | todo | P2 | 3 | 0% | |
 | T329 | todo | P2 | 5 | 0% | |
 | T329.4 | todo | P2 | 4 | 0% | |
 | T329.5 | todo | P2 | 3 | 0% | |
@@ -54,6 +53,12 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T330.5 | todo | P2 | 4 | 0% | |
 | T330.6 | todo | P3 | 3 | 0% | |
 | T331 | todo | P1 | 4 | 0% | |
+| T331.2 | todo | P1 | 3 | 0% | |
+| T331.3 | todo | P1 | 3 | 0% | |
+| T331.4 | todo | P1 | 4 | 0% | |
+| T331.5 | todo | P1 | 4 | 0% | |
+| T331.6 | todo | P1 | 4 | 0% | |
+| T331.7 | todo | P2 | 3 | 0% | |
 | T332 | todo | research | 1 | 0% | |
 | T333 | todo | research | 1 | 0% | |
 | T334 | todo | research | 1 | 0% | |
@@ -579,12 +584,6 @@ Check: `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where host tables
 Done when: `rtok web` serves the SPA from the binary, every page of `model::pages()` renders on it, Playwright drives the real binary, and no Slint code is left.
 
 Check: `rtok web` from a release build shows every page of `model::pages()` from the embedded SPA; no `slint`/`rtok-webui` left in the tree; `just check` and the SPA CI job green.
-
-### T310.12. Delete Slint, the WASM build and the HTML design
-
-Remove `crates/rtok-webui`, `tools/webui-bundle.sh`, `just web-bundle`/`webui-check`, the wasm steps in CI/release, `tests/web_wasm.rs`, `design/html/` and the rest of the prototype; update D20, `architecture.md`, `toolchain.md` and `rust.md`.
-
-Check: `just check` green; `git grep -i slint` finds only history docs; the release workflow dry-run builds.
 
 ### T329. Graph page: project selector, auto-added projects and linked projects (epic)
 
@@ -1300,6 +1299,44 @@ Dependencies: host adapters and config maps (`research.md`), JSONC/TOML editors,
 
 Check: all of the above pass on Linux, macOS and Windows CI; the "no real paths" guard test passes; `just check`.
 
+Split (epic, too large for one PR: three detectors, a fix engine, an interactive UI, ~15 host config shapes; each part ships read-only value or a tested edit and is one PR). Order: T331.1 broken hooks (read-only, the injected `Fs`/`Env`/`Which` seam every later part reuses), T331.2 hook sources of the other hosts and plugins, T331.3 duplicate hooks, T331.4 duplicate MCP entries, T331.5 `--fix` for broken hooks (the edit/backup/race engine), T331.6 `--fix` for duplicates, T331.7 interactive checklist, web doctor action, docs and the property/pty tests. T331.4 and T331.6 touch rtok's own MCP entry and wait for the T332 and T333 decisions; everything else does not depend on them.
+
+### T331.2. Doctor: hook sources of the other hosts and of plugins
+
+Part of T331. The T331.1 checks for the hosts whose hook files are mapped in `research.md` and the host adapters (Cursor `hooks.json`, Codex, Gemini, Kimi and the rest that take hooks), plus installed Claude plugins' `hooks/hooks.json` with `${CLAUDE_PLUGIN_ROOT}` resolved against the plugin's install dir (an entry left behind by an uninstalled plugin is broken), Windows `PATHEXT`, and `--agent <host>`. Depends on T331.1.
+
+Check: the T331.1 scenarios per host shape and the plugin-root cases on mocks; `just check`.
+
+### T331.3. Doctor: duplicate hooks
+
+Part of T331. Section 2 of T331: effective set per agent, normalization, the "not duplicates" cases, the keep recommendation, the report and `problems[]` entries with `keep`. Report only. Depends on T331.1 and T331.2.
+
+Check: the "Duplicate hooks across configs" and "Not duplicates" scenarios of T331; `just check`.
+
+### T331.4. Doctor: duplicate MCP entries
+
+Part of T331. Section 3 of T331: same name in two loaded sources, different names with the same launch, normalization (PATH and symlink resolution, `npx pkg@x`, URL case and trailing slash, env values never printed), the not-duplicates cases and the keep recommendation. Report only. rtok's own server follows the T332 and T333 decisions, not a guess. Depends on T331.1, T332 and T333.
+
+Check: the "Duplicate MCP entries" and "MCP that must not be called duplicate" scenarios of T331; `just check`.
+
+### T331.5. Doctor `--fix` for broken hooks
+
+Part of T331. The edit engine of section 4 for the `broken-hook` class only: `--fix`, `--yes`, `--only broken-hooks`, `--dry-run` with diffs, a minimal JSONC edit that drops the entry and its empty group and event key and keeps everything else byte for byte, `_backup` generations (T249) with the path printed, the changed-since-check skip, per-file failure reporting with exit code 1, the re-check summary, and the refusals (valid, suspect, unverified hooks and managed files are never removed). Depends on T331.1.
+
+Check: the "User selecting cleanup", "Refusing to delete valid hooks and entries" and "Failure and race cases" scenarios for broken hooks, golden files byte for byte; `just check`.
+
+### T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
+
+Part of T331. Extends the T331.5 engine to the extra copies of T331.3 and T331.4: keep rules, choosing another copy, never the last copy, TOML `[mcp_servers.<name>]` removal, never a plugin's own files or a managed file. Depends on T331.3, T331.4 and T331.5.
+
+Check: the duplicate scenarios of "User selecting cleanup" and the combined case; `just check`.
+
+### T331.7. Doctor: interactive checklist, web action, docs and property tests
+
+Part of T331. The terminal checklist with the injected `Prompt` trait (pre-unselected project files, toggles, change the kept copy, per-file diff, confirmation), the "Fix selected" action on the web doctor page (T310.7), `docs/agents.md` and the help text with `docs/ru/` and `docs/uk/`, the `proptest` invariants and the pseudo-terminal test. Depends on T331.6 and T310.7.
+
+Check: the scripted-prompt scenarios, the property tests, the pty test; `just check`.
+
 ### T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 
 In the plan, T331 (plan.md on branch `docs/plan-doctor-hooks-mcp`, ~line 711, from PR #542 (T331), not merged yet) says "for rtok's own server, the rules of T275 (plugin serves MCP, so the separate entry goes)" and keeps the "plugin-provided first" copy by default, reporting a host that de-duplicates by name as "shadowed, unused, still removable" (~line 706). D33 (plan.md@966f067 line 709) and T275 (plan.md@966f067 lines 171-175) say "Install and update always write the config entry `rtok`; only `remove` takes it out, and a plugin no longer suppresses or strips it", "the rtok plugin ships no MCP server", and "Gemini keeps both, since settings.json wins over an extension's same-name server". These contradict each other because `rtok doctor --fix --yes` would delete exactly the config entry D33 requires (on Gemini, and on any host where an old plugin still serves MCP), and the next `rtok agents install|update` would write it back, so the two features undo each other.
@@ -1630,7 +1667,7 @@ Claim a `todo` row before work: set Status to `in progress` and Agent to `Provid
 | D16 | **One task = one PR.** Each task gets its own branch (or worktree) off `origin/main` and lands through its own pull request; never commit to `main` directly. The PR carries the `<task-id>: <title>` commit and the `plan.md` → `done.md` move. Delete the branch after merge. | Every change passes CI before it reaches `main`; concurrent agents stop colliding in one checkout. |
 | D18 | **The graph index lives in SQLite with the ledgers (D8).** LadybugDB and Grafeo were gated, frozen, then removed (P39). No live `lbug` / `graph-lbug` / `symbols_lbug.rs` / `grafeo` feature flags. SQL for symbols lives only in `src/store/symbols.rs`. D6 holds: no spawned graph tool. | Both graph-store candidates were priced and deleted per the gate. Survey archive: `src/plugins/graph/PLAN.md`. |
 | D19 | **Observability is a projection of the ledgers, never a second recorder.** OpenTelemetry export reads existing rows and posts OTLP/HTTP JSON. Nothing runs on the hook path. | Delivery is at-least-once behind a per-stream watermark. |
-| D20 | **Local web UI is an operator surface, not a catalogue plugin.** `rtok web` serves axum + a Slint WASM UI (`crates/rtok-webui`). Slint is not linked into the hook binary. | Linking Slint into `rtok hook` would fail the size/latency gate. |
+| D20 | **Local web UI is an operator surface, not a catalogue plugin.** `rtok web` serves axum + the embedded React SPA (`web/`, T310). The SPA is a static bundle, not linked code, and `rtok hook` never loads it. | Pulling a UI stack into `rtok hook` would fail the size/latency gate. |
 | D21 | **Every new plugin is plugin and MCP as one unit, a singleton, with one call path per capability.** Host plugins load in that host's desktop app and its CLI. Missing `rtok`: fail open and print that it must be installed with ketch. | Duplicate MCP processes and duplicate call paths break D18 and measurement. |
 | D22 | **`rtok demon` supervises rtok's own long-running surfaces**, not a catalogue plugin. Allow-list names (`proxy`, `mcp`, `dashboard`). Nothing in it is on the hook path. | The proxy is the wire hop; when it dies every host silently loses it. |
 | D23 | **`rtok tui` and `rtok web` are two renderings of one operator model.** A page that exists on one surface and not the other is a defect. | Two independently built surfaces drift. |

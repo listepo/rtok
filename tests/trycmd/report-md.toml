@@ -288,6 +288,7 @@ Live probes (the `rtok doctor` page), not store rows.
 
 ```text
 hooks 0
+hooks check none found
 mcp
   rtok (18 tools, ~373 desc tokens) [CWD]/target/[..]
 proxy 

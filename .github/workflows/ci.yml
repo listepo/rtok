@@ -45,23 +45,12 @@ jobs:
       # Rust toolchain from the last run; mise then skips `rustup toolchain install`.
       - id: rustup
         uses: ./.github/actions/rustup-toolchain-cache
-        with:
-          extra: wasm32-unknown-unknown
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          # The webui crate is outside the workspace, with its own target dir (T81); without
-          # it here every run compiled its 183 crates from scratch (T261).
-          workspaces: |
-            . -> target
-            crates/rtok-webui -> target
           # T261 experiment: also save on the branch's manual runs to measure a warm cache.
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - run: just fmt-check lint build-min dup js python
-      # The webui crate is out of the workspace and builds for wasm only; nothing
-      # above compiles it (T81).
-      - run: just webui-check
-      # After webui-check, so the saved toolchain carries its wasm32 target.
       - if: steps.rustup.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:

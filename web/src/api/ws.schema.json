@@ -321,7 +321,7 @@
       ]
     },
     "Overview": {
-      "description": "The Overview page (T15.3): the usage totals plus what the tab draws from them —\ncontext-token-turns and the per-turn series behind the sparkline. The totals stay\nflat under the `usage` key, so the `/ws` frame keeps the shape P19 pinned and the\nSlint UI reads on untouched.",
+      "description": "The Overview page (T15.3): the usage totals plus what the tab draws from them —\ncontext-token-turns and the per-turn series behind the sparkline. The totals stay\nflat under the `usage` key, so the `/ws` frame keeps the shape P19 pinned and the\nSPA reads on untouched.",
       "type": "object",
       "properties": {
         "alerts": {
@@ -447,6 +447,55 @@
         "saves_tokens",
         "fields",
         "stats"
+      ]
+    },
+    "Problem": {
+      "description": "One finding of a doctor config check. The list is shared by every T331 detector.",
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "command": {
+          "description": "The command as written, never expanded.",
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "event": {
+          "type": "string"
+        },
+        "fixable": {
+          "description": "Whether `doctor --fix` may remove it (T331.5): only `broken-hook`.",
+          "type": "boolean"
+        },
+        "kind": {
+          "description": "`broken-hook`, `suspect-hook`, `unverified-hook` or `unreadable-config`.",
+          "type": "string"
+        },
+        "matcher": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "The key path of the entry inside `source`.",
+          "type": "string"
+        },
+        "source": {
+          "description": "The config file the entry lives in.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "agent",
+        "source",
+        "path",
+        "detail",
+        "fixable"
       ]
     },
     "ProjectIndex": {
@@ -693,6 +742,13 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "problems": {
+          "description": "Hooks that lead nowhere or cannot be checked (T331.1); the list later detectors extend.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Problem"
           }
         },
         "proxy": {

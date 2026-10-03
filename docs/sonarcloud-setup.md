@@ -70,9 +70,6 @@ The workflow:
 3. Points Sonar at that file via **`sonar.rust.lcov.reportPaths`** in
    `sonar-project.properties` (not `sonar.coverageReportPaths`).
 
-`crates/rtok-webui` is already outside the Cargo workspace and is listed under
-`sonar.exclusions`.
-
 ### Follow-ups (optional)
 
 If llvm-cov is too slow or fragile on CI:

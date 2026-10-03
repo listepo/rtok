@@ -135,25 +135,6 @@ fn the_spa_index_has_no_inline_script() {
     }
 }
 
-/// The script gates the bundle at the same number `tests/web_wasm.rs` asserts —
-/// two copies of the T60.7 measurement, so they are held together here.
-#[test]
-fn the_script_gate_matches_the_measured_size_gate() {
-    let script = read("tools/webui-bundle.sh");
-    let gate = script
-        .lines()
-        .find_map(|l| l.trim().strip_prefix("gate="))
-        .expect("gate= in tools/webui-bundle.sh");
-    let test = read("tests/web_wasm.rs");
-    let measured = test
-        .lines()
-        .find_map(|l| l.split("WASM_SIZE_GATE: u64 = ").nth(1))
-        .expect("WASM_SIZE_GATE in tests/web_wasm.rs")
-        .trim_end_matches(';')
-        .replace('_', "");
-    assert_eq!(gate, measured, "T60.7 gate drifted between script and test");
-}
-
 /// T319: every archive carries share/ — dist `include`s it and the release job generates it
 /// with tools/share-files.sh before `dist build` (it is not committed).
 #[test]
