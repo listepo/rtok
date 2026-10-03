@@ -919,14 +919,11 @@ mod tests {
         insensitive: bool,
     }
 
-    /// `path` as `m` keys it: case-folded in the case-insensitive mode.
+    /// `path` as `m` keys it: `/` and `\` alike (the keys are POSIX literals while `join` and
+    /// `with_file_name` build `\` paths on Windows), and case-folded in the case-insensitive mode.
     fn key(m: &Mock, path: &Path) -> String {
-        let s = path.to_string_lossy();
-        if m.insensitive {
-            s.to_lowercase()
-        } else {
-            s.into_owned()
-        }
+        let s = path.to_string_lossy().replace('\\', "/");
+        if m.insensitive { s.to_lowercase() } else { s }
     }
 
     impl Fs for Mock {
@@ -934,7 +931,11 @@ mod tests {
             path.to_path_buf()
         }
         fn read(&self, path: &Path) -> io::Result<String> {
-            if self.unreadable.contains(path) {
+            if self
+                .unreadable
+                .iter()
+                .any(|p| key(self, p) == key(self, path))
+            {
                 return Err(io::Error::from(io::ErrorKind::PermissionDenied));
             }
             let want = key(self, path);

@@ -1601,6 +1601,47 @@ impl Store {
             .collect())
     }
 
+    /// The ledger's `est_before - est_after` per host over the rows stamped in
+    /// `[since, until)`, with `None` for a session that has no host row (T358.6). An `expand`
+    /// row already reads negative (retrieval costs tokens), so the sum is the net saving the
+    /// report shows. [`Self::measurement_totals`] cannot serve this: it groups by `(plugin,
+    /// kind)` with no window and no session. Sessions are grouped here and mapped to hosts in
+    /// Rust for the same Diesel join-group gap as [`Self::usage_slices`].
+    pub fn measurement_saved_by_host(
+        &self,
+        since: i64,
+        until: i64,
+    ) -> Result<Vec<(Option<String>, i64)>> {
+        use diesel::dsl::sum;
+        let mut conn = self.lock()?;
+        let rows: Vec<(String, Option<i64>, Option<i64>)> = measurements::table
+            .filter(measurements::ts.ge(since).and(measurements::ts.lt(until)))
+            .group_by(measurements::session)
+            .select((
+                measurements::session,
+                sum(measurements::est_before),
+                sum(measurements::est_after),
+            ))
+            .load(&mut *conn)?;
+        let host_of = host_by_session(&mut conn)?;
+        let mut by_host: BTreeMap<Option<String>, i64> = BTreeMap::new();
+        for (session, before, after) in rows {
+            let host = host_of.get(&session).cloned().flatten();
+            *by_host.entry(host).or_default() += before.unwrap_or(0) - after.unwrap_or(0);
+        }
+        Ok(by_host.into_iter().collect())
+    }
+
+    /// Test helper: stamp every `measurements` row of `session` at `ts`.
+    #[cfg(test)]
+    pub fn set_measurement_ts(&self, session: &str, ts: i64) -> Result<()> {
+        let mut conn = self.lock()?;
+        diesel::update(measurements::table.filter(measurements::session.eq(session)))
+            .set(measurements::ts.eq(ts))
+            .execute(&mut *conn)?;
+        Ok(())
+    }
+
     /// Per `(project, kind)` note counts for `memory status` (T69.4). Excludes
     /// `checkpoint:*` and `session:*` housekeeping kinds, same as `list_notes` /
     /// `list_note_titles` (T304): `session:<id>` is unique per session, so leaving it in
@@ -2072,12 +2113,7 @@ impl Store {
                 sum_bigint(usage::output),
             ))
             .load(&mut *conn)?;
-        let host_of: HashMap<String, Option<String>> = sessions::table
-            .left_join(hosts::table)
-            .select((sessions::id, hosts::slug.nullable()))
-            .load(&mut *conn)?
-            .into_iter()
-            .collect();
+        let host_of = host_by_session(&mut conn)?;
         Ok(rows
             .into_iter()
             .map(
@@ -2598,6 +2634,16 @@ pub struct MeasRow {
     pub est_before: i32,
     pub est_after: i32,
     pub ref_id: Option<String>,
+}
+
+/// Each session's host slug, `None` when it has no host row.
+fn host_by_session(conn: &mut SqliteConnection) -> Result<HashMap<String, Option<String>>> {
+    Ok(sessions::table
+        .left_join(hosts::table)
+        .select((sessions::id, hosts::slug.nullable()))
+        .load::<(String, Option<String>)>(conn)?
+        .into_iter()
+        .collect())
 }
 
 /// One `(plugin, kind)` group from [`Store::measurement_totals`] (T207).
