@@ -120,6 +120,8 @@ pathdiff = "0.2" # relative path of a file under a repo root (graph LSP + index)
 rmcp = { version = "3.2" } # stdio MCP types + JSON-RPC (T4.1)
 url = "2.5" # file:// MCP roots → path (T263)
 ignore = "0.4" # gitignore-aware walk for search/tree (T4.5)
+globset = "0.4" # workspace member globs of project references (T329.7); already in the tree through `ignore`
+serde-saphyr = "1.3.0" # `pnpm-workspace.yaml` of project references (T329.7); maintained, serde_yaml is deprecated
 notify = "9.0.0-rc.5" # recursive file watching for the graph background indexer (T8.16); 9 drops windows-sys 0.60 (T223)
 indicatif = "0.18" # progress for `graph index` (T21.2); `ProgressBar::hidden()` keeps it off the MCP path
 owo-colors = { version = "4", features = ["supports-colors"] } # ANSI + the tty/NO_COLOR/CLICOLOR/TERM=dumb question in one call (T20.2)
