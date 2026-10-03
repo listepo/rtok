@@ -56,6 +56,10 @@ enum Cmd {
         /// JSON arguments for `--call`
         #[arg(long, value_name = "ARGS")]
         json: Option<String>,
+        /// The host this MCP entry belongs to (`claude`, `cursor`, `grok`, …): overlays `[hook] host` so
+        /// the process can find its rtok agent (T283.1)
+        #[arg(long, value_name = "HOST")]
+        host: Option<String>,
         /// Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`)
         #[arg(last = true)]
         wrap: Vec<String>,
@@ -739,6 +743,9 @@ enum AgentCmd {
         /// Bottom table by month (the default)
         #[arg(long)]
         monthly: bool,
+        /// Middle table grouping: `agent` (the default) or `model`
+        #[arg(long, value_name = "AGENT|MODEL")]
+        by: Option<String>,
         /// IANA time zone for day and month boundaries (default: the system zone)
         #[arg(long, value_name = "ZONE")]
         tz: Option<String>,
@@ -1122,6 +1129,11 @@ pub fn run() -> Result<()> {
             cache,
             price,
         } => {
+            // The flag is parsed here, before it merges into `stats.since`, so a later parse error
+            // can only come from the config or the environment and says so.
+            if let Some(s) = &since {
+                crate::measure::stats::parse_since(s)?;
+            }
             let cfg = Config::load_with(
                 config_file.as_deref(),
                 stats_flags(since, json, plugin.clone(), compare.clone(), price),
@@ -1492,6 +1504,7 @@ pub fn run() -> Result<()> {
                 until,
                 daily,
                 monthly,
+                by,
                 tz,
                 unpriced,
                 json,
@@ -1503,11 +1516,15 @@ pub fn run() -> Result<()> {
                     ("since", since),
                     ("until", until),
                     ("period", period.map(str::to_string)),
+                    ("by", by),
                     ("tz", tz),
                 ]);
                 let cfg = Config::load_with(config_file.as_deref(), flags)?;
                 let store = crate::store::Store::open(&cfg.core.db_path)?;
                 let report = crate::agents::usage::report(&cfg, &store, crate::log::now() as i64)?;
+                for s in &report.skipped {
+                    eprintln!("skipped {}: {} in {}", s.host, s.reason, s.path.display());
+                }
                 if json {
                     print_json(&report)?;
                 } else if unpriced {
@@ -1618,9 +1635,10 @@ pub fn run() -> Result<()> {
             action,
             call,
             json,
+            host,
             wrap,
         } => {
-            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let cfg = Config::load_with(config_file.as_deref(), hook_host_flag(host))?;
             if let Some(McpCmd::Ping {
                 agent,
                 cli,
@@ -1801,7 +1819,7 @@ pub fn run() -> Result<()> {
             let cx = crate::plugin::Runtime::open(cfg.clone(), "graph")?;
             match action {
                 GraphCmd::Index { path, dry_run } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let pb = crate::render::spinner("indexing");
                     let r = crate::plugins::graph::index::run_with(
                         &crate::plugin::Ctx::new(&cx),
@@ -1822,7 +1840,7 @@ pub fn run() -> Result<()> {
                     println!("{}", style::success(&summary));
                 }
                 GraphCmd::Dead { path, json } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let ctx = crate::plugin::Ctx::new(&cx);
                     if json {
                         let rows = crate::plugins::graph::dead_rows(&ctx, &root)?;
@@ -1870,7 +1888,7 @@ pub fn run() -> Result<()> {
                     to,
                     path,
                 } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let ctx = crate::plugin::Ctx::new(&cx);
                     print!(
                         "{}",

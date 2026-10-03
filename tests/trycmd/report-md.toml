@@ -48,6 +48,7 @@ Every effective key with its origin — the `config show --sources` page.
 | agents.enabled | true | default |
 | agents.idle | 30m | default |
 | agents.push_bytes | 1024 | default |
+| agents.usage.by | agent | default |
 | agents.usage.hosts | [] | default |
 | agents.usage.period | monthly | default |
 | agents.usage.since |  | default |
@@ -276,7 +277,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-230 keys.
+231 keys.
 
 ## Doctor
 
@@ -285,7 +286,7 @@ Live probes (the `rtok doctor` page), not store rows.
 ```text
 hooks 0
 mcp
-  rtok (15 tools, ~274 desc tokens) [CWD]/target/[..]
+  rtok (16 tools, ~308 desc tokens) [CWD]/target/[..]
 proxy 
 proxy openai 
 BASH_MAX_OUTPUT_LENGTH (unset)

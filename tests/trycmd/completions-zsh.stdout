@@ -43,6 +43,7 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 '--call=[Call one listed tool and print the text result (pi /`registerTool/` shim, T70.3)]:TOOL:_default' /
 '--json=[JSON arguments for /`--call/`]:ARGS:_default' /
+'--host=[The host this MCP entry belongs to (/`claude/`, /`cursor/`, /`grok/`, …)/: overlays /`/[hook/] host/` so the process can find its rtok agent (T283.1)]:HOST:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '-h[Print help]' /
 '--help[Print help]' /
@@ -457,6 +458,7 @@ _arguments "${_arguments_options[@]}" : /
 '--host=[Only these hosts, comma-separated (/`claude,codex/`)]:IDS:_default' /
 '--since=[From a date (/`2026-09-01/`, whole days in /`--tz/`) or a duration back from now (/`30d/`)]:DATE|DUR:_default' /
 '--until=[Through this date, inclusive]:DATE:_default' /
+'--by=[Middle table grouping/: /`agent/` (the default) or /`model/`]:AGENT|MODEL:_default' /
 '--tz=[IANA time zone for day and month boundaries (default/: the system zone)]:ZONE:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '(--monthly)--daily[Bottom table by day]' /
@@ -837,6 +839,7 @@ _arguments "${_arguments_options[@]}" : /
 '--host=[Only these hosts, comma-separated (/`claude,codex/`)]:IDS:_default' /
 '--since=[From a date (/`2026-09-01/`, whole days in /`--tz/`) or a duration back from now (/`30d/`)]:DATE|DUR:_default' /
 '--until=[Through this date, inclusive]:DATE:_default' /
+'--by=[Middle table grouping/: /`agent/` (the default) or /`model/`]:AGENT|MODEL:_default' /
 '--tz=[IANA time zone for day and month boundaries (default/: the system zone)]:ZONE:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '(--monthly)--daily[Bottom table by day]' /
