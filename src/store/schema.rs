@@ -315,6 +315,31 @@ diesel::table! {
     }
 }
 
+// 0027 (T329.1): the graph project registry; `name` NULL = the directory name, at most one `selected`.
+diesel::table! {
+    projects (id) {
+        id -> Integer,
+        root -> Text,
+        name -> Nullable<Text>,
+        origin -> Text,
+        created_at -> BigInt,
+        last_used_at -> BigInt,
+        selected -> Integer,
+    }
+}
+
+// 0028 (T329.3): directed project links; `unlinked = 1` is a remembered removal of an auto link.
+diesel::table! {
+    project_links (from_id, to_id) {
+        from_id -> Integer,
+        to_id -> Integer,
+        kind -> Text,
+        reason -> Nullable<Text>,
+        unlinked -> Integer,
+        created_at -> BigInt,
+    }
+}
+
 diesel::joinable!(archive_decisions -> archive (archive_id));
 diesel::joinable!(models -> providers (provider_id));
 diesel::joinable!(sessions -> hosts (host_id));
@@ -354,4 +379,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     agents,
     worktree_claims,
     messages,
+    projects,
+    project_links,
 );

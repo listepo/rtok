@@ -143,7 +143,7 @@ jobs:
         uses: "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c"
         with:
           "cache_key_prefix": "mise-v1-release"
-          "install_args": "rust"
+          "install_args": "rust node"
       - name: "Add release targets to the mise toolchain"
         run: |
           set -euo pipefail
@@ -163,14 +163,11 @@ jobs:
         with:
           "cache-on-failure": true
           "shared-key": "release-dist"
-      - name: "Install wasm-pack"
-        uses: "taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73"
-        with:
-          "tool": "wasm-pack"
-      - name: "Build the Slint WASM bundle"
+      - name: "Build the SPA"
         run: |
-          rustup target add wasm32-unknown-unknown
-          tools/webui-bundle.sh --require
+          set -euo pipefail
+          mise exec -- npm --prefix web ci
+          mise exec -- npm --prefix web run build
           echo "RTOK_WEB_EMBED=require" >> "$GITHUB_ENV"
         shell: "bash"
       - name: "Generate man pages and completions"

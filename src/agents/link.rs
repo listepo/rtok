@@ -107,11 +107,16 @@ pub fn resolve(store: &Store, who: &Caller, env: impl Fn(&str) -> Option<String>
         });
     }
     if let Some(cwd) = who.cwd {
+        // One directory has many spellings (`/var` vs `/private/var`, `RUNNER~1`, `\\?\`); a
+        // path that no longer resolves still matches only itself.
+        let canon = |p: &str| dunce::canonicalize(p).ok();
+        let here = canon(cwd);
+        let same = |p: &str| p == cwd || (here.is_some() && canon(p) == here);
         let mut ids: Vec<String> = store
             .live_agents(who.idle)?
             .into_iter()
             .filter(|a| a.host_id == who.host_id && a.parent_key.is_empty())
-            .filter(|a| a.cwd.as_deref() == Some(cwd))
+            .filter(|a| a.cwd.as_deref().is_some_and(same))
             .filter(|a| a.last_seen >= who.since)
             .map(|a| a.id)
             .collect();

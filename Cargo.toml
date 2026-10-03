@@ -1,9 +1,8 @@
 # The binary crate is the workspace root (T23.1, D25). `rtok-plugin-sdk` is the published
-# plugin contract; `crates/rtok-webui` is excluded because it builds for wasm through its own
-# toolchain and must not join `cargo test` here; `fuzz` is the nightly-only cargo-fuzz crate.
+# plugin contract; `fuzz` is the nightly-only cargo-fuzz crate and stays out of `cargo test`.
 [workspace]
 members = ["crates/rtok-agent-sdk", "crates/rtok-hook", "crates/rtok-log", "crates/rtok-mcp", "crates/rtok-plugin-sdk", "crates/rtok-sys", "crates/rtok-wasm-demo-guest"]
-exclude = ["crates/rtok-webui", "fuzz"]
+exclude = ["fuzz"]
 
 [workspace.package]
 license = "GPL-3.0-or-later"
@@ -120,6 +119,8 @@ pathdiff = "0.2" # relative path of a file under a repo root (graph LSP + index)
 rmcp = { version = "3.2" } # stdio MCP types + JSON-RPC (T4.1)
 url = "2.5" # file:// MCP roots → path (T263)
 ignore = "0.4" # gitignore-aware walk for search/tree (T4.5)
+globset = "0.4" # workspace member globs of project references (T329.7); already in the tree through `ignore`
+serde-saphyr = "1.3.0" # `pnpm-workspace.yaml` of project references (T329.7); maintained, serde_yaml is deprecated
 notify = "9.0.0-rc.5" # recursive file watching for the graph background indexer (T8.16); 9 drops windows-sys 0.60 (T223)
 indicatif = "0.18" # progress for `graph index` (T21.2); `ProgressBar::hidden()` keeps it off the MCP path
 owo-colors = { version = "4", features = ["supports-colors"] } # ANSI + the tty/NO_COLOR/CLICOLOR/TERM=dumb question in one call (T20.2)
@@ -127,7 +128,8 @@ printpdf = "0.12.8" # paged-PDF renderer for `rtok report --format pdf` (T22.0 s
 regex = "1" # search pattern (T4.5)
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time", "fs"] }
 axum = { version = "0.8.9", features = ["ws"] } # dashboard WebSocket (P19); proxy HTTP unchanged
-tower-http = { version = "0.7", features = ["fs"] } # ServeDir for Slint WASM assets
+rust-embed = { version = "8.12", default-features = false, features = ["debug-embed", "interpolate-folder-path"] } # the React SPA inside the binary, every profile (T310.9)
+mime_guess = "2" # Content-Type for the SPA's files, embedded or read from RTOK_WEB_DIST
 futures-util = "0.3.34"
 ratatui = "0.30.2" # `rtok tui`, the terminal rendering of the D23 model (T15.1); default backend is crossterm
 crossterm = "0.29" # key and tick events for the TUI loop (T15.1); same major as ratatui 0.30's backend, so one copy links
@@ -167,6 +169,7 @@ insta = "1" # snapshot tests for stable text output
 proptest = "1" # T331.5: byte-for-byte guarantee of `doctor --fix` edits over generated JSONC (doctor/fix.rs)
 rstest = "0.27.0" # parameterized unit tests; #[rstest] instead of #[test] (T36.5)
 trycmd = "1.2.1" # full CLI command-output fixtures in tests/trycmd/
+pulldown-cmark = { version = "0.13", default-features = false } # CommonMark parse of README/docs in tests/docs_structure.rs (T359): unclosed fences, skipped heading levels
 tokio-tungstenite = "0.30" # real WebSocket client for the `rtok web` e2e (tests/web_e2e.rs); already in the tree via axum "ws"
 diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] } # tests hold a competing writer on the store file (same crate/features as [dependencies], T75)
 
