@@ -16,7 +16,7 @@ the CLI file) and in the extension file
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | yes | one `plugins/cline/hooks/rtok-hook` link per event (`PreToolUse`, `PostToolUse`, `TaskStart`, `UserPromptSubmit`, `SessionEnd`), event from the link name |
-| mcp | yes | `mcpServers.rtok` → `rtok mcp` in both `cline_mcp_settings.json` files, `{command, args}` with no `type` (off with `[setup] mcp = false`) |
+| mcp | yes | `mcpServers.rtok` → `rtok mcp --host cline` in both `cline_mcp_settings.json` files, `{command, args}` with no `type` (off with `[setup] mcp = false`) |
 | plugin | `--yes` | the hook links ARE the plugin unit: no second link step, `installed()` reports `plugin` exactly when `hooks` is installed |
 | proxy | no | the Anthropic base URL is extension state, not a file rtok may edit |
 

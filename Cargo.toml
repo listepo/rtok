@@ -166,6 +166,7 @@ assert_cmd = "2" # CLI e2e through `Command::cargo_bin` (plan Working agreement)
 divan = "0.1" # divan benches in benches/ (default harness for new benches)
 httpmock = "0.8" # mock Anthropic/OpenAI upstreams for proxy tests (T5.0)
 insta = "1" # snapshot tests for stable text output
+proptest = "1" # T331.5: byte-for-byte guarantee of `doctor --fix` edits over generated JSONC (doctor/fix.rs)
 rstest = "0.27.0" # parameterized unit tests; #[rstest] instead of #[test] (T36.5)
 trycmd = "1.2.1" # full CLI command-output fixtures in tests/trycmd/
 pulldown-cmark = { version = "0.13", default-features = false } # CommonMark parse of README/docs in tests/docs_structure.rs (T359): unclosed fences, skipped heading levels

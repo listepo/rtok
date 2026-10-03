@@ -3,7 +3,8 @@
 //! runs the hook without a process start.
 //!
 //! A frame is a little-endian `u32` length, then the body. Request body: length-prefixed fields
-//! `version, fingerprint, event, host, cwd, stdin`. Response body: status byte `0` and the hook's
+//! `version, fingerprint, event, host, cwd, stdin` and, from T283.3, the client's pid as a last
+//! optional field (an older client sends six). Response body: status byte `0` and the hook's
 //! stdout, or `1` alone — refused, and the client runs `rtok hook` itself.
 
 use std::ffi::OsString;
@@ -38,13 +39,17 @@ pub struct Request {
     /// The client's working directory; the hook runs there.
     pub cwd: String,
     pub stdin: Vec<u8>,
+    /// The client's own pid, so the resident can read its ancestors (T283.3); `None` from a
+    /// client that predates the field.
+    pub pid: Option<u32>,
 }
 
 impl Request {
     /// The whole frame, length included.
     pub fn encode(&self) -> Vec<u8> {
         let fp = self.fingerprint.to_le_bytes();
-        let fields: [&[u8]; 6] = [
+        let pid = self.pid.map(u32::to_le_bytes);
+        let mut fields: Vec<&[u8]> = vec![
             self.version.as_bytes(),
             &fp,
             self.event.as_bytes(),
@@ -52,6 +57,7 @@ impl Request {
             self.cwd.as_bytes(),
             &self.stdin,
         ];
+        fields.extend(pid.as_ref().map(|p| &p[..]));
         let mut body = Vec::new();
         for f in fields {
             body.extend_from_slice(&(f.len() as u32).to_le_bytes());
@@ -70,8 +76,14 @@ impl Request {
             host: text(take(&mut body)?)?,
             cwd: text(take(&mut body)?)?,
             stdin: take(&mut body)?.to_vec(),
+            pid: None,
         };
-        body.is_empty().then_some(req)
+        let pid = if body.is_empty() {
+            None
+        } else {
+            Some(u32::from_le_bytes(take(&mut body)?.try_into().ok()?))
+        };
+        body.is_empty().then_some(Self { pid, ..req })
     }
 }
 
@@ -298,6 +310,36 @@ mod tests {
         );
     }
 
+    /// T283.3: the pid is an optional last field. A client without it still decodes (no pid),
+    /// and a pid field of the wrong size or a seventh field after it is refused.
+    #[test]
+    fn the_pid_is_optional_and_only_its_exact_field_decodes() {
+        let old = Request {
+            version: "0.7.0".into(),
+            fingerprint: 7,
+            event: "SessionStart".into(),
+            host: "codex".into(),
+            cwd: "/w".into(),
+            stdin: b"{}".to_vec(),
+            pid: None,
+        };
+        let new = Request {
+            pid: Some(4242),
+            ..old.clone()
+        };
+        let body = |r: &Request| read_frame(&mut &r.encode()[..]).unwrap();
+        assert_eq!(Request::decode(&body(&old)), Some(old.clone()));
+        assert_eq!(Request::decode(&body(&new)), Some(new.clone()));
+        assert_eq!(body(&new).len(), body(&old).len() + 8);
+        let mut short = body(&old);
+        short.extend_from_slice(&2u32.to_le_bytes());
+        short.extend_from_slice(&[1, 2]);
+        assert_eq!(Request::decode(&short), None);
+        let mut extra = body(&new);
+        extra.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(Request::decode(&extra), None);
+    }
+
     #[test]
     fn a_truncated_request_is_refused_and_only_config_variables_move_the_fingerprint() {
         let req = Request {
@@ -307,6 +349,7 @@ mod tests {
             host: String::new(),
             cwd: "/w".into(),
             stdin: b"{}".to_vec(),
+            pid: None,
         };
         let body = read_frame(&mut &req.encode()[..]).unwrap();
         assert_eq!(Request::decode(&body[..body.len() - 1]), None);

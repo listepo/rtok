@@ -23,7 +23,8 @@ use crate::config::Config;
 /// One finding of a doctor config check. The list is shared by every T331 detector.
 #[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct Problem {
-    /// `broken-hook`, `suspect-hook`, `unverified-hook` or `unreadable-config`.
+    /// `broken-hook`, `suspect-hook`, `unverified-hook`, `duplicate-hook`, `stale-plugin` or
+    /// `unreadable-config`.
     pub kind: &'static str,
     pub agent: &'static str,
     /// The config file the entry lives in.
@@ -40,6 +41,11 @@ pub struct Problem {
     pub detail: String,
     /// Whether `doctor --fix` may remove it (T331.5): only `broken-hook`.
     pub fixable: bool,
+    /// Copies of one duplicate share a `group`; `keep` marks the copy to keep (T331.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<u32>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep: bool,
 }
 
 /// What a hook command may rely on besides the machine.
@@ -62,11 +68,11 @@ pub struct Probes<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-struct Entry {
-    event: String,
-    matcher: Option<String>,
-    command: String,
-    key: String,
+pub(super) struct Entry {
+    pub event: String,
+    pub matcher: Option<String>,
+    pub command: String,
+    pub key: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -88,24 +94,36 @@ const BUILTINS: &[&str] = &[
     "set", "source", "test", "true", "type", "unset",
 ];
 
-/// The Claude Code settings files in load order: user, user local, project, project local.
-fn sources(cfg: &Config, project: Option<&Path>) -> Vec<PathBuf> {
+/// Which copy of a duplicate hook is kept, best first (T331): the one a plugin owns, so plugin
+/// updates keep working; a project `settings.json`, which teammates share; the user's own file;
+/// then a `settings.local.json`, and among equals the first in load order.
+pub(super) const RANK_PLUGIN: u8 = 0;
+const RANK_PROJECT: u8 = 1;
+const RANK_USER: u8 = 2;
+const RANK_LOCAL: u8 = 3;
+
+/// The Claude Code settings files in load order (user, user local, project, project local), each
+/// with its keep rank.
+fn sources(cfg: &Config, project: Option<&Path>) -> Vec<(PathBuf, u8)> {
     let user = cfg.doctor.settings_path.clone();
-    let mut out = vec![user.clone(), user.with_file_name("settings.local.json")];
+    let mut out = vec![
+        (user.clone(), RANK_USER),
+        (user.with_file_name("settings.local.json"), RANK_LOCAL),
+    ];
     if let Some(p) = project {
         let dir = p.join(".claude");
-        out.push(dir.join("settings.json"));
-        out.push(dir.join("settings.local.json"));
+        out.push((dir.join("settings.json"), RANK_PROJECT));
+        out.push((dir.join("settings.local.json"), RANK_LOCAL));
     }
     // No file twice: the working directory may be `$HOME`.
     let mut seen = BTreeSet::new();
-    out.retain(|p| seen.insert(p.clone()));
+    out.retain(|(p, _)| seen.insert(p.clone()));
     out
 }
 
 /// Every command hook of a settings document: `hooks.<Event>[].{matcher, hooks[].command}`,
 /// plus the flat `hooks.<Event>[].command` shape `doctor`'s hook count also accepts.
-fn entries(doc: &Value) -> Vec<Entry> {
+pub(super) fn entries(doc: &Value) -> Vec<Entry> {
     let mut out = Vec::new();
     let Some(events) = doc.get("hooks").and_then(Value::as_object) else {
         return out;
@@ -253,6 +271,28 @@ fn target(words: &[String]) -> Result<(String, bool), Verdict> {
     }
 }
 
+/// `command` as the shell would see it: words split, variables and `~` expanded, a `./` path
+/// made absolute where the host documents its base. What cannot be expanded or split is kept as
+/// written with its spacing collapsed, so two copies compare equal only when they really match.
+fn normalize(command: &str, p: &Probes, scope: &Scope) -> String {
+    let raw = command.trim();
+    let words = match (shell_syntax(raw), shlex::split(raw)) {
+        (None, Some(words)) => words,
+        _ => return raw.split_whitespace().collect::<Vec<_>>().join(" "),
+    };
+    words
+        .iter()
+        .map(|w| {
+            let w = expand(w, p, scope).unwrap_or_else(|_| w.clone());
+            match w.strip_prefix("./") {
+                Some(rest) if scope.relative_ok => scope.project.join(rest).display().to_string(),
+                _ => w,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn path_like(t: &str) -> bool {
     t.contains(['/', '\\']) || t.starts_with(['~', '.'])
 }
@@ -356,8 +396,8 @@ fn unmounted_volume(_path: &Path, _fs: &dyn Fs) -> Option<String> {
     None
 }
 
-/// Check every hook of Claude Code's settings files and enabled plugins, and of the JSON
-/// config files the other hosts' installers write. A file that does not exist is skipped; one
+/// Check every hook of Claude Code's settings files and enabled plugins, and of the JSON and
+/// TOML config files the other hosts' installers write. A file that does not exist is skipped; one
 /// that cannot be read or parsed is reported and left alone.
 pub fn check(cfg: &Config, p: &Probes) -> Vec<Problem> {
     let project = p.env.cwd().unwrap_or_default();
@@ -370,32 +410,70 @@ pub fn check(cfg: &Config, p: &Probes) -> Vec<Problem> {
         relative_ok: false,
         ..claude
     };
-    let mut out = Vec::new();
+    let mut acc = Acc::default();
     let mut seen = BTreeSet::new();
     let mut enabled = BTreeSet::new();
     let user_sources = sources(
         cfg,
         Some(project.as_path()).filter(|d| !d.as_os_str().is_empty()),
     );
-    for source in &user_sources {
-        if let Some(doc) = scan(p, "claude", source, &claude, false, &mut out) {
+    for (source, rank) in &user_sources {
+        // The working directory may reach `$HOME` through a symlink; the file is still one file.
+        if !seen.insert(p.fs.canonical(source)) {
+            continue;
+        }
+        if let Some(doc) = scan(
+            p,
+            "claude",
+            source,
+            (*rank, Format::Json),
+            &claude,
+            &mut acc,
+        ) {
             enabled.extend(enabled_plugins(&doc));
         }
     }
-    seen.extend(user_sources);
-    for (agent, source) in host_sources(cfg) {
-        if seen.insert(source.clone()) {
-            scan(p, agent, &source, &other, false, &mut out);
+    for (agent, source, format) in host_sources(cfg) {
+        if seen.insert(p.fs.canonical(&source)) {
+            scan(p, agent, &source, (RANK_USER, format), &other, &mut acc);
         }
     }
-    plugins(cfg, p, &enabled, &claude, &mut out);
-    out
+    plugins(cfg, p, &enabled, &claude, &mut acc);
+    let dupes = super::dupes::find(&acc.seen);
+    acc.problems.extend(dupes);
+    acc.problems
 }
 
-/// The JSON files every host but Claude Code keeps hooks in, as its installer names them, once
-/// each (Cursor's variants share theirs). Other formats wait for T331.8.
-fn host_sources(cfg: &Config) -> Vec<(&'static str, PathBuf)> {
-    let mut out = Vec::new();
+/// What one pass over the config files collects: the findings, and every hook seen (the input
+/// of the duplicate check).
+#[derive(Default)]
+struct Acc {
+    problems: Vec<Problem>,
+    seen: Vec<Seen>,
+}
+
+/// One hook entry as found, whether or not it is a problem.
+pub(super) struct Seen {
+    pub agent: &'static str,
+    pub source: String,
+    pub path: String,
+    pub event: String,
+    pub matcher: Option<String>,
+    pub command: String,
+    /// The command with variables expanded and quotes and spacing removed: two entries that
+    /// differ only there run the same thing.
+    pub normal: String,
+    pub rank: u8,
+}
+
+/// The hosts whose hooks live in a `config.toml`, each shape documented by the host (see
+/// [`toml_entries`]). Another host's TOML is not guessed at.
+const TOML_HOSTS: &[&str] = &["kimi", "codewhale", "codex"];
+
+/// The config files every host but Claude Code keeps hooks in, as its installer names them, once
+/// each (Cursor's variants share theirs): JSON, and the TOML of [`TOML_HOSTS`].
+fn host_sources(cfg: &Config) -> Vec<(&'static str, PathBuf, Format)> {
+    let mut out: Vec<(&'static str, PathBuf, Format)> = Vec::new();
     for agent in crate::agents::HOSTS
         .iter()
         .filter(|id| **id != "claude")
@@ -403,11 +481,14 @@ fn host_sources(cfg: &Config) -> Vec<(&'static str, PathBuf)> {
     {
         for v in agent.variants() {
             for path in agent.files(cfg, v.kind) {
-                let json = path
-                    .extension()
-                    .is_some_and(|e| e == "json" || e == "jsonc");
-                if json && !out.iter().any(|(_, seen)| *seen == path) {
-                    out.push((agent.id(), path));
+                let ext = path.extension().and_then(|e| e.to_str());
+                let format = match ext {
+                    Some("json" | "jsonc") => Format::Json,
+                    Some("toml") if TOML_HOSTS.contains(&agent.id()) => Format::Toml,
+                    _ => continue,
+                };
+                if !out.iter().any(|(_, seen, _)| *seen == path) {
+                    out.push((agent.id(), path, format));
                 }
             }
         }
@@ -428,13 +509,7 @@ fn enabled_plugins(doc: &Value) -> impl Iterator<Item = String> + '_ {
 /// The hooks of every enabled Claude plugin, with `${CLAUDE_PLUGIN_ROOT}` resolved against its
 /// install directory. A plugin that is enabled but whose directory is gone is reported as
 /// stale. These files belong to the plugin, so nothing found in them is ever fixable.
-fn plugins(
-    cfg: &Config,
-    p: &Probes,
-    enabled: &BTreeSet<String>,
-    claude: &Scope,
-    out: &mut Vec<Problem>,
-) {
+fn plugins(cfg: &Config, p: &Probes, enabled: &BTreeSet<String>, claude: &Scope, acc: &mut Acc) {
     let index = crate::agents::claude::config_dir(cfg).join("plugins/installed_plugins.json");
     let Some(root) =
         p.fs.read(&index)
@@ -450,7 +525,7 @@ fn plugins(
         for (i, dir) in super::plugin_install_paths(&root, id).iter().enumerate() {
             let dir = PathBuf::from(dir);
             if p.fs.kind(&dir) != PathKind::Dir {
-                out.push(Problem {
+                acc.problems.push(Problem {
                     path: format!("plugins.{id}[{i}]"),
                     detail: format!(
                         "`{id}` is enabled but its install directory {} is gone",
@@ -468,47 +543,110 @@ fn plugins(
                 p,
                 "claude",
                 &dir.join("hooks/hooks.json"),
+                (RANK_PLUGIN, Format::Json),
                 &scope,
-                true,
-                out,
+                acc,
             );
         }
     }
 }
 
-/// One config file: its hooks classified into `out`. `managed` marks a file that is not the
-/// user's to edit, so nothing in it is fixable. Returns the parsed document.
+/// How a hook file is written.
+#[derive(Clone, Copy, PartialEq)]
+enum Format {
+    Json,
+    Toml,
+}
+
+/// The document of `raw` as JSON, whichever the format, so one classification serves both.
+fn parse(raw: &str, format: Format) -> Result<Value, String> {
+    match format {
+        Format::Json => crate::agents::jsonc::parse(raw).map_err(|e| e.to_string()),
+        Format::Toml => raw
+            .parse::<toml_edit::DocumentMut>()
+            .map(|d| crate::agents::mcp::toml_item_to_json(d.as_item()))
+            .map_err(|e| e.to_string()),
+    }
+}
+
+/// The hooks of a TOML config. Kimi writes `[[hooks]]` tables and CodeWhale `[[hooks.hooks]]`,
+/// both `{event, matcher?, command}`; Codex's `[[hooks.<Event>]]` with nested
+/// `[[hooks.<Event>.hooks]]` has the settings.json shape and goes through [`entries`].
+fn toml_entries(doc: &Value) -> Vec<Entry> {
+    let flat = |list: &Value, prefix: &str| -> Vec<Entry> {
+        let text = |h: &Value, k: &str| h.get(k).and_then(Value::as_str).map(String::from);
+        list.as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+            .filter_map(|(i, h)| {
+                Some(Entry {
+                    event: text(h, "event").unwrap_or_default(),
+                    matcher: text(h, "matcher").filter(|m| !m.is_empty()),
+                    command: text(h, "command")?,
+                    key: format!("{prefix}[{i}]"),
+                })
+            })
+            .collect()
+    };
+    match doc.get("hooks") {
+        Some(list @ Value::Array(_)) => flat(list, "hooks"),
+        Some(Value::Object(o)) if o.get("hooks").is_some_and(Value::is_array) => {
+            flat(&o["hooks"], "hooks.hooks")
+        }
+        _ => entries(doc),
+    }
+}
+
+/// One config file: its hooks classified into `acc`. A plugin's file (`RANK_PLUGIN`) is not the
+/// user's to edit, and `--fix` edits JSON only, so nothing in those is fixable. Returns the
+/// parsed document.
 fn scan(
     p: &Probes,
     agent: &'static str,
     source: &Path,
+    (rank, format): (u8, Format),
     scope: &Scope,
-    managed: bool,
-    out: &mut Vec<Problem>,
+    acc: &mut Acc,
 ) -> Option<Value> {
+    let editable = rank != RANK_PLUGIN && format == Format::Json;
     let raw = match p.fs.read(source) {
         Ok(raw) => raw,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
         Err(e) => {
-            out.push(unreadable(agent, source, &e.to_string()));
+            acc.problems.push(unreadable(agent, source, &e.to_string()));
             return None;
         }
     };
-    let doc = match crate::agents::jsonc::parse(&raw) {
+    let doc = match parse(&raw, format) {
         Ok(doc) => doc,
         Err(e) => {
-            out.push(unreadable(agent, source, &e.to_string()));
+            acc.problems.push(unreadable(agent, source, &e));
             return None;
         }
     };
-    for e in entries(&doc) {
+    let found = match format {
+        Format::Json => entries(&doc),
+        Format::Toml => toml_entries(&doc),
+    };
+    for e in found {
+        acc.seen.push(Seen {
+            agent,
+            source: source.display().to_string(),
+            path: e.key.clone(),
+            event: e.event.clone(),
+            matcher: e.matcher.clone(),
+            command: e.command.clone(),
+            normal: normalize(&e.command, p, scope),
+            rank,
+        });
         let (kind, detail, fixable) = match classify(&e.command, p, scope) {
             Verdict::Ok => continue,
-            Verdict::Broken(d) => ("broken-hook", d, !managed),
+            Verdict::Broken(d) => ("broken-hook", d, editable),
             Verdict::Suspect(d) => ("suspect-hook", d, false),
             Verdict::Unverified(d) => ("unverified-hook", d, false),
         };
-        out.push(Problem {
+        acc.problems.push(Problem {
             path: e.key,
             event: e.event,
             matcher: e.matcher,
@@ -533,6 +671,8 @@ fn problem(kind: &'static str, agent: &'static str, source: &Path) -> Problem {
         command: String::new(),
         detail: String::new(),
         fixable: false,
+        group: None,
+        keep: false,
     }
 }
 
@@ -560,13 +700,22 @@ pub fn render(problems: &[Problem]) -> String {
     let hook_problems: Vec<&Problem> = problems
         .iter()
         .filter(|p| {
-            p.kind.ends_with("-hook") || matches!(p.kind, "unreadable-config" | "stale-plugin")
+            matches!(
+                p.kind,
+                "broken-hook"
+                    | "suspect-hook"
+                    | "unverified-hook"
+                    | "unreadable-config"
+                    | "stale-plugin"
+            )
         })
         .collect();
+    let mut out = String::new();
     if hook_problems.is_empty() {
-        return "hooks check none found\n".into();
+        out.push_str("hooks check none found\n");
+    } else {
+        out.push_str("hooks check\n");
     }
-    let mut out = String::from("hooks check\n");
     for (kind, title) in [
         ("broken-hook", "broken"),
         ("suspect-hook", "suspect"),
@@ -595,6 +744,7 @@ pub fn render(problems: &[Problem]) -> String {
             ));
         }
     }
+    out.push_str(&super::dupes::render(problems));
     out
 }
 
@@ -614,18 +764,35 @@ mod tests {
         unreadable: BTreeSet<PathBuf>,
     }
 
+    /// The entry for `path`, matched component by component. The keys are POSIX literals
+    /// (`/h/.claude/x`) while `join` and `with_file_name` build `\`-separated paths on Windows;
+    /// a lookup through the map's ordering did not find those there.
+    fn lookup<'a, V>(map: &'a BTreeMap<PathBuf, V>, path: &Path) -> Option<&'a V> {
+        map.iter()
+            .find(|(key, _)| key.components().eq(path.components()))
+            .map(|(_, v)| v)
+    }
+
     impl Fs for Mock {
+        fn canonical(&self, path: &Path) -> PathBuf {
+            path.to_path_buf()
+        }
         fn read(&self, path: &Path) -> io::Result<String> {
-            if self.unreadable.contains(path) {
+            if self
+                .unreadable
+                .iter()
+                .any(|p| p.components().eq(path.components()))
+            {
                 return Err(io::Error::from(io::ErrorKind::PermissionDenied));
             }
-            self.files
-                .get(path)
+            lookup(&self.files, path)
                 .cloned()
                 .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
         }
         fn kind(&self, path: &Path) -> PathKind {
-            self.kinds.get(path).cloned().unwrap_or(PathKind::Missing)
+            lookup(&self.kinds, path)
+                .cloned()
+                .unwrap_or(PathKind::Missing)
         }
     }
     impl Env for Mock {
@@ -667,6 +834,9 @@ mod tests {
         c.setup.claude.settings_path = "/h/.claude/settings.json".into();
         c.setup.cursor.hooks_path = "/h/.cursor/hooks.json".into();
         c.setup.gemini.dir = "/h/.gemini".into();
+        c.setup.kimi.config_path = "/h/.kimi-code/config.toml".into();
+        c.setup.codewhale.dir = "/h/.codewhale".into();
+        c.setup.codex.config_path = "/h/.codex/config.toml".into();
         c
     }
 
@@ -686,6 +856,7 @@ mod tests {
     fn verdicts(m: &Mock, commands: &[&str]) -> Vec<(&'static str, String)> {
         run(m, commands)
             .into_iter()
+            .filter(|p| p.kind != "duplicate-hook")
             .map(|p| (p.kind, p.detail))
             .collect()
     }
@@ -1087,10 +1258,233 @@ mod tests {
         );
     }
 
+    fn hooks_doc(event: &str, matcher: Option<&str>, commands: &[&str]) -> String {
+        let hooks: Vec<Value> = commands
+            .iter()
+            .map(|c| serde_json::json!({"type": "command", "command": c}))
+            .collect();
+        let mut group = serde_json::json!({ "hooks": hooks });
+        if let Some(m) = matcher {
+            group["matcher"] = m.into();
+        }
+        serde_json::json!({"hooks": {event: [group]}}).to_string()
+    }
+
+    /// `(source, keep)` of every duplicate copy, in report order.
+    fn copies(m: &Mock) -> Vec<(PathBuf, bool)> {
+        check_with(m)
+            .into_iter()
+            .filter(|p| p.kind == "duplicate-hook")
+            .map(|p| (PathBuf::from(p.source), p.keep))
+            .collect()
+    }
+
+    #[test]
+    fn the_same_hook_in_user_and_project_settings_is_a_duplicate_and_the_shared_copy_is_kept() {
+        let mut m = Mock::default();
+        let doc = hooks_doc("PreToolUse", Some("Bash"), &["jq ."]);
+        m.files
+            .insert("/h/.claude/settings.json".into(), doc.clone());
+        m.files.insert("/proj/.claude/settings.json".into(), doc);
+        m.path.insert("jq".into(), "/usr/bin/jq".into());
+        let found = check_with(&m);
+        let d: Vec<&Problem> = found
+            .iter()
+            .filter(|p| p.kind == "duplicate-hook")
+            .collect();
+        assert_eq!(d.len(), 2);
+        assert_eq!(d[0].group, d[1].group);
+        assert!(d[0].detail.starts_with("runs 2 times"));
+        assert!(!d.iter().any(|p| p.fixable), "report only until T331.6");
+        assert_eq!(
+            copies(&m),
+            vec![
+                (PathBuf::from("/h/.claude/settings.json"), false),
+                (PathBuf::from("/proj/.claude/settings.json"), true)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_user_file_wins_over_a_local_one_and_a_repeat_in_one_file_keeps_the_first() {
+        let mut m = Mock::default();
+        let doc = hooks_doc("Stop", None, &["jq .", "jq ."]);
+        m.files.insert(
+            "/h/.claude/settings.local.json".into(),
+            hooks_doc("Stop", None, &["jq ."]),
+        );
+        m.files.insert("/h/.claude/settings.json".into(), doc);
+        m.path.insert("jq".into(), "/usr/bin/jq".into());
+        let found = check_with(&m);
+        let d: Vec<&Problem> = found
+            .iter()
+            .filter(|p| p.kind == "duplicate-hook")
+            .collect();
+        assert_eq!(d.len(), 3);
+        assert!(d[0].detail.starts_with("runs 3 times"));
+        let kept: Vec<(&str, bool)> = d.iter().map(|p| (p.path.as_str(), p.keep)).collect();
+        assert_eq!(
+            kept,
+            vec![
+                ("hooks.Stop[0].hooks[0]", true),
+                ("hooks.Stop[0].hooks[1]", false),
+                ("hooks.Stop[0].hooks[0]", false)
+            ]
+        );
+        assert_eq!(
+            PathBuf::from(&d[2].source),
+            PathBuf::from("/h/.claude/settings.local.json")
+        );
+    }
+
+    #[test]
+    fn a_plugin_copy_is_kept_over_a_hand_written_one_and_is_never_the_extra() {
+        let mut m = Mock::default();
+        m.files.insert(
+            "/h/.claude/plugins/installed_plugins.json".into(),
+            r#"{"plugins": {"demo@mkt": [{"installPath": "/h/plug/demo"}]}}"#.into(),
+        );
+        let mut settings: Value =
+            serde_json::from_str(&hooks_doc("PreToolUse", Some("Bash"), &["jq ."])).unwrap();
+        settings["enabledPlugins"] = serde_json::json!({"demo@mkt": true});
+        m.files
+            .insert("/h/.claude/settings.json".into(), settings.to_string());
+        m.kinds.insert("/h/plug/demo".into(), PathKind::Dir);
+        m.files.insert(
+            "/h/plug/demo/hooks/hooks.json".into(),
+            hooks_doc("PreToolUse", Some("Bash"), &["jq ."]),
+        );
+        m.path.insert("jq".into(), "/usr/bin/jq".into());
+        assert_eq!(
+            copies(&m),
+            vec![
+                (PathBuf::from("/h/.claude/settings.json"), false),
+                (PathBuf::from("/h/plug/demo/hooks/hooks.json"), true)
+            ]
+        );
+    }
+
+    #[test]
+    fn what_differs_in_event_matcher_command_agent_or_load_state_is_not_a_duplicate() {
+        let mut m = Mock::default();
+        m.path.insert("jq".into(), "/usr/bin/jq".into());
+        m.path.insert("fmt".into(), "/usr/bin/fmt".into());
+        // Different events, different matchers, different commands.
+        m.files.insert(
+            "/h/.claude/settings.json".into(),
+            serde_json::json!({"hooks": {
+                "Stop": [{"hooks": [{"type": "command", "command": "jq ."}]}],
+                "SessionEnd": [{"hooks": [{"type": "command", "command": "jq ."}]}],
+                "PreToolUse": [
+                    {"matcher": "Bash", "hooks": [{"type": "command", "command": "jq ."}]},
+                    {"matcher": "Edit", "hooks": [{"type": "command", "command": "jq ."}]},
+                    {"matcher": "Bash", "hooks": [{"type": "command", "command": "jq -r ."}]}
+                ]
+            }})
+            .to_string(),
+        );
+        // The same command under another agent is a different process tree.
+        m.files.insert(
+            "/h/.cursor/hooks.json".into(),
+            r#"{"hooks": {"stop": [{"command": "jq ."}]}}"#.into(),
+        );
+        m.files.insert(
+            "/h/.gemini/settings.json".into(),
+            r#"{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "jq ."}]}]}}"#.into(),
+        );
+        // A disabled plugin is not loaded, so its copy does not run.
+        m.files.insert(
+            "/h/.claude/plugins/installed_plugins.json".into(),
+            r#"{"plugins": {"off@mkt": [{"installPath": "/h/plug/off"}]}}"#.into(),
+        );
+        m.kinds.insert("/h/plug/off".into(), PathKind::Dir);
+        m.files.insert(
+            "/h/plug/off/hooks/hooks.json".into(),
+            hooks_doc("Stop", None, &["jq ."]),
+        );
+        assert!(copies(&m).is_empty(), "{:?}", check_with(&m));
+    }
+
+    #[test]
+    fn copies_that_differ_only_in_spelling_are_duplicates() {
+        let mut m = Mock::default();
+        m.path.insert("jq".into(), "/usr/bin/jq".into());
+        // Matcher: order, spacing, and "no matcher" equal `*`.
+        m.files.insert(
+            "/h/.claude/settings.json".into(),
+            serde_json::json!({"hooks": {"PreToolUse": [
+                {"matcher": "Bash|Edit", "hooks": [{"type": "command", "command": "jq  -r  ."}]},
+                {"matcher": " Edit | Bash ", "hooks": [{"type": "command", "command": "jq -r '.'", "timeout": 5}]},
+                {"hooks": [{"type": "command", "command": "jq a"}]},
+                {"matcher": "*", "hooks": [{"type": "command", "command": "jq \"a\""}]}
+            ]}})
+            .to_string(),
+        );
+        let found = check_with(&m);
+        let d: Vec<&Problem> = found
+            .iter()
+            .filter(|p| p.kind == "duplicate-hook")
+            .collect();
+        assert_eq!(d.len(), 4, "{found:?}");
+        assert_eq!(d.iter().filter(|p| p.group == Some(0)).count(), 2);
+        assert_eq!(d.iter().filter(|p| p.group == Some(1)).count(), 2);
+    }
+
+    #[test]
+    fn variables_expand_before_copies_are_compared() {
+        let mut m = Mock::default();
+        m.path.insert("jq".into(), "/usr/bin/jq".into());
+        m.script("/h/hooks/a.sh", true);
+        m.files.insert(
+            "/h/.claude/settings.json".into(),
+            hooks_doc(
+                "Stop",
+                None,
+                &["/h/hooks/a.sh", "$HOME/hooks/a.sh", "~/hooks/a.sh"],
+            ),
+        );
+        assert_eq!(copies(&m).len(), 3);
+    }
+
+    #[cfg(unix)] // `./x` joins the project directory with `/`
+    #[test]
+    fn a_relative_path_equals_its_absolute_form_for_claude_only() {
+        let mut m = Mock::default();
+        m.script("/proj/hooks/a.sh", true);
+        m.files.insert(
+            "/h/.claude/settings.json".into(),
+            hooks_doc("Stop", None, &["./hooks/a.sh", "/proj/hooks/a.sh"]),
+        );
+        assert_eq!(copies(&m).len(), 2);
+    }
+
+    #[test]
+    fn the_text_lists_each_group_once_with_its_copies_and_says_none_found() {
+        assert_eq!(
+            super::super::dupes::render(&[]),
+            "duplicate hooks none found\n"
+        );
+        let mut m = Mock::default();
+        let doc = hooks_doc("Stop", None, &["jq ."]);
+        m.files
+            .insert("/h/.claude/settings.json".into(), doc.clone());
+        m.files.insert("/proj/.claude/settings.json".into(), doc);
+        m.path.insert("jq".into(), "/usr/bin/jq".into());
+        let text = render(&check_with(&m));
+        assert!(text.contains("hooks check none found\n"), "{text}");
+        assert!(
+            text.contains("duplicate hooks\n  claude Stop `jq .`: runs 2 times\n"),
+            "{text}"
+        );
+        assert_eq!(text.matches("runs 2 times").count(), 1);
+        assert!(text.contains("    keep "), "{text}");
+        assert!(text.contains("    extra "), "{text}");
+    }
+
     #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
     #[test]
     fn the_text_groups_by_class_and_says_none_found() {
-        assert_eq!(render(&[]), "hooks check none found\n");
+        assert!(render(&[]).starts_with("hooks check none found\n"));
         let found = run(&Mock::default(), &["/h/gone.sh", "$(x)"]);
         let text = render(&found);
         assert!(text.starts_with("hooks check\n"), "{text}");
@@ -1114,7 +1508,10 @@ mod tests {
             concat!("which", "::"),
             concat!("fs", "::read"),
         ];
-        for (name, src) in [("hooks.rs", include_str!("hooks.rs"))] {
+        for (name, src) in [
+            ("hooks.rs", include_str!("hooks.rs")),
+            ("dupes.rs", include_str!("dupes.rs")),
+        ] {
             let code = src.split("#[cfg(test)]").next().unwrap_or(src);
             for b in banned {
                 assert!(
@@ -1123,5 +1520,151 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// What the TOML hosts report, one `agent kind event [matcher] path fixable` line each.
+    fn toml_rows(m: &Mock) -> Vec<String> {
+        check_with(m)
+            .into_iter()
+            .map(|p| {
+                let matcher = p.matcher.map(|m| format!(" [{m}]")).unwrap_or_default();
+                format!(
+                    "{} {} {}{matcher} {} {}",
+                    p.agent, p.kind, p.event, p.path, p.fixable
+                )
+            })
+            .collect()
+    }
+
+    #[cfg(unix)] // POSIX paths and command words; Windows rules are T331.9
+    #[test]
+    fn kimi_toml_hooks_are_checked_by_their_array_index_and_never_fixable() {
+        let mut m = Mock::default();
+        m.script("/h/ok.sh", true);
+        m.files.insert(
+            "/h/.kimi-code/config.toml".into(),
+            r#"
+theme = "dark"
+
+[[hooks]]
+event = "PreToolUse"
+matcher = "Bash"
+command = "/h/gone.sh"
+timeout = 5
+
+[[hooks]]
+event = "Stop"
+command = "/h/ok.sh"
+
+[[hooks]]
+event = "SessionStart"
+matcher = ""
+command = "echo $(date)"
+"#
+            .into(),
+        );
+        assert_eq!(
+            toml_rows(&m),
+            [
+                "kimi broken-hook PreToolUse [Bash] hooks[0] false",
+                "kimi unverified-hook SessionStart hooks[2] false",
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codewhale_toml_hooks_use_the_nested_hooks_hooks_table() {
+        let mut m = Mock::default();
+        m.files.insert(
+            "/h/.codewhale/config.toml".into(),
+            r#"
+[hooks]
+enabled = true
+
+[[hooks.hooks]]
+name = "rtok"
+event = "message_submit"
+command = "/h/gone/rtok-hook UserPromptSubmit"
+timeout_secs = 5
+"#
+            .into(),
+        );
+        assert_eq!(
+            toml_rows(&m),
+            ["codewhale broken-hook message_submit hooks.hooks[0] false"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_inline_toml_hooks_keep_the_settings_shape() {
+        let mut m = Mock::default();
+        m.script("/h/ok.sh", true);
+        m.files.insert(
+            "/h/.codex/config.toml".into(),
+            r#"
+model = "gpt"
+
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/h/gone.sh"
+timeout = 30
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/h/ok.sh"
+
+[[hooks.Stop.hooks]]
+type = "mcp_tool"
+command = "/h/never-looked-at.sh"
+"#
+            .into(),
+        );
+        assert_eq!(
+            toml_rows(&m),
+            ["codex broken-hook PreToolUse [^Bash$] hooks.PreToolUse[0].hooks[0] false"]
+        );
+    }
+
+    #[test]
+    fn an_unparsable_toml_is_reported_and_a_valid_one_without_hooks_is_quiet() {
+        let mut m = Mock::default();
+        m.files.insert(
+            "/h/.kimi-code/config.toml".into(),
+            "[[hooks]\nevent = ".into(),
+        );
+        m.files
+            .insert("/h/.codex/config.toml".into(), "model = \"gpt\"\n".into());
+        let found = check_with(&m);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            (found[0].kind, found[0].agent),
+            ("unreadable-config", "kimi")
+        );
+        assert!(!found[0].fixable);
+    }
+
+    #[test]
+    fn a_toml_of_a_host_with_no_documented_hook_shape_is_not_read() {
+        let mut c = cfg();
+        c.setup.grok.config_path = "/h/.grok/config.toml".into();
+        let mut m = Mock::default();
+        m.files.insert(
+            "/h/.grok/config.toml".into(),
+            "[[hooks]]\nevent = \"Stop\"\ncommand = \"/h/gone.sh\"\n".into(),
+        );
+        let found = check(
+            &c,
+            &Probes {
+                fs: &m,
+                env: &m,
+                which: &m,
+            },
+        );
+        assert!(found.is_empty(), "{found:?}");
     }
 }

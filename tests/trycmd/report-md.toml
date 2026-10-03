@@ -49,6 +49,16 @@ Every effective key with its origin — the `config show --sources` page.
 | agents.idle | 30m | default |
 | agents.push_bytes | 1024 | default |
 | agents.usage.by | agent | default |
+| agents.usage.dirs.antigravity | [~/.gemini/antigravity] | default |
+| agents.usage.dirs.copilot | [~/.copilot/session-state] | default |
+| agents.usage.dirs.droid | [~/.factory/sessions] | default |
+| agents.usage.dirs.gemini | [~/.gemini/tmp] | default |
+| agents.usage.dirs.grok | [~/.grok/sessions] | default |
+| agents.usage.dirs.kilo | [~/.local/share/kilo] | default |
+| agents.usage.dirs.kimi | [~/.kimi-code/sessions] | default |
+| agents.usage.dirs.opencode | [~/.local/share/opencode] | default |
+| agents.usage.dirs.pi | [~/.pi/agent/sessions] | default |
+| agents.usage.dirs.zcode | [~/.zcode] | default |
 | agents.usage.hosts | [] | default |
 | agents.usage.period | monthly | default |
 | agents.usage.since |  | default |
@@ -280,7 +290,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-234 keys.
+244 keys.
 
 ## Doctor
 
@@ -289,6 +299,7 @@ Live probes (the `rtok doctor` page), not store rows.
 ```text
 hooks 0
 hooks check none found
+duplicate hooks none found
 mcp
   rtok (25 tools, ~663 desc tokens) [CWD]/target/[..]
 proxy 

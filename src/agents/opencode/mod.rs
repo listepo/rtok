@@ -144,12 +144,12 @@ impl Agent for OpenCode {
 
 /// Register `rtok mcp` as `mcp.rtok` — OpenCode's local server shape, `command` as argv.
 pub fn register_mcp(cfg: &Config) -> Result<String> {
-    register_local_mcp(cfg, &cfg.setup.opencode.config_path, "mcp")
+    register_local_mcp(cfg, &cfg.setup.opencode.config_path, "mcp", "opencode")
 }
 
 /// Drop `mcp.rtok` (`rtok agents remove opencode`).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    unregister_local_mcp(cfg, &cfg.setup.opencode.config_path, "mcp")
+    unregister_local_mcp(cfg, &cfg.setup.opencode.config_path, "mcp", "opencode")
 }
 
 /// Offer / link / unlink `plugins/opencode/rtok.ts` (D21, T44.5). Dry-run and the unaccepted
@@ -309,5 +309,19 @@ mod tests {
                 .join("plugins")
                 .join("rtok.ts")
         );
+    }
+
+    #[test]
+    fn an_entry_without_host_is_upgraded_and_still_removable() {
+        let (c, path) = cfg("legacy-host", false);
+        crate::agents::mcp::assert_legacy_entry_upgraded(
+            &path,
+            r#"{"mcp":{"other":{"type":"remote","url":"x"},"rtok":{"type":"local","command":["rtok","mcp"],"enabled":true}}}"#,
+            "opencode",
+            &["\"other\""],
+            || register_mcp(&c),
+            || unregister_mcp(&c),
+        );
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }
