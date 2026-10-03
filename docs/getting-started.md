@@ -6,7 +6,7 @@ measured; shortened payloads stay retrievable by id.
 
 ## Install
 
-macOS (Apple silicon or Intel) and Linux x86-64 have prebuilt binaries. The
+macOS (Apple silicon) and Linux x86-64 have prebuilt binaries. The
 installer is POSIX `sh` and puts `rtok` (plus `rtok-update`) in `~/.cargo/bin`.
 
 ```bash

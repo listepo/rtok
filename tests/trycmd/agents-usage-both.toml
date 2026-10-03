@@ -13,7 +13,9 @@ stdout = """
     "output": 200000,
     "cost_usd": 6.0,
     "sessions": 1,
-    "daily_rows": 1
+    "daily_rows": 1,
+    "saved_tokens": 0,
+    "saved_usd": null
   },
   "unpriced_models": 0,
   "unpriced": [],
@@ -28,7 +30,9 @@ stdout = """
       "output": 200000,
       "cost_usd": 6.0,
       "through_rtok_tokens": 0,
-      "coverage": 0.0
+      "coverage": 0.0,
+      "saved_tokens": 0,
+      "saved_usd": null
     }
   ],
   "periods": [
@@ -41,7 +45,8 @@ stdout = """
       "output": 200000,
       "cost_usd": 6.0
     }
-  ]
+  ],
+  "skipped": []
 }
 """
 
