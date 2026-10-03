@@ -15,28 +15,45 @@
 - T277. Move rtok's MCP core into its own crate `crates/rtok-mcp`
 - T278. `rtok agents info <agent>` reports the real MCP state, not "mcp installed" by assumption
 - T279. One plugin version scheme for every install source (GitHub, local, marketplace), and `agents update` that skips an up-to-date plugin
-- T279.1. `rtok agents outdated`: list only the hosts whose rtok plugin is older than the running rtok
 - T281. Probe: tie a host session's hooks and its rtok MCP server to one agent
 - T283. An agent learns its own rtok agent id
+- T283.2. `--host <id>` in every host's MCP entry
+- T283.3. MCP link rule (b): the nearest common host ancestor pid
 - T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
-- T285. Worktree claims: `rtok worktree add` hands the worktree to the calling agent; MCP `worktree_add`
 - T286. `rtok worktree remove` and MCP `worktree_remove`: an agent removes its own worktree
 - T287. Messages between agents and the user: `rtok agents send`, `rtok agents inbox`, MCP `agent_send`, `agent_inbox`
 - T288. Push unread messages to hooked agents
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
 - T310. React SPA replaces the Slint web UI (epic)
-- T310.5. UI kit + Storybook
-- T310.6. Pages: overview, plugins (toggle), calls (expand)
-- T310.7. Pages: sessions, doctor, logs
-- T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
-- T310.9. Serve the SPA from `rtok web`
-- T310.10. Playwright e2e against the real binary
-- T310.11. CI job for the SPA
-- T310.12. Delete Slint, the WASM build and the HTML design
-- T329. Graph page: project selector, auto-added projects and linked projects
+- T329. Graph page: project selector, auto-added projects and linked projects (epic)
+- T329.4. `project` argument and scoped traversal for symbol, callers, impact, explore and outline (CLI and MCP)
+- T329.5. Scoped `dead` and `affected`, whole-answer caps, watch across the scope
+- T329.6. Auto-adding projects rtok sees in use (sessions, worktrees, graph MCP calls) and its config keys
+- T329.9. Graph backend `auto`: LSP first, tree-sitter second, chosen per project and language
+- T329.10. Graph text-search backend (rg/grep) including `ssh://` roots
+- T329.11. Graph capability cache: one probe per project until the process restarts
+- T329.14. Graph page level 2: drill-down into one project
+- T329.15. Graph page: two-part UI with the read-only live graph and live metrics
+- T329.16. Graph export: PNG, SVG, JSON, `rtok graph export`, MCP `graph_export`
+- T329.17. Graph alerts: linked project down or unreachable
+- T329.18. Graph diff: compare before and after a change
+- T329.19. Graph health score per project
+- T329.20. SPA graph page links panel: link, unlink, both ways, project badges
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
+- T330.2. Junk: every host as an agent row, folders from `research.md` §22
+- T330.3. Junk: `cache`, `temp`, `build`, `locks`, `swap` kinds and rtok's own caches
+- T330.4. Junk `clear`: `--agent`, `--kind`, `--include review`, `--older-than`, `--trash`, re-check, exit codes
+- T330.5. Junk: review kinds (`sessions`, `stale-worktrees`, `stale-tokens`, `crash-dumps`, `snapshots`, `logs`, `deps`, `backups`, `index`) and `[agents.junk]` config
+- T330.6. Junk: item breakdown, `doctor` line, web card
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
+- T331.3. Doctor: duplicate hooks
+- T331.4. Doctor: duplicate MCP entries
+- T331.5. Doctor `--fix` for broken hooks
+- T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
+- T331.7. Doctor: interactive checklist, web action, docs and property tests
+- T331.8. Doctor: hook files in TOML and other formats
+- T331.9. Doctor: `--agent <host>` and Windows hook rules
 - T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 - T333. Investigate: T271 desktop-entry sweep vs D33/T275
 - T334. Investigate: graph default backend: T329 `auto` (LSP first, fallback) vs graph PLAN.md P30 decisions
@@ -57,7 +74,3 @@
 - T356. Never index `$HOME` or `/` as a graph root
 - T358. `rtok agents usage`: tokens and estimated cost across every coding agent
 - T358.5. The Usage page on `rtok web` and `rtok tui`
-- T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
-- T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
-- T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
-- T367. `rtok graph index <path>` exits 0 for a path that does not exist

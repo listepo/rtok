@@ -131,3 +131,4 @@ rtok agents outdated --exit-code  # exit 10 when anything is outdated (CI)
 When every installed plugin matches the binary, the command prints how many are installed and
 the rtok version; when none are installed it prints `no rtok plugins installed`. The check is
 local only (receipt, version file, host records) — no network and no host CLI.
+More in [Plugin versions: Listing outdated plugins](plugin-versions.md#listing-outdated-plugins).

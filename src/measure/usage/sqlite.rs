@@ -223,7 +223,12 @@ mod tests {
 
     #[test]
     fn a_path_with_uri_delimiters_is_read_where_it_is() {
-        let d = dir("odd #1 %41 ?x");
+        // Windows forbids `?` in a file name; `#` and `%` still exercise the URI escaping there.
+        let d = dir(if cfg!(windows) {
+            "odd #1 %41"
+        } else {
+            "odd #1 %41 ?x"
+        });
         fixture(
             &d.join("opencode.db"),
             &[("s", 1_790_811_000_500, assistant("m", [3, 0, 0, 0, 0]))],

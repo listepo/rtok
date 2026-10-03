@@ -1,0 +1,14 @@
+bin.name = "rtok"
+args = "graph projects add Cargo.toml"
+status.code = 1
+stderr = """
+Error: Cargo.toml is not a directory
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t3292-projects"
+RTOK_HOME = "target/tmp/t3292-projects"

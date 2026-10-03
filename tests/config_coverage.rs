@@ -99,6 +99,8 @@ const ALLOW_KEYS: &[&str] = &[
     // stored value would delete without anyone typing it, and it must not share `setup.yes`,
     // which confirms a different destructive action (`agents install --replace`).
     "junk.yes",
+    // `agents junk list --bytes` (T330.1): how one call prints sizes, not a stored setting.
+    "junk.bytes",
     // `rtok mcp ping --timeout` (T275.1): one call's wait, default 60s, not a stored setting.
     "mcp.ping.timeout_s",
     // `agents send --all-live` / `agents inbox --unread` (T287): who gets one message and
@@ -111,6 +113,13 @@ const ALLOW_KEYS: &[&str] = &[
     "setup.exit_code",
     // `agents usage --unpriced` (T358.1): which view one call prints, not a stored setting.
     "agents.usage.unpriced",
+    // `graph projects link|unlink --from/--both/--reason` (T329.3): which two projects one call
+    // links and why, not stored settings.
+    "graph.projects.link.from",
+    "graph.projects.link.both",
+    "graph.projects.link.reason",
+    "graph.projects.unlink.from",
+    "graph.projects.unlink.both",
 ];
 
 #[test]
@@ -190,6 +199,8 @@ fn config_key(path: &[&str], long: &str) -> String {
         ["agents", ..] => format!("setup.{name}"),
         // `rtok dashboard` is the hidden deprecated spelling of `rtok web`; one table, `[web]`.
         ["dashboard", ..] => format!("web.{name}"),
+        // `rtok mcp --host` (T283.1) overlays `[hook] host`, as `rtok hook --host` does.
+        ["mcp"] if name == "host" => "hook.host".into(),
         ["run", ..] | ["filter", ..] => match name {
             "shell" => "plugins.cmd.shell".into(),
             "no_trailer" => "plugins.cmd.trailer_min_lines".into(),

@@ -45,23 +45,12 @@ jobs:
       # Rust toolchain from the last run; mise then skips `rustup toolchain install`.
       - id: rustup
         uses: ./.github/actions/rustup-toolchain-cache
-        with:
-          extra: wasm32-unknown-unknown
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          # The webui crate is outside the workspace, with its own target dir (T81); without
-          # it here every run compiled its 183 crates from scratch (T261).
-          workspaces: |
-            . -> target
-            crates/rtok-webui -> target
           # T261 experiment: also save on the branch's manual runs to measure a warm cache.
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - run: just fmt-check lint build-min dup js python
-      # The webui crate is out of the workspace and builds for wasm only; nothing
-      # above compiles it (T81).
-      - run: just webui-check
-      # After webui-check, so the saved toolchain carries its wasm32 target.
       - if: steps.rustup.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
@@ -112,7 +101,20 @@ jobs:
           path: target/vitest
           key: vitest-${{ runner.os }}-${{ hashFiles('mise.toml', 'vitest.config.mjs', 'plugins/**/*.ts') }}
           restore-keys: vitest-${{ runner.os }}-
+      # T310.9: build.rs embeds web/dist, so build the SPA before cargo; without it the binary
+      # carries the "UI not built" page and the SPA-serving tests only see the placeholder.
+      - run: just spa-install spa-build
       - run: just test
+      # T310.10: the Playwright e2e drives the target/debug/rtok that `just test` just built with the
+      # SPA embedded. In the `spa` job it would need its own Rust toolchain and a cold cargo build;
+      # here the binary and the cargo cache are already warm, and only Chromium is added.
+      - if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+      - if: runner.os == 'Linux'
+        run: just spa-browsers spa-e2e-run
       - run: just example
       - if: failure() && github.event_name == 'pull_request'
         uses: ./.github/actions/cancel-run
@@ -157,9 +159,50 @@ jobs:
       - if: failure() && github.event_name == 'pull_request'
         uses: ./.github/actions/cancel-run
 
+  # T310.11: the admin SPA in web/ (the `just spa-*` recipes). oxlint and oxfmt already cover
+  # web/ in `lint` (`just js` lints every tracked .ts/.tsx), so they are not run twice. The
+  # Playwright run against the real binary (T310.10) is a step of the ubuntu `check` job, which
+  # already builds that binary. Like every job in this file it runs on every change:
+  # the pipeline gate has no per-path skip, and a Rust-only change leaves this job warm in cache.
+  spa:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: write # cancel-run
+    env:
+      # Node comes from mise below, so the recipes call npm directly instead of `mise exec`,
+      # which would also try to install the Rust and Go toolchains of mise.toml.
+      NPM: npm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: just node
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+      # Keyed on the lockfile because it pins the Playwright version, which pins the browser build.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+      - run: just spa-install
+      - run: just spa-browsers
+      - run: just spa-typecheck
+      - run: just spa-test
+      - run: just spa-storybook
+      - run: just spa-stories
+      - run: just spa-build
+      - if: failure() && github.event_name == 'pull_request'
+        uses: ./.github/actions/cancel-run
+
   revert-on-failure:
     name: revert-on-failure
-    needs: [lint, check, windows]
+    needs: [lint, check, windows, spa]
     if: >-
       always()
       && github.event_name == 'push'
@@ -173,4 +216,4 @@ jobs:
       # Revert, then a draft `revert-<branch>` PR that re-applies the work (T84, T253). The
       # shared action skips new branches, bot and auto-revert commits, and pushes touching
       # .github/ (GITHUB_TOKEN cannot push workflow files).
-      - uses: pyrlyn/infra/.github/actions/revert-on-failure@863d8960601216eec62d4aa78924f84ce61d72b9
+      - uses: pyrlyn/infra/.github/actions/revert-on-failure@0603d0ae610af9f792c5caf925041292a857e480
