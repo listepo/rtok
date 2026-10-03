@@ -11,7 +11,7 @@ different app and is left alone.
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | yes | `"hooks"` in `config.json`: `rtok hook <event> --host devin` on PreToolUse (`^exec$`, `^read$`), PostToolUse, UserPromptSubmit, SessionStart, PostCompaction, SessionEnd, timeout in seconds — the same groups as `plugins/devin/hooks.json` |
-| mcp | yes | `mcpServers.rtok` → `rtok mcp` in `mcp_config.json` as `{command, args}` (off with `[setup] mcp = false`) |
+| mcp | yes | `mcpServers.rtok` → `rtok mcp --host devin` in `mcp_config.json` as `{command, args}` (off with `[setup] mcp = false`) |
 | plugin | `--yes` | install prints `devin plugins install --local <resolved plugins/devin path>` behind the flag. Devin does not document the plugin store, so rtok never writes it and never reports `plugin` as installed |
 | proxy | no | Devin's proxy key is an HTTP proxy for CLI traffic, not a model API base URL |
 

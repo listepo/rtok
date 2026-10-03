@@ -42,12 +42,25 @@ pub fn config_in(dir: &Path) -> Config {
 /// `~/.claude*`, `~/.codex` and agent configs, and a snapshot would parse its session history.
 pub fn config_file_in(dir: &Path) -> Config {
     let mut rebased = config_in(dir);
-    let pairs: Vec<(String, String)> = rebased
-        .path_fields_mut()
-        .into_iter()
-        .filter(|(_, path)| path.is_absolute())
-        .map(|(key, path)| (key.into_owned(), path.to_string_lossy().into_owned()))
-        .collect();
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    // A list key (`plugins.read.allow_paths[0]`, `agents.usage.dirs.kilo[0]`) is one `set`
+    // of a TOML array, not one per element.
+    let mut lists: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for (key, path) in rebased.path_fields_mut() {
+        if !path.is_absolute() {
+            continue;
+        }
+        let path = path.to_string_lossy().into_owned();
+        match key.split_once('[') {
+            Some((list, _)) => lists.entry(list.to_owned()).or_default().push(path),
+            None => pairs.push((key.into_owned(), path)),
+        }
+    }
+    pairs.extend(
+        lists
+            .into_iter()
+            .map(|(key, paths)| (key, serde_json::to_string(&paths).expect("paths as json"))),
+    );
     let pairs: Vec<_> = pairs
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))

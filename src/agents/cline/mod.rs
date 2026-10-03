@@ -181,7 +181,7 @@ pub fn ext_mcp_path(cfg: &Config) -> PathBuf {
 
 /// The `mcpServers.rtok` entry [`register_mcp`] writes.
 fn mcp_entry(cmd: &str) -> serde_json::Value {
-    json!({"command": cmd, "args": ["mcp"]})
+    json!({"command": cmd, "args": super::mcp_args("cline")})
 }
 
 /// `mcpServers.rtok = {command, args}` in a `cline_mcp_settings.json` — Cline's
@@ -194,7 +194,7 @@ pub fn register_mcp(cfg: &Config, path: &Path) -> Result<String> {
         "mcpServers",
         NAME,
         mcp_entry(&cmd),
-        &format!("{cmd} mcp"),
+        &super::mcp_summary(&cmd, "cline"),
     )
 }
 
