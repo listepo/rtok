@@ -148,6 +148,9 @@ _rtok() {
             rtok__subcmd__agents,update)
                 cmd="rtok__subcmd__agents__subcmd__update"
                 ;;
+            rtok__subcmd__agents,usage)
+                cmd="rtok__subcmd__agents__subcmd__usage"
+                ;;
             rtok__subcmd__agents,whoami)
                 cmd="rtok__subcmd__agents__subcmd__whoami"
                 ;;
@@ -189,6 +192,9 @@ _rtok() {
                 ;;
             rtok__subcmd__agents__subcmd__help,update)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__update"
+                ;;
+            rtok__subcmd__agents__subcmd__help,usage)
+                cmd="rtok__subcmd__agents__subcmd__help__subcmd__usage"
                 ;;
             rtok__subcmd__agents__subcmd__help,whoami)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__whoami"
@@ -496,6 +502,9 @@ _rtok() {
             rtok__subcmd__help__subcmd__agents,update)
                 cmd="rtok__subcmd__help__subcmd__agents__subcmd__update"
                 ;;
+            rtok__subcmd__help__subcmd__agents,usage)
+                cmd="rtok__subcmd__help__subcmd__agents__subcmd__usage"
+                ;;
             rtok__subcmd__help__subcmd__agents,whoami)
                 cmd="rtok__subcmd__help__subcmd__agents__subcmd__whoami"
                 ;;
@@ -791,7 +800,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents)
-            opts="-h --config --help install uninstall remove update outdated list info sessions junk whoami show status send inbox help"
+            opts="-h --config --help install uninstall remove update outdated list info sessions usage junk whoami show status send inbox help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -809,7 +818,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__help)
-            opts="install uninstall update outdated list info sessions junk whoami show status send inbox help"
+            opts="install uninstall update outdated list info sessions usage junk whoami show status send inbox help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1019,6 +1028,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__help__subcmd__update)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__agents__subcmd__help__subcmd__usage)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1377,6 +1400,44 @@ _rtok() {
             case "${prev}" in
                 --source)
                     COMPREPLY=($(compgen -W "github local marketplace" -- "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__agents__subcmd__usage)
+            opts="-h --source --host --since --until --daily --monthly --tz --unpriced --json --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --source)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --host)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --since)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --until)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tz)
+                    COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 --config)
@@ -2469,7 +2530,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__agents)
-            opts="install uninstall update outdated list info sessions junk whoami show status send inbox"
+            opts="install uninstall update outdated list info sessions usage junk whoami show status send inbox"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2665,6 +2726,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__agents__subcmd__update)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__help__subcmd__agents__subcmd__usage)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -3815,7 +3890,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__mcp)
-            opts="-h --call --json --config --help ping help"
+            opts="-h --call --json --host --config --help ping help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3826,6 +3901,10 @@ _rtok() {
                     return 0
                     ;;
                 --json)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --host)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

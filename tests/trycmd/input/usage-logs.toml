@@ -1,0 +1,15 @@
+[stats]
+transcripts_dir = "tests/trycmd/input/usage-logs/claude"
+codex_dir = "tests/trycmd/input/usage-logs/codex"
+
+[stats.prices."claude-test"]
+input = 1.0
+cache_write = 1.25
+cache_read = 0.1
+output = 5.0
+
+[stats.prices."gpt-x"]
+input = 2.0
+cache_write = 2.0
+cache_read = 0.0
+output = 10.0

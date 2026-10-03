@@ -635,6 +635,11 @@ const EXEMPT: &[(&str, &str)] = &[
          not a shared model page",
     ),
     (
+        "agents usage",
+        "reading command whose Usage page on `rtok web` / `rtok tui` is T358.5 (D23/D27); it \
+         moves to COMMAND_PAGES with it",
+    ),
+    (
         "info",
         "prints version, paths, disk usage, error count and proxy status",
     ),
