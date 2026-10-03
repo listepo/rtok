@@ -1,0 +1,14 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml doctor --fix"
+stdout = """
+no broken hooks to remove
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false. An empty home has no hook
+# config to fix; the removal itself is covered by tests/commands_e2e.rs.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t331-5-doctor-fix"
+RTOK_HOME = "target/tmp/t331-5-doctor-fix"

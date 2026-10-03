@@ -483,7 +483,8 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         .then(|| cx.host_id())
         .flatten()
         .and_then(|host_id| {
-            cx.store
+            let id = cx
+                .store
                 .register_agent(
                     host_id,
                     &cx.session,
@@ -491,7 +492,17 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
                     cx.cwd.as_deref(),
                     agent_activity(input).as_deref(),
                 )
-                .ok()
+                .ok()?;
+            // T283.3: what lets an `rtok mcp` process find this row by its host ancestor.
+            if let Some(pid) = cx
+                .config
+                .hook_client_pid
+                .and_then(|p| i32::try_from(p).ok())
+            {
+                let chain = rtok_sys::ancestors(pid, crate::agents::link::ANCESTORS);
+                let _ = cx.store.set_agent_ancestors(&id, &chain);
+            }
+            Some(id)
         });
     let parent = match cx.record_call("hook", "hook", Some(&input.hook_event_name)) {
         Ok(id) => Some(id),
@@ -1787,6 +1798,26 @@ mod tests {
             Some("Bash: cargo nextest run --no-fail-fast --release --workspace --all"),
             "tool name plus the first 60 chars of its main argument"
         );
+    }
+
+    /// T283.3: a hook that knows its client's pid records the ancestors above it on the agent
+    /// row; a hook without one (an old client) leaves the row without any.
+    #[test]
+    fn a_known_client_pid_records_its_ancestors_on_the_agent_row() {
+        let me = std::process::id();
+        let chain = rtok_sys::ancestors(me as i32, crate::agents::link::ANCESTORS);
+        let ancestors_after = |pid: Option<u32>, session: &str| {
+            let (_, stdin, input, mut cx) = agent_fixture(session);
+            cx.config.hook_client_pid = pid;
+            let _ = dispatch(&stdin, &input, &cx);
+            let id = cx
+                .store
+                .register_agent(cx.host_id().unwrap(), &cx.session, None, None, None)
+                .unwrap();
+            cx.store.agent_row(&id).unwrap().unwrap().ancestors
+        };
+        assert_eq!(ancestors_after(Some(me), "anc-sess-1"), chain);
+        assert!(ancestors_after(None, "anc-sess-2").is_empty());
     }
 
     #[test]

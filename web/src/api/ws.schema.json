@@ -20,6 +20,82 @@
     "client"
   ],
   "$defs": {
+    "Agent": {
+      "description": "Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in\nthe row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).",
+      "type": "object",
+      "properties": {
+        "cache_read": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache_write": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "coverage": {
+          "description": "`both` only: `through_rtok_tokens` over the logs' tokens, so an agent that bypasses\nthe proxy reads low. `None` when the logs hold no tokens for it.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "host": {
+          "type": "string"
+        },
+        "input": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "name": {
+          "type": "string"
+        },
+        "output": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "saved_tokens": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "saved_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "through_rtok_tokens": {
+          "description": "`both` only: tokens of this agent that also passed through rtok.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "tokens": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "host",
+        "name",
+        "tokens",
+        "input",
+        "cache_write",
+        "cache_read",
+        "output",
+        "cost_usd"
+      ]
+    },
     "AgentModules": {
       "type": "object",
       "properties": {
@@ -202,7 +278,7 @@
           ]
         },
         {
-          "description": "Change the project registry (T329.12): select a project.",
+          "description": "Change the project registry (T329.12, T329.20): select a project, or link two of them.",
           "type": "object",
           "properties": {
             "project": {
@@ -279,6 +355,51 @@
       "enum": [
         "manual",
         "auto"
+      ]
+    },
+    "ModelRow": {
+      "description": "Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in\nthe row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).",
+      "type": "object",
+      "properties": {
+        "cache_read": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache_write": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "input": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "model": {
+          "type": "string"
+        },
+        "output": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "tokens": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "model",
+        "tokens",
+        "input",
+        "cache_write",
+        "cache_read",
+        "output",
+        "cost_usd"
       ]
     },
     "ModuleRow": {
@@ -386,6 +507,51 @@
         "turns"
       ]
     },
+    "Period": {
+      "description": "Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in\nthe row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).",
+      "type": "object",
+      "properties": {
+        "cache_read": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache_write": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "input": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "output": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "period": {
+          "type": "string"
+        },
+        "tokens": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "period",
+        "tokens",
+        "input",
+        "cache_write",
+        "cache_read",
+        "output",
+        "cost_usd"
+      ]
+    },
     "PluginPage": {
       "description": "A plugin's page: its manifest, the static copy it contributes through\n`Plugin::dashboard_page`, and the stats widget when it saves tokens.",
       "type": "object",
@@ -470,8 +636,20 @@
           "description": "Whether `doctor --fix` may remove it (T331.5): only `broken-hook`.",
           "type": "boolean"
         },
+        "group": {
+          "description": "Copies of one duplicate share a `group`; `keep` marks the copy to keep (T331.3).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "keep": {
+          "type": "boolean"
+        },
         "kind": {
-          "description": "`broken-hook`, `suspect-hook`, `unverified-hook` or `unreadable-config`.",
+          "description": "`broken-hook`, `suspect-hook`, `unverified-hook`, `duplicate-hook`, `duplicate-mcp`,\n`conflicting-mcp`, `stale-plugin` or `unreadable-config`.",
           "type": "string"
         },
         "matcher": {
@@ -563,7 +741,7 @@
       ]
     },
     "ProjectRequest": {
-      "description": "The registry writes the graph page offers (links come with T329.20); `<project>` is an id or a\nroot path, as in `rtok graph projects`.",
+      "description": "The registry writes the graph page offers; `<project>` is an id or a\nroot path, as in `rtok graph projects`.",
       "oneOf": [
         {
           "type": "object",
@@ -579,6 +757,56 @@
           "required": [
             "action",
             "project"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "link"
+            },
+            "both": {
+              "type": "boolean",
+              "default": false
+            },
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "from",
+            "to",
+            "both"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "unlink"
+            },
+            "both": {
+              "type": "boolean",
+              "default": false
+            },
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "from",
+            "to",
+            "both"
           ]
         }
       ]
@@ -800,6 +1028,79 @@
         "auto_compact_window",
         "instructions",
         "agents"
+      ]
+    },
+    "Report2": {
+      "type": "object",
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Agent"
+          }
+        },
+        "models": {
+          "description": "`--by model` only: the model rows the middle table shows instead of `agents`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ModelRow"
+          }
+        },
+        "periods": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Period"
+          }
+        },
+        "skipped": {
+          "description": "Hosts whose files exist but could not be read: named, counted nowhere.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Skipped"
+          }
+        },
+        "source": {
+          "type": "string"
+        },
+        "through": {
+          "description": "The last day with usage, in `tz`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "totals": {
+          "$ref": "#/$defs/Totals"
+        },
+        "tz": {
+          "type": "string"
+        },
+        "unpriced": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Unpriced"
+          }
+        },
+        "unpriced_models": {
+          "description": "Distinct model ids without a price.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "source",
+        "tz",
+        "through",
+        "totals",
+        "unpriced_models",
+        "unpriced",
+        "agents",
+        "periods",
+        "skipped"
       ]
     },
     "ServerFrame": {
@@ -1114,10 +1415,34 @@
         "rows"
       ]
     },
+    "Skipped": {
+      "description": "A host whose session files exist but could not be read: named once, counted nowhere.",
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "reason",
+        "path"
+      ]
+    },
     "Snapshot": {
       "description": "Everything a surface needs for one refresh. `Default` is the empty frame a surface\npaints while its first read is still running.",
       "type": "object",
       "properties": {
+        "agent_usage": {
+          "description": "Usage page (T358.5): what `rtok agents usage` reports, through [`usage_page`]. The\noverview's own `usage` key is the proxy's totals, so this one carries the page's name\nin its own words.",
+          "$ref": "#/$defs/UsagePage"
+        },
         "calls": {
           "description": "Calls page (T15.5): the last [`CALLS_ROWS`] ledger rows, newest first.",
           "type": "array",
@@ -1252,7 +1577,8 @@
         "hosts",
         "config",
         "services",
-        "worktrees"
+        "worktrees",
+        "agent_usage"
       ]
     },
     "Stats": {
@@ -1297,6 +1623,115 @@
         "est_before",
         "est_after",
         "rows"
+      ]
+    },
+    "Totals": {
+      "description": "Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in\nthe row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).",
+      "type": "object",
+      "properties": {
+        "cache_read": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache_write": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "daily_rows": {
+          "description": "Distinct `(agent, day)` pairs with usage, what ccusage calls daily rows.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "input": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "output": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "saved_tokens": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "saved_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "sessions": {
+          "description": "Distinct session ids.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "tokens": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "tokens",
+        "input",
+        "cache_write",
+        "cache_read",
+        "output",
+        "cost_usd",
+        "sessions",
+        "daily_rows"
+      ]
+    },
+    "Unpriced": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "tokens": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "model",
+        "host",
+        "tokens"
+      ]
+    },
+    "UsagePage": {
+      "description": "The Usage page: one [`usage::Report`] — the call `rtok agents usage` makes — read once and\ncarried twice. `text` is that command's screen ([`usage::Report::to_text`]) for the tui and\nthe Slint page; `report` is the same rows as data for the SPA's tables. Nothing is summed\na second time (D27). Both are empty-handed while the first read runs or after it fails:\n`report` is `None` and `text` says why.",
+      "type": "object",
+      "properties": {
+        "report": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Report2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "report"
       ]
     }
   }

@@ -48,12 +48,12 @@ fn config_path(cfg: &Config) -> PathBuf {
 
 /// `mcp.rtok` — the local-argv shape confirmed against MiMo's own MCP docs (module doc).
 pub fn register_mcp(cfg: &Config) -> Result<String> {
-    register_local_mcp(cfg, &config_path(cfg), "mcp")
+    register_local_mcp(cfg, &config_path(cfg), "mcp", "mimo")
 }
 
 /// Drop `mcp.rtok` (`rtok agents remove mimo`).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    unregister_local_mcp(cfg, &config_path(cfg), "mcp")
+    unregister_local_mcp(cfg, &config_path(cfg), "mcp", "mimo")
 }
 
 impl Agent for Mimo {

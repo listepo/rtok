@@ -25,6 +25,9 @@ pub enum PathKind {
 pub trait Fs {
     fn read(&self, path: &Path) -> io::Result<String>;
     fn kind(&self, path: &Path) -> PathKind;
+    /// The one name of a file reached through a symlinked folder (`/tmp` and `/private/tmp`),
+    /// so a file named two ways is not read twice. `path` itself when it cannot be resolved.
+    fn canonical(&self, path: &Path) -> PathBuf;
 }
 
 pub trait Env {
@@ -43,6 +46,10 @@ pub struct RealEnv;
 pub struct RealWhich;
 
 impl Fs for RealFs {
+    fn canonical(&self, path: &Path) -> PathBuf {
+        dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    }
+
     fn read(&self, path: &Path) -> io::Result<String> {
         std::fs::read_to_string(path)
     }
@@ -95,5 +102,28 @@ impl Env for RealEnv {
 impl Which for RealWhich {
     fn find(&self, program: &str) -> Option<PathBuf> {
         crate::agents::find_on_path(program)
+    }
+}
+
+/// The only way the doctor changes a file: a copy to `_backup/` first, then an atomic swap.
+/// Both are the helpers `agents install` already writes host configs with, so a doctor fix
+/// and an install leave the same undo trail.
+pub trait Writer {
+    /// Copy `path` into its `_backup/` folder, keeping `keep` generations; `None` when an
+    /// identical copy is already there.
+    fn backup(&self, path: &Path, keep: usize) -> io::Result<Option<PathBuf>>;
+    /// Replace `path` with `body` so a reader sees the old or the new file, never half of it.
+    fn write(&self, path: &Path, body: &str) -> io::Result<()>;
+}
+
+pub struct RealWriter;
+
+impl Writer for RealWriter {
+    fn backup(&self, path: &Path, keep: usize) -> io::Result<Option<PathBuf>> {
+        rtok_agent_sdk::backup(path, keep).map_err(io::Error::other)
+    }
+
+    fn write(&self, path: &Path, body: &str) -> io::Result<()> {
+        rtok_agent_sdk::write_atomic(path, body).map_err(io::Error::other)
     }
 }

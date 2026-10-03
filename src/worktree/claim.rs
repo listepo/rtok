@@ -78,9 +78,14 @@ fn register_project(store: Option<&Store>, auto_add: bool, path: &Path, branch: 
     }
 }
 
-/// `rtok worktree add` and MCP `worktree_add`: create the worktree for `agent` (or for
-/// `owner` alone when no agent is known) and record the claim. One path, so both surfaces
-/// bind the lock and the store row the same way.
+/// The configured `[worktree] root`, or none while it is empty (the default beside the repo).
+pub fn configured_root(root: &Path) -> Option<&Path> {
+    Some(root).filter(|r| !r.as_os_str().is_empty())
+}
+
+/// `rtok worktree add`, MCP `worktree_add` and the `WorktreeCreate` hook (T159): create the
+/// worktree for `agent` (or for `owner` alone when no agent is known) and record the claim.
+/// One path, so every surface binds the lock and the store row the same way.
 pub fn add(
     store: Option<&Store>,
     cwd: &Path,
