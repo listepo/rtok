@@ -213,10 +213,12 @@ fn walk(host: &str) -> Result<Shape, String> {
     }
     Ok(Shape {
         path: path
-            .strip_prefix(tmp.canonicalize().unwrap())
+            // dunce: the server reports paths without the `\\?\` prefix std adds on Windows.
+            .strip_prefix(dunce::canonicalize(&tmp).unwrap())
             .unwrap()
             .display()
-            .to_string(),
+            .to_string()
+            .replace('\\', "/"),
         branch: added["branch"].as_str().unwrap().into(),
         rows: shaped,
         inbox: "framed".into(),
