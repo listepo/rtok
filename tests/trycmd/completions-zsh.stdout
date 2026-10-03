@@ -161,7 +161,7 @@ _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--instructions[Also run the instruction-file audit (T7.2)]' /
 '(--fix)--json[JSON instead of the table]' /
-'--fix[Remove broken hooks and the extra copies of duplicate hooks and MCP entries; prints the diff, writes only with --yes]' /
+'--fix[Clean up broken hooks and duplicate hooks and MCP entries/: a terminal gets a checklist, a pipe the diff; --yes writes without asking]' /
 '--yes[With --fix/: write the changes (a copy goes to /`_backup//` first)]' /
 '--dry-run[With --fix --yes/: print the diffs and write nothing]' /
 '-h[Print help]' /

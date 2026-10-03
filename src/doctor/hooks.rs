@@ -1676,8 +1676,8 @@ mod tests {
         assert_eq!(d[0].group, d[1].group);
         assert!(d[0].detail.starts_with("runs 2 times"));
         assert!(
-            d.iter().all(|p| p.fixable != p.keep),
-            "only the extra copy is fixable"
+            d.iter().all(|p| p.fixable),
+            "both files are the user's to edit"
         );
         assert_eq!(
             copies(&m),
