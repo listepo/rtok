@@ -15,7 +15,7 @@ build never blocks the host.
 | `rtok hook <event>` | Claude Code hook entry point (stdin JSON → stdout JSON) |
 | `rtok mcp` | MCP server over stdio: `read`, `search`, `tree`, `expand`, `mem_*`, graph tools |
 | `rtok proxy` | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` hop: usage capture, optional compress mode |
-| `rtok dashboard` | local Slint/WASM UI over a WebSocket API, reading the same store |
+| `rtok dashboard` | local React UI over a WebSocket API, reading the same store |
 | `rtok run -- <cmd>` | run a command, archive the raw output, print the filtered version |
 | `rtok filter --stdin` | filter a payload without executing it (OpenCode `tool.execute.after`) |
 | `rtok expand <id>` | print an archived payload, whole or by `--lines` / `--grep` |
@@ -25,6 +25,7 @@ build never blocks the host.
 | `rtok agents uninstall claude\|cursor\|codex\|opencode\|kilo\|pi\|zcode\|kimi\|copilot\|aider\|windsurf\|zed` | take rtok back out of a host, with backups; `--dry-run` |
 | `rtok agents list` | every known app: kind and name, path and version, config files, rtok modules |
 | `rtok graph index [path]` | build the tree-sitter symbol index for a tree |
+| `rtok graph projects` | list the registered projects with their index status (`add`, `select`, `remove`, `link` and `unlink` change the registry) |
 | `rtok memory import <file>` | import notes as JSONL, deduped by body hash |
 | `rtok otel flush\|status` | export the ledgers over OTLP/HTTP, or report the watermarks |
 | `rtok bench` | A/B two host configurations on fixed tasks |

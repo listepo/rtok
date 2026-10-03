@@ -2,17 +2,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
-//! Local operator dashboard: one process serves the WebSocket API and the Slint WASM UI.
+//! Local operator dashboard: one process serves the WebSocket API and the React SPA.
 //!
-//! `rtok web --host --port`. Does not enter the hook path. Slint is a separate
-//! crate (`crates/rtok-webui`) so the hook binary does not link the UI toolkit.
+//! `rtok web --host --port`. Does not enter the hook path. The SPA (`web/`) is built to
+//! `web/dist` and embedded by [`spa`] (T310.9), so the hook binary links no UI toolkit.
 //! Every value served comes from [`model`], the operator model `rtok tui` renders too (D23).
 
 pub mod model;
 pub mod protocol;
+pub mod spa;
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -22,19 +22,16 @@ use axum::Router;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{Html, IntoResponse};
+use axum::response::IntoResponse;
 use axum::routing::get;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tower_http::services::ServeDir;
 
 use crate::config::{Config, validate};
 use crate::plugins::Registry;
 use protocol::{ClientMessage, ServerFrame};
-
-const INDEX: &str = include_str!("index.html");
 
 /// Builds one snapshot frame from a config. Production always uses [`frame`]; tests can
 /// substitute a slower or instrumented builder to exercise T206's build coalescing (a real
@@ -164,167 +161,33 @@ pub async fn serve(cfg: Config) -> Result<()> {
         "serve",
         &format!("http://{addr} websocket /ws"),
     );
-    let pkg = resolve_pkg();
-    if matches!(pkg, Pkg::Missing) {
-        let msg = pkg_missing_text();
+    let (assets, notice) = spa::resolve(std::env::var_os(spa::DIST_ENV));
+    if let Some(msg) = notice {
         eprintln!("{msg}");
-        crate::log::append(&cfg, "warn", "web", "pkg", &msg);
+        crate::log::append(&cfg, "warn", "web", "spa", &msg);
     }
-    axum::serve(listener, app_with_pkg(Arc::new(DashState::new(cfg)), pkg))
-        .await
-        .context("dashboard server")
+    axum::serve(
+        listener,
+        app_with_assets(Arc::new(DashState::new(cfg)), assets),
+    )
+    .await
+    .context("dashboard server")
 }
 
+/// The router with the SPA embedded in this binary; tests and callers that must not read the
+/// process environment use this, `serve` resolves `RTOK_WEB_DIST` itself.
 pub fn app(state: Arc<DashState>) -> Router {
-    app_with_pkg(state, resolve_pkg())
+    app_with_assets(state, spa::Assets::Embedded)
 }
 
-/// Where `/pkg` comes from.
-#[derive(Debug, Clone)]
-pub enum Pkg {
-    /// A built bundle on disk (`RTOK_WEB_PKG`, beside the binary, the source tree).
-    Dir(PathBuf),
-    /// The bundle compiled into this binary (T111) — what a ketch install has.
-    Embedded,
-    /// Neither: `/pkg` answers 503 with how to get one (T80).
-    Missing,
-}
-
-/// A bundle on disk wins, so `RTOK_WEB_PKG` and a fresh `just web` override the
-/// copy baked in at build time; the embedded one serves every plain install.
-pub fn resolve_pkg() -> Pkg {
-    match pkg_dir() {
-        Some(dir) => Pkg::Dir(dir),
-        None if embedded::AVAILABLE => Pkg::Embedded,
-        None => Pkg::Missing,
-    }
-}
-
-/// `app` with the asset source already resolved, so tests cover every surface
-/// without touching the process environment.
-pub fn app_with_pkg(state: Arc<DashState>, pkg: Pkg) -> Router {
-    let r = Router::new()
-        .route("/", get(index))
+/// `app` with the SPA's source already resolved, so tests cover every source without touching
+/// the process environment. The API paths are explicit routes; everything else is the SPA's.
+pub fn app_with_assets(state: Arc<DashState>, assets: spa::Assets) -> Router {
+    Router::new()
         .route("/health", get(health))
         .route("/ws", get(ws_upgrade))
-        .with_state(state);
-    match pkg {
-        Pkg::Dir(dir) => {
-            let service = ServeDir::new(dir).precompressed_br().precompressed_gzip();
-            r.nest_service("/pkg", service)
-        }
-        Pkg::Embedded => r.route("/pkg/{*path}", get(embedded::serve)),
-        // T80: a 404 here reads as a broken build. Say what is missing instead.
-        Pkg::Missing => r.route("/pkg/{*path}", get(pkg_missing)),
-    }
-}
-
-/// The Slint bundle `build.rs` found at compile time (T111). Without it the
-/// binary still builds; `AVAILABLE` is false and `/pkg` falls back to disk.
-pub mod embedded {
-    use axum::extract::Path;
-    use axum::http::{StatusCode, header};
-    use axum::response::IntoResponse;
-
-    #[cfg(rtok_web_embed)]
-    const FILES: &[(&str, &str, &[u8])] = &[
-        (
-            "rtok_webui.js",
-            "text/javascript",
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/crates/rtok-webui/pkg/rtok_webui.js"
-            )),
-        ),
-        (
-            "rtok_webui_bg.wasm",
-            "application/wasm",
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/crates/rtok-webui/pkg/rtok_webui_bg.wasm"
-            )),
-        ),
-    ];
-    #[cfg(not(rtok_web_embed))]
-    const FILES: &[(&str, &str, &[u8])] = &[];
-
-    /// True when this binary carries the bundle.
-    pub const AVAILABLE: bool = !FILES.is_empty();
-
-    /// Bytes and media type of one embedded file, by its name under `/pkg/`.
-    pub fn get(name: &str) -> Option<(&'static str, &'static [u8])> {
-        FILES
-            .iter()
-            .find(|(n, _, _)| *n == name)
-            .map(|(_, mime, bytes)| (*mime, *bytes))
-    }
-
-    pub(super) async fn serve(Path(name): Path<String>) -> impl IntoResponse {
-        match get(&name) {
-            Some((mime, bytes)) => {
-                (StatusCode::OK, [(header::CONTENT_TYPE, mime)], bytes).into_response()
-            }
-            None => StatusCode::NOT_FOUND.into_response(),
-        }
-    }
-}
-
-/// Where the Slint WASM bundle lives at run time. `env!("CARGO_MANIFEST_DIR")` is
-/// baked at compile time, so a released binary would look inside the CI runner's
-/// checkout (T80); the source tree is the last candidate, not the only one.
-pub fn pkg_dir() -> Option<PathBuf> {
-    pkg_candidates().into_iter().find(|p| p.is_dir())
-}
-
-fn pkg_candidates() -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    if let Some(dir) = std::env::var_os(PKG_ENV) {
-        out.push(PathBuf::from(dir));
-    }
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(bin) = exe.parent()
-    {
-        // A release archive unpacks `pkg/` beside the binary; a prefix install
-        // puts it under `share/rtok/` beside or one level above `bin/`.
-        out.push(bin.join("pkg"));
-        out.push(bin.join("share").join("rtok").join("pkg"));
-        if let Some(prefix) = bin.parent() {
-            out.push(prefix.join("share").join("rtok").join("pkg"));
-        }
-    }
-    // Dev fallback only: an embedded build already carries this tree's bundle, and
-    // `build.rs` re-embeds it whenever it changes.
-    if !embedded::AVAILABLE {
-        out.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("crates/rtok-webui/pkg"));
-    }
-    out
-}
-
-const PKG_ENV: &str = "RTOK_WEB_PKG";
-
-/// One line for the 503 body and for the startup warning — same text, one source.
-fn pkg_missing_text() -> String {
-    let tried = pkg_candidates()
-        .iter()
-        .map(|p| p.display().to_string())
-        .collect::<Vec<_>>()
-        .join("\n  ");
-    format!(
-        "rtok web: the Slint WASM bundle is not on this machine, so the UI cannot load \
-         (the API and /ws are up). Build it with `just web`, or point {PKG_ENV} at a pkg/ \
-         directory. Looked in:\n  {tried}"
-    )
-}
-
-async fn pkg_missing() -> impl IntoResponse {
-    (
-        axum::http::StatusCode::SERVICE_UNAVAILABLE,
-        pkg_missing_text(),
-    )
-}
-
-async fn index() -> Html<&'static str> {
-    Html(INDEX)
+        .with_state(state)
+        .fallback_service(spa::router(assets))
 }
 
 async fn health(State(state): State<Arc<DashState>>) -> Json<Value> {
@@ -448,7 +311,14 @@ async fn socket_loop(mut socket: WebSocket, state: Arc<DashState>) {
                 match msg {
                     Some(Ok(Message::Close(_))) | None => break,
                     Some(Ok(Message::Text(text))) => {
-                        if let Some(reply) = inbound(&state, text.as_str())
+                        // A registry write can index a project, so it runs off the executor.
+                        let st = state.clone();
+                        let text = text.to_string();
+                        let reply = tokio::task::spawn_blocking(move || inbound(&st, &text))
+                            .await
+                            .ok()
+                            .flatten();
+                        if let Some(reply) = reply
                             && socket.send(Message::text(reply)).await.is_err()
                         {
                             break;
@@ -477,7 +347,20 @@ fn inbound(state: &DashState, text: &str) -> Option<String> {
                 None => message_frame(&format!("unknown archive id: {id}")),
             });
         }
+        Ok(ClientMessage::Project { project }) => {
+            let cfg = state
+                .cfg
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            return project_write(&cfg, project)
+                .err()
+                .map(|e| message_frame(&format!("{e:#}")));
+        }
         Ok(ClientMessage::Set { set }) => set,
+        Err(_) if v.get("project").is_some() => {
+            return Some(message_frame("unknown project request"));
+        }
         Err(_) if v.get("set").is_some() => {
             return Some(message_frame("set needs a string key and a bool value"));
         }
@@ -497,6 +380,20 @@ fn inbound(state: &DashState, text: &str) -> Option<String> {
         }
         Err(e) => Some(message_frame(&format!("config set {key}: {e:#}"))),
     }
+}
+
+#[cfg(feature = "graph")]
+fn project_write(cfg: &Config, req: protocol::ProjectRequest) -> Result<()> {
+    use crate::plugins::graph::projects::{Action, run};
+    use protocol::ProjectRequest as R;
+    let rt = crate::plugin::Runtime::open(cfg.clone(), "web-projects")?;
+    let R::Select { project } = req;
+    run(&rt, Action::Select(project), false).map(|_| ())
+}
+
+#[cfg(not(feature = "graph"))]
+fn project_write(_cfg: &Config, _req: protocol::ProjectRequest) -> Result<()> {
+    anyhow::bail!("the graph feature is not built in")
 }
 
 /// `plugins.<id>.enabled` for a catalogue id (D23: Registry, not a second list).

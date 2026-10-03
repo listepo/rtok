@@ -161,6 +161,51 @@ fn assign(doc: &mut DocumentMut, key: &str, value: TomlValue) -> Result<()> {
     bail!("empty key");
 }
 
+/// [`issues`] over the values the merged config takes from a layer other than the defaults and
+/// the user file (project file, `.env`, environment), as [`super::layers::sourced`] yields them.
+/// `issues` reads only the file, so without this `RTOK_LOG_LEVEL=verbose` loaded and silently
+/// dropped every log line below error while `validate` said ok. Each message names the layer.
+pub fn layered_issues(values: Vec<(String, FigValue, String)>) -> Vec<String> {
+    let mut docs: std::collections::BTreeMap<String, DocumentMut> = Default::default();
+    for (key, value, source) in values {
+        if matches!(source.as_str(), "default" | "user") {
+            continue;
+        }
+        if let Some(value) = toml_value(&value) {
+            // A leaf key never runs through a scalar, so `assign` has no clash to report.
+            let _ = assign(docs.entry(source).or_default(), &key, value);
+        }
+    }
+    let mut out = Vec::new();
+    for (source, doc) in docs {
+        for e in issues_in(Path::new(&source), &doc.to_string()) {
+            // `source:LINE: msg` → `source: msg`; the line is of a synthetic document.
+            let msg = e
+                .strip_prefix(&format!("{source}:"))
+                .and_then(|rest| rest.split_once(": "))
+                .map_or(e.as_str(), |(_, msg)| msg);
+            out.push(format!("{source}: {msg}"));
+        }
+    }
+    out
+}
+
+fn toml_value(v: &FigValue) -> Option<TomlValue> {
+    use figment::value::Num;
+    Some(match v {
+        FigValue::String(_, s) => TomlValue::from(s.as_str()),
+        FigValue::Bool(_, b) => TomlValue::from(*b),
+        FigValue::Num(_, Num::F32(_) | Num::F64(_)) => TomlValue::from(v.to_num()?.to_f64()?),
+        FigValue::Num(_, n) => {
+            // `to_i128` is `None` for the unsigned variants, which most integer keys use.
+            let wide = n.to_i128().or_else(|| i128::try_from(n.to_u128()?).ok())?;
+            TomlValue::from(i64::try_from(wide).ok()?)
+        }
+        FigValue::Array(_, items) => items.iter().filter_map(toml_value).collect(),
+        _ => return None,
+    })
+}
+
 /// Malformed `cmd` filter rules for `rtok config validate` (T50.2): the single
 /// `rules` file when present, plus every `rules.d/*.toml`. Without the `cmd`
 /// feature there is nothing to check.
@@ -615,6 +660,33 @@ mod tests {
         set(&home, "stats.since", "12h", false).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// T365: values from the project file, `.env` and the environment go through the same rules,
+    /// each message names its layer, and the file layers `issues` already read are not repeated.
+    #[test]
+    fn layered_values_are_checked_and_name_their_layer() {
+        let v = |key: &str, value: FigValue, source: &str| (key.to_string(), value, source.into());
+        let errs = layered_issues(vec![
+            v("proxy.port", FigValue::from(70000_u32), "env"),
+            v(
+                "plugins.read.delta_max_ratio",
+                FigValue::from(5.0_f32),
+                "project",
+            ),
+            v("log.level", FigValue::from("debug"), "env"),
+            v("proxy.port", FigValue::from(0_u32), "user"),
+            v("log.path", FigValue::from("123"), "dotenv"),
+        ]);
+        assert_eq!(errs.len(), 2, "{errs:?}");
+        assert!(
+            errs.iter()
+                .any(|e| e.starts_with("env: proxy.port out of range"))
+        );
+        assert!(
+            errs.iter()
+                .any(|e| e.starts_with("project: plugins.read.delta_max_ratio"))
+        );
     }
 
     /// T363: the `(0, 1]` float keys and the `embed_backend` set go through the one rule table,
