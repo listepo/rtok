@@ -1414,7 +1414,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__usage)
-            opts="-h --source --host --since --until --daily --monthly --tz --unpriced --json --config --help"
+            opts="-h --source --host --since --until --daily --monthly --by --tz --unpriced --json --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1433,6 +1433,10 @@ _rtok() {
                     return 0
                     ;;
                 --until)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --by)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3894,7 +3898,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__mcp)
-            opts="-h --call --json --config --help ping help"
+            opts="-h --call --json --host --config --help ping help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3905,6 +3909,10 @@ _rtok() {
                     return 0
                     ;;
                 --json)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --host)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

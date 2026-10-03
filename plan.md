@@ -21,9 +21,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T277 | in progress | P2 | 5 | 20% | Claude Code / claude-opus-5-5 |
 | T278 | in progress | P1 | 3 | 90% | Claude Code / claude-opus-5-5 |
 | T279 | in progress | P1 | 5 | 90% | Claude Code / claude-opus-5-5 |
-| T279.1 | todo | P2 | 2 | 0% | |
 | T281 | in progress | P1 | 3 | 70% | Claude Code / claude-opus-5-5 |
-| T283 | in progress | P1 | 3 | 60% | Claude Code / claude-opus-5-5 |
+| T283 | in progress | P1 | 3 | 60% | Claude Code / sonnet-5 |
+| T283.2 | todo | P1 | 2 | 0% | |
+| T283.3 | todo | P1 | 3 | 0% | |
 | T284 | in progress | P1 | 3 | 50% | Claude Code / claude-opus-5-5 |
 | T285 | in progress | P1 | 4 | 50% | Claude Code / claude-opus-5-5 |
 | T286 | in progress | P1 | 3 | 40% | Claude Code / claude-opus-5-5 |
@@ -32,7 +33,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T289 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T290 | todo | P1 | 3 | 0% | |
 | T310 | todo | P1 | 5 | 0% | |
-| T310.5 | todo | P1 | 3 | 0% | |
 | T310.6 | todo | P1 | 3 | 0% | |
 | T310.7 | todo | P2 | 3 | 0% | |
 | T310.8 | todo | P2 | 3 | 0% | |
@@ -63,14 +63,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T345 | todo | research | 1 | 0% | |
 | T346 | todo | research | 1 | 0% | |
 | T359 | todo | P1 | 2 | 0% | |
-| T364 | todo | P3 | 2 | 0% | |
 | T365 | todo | P3 | 3 | 0% | |
-| T367 | todo | P3 | 1 | 0% | |
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
 | T356 | in progress | P1 | 2 | 5% | Claude Code / claude-opus-5-5 |
 | T358 | todo | P2 | 4 | 0% | |
-| T358.2 | todo | P2 | 3 | 0% | |
 | T358.3 | todo | P2 | 4 | 0% | |
 | T358.4 | todo | P2 | 3 | 0% | |
 | T358.5 | todo | P2 | 3 | 0% | |
@@ -437,32 +434,6 @@ Execution plan:
 4. PR 4: `docs/plugin-versions.md` with real command output, and its links (step 7).
 Progress (2026-09-28): PRs 1-4 merged (docs: #465, today's behaviour). Open against this card, for the creator: the installed copy's `.rtok-plugin-version` is never read or written (`read_installed` and `VersionFile::write` are unused), so there is no legacy line from it; a missing `claude` on `PATH` prints "already current"; the dry-run reinstall wording differs from step 5; `--source local` fails from a release install; the marketplace source does not read the catalog. Only Claude is wired; Codex, Copilot and Gemini follow.
 
-### T279.1. `rtok agents outdated`: list only the hosts whose rtok plugin is older than the running rtok
-
-Name: `rtok agents outdated`, the word `npm outdated`, `cargo outdated` and `brew outdated` use for exactly this list, next to the `agents list` / `info` / `update` it belongs with. `rtok agents update --check` is an alias that prints the same thing (for people who look under `update`). `versions` was rejected: it reads as "show every version", while this command hides everything that needs no action.
-
-Behaviour:
-- Walks every host rtok supports (the host registry `agents list` uses), not only the ones in the receipt, so a plugin installed by hand or by an older rtok is found too.
-- For each host it reads the installed plugin's version with T279 step 2's lookup: `.rtok-plugin-version` in the installed copy, then the receipt, then the host's own record (Claude `installed_plugins.json`). The source comes from the same lookup (`github`, `local`, `marketplace`).
-- Target version is the running binary's `CARGO_PKG_VERSION`. The command reads local files only: no network, no host CLI call, no marketplace refresh, so it is fast and works offline.
-- A host is listed only when the plugin is installed and its version is lower than the target by SemVer, ignoring build metadata (a local `0.10.0+g12c7e91` on rtok `0.10.0` is current). An install with no version file and no recorded version counts as `0.0.0` and is listed as `legacy`. Hosts without the plugin, with the same version, or with a newer one are not printed.
-- Selection flags as in `update`: an optional host list (`rtok agents outdated claude,cursor`), `--cli` / `--desktop`.
-
-Output:
-- A table with columns `agent`, `installed`, `available`, `source`, one row per outdated host and variant, for example `claude  0.0.1  0.10.0  github` and `gemini  legacy  0.10.0  marketplace`. A footer names the next step: `run: rtok agents update claude,gemini`.
-- Nothing to update, some plugins installed: `all rtok plugins are up to date (3 installed, rtok 0.10.0)`.
-- No plugin installed anywhere: `no rtok plugins installed`.
-- `--json`: `{"rtok":"0.10.0","outdated":[{"agent":"claude","variant":"cli","installed":"0.0.1","available":"0.10.0","source":"github","legacy":false}],"installed":3}`, with `outdated` empty in both "nothing to do" cases; the human messages are not printed.
-- Exit code 0 by default, so scripts that only read the output keep working; `--exit-code` returns 10 when at least one host is outdated, for CI and hooks.
-
-Implementation: one function `outdated(cfg, selection) -> Vec<Outdated>` built on T279's version lookup and comparison (the same pure function `update` uses, so both always agree on "outdated"); the table uses the existing `render` table helpers; the `demon` and web UI can call the same function later for an "updates available" badge.
-
-Tests (`Vfs` fixtures): no plugins prints `no rtok plugins installed` and `outdated: []`; all current prints the up-to-date line; one outdated and one current prints only the outdated row; a legacy install without a version file is listed as `legacy`; a newer installed plugin is not listed; local build metadata on the same version is not listed; `--json` matches the schema above; `--exit-code` gives 10 and 0 in the matching cases; `agents update --check` output equals `agents outdated`; no host CLI is spawned (fake CLI on `PATH` logs nothing).
-
-Documentation and tests (required): this command has its own section in `docs/plugin-versions.md` (T279 step 7, section 6) and its cases in T279 step 8 (the `outdated` and `offline` groups, the `--exit-code` and alias checks). T279.1 is not done until both are in and green.
-
-Check: on the creator's machine today `rtok agents outdated` prints `claude 0.0.1 0.10.0 github`; after `rtok agents update claude` it prints the up-to-date line; `just check`.
-
 
 ### T281. Probe: tie a host session's hooks and its rtok MCP server to one agent
 
@@ -493,6 +464,19 @@ Check: hook fixture test: SessionStart output carries the line and it is identic
 
 Execution (2026-09-27): two PRs. PR 1, cut on top of T282's branch until #439 merges: the SessionStart line (step 2) inside the injection budget; `RTOK_AGENT_ID` through `CLAUDE_ENV_FILE` (step 3, cited from the Claude Code hooks docs); `rtok agents whoami [--json]` from `RTOK_AGENT_ID` (step 5); tests: hook fixture byte-stable but for the id, `enabled = false` prints nothing, trycmd, `surface_parity`, `config_coverage`, man page. PR 2, after T281's rules and T275's per-host PRs land: `rtok mcp` resolves its agent at `initialize`, `--host <id>` in every host's MCP entry, hook-less hosts register through MCP, MCP tool `whoami`; MCP e2e with a fake client.
 Progress (2026-09-28): PR 1 merged (#449): SessionStart line, `RTOK_AGENT_ID`, `rtok agents whoami` (host session id only in `--json`). Left: PR 2, the MCP link at `initialize` after T281's probe.
+Progress (2026-10-03): PR 2 is split into T283.1 (resolve the link, MCP `whoami`, `rtok mcp --host`), T283.2 (`--host` in every host's MCP entry) and T283.3 (the ancestor-pid rule, which needs the hook wire request to carry a pid). The link rule is derived from `research.md` §26's vendor docs and spawn code; the T281 live probe only confirms it.
+
+### T283.2. `--host <id>` in every host's MCP entry
+
+PR 2 of T283, part 2 (after T283.1 and T275's per-host entries). Every host's `register_mcp` passes `--host <id>` to `rtok mcp`, so the process knows its host without `[hook] host`; the host tests and fixtures change with it. Only our entry changes, the rest of the host's file stays byte-for-byte.
+
+Check: each host's install/remove test shows `mcp --host <id>` in the written entry and removal leaves the file as before; `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where tables change; `just check`.
+
+### T283.3. MCP link rule (b): the nearest common host ancestor pid
+
+PR 2 of T283, part 3. The hook wire request (`crates/rtok-hook`, `src/hooks/resident.rs`: `version, fingerprint, event, host, cwd, stdin`) carries no pid, and the resident hook process is not the host's child, so a hook cannot record its own ancestry today. Add the client's parent pid to the request (protocol version bump), store it on the agent row (migration), record it on registration, and let `link.rs` match it against the `rtok mcp` process's ancestor chain (nearest first; two agents behind one ancestor are ambiguous). Doc-derived like the rest of the rule order; the T281 probe confirms it per host.
+
+Check: wire round-trip test; store test; `link.rs` test with a seeded agent row and a fake ancestor chain; hook latency stays inside the 10 ms budget; `just check`.
 
 ### T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
 
@@ -610,12 +594,6 @@ Check: `tests/host_docs.rs`, `tests/agents_doc.rs` regenerated where host tables
 Done when: `rtok web` serves the SPA from the binary, every page of `model::pages()` renders on it, Playwright drives the real binary, and no Slint code is left.
 
 Check: `rtok web` from a release build shows every page of `model::pages()` from the embedded SPA; no `slint`/`rtok-webui` left in the tree; `just check` and the SPA CI job green.
-
-### T310.5. UI kit + Storybook
-
-Storybook 10 (`@storybook/react-vite`, addon-vitest, addon-a11y): Panel, Kpi, Pill, Switch, Search, Chip, Sparkline, DataTable (TanStack Table + Virtual) with stories for every state; stories run as Vitest browser tests.
-
-Check: `storybook build` succeeds; stories run as Vitest browser tests with no a11y violations.
 
 ### T310.6. Pages: overview, plugins (toggle), calls (expand)
 
@@ -1428,16 +1406,6 @@ Done when: the reference block closes with a bare ```` ``` ```` before the seman
 
 Check: a new docs-structure test fails on `main` @ `aecab806` (h2 → h4 at `[proxy.flex]`) and passes after the fix; `config_coverage` and `public_numbers` stay green; `just check`.
 
-### T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). `stats.since = "7x"` passes `config set` and `config validate`; then `rtok stats` fails with `Error: bad --since unit in 7x`, `rtok report` silently falls back to 30 days, `doctor` silently skips its check (`.ok()?` in `src/doctor.rs`), and the web/TUI model returns the error (`?` in `src/web/model.rs`). `src/config/validate.rs` has no rule for `stats.since`; the only parser, `measure::stats::parse_since` (`src/measure/stats.rs:799,803`), hard-codes `--since` in its messages.
-
-Repro: `rtok config set stats.since 7x` (exit 0), `rtok config validate` (`ok`, exit 0), `rtok stats` (`Error: bad --since unit in 7x`, exit 1).
-
-Done when: `validate.rs` runs `measure::stats::parse_since` on `stats.since` (accepts `<n>`, `<n>d`, `<n>h`), so `set` and `validate` reject `7x`; `parse_since` names its source (`stats.since` vs `--since`) in the error.
-
-Check: validate tests reject `7x` / `d` / `-1d` for `stats.since` and accept `30d`, `12h`, `7`; a `parse_since` unit test asserts the message names `stats.since` when it comes from config and `--since` from the flag; `just check`.
-
 ### T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
 
 Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). Values `config validate` rejects in the file are taken as-is from the environment: `RTOK_LOG_LEVEL=verbose` ranks as most severe in `crates/rtok-log` and silently drops everything below error, yet `rtok config validate` prints `ok`, so it cannot explain why logs went quiet. `ConfigCmd::Validate` (`src/cli.rs`) runs `validate::issues` on the file path only; env values come in through `layers::load` (`src/config/layers.rs`), which deserializes them with type checks and no value rules.
@@ -1448,15 +1416,6 @@ Done when: `config validate` runs the same per-key rules over the merged config 
 
 Check: a test with `RTOK_LOG_LEVEL=verbose` in the child env gets a non-zero `config validate` whose message names the env source; a clean env still prints `ok`; `just check`.
 
-### T367. `rtok graph index <path>` exits 0 for a path that does not exist
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A typo prints `indexed 0 files · 0 rows …` with exit 0, so a script or agent thinks the index was built. `src/cli.rs` (the `graph index` arm, `index::run_with` at `:1684`) passes `path` as-is and the walker yields nothing for a missing root. The sibling graph subcommands in `src/cli.rs` and `src/plugins/graph/status.rs` resolve `path` the same unchecked way (suspected, not reproduced).
-
-Repro: `rtok graph index /nonexistent; echo $?` prints the zero counts and `0`.
-
-Done when: every graph subcommand that takes a path checks it is an existing directory (or canonicalizes with the path as context) before walking, and exits non-zero with `Error: /nonexistent: No such file or directory`; the T356 home/`/` refusal stays as it is.
-
-Check: tests for `graph index` and each sibling path-taking graph subcommand with a missing path exit non-zero naming the path; indexing a temp project is unchanged; `just check`.
 
 ### T356. Never index `$HOME` or `/` as a graph root
 
@@ -1605,15 +1564,9 @@ Check: every item below passes.
 - `rtok config validate` accepts every new key; each has its `default.toml` row and `docs/config.md` row; `just check` green.
 - The screenshot's layout (summary, warning, per-agent table, monthly totals) is what `rtok agents usage` prints for the fixture.
 
-### T358.2. `rtok agents usage --source logs|both` for Claude Code and Codex
-
-Scope: the T358.2 bullet under "Split when claiming" in T358, plus what T358.1 moved here (see its card): `--by agent|model`, the saved columns and `rtok saved` line, display names, the JSON `skipped` field, and the `source` default flip to `logs`.
-
-Check: the T358 Check items for `logs` and `both` on fixture homes for Claude Code and Codex; `just check`.
-
 ### T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
 
-Scope: the T358.3 bullet under "Split when claiming" in T358.
+Scope: the T358.3 bullet under "Split when claiming" in T358, plus the `[agents.usage.dirs]` config keys (T358.2 reads Claude Code and Codex from the existing `[stats] transcripts_dir` and `codex_dir`).
 
 Check: one fixture per host pins its totals; each reader was run against that host's real files once; `just check`.
 
