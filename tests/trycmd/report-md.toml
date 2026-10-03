@@ -290,7 +290,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-241 keys.
+244 keys.
 
 ## Doctor
 
