@@ -46,7 +46,6 @@
 - T330.5. Junk: review and explicit kinds (`sessions`, `stale-worktrees`, `crash-dumps`, `snapshots`, `logs`, `deps`, `backups`, `index`) and `[agents.junk]` config
 - T330.6. Junk: item breakdown, `doctor` line, web card
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
-- T331.3. Doctor: duplicate hooks
 - T331.4. Doctor: duplicate MCP entries
 - T331.5. Doctor `--fix` for broken hooks
 - T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries

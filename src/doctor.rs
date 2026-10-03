@@ -22,6 +22,7 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
+mod dupes;
 pub mod hooks;
 pub mod probe;
 

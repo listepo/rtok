@@ -636,8 +636,20 @@
           "description": "Whether `doctor --fix` may remove it (T331.5): only `broken-hook`.",
           "type": "boolean"
         },
+        "group": {
+          "description": "Copies of one duplicate share a `group`; `keep` marks the copy to keep (T331.3).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "keep": {
+          "type": "boolean"
+        },
         "kind": {
-          "description": "`broken-hook`, `suspect-hook`, `unverified-hook` or `unreadable-config`.",
+          "description": "`broken-hook`, `suspect-hook`, `unverified-hook`, `duplicate-hook`, `stale-plugin` or\n`unreadable-config`.",
           "type": "string"
         },
         "matcher": {
