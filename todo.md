@@ -16,7 +16,6 @@
 - T279. One plugin version scheme for every install source (GitHub, local, marketplace), and `agents update` that skips an up-to-date plugin
 - T281. Probe: tie a host session's hooks and its rtok MCP server to one agent
 - T283. An agent learns its own rtok agent id
-- T283.2. `--host <id>` in every host's MCP entry
 - T283.3. MCP link rule (b): the nearest common host ancestor pid
 - T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
 - T288. Push unread messages to hooked agents

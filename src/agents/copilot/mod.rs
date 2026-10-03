@@ -228,7 +228,7 @@ fn remove_file(apply: &Apply, path: &Path) -> Result<String> {
 
 /// The `mcpServers.rtok` entry [`register_mcp`] writes.
 fn mcp_entry(cmd: &str) -> Value {
-    json!({"type": "local", "command": cmd, "args": ["mcp"], "tools": ["*"]})
+    json!({"type": "local", "command": cmd, "args": super::mcp_args("copilot"), "tools": ["*"]})
 }
 
 /// `mcpServers.rtok = {type: "local", command, args, tools: ["*"]}` in `mcp-config.json`.
@@ -240,7 +240,7 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
         "mcpServers",
         NAME,
         mcp_entry(&cmd),
-        &format!("{cmd} mcp"),
+        &super::mcp_summary(&cmd, "copilot"),
     )
 }
 
@@ -465,7 +465,7 @@ mod tests {
         let doc: Value = serde_json::from_str(&fs::read_to_string(mcp_path(&c)).unwrap()).unwrap();
         let rtok = &doc["mcpServers"]["rtok"];
         assert_eq!(rtok["type"], "local");
-        assert_eq!(rtok["args"], json!(["mcp"]));
+        assert_eq!(rtok["args"], json!(["mcp", "--host", "copilot"]));
         assert_eq!(rtok["tools"], json!(["*"]));
         assert_eq!(Copilot.installed(&c, Kind::Desktop), ["mcp"]);
         assert_eq!(unregister_mcp(&c).unwrap(), "- mcpServers.rtok");

@@ -1083,14 +1083,36 @@ pub(crate) fn register_local_mcp(
     cfg: &Config,
     path: &std::path::Path,
     key: &str,
+    host: &'static str,
 ) -> Result<String> {
     let cmd = rtok_command();
-    let entry = local_mcp_entry(&cmd);
-    rtok_agent_sdk::register_server(&apply(cfg), path, key, "rtok", entry, &format!("{cmd} mcp"))
+    let entry = local_mcp_entry(&cmd, host);
+    rtok_agent_sdk::register_server(
+        &apply(cfg),
+        path,
+        key,
+        "rtok",
+        entry,
+        &mcp_summary(&cmd, host),
+    )
 }
 
-fn local_mcp_entry(cmd: &str) -> serde_json::Value {
-    json!({"type": "local", "command": [cmd, "mcp"], "enabled": true})
+fn local_mcp_entry(cmd: &str, host: &'static str) -> serde_json::Value {
+    let [sub, flag, id] = mcp_args(host);
+    json!({"type": "local", "command": [cmd, sub, flag, id], "enabled": true})
+}
+
+/// What follows the binary in a host's `rtok mcp` entry: `mcp --host <id>` (T283.2), so the MCP
+/// process knows which host started it without `[hook] host`. One place, so no host spells it
+/// by hand; removal ignores the pair (see `rtok_agent_sdk::judge_owned`), so an entry written
+/// without it is still rtok's own.
+pub(crate) const fn mcp_args(host: &'static str) -> [&'static str; 3] {
+    ["mcp", "--host", host]
+}
+
+/// The report text after `<key>.rtok: ` for a host's entry.
+pub(crate) fn mcp_summary(cmd: &str, host: &'static str) -> String {
+    format!("{cmd} {}", mcp_args(host).join(" "))
 }
 
 /// [`register_local_mcp`]'s remove: only the entry as rtok wrote it (T246.2).
@@ -1098,8 +1120,9 @@ pub(crate) fn unregister_local_mcp(
     cfg: &Config,
     path: &std::path::Path,
     key: &str,
+    host: &'static str,
 ) -> Result<String> {
-    unregister_ours(cfg, path, key, "rtok", &local_mcp_entry("rtok"))
+    unregister_ours(cfg, path, key, "rtok", &local_mcp_entry("rtok", host))
 }
 
 /// `Agent::installed` for a host whose only module is `mcp`: present iff `path` mentions

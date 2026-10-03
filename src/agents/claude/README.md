@@ -25,7 +25,7 @@ prompt to paste.
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | yes | `rtok hook <event>` on PreToolUse (Bash, Read), PostToolUse, UserPromptSubmit, SessionStart, PreCompact, PostCompact, SessionEnd, SubagentStart (the spawn brief, T130; inert while `[plugins.memory] spawn_brief` is off); the plugin alone also routes WorktreeCreate and WorktreeRemove through `rtok worktree` (T159) |
-| mcp | yes | `mcpServers.rtok` → `rtok mcp` (off with `[setup] mcp = false`); always written on install/update, plugin or not — only `remove` takes it out (T275) |
+| mcp | yes | `mcpServers.rtok` → `rtok mcp --host claude` (off with `[setup] mcp = false`); always written on install/update, plugin or not — only `remove` takes it out (T275) |
 | proxy | `--proxy` | `env.ANTHROPIC_BASE_URL` → `http://<bind>:<port>`; opt-in because it routes every request through `rtok proxy` |
 | plugin | yes | runs `claude plugin marketplace add listepo/rtok` (skipped once Claude already knows the `rtok` marketplace) and `claude plugin install rtok@rtok` (remove: `uninstall` + `marketplace remove`); installed by default once `claude` is on PATH — no `--yes` needed; Claude Code loads it in the CLI and the desktop Code tab; while it is installed it is the only call path for hooks, so setup strips its own settings-file hooks — `mcpServers.rtok` is unaffected, the plugin carries no MCP server of its own (T275); a missing or failing `claude` leaves the offer open instead of failing the install; `rtok agents update` runs `claude plugin marketplace update rtok` + `claude plugin update rtok@rtok` and reinstalls (`uninstall` + `install`) only when that fails |
 | hooks (desktop) | no | Claude Desktop has no hook events |
