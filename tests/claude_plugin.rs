@@ -171,6 +171,10 @@ fn hook_commands_exec_rtok_from_path_and_fall_back_to_hook_sh() {
     let hooks: serde_json::Value =
         serde_json::from_str(include_str!("../plugins/claude/hooks/hooks.json")).unwrap();
     for (event, entries) in hooks["hooks"].as_object().unwrap() {
+        // T159: the worktree launcher has its own contract (`tests/worktree_hooks.rs`).
+        if event.starts_with("Worktree") {
+            continue;
+        }
         for cmd in entries
             .as_array()
             .unwrap()

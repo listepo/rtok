@@ -1558,6 +1558,19 @@ This table records what Claude Code's docs promise. The "probe" column is for th
 
 What this means for T159: the hook does not just observe creation, it is the only thing that creates the worktree. When `rtok worktree add` fails, the hook itself must still print a usable path. It also has to do the work of `.worktreeinclude`.
 
+Re-checked for T159, 2026-10-02, against the raw pages https://code.claude.com/docs/en/hooks.md (sections `WorktreeCreate`, `WorktreeRemove`) and https://code.claude.com/docs/en/worktrees.md (`Customize worktree creation`, `Clean up worktrees`). The table above still holds: create input is the common fields plus `name` (the docs' example has `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `name`), remove input is the common fields plus `worktree_path`, and neither event has a matcher. What T159 builds on, all from those two pages:
+
+| Fact | Source |
+| --- | --- |
+| A command hook returns the path as the last non-empty stdout line; any failure or a missing path fails the creation, so a hook cannot fail open by printing nothing | hooks `#worktreecreate-output` |
+| `WorktreeRemove` exit 0 counts as removed whatever is on disk; non-zero fails the removal only while the directory at `worktree_path` still exists, and then there is no `git worktree remove --force` fallback. With no `WorktreeRemove` hook the host falls back to `git worktree remove --force` on the path the create hook returned | hooks `#worktreeremove` |
+| The host never deletes the branch of a hook-created worktree; the remove hook has to | hooks `#worktreeremove` |
+| Default creation, which the launcher's plain-git fallback reproduces: `<repo>/.claude/worktrees/<name>` on branch `worktree-<name>`, from the default branch, or from the local `HEAD` when `origin/HEAD` is not available | worktrees `#start-claude-in-a-worktree`, `#choose-the-base-branch` |
+| A relative path is resolved against the hook's cwd; an absolute path with `.` or `..` segments, or one through a symlink below the repository root, is refused (since 2.1.216); other output belongs on stderr | hooks `#worktreecreate-output` |
+| Default hook `timeout` is 600 s for command hooks | hooks `#common-fields` |
+
+Still **unverified** (needs the creator's live run, T156 part 1): whether a sub-agent's create and remove payloads carry `agent_id`, and which `session_id` a sub-agent's `WorktreeRemove` carries. T159 resolves the owner from `session_id` and, when present, `agent_id`, and removes under any agent of the payload's session, so either answer works; the docs name `agent_id` only for hooks that fire inside a sub-agent call.
+
 ### 18.4 Libraries and tools
 
 - `git2` 0.21: add, list, lock, prune — no `move`, `repair`, or dirty-checked `remove`; adds libgit2. `gix` 0.87: worktrees read-only (create/move/remove/repair open in its `crate-status.md`). worktrunk and `git-worktree-runner` shell out to `git`. rtok already shells out to `git` (`git_changed_files`, `src/plugins/graph/mod.rs`) and has no shared git helper; `git_root` exists twice (`src/config/layers.rs`, `src/doctor.rs`). **Decision: `git worktree list --porcelain -z` through one helper, no new dependency.**

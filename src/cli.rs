@@ -1127,6 +1127,16 @@ pub fn run() -> Result<()> {
             }
         }
         Cmd::Hook { serve: true, .. } => crate::hooks::resident::serve()?,
+        // T159: these two events answer with a path and an exit code, not the JSON the hook
+        // dispatcher writes, so they skip it.
+        Cmd::Hook {
+            event: Some(event), ..
+        } if crate::worktree::host::handles(&event) => {
+            let cfg = Config::load_lenient(config_file.as_deref(), None);
+            if let Some(out) = crate::worktree::host::run(&event, io::stdin(), &cfg)? {
+                println!("{out}");
+            }
+        }
         Cmd::Hook { event, host, .. } => {
             let cfg = Config::load_lenient(config_file.as_deref(), hook_host_flag(host));
             crate::hooks::run(&event.unwrap_or_default(), io::stdin(), io::stdout(), &cfg);
@@ -1237,11 +1247,11 @@ pub fn run() -> Result<()> {
         } => {
             use crate::worktree::claim;
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let root = Some(cfg.worktree.root.as_path()).filter(|r| !r.as_os_str().is_empty());
             let id = (task.as_str(), slug.as_deref());
             let store = crate::store::Store::open(&cfg.core.db_path).ok();
             let agent = claim::caller(store.as_ref(), agent.as_deref())?;
             let cwd = std::env::current_dir()?;
+            let root = claim::configured_root(&cfg.worktree.root);
             let plan = claim::add(store.as_ref(), &cwd, root, id, agent.as_ref(), owner)?;
             println!("{}", plan.path.display());
         }
