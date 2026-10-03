@@ -107,11 +107,12 @@ idle       = "30m"                    # `live()`'s window: no `ended_at` and `la
 push_bytes = 1024                     # framed messages pushed per UserPromptSubmit/PostToolUse; the rest → "and N more" (T288)
 
 [agents.usage]                        # rtok agents usage (T358)
-source = "rtok"                       # rtok = what passed through rtok (the store); T358.2 adds logs and both
+source = "logs"                       # logs = the agents' own session files (Claude Code, Codex); rtok = what passed through rtok; both
 hosts  = []                           # [] = every host; else host ids, e.g. ["claude", "codex"]
 since  = ""                           # "" = all time; a date (2026-09-01, whole days in tz) or a duration (30d)
 until  = ""                           # "" = through today; a date, inclusive
 period = "monthly"                    # monthly | daily: the bottom table
+by     = "agent"                      # agent | model: what the middle table groups by
 tz     = ""                           # IANA zone for day and month boundaries; "" = the system zone
 
 [mcp]                                 # rtok mcp
@@ -384,6 +385,9 @@ body_lines = 40                       # symbol(): source lines shown per definit
 auto_index = true                     # true = every call walks the tree; false = index once, then `rtok graph index` or the watcher (a hook-staled file reads as missing until then)
 backend    = "tags"                   # tags | lsp: index backend; default tags; lsp spawns rust-analyzer/clangd/tsserver from PATH (P30)
 watch      = "off"                    # off | notify: background re-index inside `rtok mcp` (P8d)
+auto_link_references = true           # T329.8: follow references in manifests (Cargo path, npm file:/link:, go replace, Python path, submodules) into other directories, register and auto-link them
+reference_depth = 3                   # T329.8: reference levels followed from the project (A -> B is 1); reaching it is shown and logged
+max_auto_projects = 20                # T329.8: most projects references may add to the registry; reaching it is shown and logged
 
 [plugins.toon]
 enabled  = true

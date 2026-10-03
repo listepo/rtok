@@ -54,11 +54,9 @@ checks are the gate instead.
 | `x86_64-unknown-linux-gnu` | `ubuntu-22.04` | `rtok-x86_64-unknown-linux-gnu.tar.xz` |
 | `x86_64-pc-windows-msvc` | `windows-latest` | `rtok-x86_64-pc-windows-msvc.zip` |
 
-Intel macOS (`x86_64-apple-darwin`) is intentionally omitted: GitHub's
-`macos-15-intel` runners queue and usually dominate release wall-clock. Release
-jobs install Rust from the `rust` pin in `mise.toml` (via `jdx/mise-action`, the same
-toolchain ci.yml tests), add the matrix targets to it, and restore a Cargo cache via
-[`.github/build-setup.yml`](../.github/build-setup.yml).
+macOS is Apple Silicon only. Release jobs install Rust from the `rust` pin in `mise.toml` (via
+`jdx/mise-action`, the same toolchain ci.yml tests), add the matrix targets to it, and restore a
+Cargo cache via [`.github/build-setup.yml`](../.github/build-setup.yml).
 
 Each build job prints archive sizes into the Actions step summary; the GitHub
 Release notes get a **Download sizes** table (MiB) so you do not have to open Assets.
@@ -239,20 +237,22 @@ secrets in CI.
 
 ## The web UI rides in the binary
 
-The Slint WASM bundle `rtok web` serves is compiled into the executable: `build.rs` embeds
-`crates/rtok-webui/pkg/` when it exists, so every install — including a ketch install that keeps
-only the binary — has the UI. `.github/build-setup.yml` installs wasm-pack, runs
-`tools/webui-bundle.sh --require` in each build job and exports `RTOK_WEB_EMBED=require`, so a
-missing bundle fails the release instead of shipping a binary whose `rtok web` has no UI.
+The React app `rtok web` serves (`web/`) is compiled into the executable: `build.rs` embeds
+`web/dist/` when it holds a built SPA, so every install — including a ketch install that keeps
+only the binary — has the UI. `.github/build-setup.yml` installs node from `mise.toml`, runs
+`npm --prefix web ci` and `npm --prefix web run build` in each build job and exports
+`RTOK_WEB_EMBED=require`, so a missing SPA fails the release instead of shipping a binary whose
+`rtok web` answers with a "UI not built" page. Without `require` (a contributor with no npm) the
+build still succeeds and embeds that page.
 
-A bundle on disk still wins at run time (`RTOK_WEB_PKG`, `pkg/` beside the binary, the source
-tree), so `just web` serves a fresh build without relinking.
+A directory on disk wins at run time when `RTOK_WEB_DIST` names one, so `just web` serves a fresh
+build without relinking.
 
-A **local** `dist build` does not run that hook: build the bundle first, or the binary is built
+A **local** `dist build` does not run that hook: build the SPA first, or the binary is built
 without it.
 
 ```bash
-just web-bundle
+just spa-install spa-build
 ```
 
 ## Locally

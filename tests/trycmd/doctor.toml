@@ -2,6 +2,7 @@ bin.name = "rtok"
 args = "--config tests/trycmd/input/json-readers.toml doctor"
 stdout = """
 hooks 0
+hooks check none found
 mcp
   rtok ([..] tools, ~[..] desc tokens) [..]
 proxy 

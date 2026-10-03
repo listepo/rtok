@@ -12,6 +12,8 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+pub mod refs;
+
 use crate::fs::{HostFs, ReadFs, normalize};
 
 /// Name of the project `cwd` lies in, if it is inside a git checkout: the `origin` repo name
