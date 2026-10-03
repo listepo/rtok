@@ -988,14 +988,11 @@ mod tests {
         insensitive: bool,
     }
 
-    /// `path` as `m` keys it: case-folded in the case-insensitive mode.
+    /// `path` as `m` keys it: `/` and `\` alike (the keys are POSIX literals while `join` and
+    /// `with_file_name` build `\` paths on Windows), and case-folded in the case-insensitive mode.
     fn key(m: &Mock, path: &Path) -> String {
-        let s = path.to_string_lossy();
-        if m.insensitive {
-            s.to_lowercase()
-        } else {
-            s.into_owned()
-        }
+        let s = path.to_string_lossy().replace('\\', "/");
+        if m.insensitive { s.to_lowercase() } else { s }
     }
 
     impl Fs for Mock {
@@ -1003,7 +1000,11 @@ mod tests {
             path.to_path_buf()
         }
         fn read(&self, path: &Path) -> io::Result<String> {
-            if self.unreadable.contains(path) {
+            if self
+                .unreadable
+                .iter()
+                .any(|p| key(self, p) == key(self, path))
+            {
                 return Err(io::Error::from(io::ErrorKind::PermissionDenied));
             }
             let want = key(self, path);
@@ -1765,17 +1766,18 @@ mod tests {
             hooks_doc("Stop", None, &["jq .", "jq ."]),
         );
         m.path.insert("jq".into(), "/usr/bin/jq".into());
-        let fixable: Vec<(String, bool, bool)> = check_with(&m)
+        // Compared as paths: `join` writes `\` on Windows where the literals have `/`.
+        let fixable: Vec<(PathBuf, bool, bool)> = check_with(&m)
             .into_iter()
             .filter(|p| p.kind == "duplicate-hook")
-            .map(|p| (p.source, p.keep, p.fixable))
+            .map(|p| (PathBuf::from(p.source), p.keep, p.fixable))
             .collect();
         assert_eq!(
             fixable,
             vec![
-                ("/h/.claude/settings.json".into(), false, true),
-                ("/h/plug/demo/hooks/hooks.json".into(), true, false),
-                ("/h/plug/demo/hooks/hooks.json".into(), false, false),
+                (PathBuf::from("/h/.claude/settings.json"), false, true),
+                (PathBuf::from("/h/plug/demo/hooks/hooks.json"), true, false),
+                (PathBuf::from("/h/plug/demo/hooks/hooks.json"), false, false),
             ]
         );
     }

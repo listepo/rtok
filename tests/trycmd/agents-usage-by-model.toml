@@ -1,0 +1,30 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/usage-logs.toml agents usage --by model --daily --tz Europe/Kyiv"
+stdout = """
+rtok agents usage: logs from 2 agents, up to 2026-10-02 (Europe/Kyiv)
+
+  6.85M tokens
+  $7.70 estimated cost
+  2 sessions
+  3 daily rows
+
+! Cost is incomplete: 1 model has no price in [stats.prices], so its tokens are not in
+  the estimate. `rtok agents usage --unpriced` lists them.
+
+Model         Tokens Estimated cost
+gpt-x           3.2M          $6.00
+claude-test     3.1M          $1.70
+mystery-model   550K              -
+
+Daily totals
+Day        Tokens Estimated cost
+2026-10-01   6.3M          $7.70
+2026-10-02   550K              -
+"""
+
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t358-6-agents-usage-by-model"
+RTOK_HOME = "target/tmp/t358-6-agents-usage-by-model"
