@@ -26,9 +26,6 @@
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
 - T310. React SPA replaces the Slint web UI (epic)
-- T310.7. Pages: sessions, doctor, logs
-- T310.10. Playwright e2e against the real binary
-- T310.11. CI job for the SPA
 - T329. Graph page: project selector, auto-added projects and linked projects (epic)
 - T329.4. `project` argument and scoped traversal for symbol, callers, impact, explore and outline (CLI and MCP)
 - T329.5. Scoped `dead` and `affected`, whole-answer caps, watch across the scope

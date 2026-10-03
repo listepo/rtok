@@ -85,9 +85,24 @@ spa-test:
 spa-stories:
     {{npm}} --prefix web run test:stories
 
+# T310.11: the Chromium the story tests drive; `--with-deps` adds the system libraries on Linux.
+spa-browsers:
+    {{npm}} --prefix web exec -- playwright install --with-deps chromium
+
 # T310.5: static Storybook build of the UI kit.
 spa-storybook:
     {{npm}} --prefix web run build-storybook
+
+# T310.10: Playwright against the real `rtok web` binary (embedded SPA, fixture store). Builds
+# the SPA first so the binary embeds it, then the binary. Needs Chrome (SPA_BROWSER_CHANNEL=chrome)
+# or Playwright's Chromium (`npx playwright install chromium` in web/).
+spa-e2e: spa-build && spa-e2e-run
+    {{cargo}} build -q
+
+# The suite alone, against the `target/debug/rtok` that is already built (CI: `just test` built it
+# with the SPA embedded, and rebuilding here would touch build.rs and recompile the crate).
+spa-e2e-run:
+    {{npm}} --prefix web run test:e2e
 
 # T183: tools/publish_marketplace's own test suite (no network, no real `gh`).
 python:
