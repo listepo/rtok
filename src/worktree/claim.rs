@@ -67,6 +67,26 @@ pub fn remember(store: Option<&Store>, path: &Path, agent: &str, task: &str) {
     }
 }
 
+/// `rtok worktree add` and MCP `worktree_add`: create the worktree for `agent` (or for
+/// `owner` alone when no agent is known) and record the claim. One path, so both surfaces
+/// bind the lock and the store row the same way.
+pub fn add(
+    store: Option<&Store>,
+    cwd: &Path,
+    root: Option<&Path>,
+    id: (&str, Option<&str>),
+    agent: Option<&AgentDetail>,
+    owner_flag: Option<String>,
+) -> Result<super::add::Plan> {
+    let owner = owner(owner_flag, agent, store)?;
+    let agent_id = agent.map(|a| a.id.as_str());
+    let plan = super::add::run(cwd, root, id, (&owner, agent_id))?;
+    if let Some(agent) = agent_id {
+        remember(store, &plan.path, agent, &plan.task);
+    }
+    Ok(plan)
+}
+
 /// `rtok worktree claim`: rewrite `path`'s lock as `owner`'s, bound to `agent`, when it has
 /// no lock or the lock is already theirs. Returns the worktree path and its task.
 pub fn run(path: &Path, owner: &str, agent: &str) -> Result<(PathBuf, String)> {
