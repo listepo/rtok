@@ -3,36 +3,15 @@
 // Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // @vitest-environment happy-dom
-import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
-import { DataProvider } from "../api/query";
 import { connectSample } from "../api/sample";
-import type { Snapshot } from "../api/snapshot.gen";
-import type { Connect } from "../api/ws";
-import { createAppRouter } from "../router";
 import { ago, compact, pct } from "./format";
 import { richSnapshot } from "./fixtures";
 import { callBuckets, doctorChecks, overview, tokensOf } from "./model";
 import { matchesPlugin } from "./Plugins";
 import { matchesCall } from "./Calls";
-
-const serving =
-    (snapshot: Snapshot): Connect =>
-    (h) => {
-        h.onState("open");
-        h.onFrame({ type: "snapshot", snapshot });
-        return { send: () => true, close: () => {} };
-    };
-
-function mount(connect: Connect, path: string) {
-    const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
-    return render(
-        <DataProvider connect={connect}>
-            <RouterProvider router={router} />
-        </DataProvider>,
-    );
-}
+import { mount, serving } from "./testHelpers";
 
 afterEach(cleanup);
 
