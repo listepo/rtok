@@ -33,12 +33,9 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T290 | todo | P1 | 3 | 0% | |
 | T310 | todo | P1 | 5 | 0% | |
 | T310.7 | todo | P2 | 3 | 0% | |
-| T310.8 | todo | P2 | 3 | 0% | |
 | T310.10 | todo | P1 | 3 | 0% | |
 | T310.11 | todo | P2 | 3 | 0% | |
 | T329 | todo | P2 | 5 | 0% | |
-| T329.2 | todo | P2 | 3 | 0% | |
-| T329.3 | todo | P2 | 3 | 0% | |
 | T329.4 | todo | P2 | 4 | 0% | |
 | T329.5 | todo | P2 | 3 | 0% | |
 | T329.6 | todo | P2 | 3 | 0% | |
@@ -47,14 +44,13 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T329.9 | todo | P2 | 4 | 0% | |
 | T329.10 | todo | P3 | 3 | 0% | |
 | T329.11 | todo | P2 | 3 | 0% | |
-| T329.12 | todo | P2 | 3 | 0% | |
-| T329.13 | todo | P2 | 4 | 0% | |
 | T329.14 | todo | P2 | 4 | 0% | |
 | T329.15 | todo | P3 | 5 | 0% | |
 | T329.16 | todo | P3 | 3 | 0% | |
 | T329.17 | todo | P3 | 3 | 0% | |
 | T329.18 | todo | P3 | 4 | 0% | |
 | T329.19 | todo | P3 | 3 | 0% | |
+| T329.20 | todo | P2 | 2 | 0% | |
 | T330 | todo | P2 | 4 | 0% | |
 | T330.2 | todo | P2 | 3 | 0% | |
 | T330.3 | todo | P2 | 3 | 0% | |
@@ -77,10 +73,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T344 | todo | research | 1 | 0% | |
 | T345 | todo | research | 1 | 0% | |
 | T346 | todo | research | 1 | 0% | |
-| T359 | todo | P1 | 2 | 0% | |
-| T361 | todo | P2 | 1 | 0% | |
-| T366 | todo | P3 | 1 | 0% | |
-| T367 | todo | P3 | 1 | 0% | |
 | T347 | todo | research | 1 | 0% | |
 | T348 | todo | research | 1 | 0% | |
 | T356 | in progress | P1 | 2 | 5% | Claude Code / claude-opus-5-5 |
@@ -596,10 +588,6 @@ Check: `rtok web` from a release build shows every page of `model::pages()` from
 
 Check: each page renders in dark and light at 375 and 1280 px on sample data; stories and Vitest for page logic.
 
-### T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
-
-Check: each page renders in dark and light at 375 and 1280 px on sample data; stories and Vitest for page logic.
-
 ### T310.10. Playwright e2e against the real binary
 
 Playwright drives `rtok web` on a fixture store (no real agents): every page renders, plugin toggle round-trips through `/ws`, expand works, offline/reconnect state shows. Runs in CI on Linux; Storybook tests run in the same job.
@@ -618,7 +606,7 @@ Ivan, 2026-10-01: in the web UI's graph tab, the graph is built for a project th
 
 Today the graph plugin (`src/plugins/graph/`) always works on one root: the process's current directory. The index is keyed by that root (`index::canon(root)` in `src/store/symbols.rs`), and the MCP tools `symbol`, `callers`, `impact`, `outline` and `explore`, plus `dead` and `affected`, only see that root. The graph page shows the same single root (`root .`). There is no way to pick another project and no way to follow a call into a dependency's source.
 
-Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.19 in dependency order (T329.1 is already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
+Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.20 in dependency order (T329.1 to T329.3 and T329.12 are already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
 
 #### Terms
 
@@ -933,18 +921,6 @@ Check: fixture repos under `tests/fixtures`, no network:
 - Health: a fully indexed A with LSP and intact links scores 100; with 30% of files pending it drops below 80 with the reason shown; on tree-sitter fallback the backend component reads 0.6; a broken link lowers the links component; the scope shows the lowest score; an MCP answer from a scope under 80 includes the health note.
 - Playwright covers the selector, the indicator and its states, link/unlink, project badges, backend tags, both graph levels, export, alerts, compare mode, health rings, 3D and 2D modes, the two-part layout with the read-only live graph and its metric displays, and the list-view fallback; `just check`.
 
-### T329.2. `rtok graph projects`: list, add, remove, select, with per-project index status
-
-T329 §1 (index status: rows, files, pending, `indexed_at`, watch state, last error), §7 CLI half. `rtok graph projects [--json]`, `add <path>`, `remove <id|path>`, `select <id|path>`. Needs the usual new-CLI gates (trycmd, surface_parity, config_coverage, completions). Depends on T329.1.
-
-Check: fixture store with three projects; list, add, remove and select round-trip with `--json`; status shows rows, files and pending; `just check`.
-
-### T329.3. Project links and graph scope: `link`/`unlink`, cycle-safe scope, manual and auto kinds
-
-T329 Terms and §5. A `project_links` table (from, to, kind `manual|auto`, reason, a flag for an unlink the user made so T329.8 does not re-create it), the scope builder (the selected project plus everything reachable, each project once, missing ones excluded), `rtok graph projects link|unlink` (also `--both`), no self-links, a duplicate link is a no-op. Linking an unindexed project starts its indexing. Depends on T329.1, T329.2.
-
-Check: fixture repos A to B to C and D; scope of A is A, B, C; a cycle D to A neither loops nor duplicates; unlink and a self-link behave as the card says; `just check`.
-
 ### T329.4. `project` argument and scoped traversal for symbol, callers, impact, explore and outline (CLI and MCP)
 
 T329 §6 (first half), §7 and the tags-backend half of §6a mode 2. Every graph command and graph MCP tool takes `project` (id or path); without it the project is the caller's cwd and its links are in scope (T336 decides whether the selected project replaces the cwd, so settle it before claiming). Queries run over the scope as one graph, rows carry `project` (JSON field, `[name]` text prefix), same-named symbols across projects are grouped and flagged ambiguous with the selected project first. Depends on T329.3.
@@ -993,18 +969,6 @@ T329 §6b: an in-memory per-project (and language) record of which mode works, s
 
 Check: a test counts probes, 100 requests after the first run zero lookups or spawns; restarting picks up a newly installed server; a `backend` change re-checks only affected projects; concurrent first requests run one check; `just check`.
 
-### T329.12. `/ws` project messages and the SPA graph page selector, indicator and links panel
-
-T329 §2, §3, §5 page parts and §8 `/ws` messages (project list, selection changed, links changed, per-project index progress). Builds on the SPA graph page of T310.8 (PR #655): selector with search above about ten projects, current-project header with the index status and the not-indexed/indexing/stale/failed/missing states, links panel with link, unlink and "link both ways", project badges in the lists, selection synced between tabs. Playwright covers it. Depends on T329.3, T310.8.
-
-Check: Playwright covers the selector, the indicator and its five states, link and unlink, project badges and selection syncing between two tabs; Vitest for the reducers; `just check`.
-
-### T329.13. Graph page level 1: 3D projects overview (Three.js, 2D fallback)
-
-T329 §8a level 1 and the rendering section: node per project, edges per link (dashed auto, solid manual, thickness by cross-project references), scope emphasis, node menu, filter, clustered layout above about 50 projects, 3D with Three.js (pick the library, record it and its bundle size in `toolchain.md`) with the 2D fallback and toggle, layout in a web worker, disposal on leaving the page, list view for accessibility. Depends on T329.12.
-
-Check: Vitest for the data-to-scene mapping without WebGL; Playwright with software WebGL sees a non-empty canvas, selects a node by click and shows the 2D fallback and notice with WebGL off; the 2D/3D choice survives a reload; `just check`.
-
 ### T329.14. Graph page level 2: drill-down into one project
 
 T329 §8a level 2: files, modules, types and functions with contains/calls/implements/imports edges, URL-carried drill-down state and breadcrumb, expand and focus, calls into linked projects ending at that project's node, side panel, search-to-focus, the 500-node cap with "+N more", live updates under `watch`. Depends on T329.13, T329.5.
@@ -1040,6 +1004,12 @@ Check: a signature change in B shows in `rtok graph diff --from HEAD` from A wit
 T329 §8f: the 0 to 100 score with freshness, backend and link components, reasons and fixes, the scope's lowest score, the MCP health note and the `rtok doctor` list. Depends on T329.11.
 
 Check: a fully indexed A with LSP and intact links scores 100; 30% of files pending drops it below 80 with the reason; tree-sitter fallback reads 0.6 on the backend component; a broken link lowers the links component; the scope shows the lowest score; `just check`.
+
+### T329.20. SPA graph page links panel: link, unlink, both ways, project badges
+
+Second half of the original T329.12 (split because the whole was over 300 LOC). Adds `ProjectRequest::Link` and `Unlink` (`from`, `to`, `both`) to the `/ws` protocol, handled in `project_write` through `graph::projects::run` as `rtok graph projects link` and `unlink` do; the links panel under the current-project header (linked projects with their kind and reason, an unlink button each, a "link to" picker and "both ways" for the rest); the reducer cases for the sample server; project badges in the lists once T329.4 and T329.5 scope them. The full first draft of this half is on the local branch `t329.20-spa-links-panel` (commit `d8e0d14a`, never pushed): reuse it, rebase it on `main` once T329.12 lands, and re-check it against the schema. Depends on T329.12, T329.3.
+
+Check: Vitest for the link and unlink requests (a pushed snapshot shows the result), a Storybook play through the sample server (link both ways, unlink), the `/ws` integration test with link and unlink, `just check`.
 
 ### T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 
@@ -1492,45 +1462,6 @@ Goal: research both approaches, compare trade-offs, recommend one, then update t
 
 Check: the recommendation and the chosen approach are recorded in this card (or as a decision row), and every task named above is updated so the plan no longer contradicts itself.
 
-### T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). The "Reference file" fence opened at `docs/config.md:67` (```` ```toml ````) is not closed before `#### [plugins.proxy.semantic_cache]` (`:338`); the ```` ```toml ```` at `:355` cannot close a fence (a closer has no info string). In any CommonMark renderer (markdown-it 14, GitHub, the landing site) the semantic-cache heading, table and example render as code, the rest of the reference file renders as loose prose, and `### [proxy.batch] / [proxy.flex] / [proxy.routing]` plus `#### [proxy.batch]` land in a stray code block. The first heading after `## Reference file` becomes `#### [proxy.flex]` (`:448`), so the `pyrlyn/landing` `check:seo` step fails with `heading skips a level: h2 → h4 ("[proxy.flex]")` and blocks Pages deploys for every synced product. Origin: `2af52d66` (T31.1) put the semantic-cache prose inside the fence; `fb214cf9` added the `[proxy.*]` sections it now swallows. The raw fence count stays even, so counting backticks misses it.
-
-Repro: `awk '/^[ \t]*```/{print NR": "$0}' docs/config.md` (the fence at 67 is followed by ```` ```toml ```` at 355); parse the file with markdown-it and list fences and headings.
-
-Done when: the reference block closes with a bare ```` ``` ```` before the semantic-cache section; that section (heading, table, example) sits outside the reference file under a `###` (or is dropped from the reference, since `config/default.toml`, which the reference mirrors, has no such table); the rest of the reference reopens as ```` ```toml ````; no heading level is skipped. A test parses every `docs/**/*.md` with a CommonMark parser (no Markdown parser is in `Cargo.lock` today: `pulldown-cmark` as a dev-dependency with a one-line reason and a `toolchain.md` row) and fails on unclosed/mis-nested fences and heading-level skips. English-only change: rtok has no `docs/ru` / `docs/uk` mirror.
-
-Check: a new docs-structure test fails on `main` @ `aecab806` (h2 → h4 at `[proxy.flex]`) and passes after the fix; `config_coverage` and `public_numbers` stay green; `just check`.
-
-### T361. `rtok memory import` reports success for a missing or unreadable file
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A path typo, a directory, a permission error or a non-UTF-8 file all print `inserted 0  skipped 0  malformed 0` with exit 0, so scripts and agents believe the import ran. `src/plugins/memory/import.rs:57` is `std::fs::read_to_string(path).unwrap_or_default()`.
-
-Repro: `rtok memory import /nonexistent.json; echo $?` prints the zero counts and `0`.
-
-Done when: the read propagates its error with the path as context (`.with_context(|| path.display().to_string())?`, the pattern `src/config/validate.rs` already uses), so the command exits non-zero with `Error: /nonexistent.json: No such file or directory`.
-
-Check: an import test with a missing path and one with a directory both return an error naming the path and insert nothing; existing `memory import` tests unchanged; `just check`.
-
-### T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A command killed by SIGKILL (OOM killer, timeout) or SIGTERM comes back as `1`, not `128+signal` (137 / 143), so agents and scripts cannot tell "killed" from "failed" and OOM kills in test runs hide. On Unix `ExitStatus::code()` is `None` for a signal death and both sites map `None` to `1`: `src/plugins/cmd/run.rs:298` (`out.code.unwrap_or(1)`) and `src/mcp/wrap.rs:90` (`code().unwrap_or(1)`).
-
-Repro: `rtok run -- sh -c 'kill -TERM $$'; echo $?` and `rtok run -- sh -c 'kill -KILL $$'; echo $?` print `1`; plain `sh -c 'kill -TERM $$'; echo $?` prints `143`.
-
-Done when: one shared helper maps a Unix signal death (`ExitStatusExt::signal()`) to `128 + sig` where `code()` is `None`, used by both sites; Windows behaviour unchanged.
-
-Check: Unix-only tests for `rtok run` and the `rtok mcp --` wrap path get `143` for SIGTERM and `137` for SIGKILL, and a normal non-zero exit keeps its code; `just check`.
-
-### T367. `rtok graph index <path>` exits 0 for a path that does not exist
-
-Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A typo prints `indexed 0 files · 0 rows …` with exit 0, so a script or agent thinks the index was built. `src/cli.rs` (the `graph index` arm, `index::run_with` at `:1684`) passes `path` as-is and the walker yields nothing for a missing root. The sibling graph subcommands in `src/cli.rs` and `src/plugins/graph/status.rs` resolve `path` the same unchecked way (suspected, not reproduced).
-
-Repro: `rtok graph index /nonexistent; echo $?` prints the zero counts and `0`.
-
-Done when: every graph subcommand that takes a path checks it is an existing directory (or canonicalizes with the path as context) before walking, and exits non-zero with `Error: /nonexistent: No such file or directory`; the T356 home/`/` refusal stays as it is.
-
-Check: tests for `graph index` and each sibling path-taking graph subcommand with a missing path exit non-zero naming the path; indexing a temp project is unchanged; `just check`.
 
 ### T356. Never index `$HOME` or `/` as a graph root
 

@@ -539,3 +539,48 @@ async fn the_embedded_ui_revalidates_by_etag_and_matches_web_dist() {
     }
     task.abort();
 }
+
+#[tokio::test]
+async fn ws_project_select_reaches_the_next_snapshot_and_a_bad_id_is_refused() {
+    let (_addr, state, dir, task) = serve("projects").await;
+    let roots: Vec<_> = ["a", "b"]
+        .iter()
+        .map(|n| {
+            let p = dir.join(n);
+            std::fs::create_dir_all(&p).unwrap();
+            std::fs::write(p.join("lib.rs"), "fn used() {}\n").unwrap();
+            p
+        })
+        .collect();
+    let rt = rtok::plugin::Runtime::open(Config::load_from(&dir).unwrap(), "web-test").unwrap();
+    let ids: Vec<i32> = roots
+        .iter()
+        .map(|p| {
+            rt.store
+                .register_project(p, rtok::store::Origin::Manual)
+                .unwrap()
+                .id
+        })
+        .collect();
+    let rows = |state: &DashState| -> Vec<serde_json::Value> {
+        let snap: serde_json::Value = serde_json::from_str(&state.snapshot_json()).unwrap();
+        snap["projects"].as_array().expect("projects").clone()
+    };
+    assert_eq!(rows(&state).len(), 2, "the snapshot lists the registry");
+
+    let send = |m: serde_json::Value| state.inbound(&m.to_string());
+    let b = ids[1].to_string();
+    assert!(send(serde_json::json!({"project": {"action": "select", "project": b}})).is_none());
+    let sel: Vec<_> = rows(&state).iter().map(|r| r["selected"].clone()).collect();
+    assert_eq!(
+        sel,
+        [false, true],
+        "the selection reaches the next snapshot"
+    );
+
+    let bad = send(serde_json::json!({"project": {"action": "select", "project": "9999"}}));
+    let bad: serde_json::Value = serde_json::from_str(&bad.expect("refused")).unwrap();
+    assert_eq!(bad["type"], "message");
+    task.abort();
+    let _ = std::fs::remove_dir_all(&dir);
+}
