@@ -47,7 +47,7 @@ pub struct RealWhich;
 
 impl Fs for RealFs {
     fn canonical(&self, path: &Path) -> PathBuf {
-        std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+        dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
     }
 
     fn read(&self, path: &Path) -> io::Result<String> {
