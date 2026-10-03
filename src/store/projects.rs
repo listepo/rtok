@@ -305,6 +305,8 @@ mod tests {
         store.mark_symbols_stale_in(root, "stale.rs").unwrap();
     }
 
+    // Windows needs a privilege to create a symlink, and `std::os::unix` does not exist there.
+    #[cfg(unix)]
     #[test]
     fn auto_add_skips_unwalkable_roots_and_never_renames_a_known_project() {
         let dir = Dir::new("auto-add");

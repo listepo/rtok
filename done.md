@@ -418,6 +418,18 @@ Check: new negative cases in the validate tests for all three keys (`-1`, `0`, `
 
 Result (2026-10-03, Claude Code / sonnet-5): `src/config/validate.rs` gains `UNIT_RATIO_KEYS` (`plugins.proxy.semantic_cache.threshold`, `plugins.read.delta_max_ratio`), checked as `(0, 1]` for floats and integers alike (NaN, 0, negatives and values above 1 are rejected), and `plugins.proxy.semantic_cache.embed_backend` joins `CHOICES` with the only supported value `hash`. `config set` already re-runs `issues_in` on the edited text, so it uses the same table and a refused value leaves the file untouched. Checked: new test `unit_ratio_keys_and_embed_backend_are_range_checked` (`-1`, `0`, `5`, `1.5`, `-3`, `0.0`, `openai` rejected by validate; `-1`, `0`, `5`, `-3`, `openai` rejected by `set` with the file byte-identical; `0.99`, `1`, `0.6`, `hash` accepted), `cargo test --lib config::validate` 16 passed, `just check`.
 
+### T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). `stats.since = "7x"` passes `config set` and `config validate`; then `rtok stats` fails with `Error: bad --since unit in 7x`, `rtok report` silently falls back to 30 days, `doctor` silently skips its check (`.ok()?` in `src/doctor.rs`), and the web/TUI model returns the error (`?` in `src/web/model.rs`). `src/config/validate.rs` has no rule for `stats.since`; the only parser, `measure::stats::parse_since` (`src/measure/stats.rs:799,803`), hard-codes `--since` in its messages.
+
+Repro: `rtok config set stats.since 7x` (exit 0), `rtok config validate` (`ok`, exit 0), `rtok stats` (`Error: bad --since unit in 7x`, exit 1).
+
+Done when: `validate.rs` runs `measure::stats::parse_since` on `stats.since` (accepts `<n>`, `<n>d`, `<n>h`), so `set` and `validate` reject `7x`; `parse_since` names its source (`stats.since` vs `--since`) in the error.
+
+Check: validate tests reject `7x` / `d` / `-1d` for `stats.since` and accept `30d`, `12h`, `7`; a `parse_since` unit test asserts the message names `stats.since` when it comes from config and `--since` from the flag; `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `measure::stats::parse_since_from(s, source)` is the one parser and names its source in every error (`bad stats.since 7x`, `bad stats.since unit in 7x`, `stats.since 99999999999999999d is out of range`); `parse_since(s)` keeps the `--since` wording for the flag. `src/config/validate.rs` runs it on `stats.since`, so `config validate` reports `7x`, `d`, `-1d` and the empty string with `file:line`, and `config set` refuses them through the same `issues_in` (file unchanged). The readers that take the config value (`web::model::stats_report` and `memory_status`, `report_window` as `report.since`, `doctor`) pass their source; `rtok stats --since` is parsed in `Cmd::Stats` before it merges into the config, so an error from the merged value can only come from the config or `RTOK_STATS_SINCE` and says so. Checked: `a_malformed_stats_since_is_rejected` (rejects `7x`, `d`, `-1d`, empty; accepts `30d`, `12h`, `7`; `set` refuses `7x` and leaves the file byte-identical), `parse_since_names_its_source`, the existing `bad-args` trycmd for `--since 5x` unchanged, `cargo test --lib` 20 passed for the three filters, `just check`.
+
 ### T225. Debug log on stderr: `log` + `env_logger` behind `RUST_LOG`, tailspin viewer
 
 Creator request 2026-09-23: add env_logger for debugging, configurable; add tailspin, or replace env_logger if it is worse. Tailspin is a log highlighter (`tspin`), not a logger, so both went in. `crate::log::init_stderr` (first thing in `cli::run`) installs env_logger with the filter defaulting to `off`, so nothing changes on stderr until `RUST_LOG` is set; `RUST_LOG` rather than `RTOK_LOG` because the config env layer owns `RTOK_<SECTION>_<KEY>` and `RTOK_LOG` would shadow the `[log]` table. `cli::run` logs argv at debug; every D26 line is mirrored to the facade (target `rtok::log`) before the `[log] level` gate, so the file keeps its level while stderr shows what `RUST_LOG` asks for. Tailspin is pinned in `mise.toml` (`ubi:bensadeh/tailspin`); `just logs [flags]` opens `~/.rtok/logs/rtok.log` in it. Docs: `docs/config.md` → "Debug log (`RUST_LOG`)".
@@ -872,6 +884,16 @@ Check: Vitest covers the route tree built from the page list, theme persistence 
 Execution: `web/src/pages.ts` holds the one page list (id plus the `Snapshot` field it reads, mirroring `model::pages()`); `web/src/router.tsx` builds the code-based route tree from it (index redirect, per-page placeholder reading `useSnapshot`) on hash history; `web/src/Shell.tsx` is the layout (skip link, sidebar that becomes a bottom tab bar on phones, top bar with connection and theme toggle, focus moved to the page heading on navigation); `web/src/theme.ts`, `web/src/Orb.tsx` + `web/src/orbGl.ts` and `web/src/states.tsx` carry the theme, the orb and the four shared states; `web/src/app.test.tsx` covers them under happy-dom.
 
 Result (2026-10-03, Claude Code / sonnet-5): the SPA now has an app shell on top of the T310.3 data layer. One `PAGES` list drives the route tree (`/` redirects to `/overview`, an unknown path shows "Page not found"), the sidebar and the bottom tab bar, so a page cannot be routable and missing from the nav; every link is a plain focusable anchor, the heading takes focus after each navigation and a skip link targets `#main`. Hash history keeps `?sample` in the real query string (a path router drops it on the first navigation) and needs no server fallback. The theme toggle reads and writes `rtok-theme` (system default, tracks the OS while unset, tolerates blocked storage); the orb is the WebGL shader from `design/html/js/orb.js` with the CSS gradient as first paint and fallback, off under reduced motion or `rtok-orb=off`, one still frame while the tab is hidden. `Loading`, `Empty`, `ErrorState` and `Offline` are the shared states: offline is driven by `useConnection()` and the snapshot's `error` becomes an alert banner. Vitest (happy-dom + Testing Library, 12 new tests) covers the route tree, keyboard-reachable navigation, theme persistence across a fresh mount, the four states and the orb fallback. Not done here: per-page icons (only 9 of the design's icons are in `web/assets/icons`, so the nav is text-only until the UI kit T310.5) and the settings dialog for the orb and opaque-panel switches.
+
+### T310.5. UI kit + Storybook
+
+Storybook 10 (`@storybook/react-vite`, addon-vitest, addon-a11y): Panel, Kpi, Pill, Switch, Search, Chip, Sparkline, DataTable (TanStack Table + Virtual) with stories for every state; stories run as Vitest browser tests.
+
+Check: `storybook build` succeeds; stories run as Vitest browser tests with no a11y violations.
+
+Execution: components in `web/src/ui/` (one file each plus `*.stories.tsx`), styled from `design/html` tokens and `components.html`; Storybook config in `web/.storybook/` (theme toolbar switching the app's `data-theme`, axe violations set to fail); `web/vite.config.ts` gets two Vitest projects, `unit` (the existing tests, `npm test`) and `storybook` (browser mode, `npm run test:stories`); `just spa-stories` and `just spa-storybook` wrap them.
+
+Result (2026-10-03, Claude Code / sonnet-5): `Panel`, `Kpi`, `Pill`, `Switch`, `Search`, `Chip`, `Sparkline` and a virtualized `DataTable` (TanStack Table v9 `useTable` for the model, TanStack Virtual for the rows, ARIA table roles with `aria-rowcount`/`aria-rowindex`, keyboard-selectable rows, loading/empty/error slots through the shared states) live in `web/src/ui/`; `Icon` inlines the bundled SVGs and the sidebar uses it for the pages that have one (calls, doctor, logs, overview, plugins, sessions, skills; the design has no icons for stats, graph, hosts, config, services and worktrees, so those keep an empty slot). 48 stories cover every state (off/on/disabled, tones in dark and light, flat/short sparklines, 10,000-row table, empty/loading/failed table, offline/error/empty/loading panels) and five have play functions (switch, chip and search interaction, row windowing, keyboard row selection). `storybook build` succeeds and all 48 stories pass as Vitest browser tests with axe violations set to fail; the run found and fixed one real violation (the table's scroll region was not keyboard-focusable). The browser project needs Chromium: `npx playwright install chromium`, or `SPA_BROWSER_CHANNEL=chrome` to use an installed Chrome. CI wiring is T310.11.
 
 ### T80. `rtok web` from an installed binary 404s the whole UI
 
@@ -7748,6 +7770,23 @@ Result (2026-10-03, Claude Code / sonnet-5): `rtok agents usage` now defaults to
 Status: done 2026-10-03
 Model: Claude Code / claude-sonnet-5
 
+### T358.6. `rtok agents usage`: `--by`, saved columns and the `skipped` list
+
+Scope: what T358.1 and T358.2 left out of the screen. `--by agent|model` (config `[agents.usage] by`); for `--source rtok|both` the saved tokens and saved estimate columns and the `rtok saved` summary line from the `measurements` ledger (T358 "`rtok` — what passed through rtok"); in `both`, the agents that appear only in the store next to the logs' agents, with logged tokens 0; the JSON `skipped` field and the stderr line for a host whose files exist but cannot be parsed.
+
+Check: the T358 Check items for `--by`, the saved columns and `both` coverage on fixture homes and a fixture store; `just check`.
+
+Execution:
+
+1. Stack on T358.2 (#660). `Store::measurement_saved_by_host(since, until)` sums the ledger's `est_before - est_after` per session in the window through Diesel and maps sessions to hosts (the host map is now one helper shared with `usage_slices`); `measurement_totals` has no window or session, so it could not serve.
+2. `agents::usage::report` takes `by`, fills `saved` per agent and in the totals (valued at the average input price that host's requests paid), lists store-only agents in `both`, and carries `skipped`; `measure::usage::read` and `codex::requests` report the first unreadable file per host.
+3. Unit tests, a trycmd case for `--by model`, goldens, `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `--by model` swaps the middle table for model rows (raw ids, dearest first; JSON `models`). For `--source rtok` and `both` the agent table gains `Saved tokens` and `Saved est.`, the summary gains `rtok saved N tokens (≈ $X)`, and JSON gains `saved_tokens` and `saved_usd` on each agent and in `totals`; the net saving counts an `expand` row as a cost, so it can go negative, and `saved_usd` is `null` when none of that host's models has a price. `both` also lists agents that only passed through rtok (no logged tokens, coverage `-`). A Claude Code or Codex dir whose files are unreadable or hold no JSON line is named once on stderr (`skipped claude: unknown format in <path>`) and in JSON `skipped`, and counts nowhere. Config `[agents.usage] by` and `--by` have their `default.toml` and `docs/config.md` rows. Checked: unit tests for the net ledger per agent and total, the window, the price rate and a negative `expand`; `--by model`; the store-only agent in `both`; `skipped` and its host filter; the stable JSON field names; a trycmd golden for `--by model --daily`. Not done: the saved estimate uses one average input rate per host (not per model); the `measurements` ledger has no host column, so a session with no host row is in the total only.
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
+
 ### T325. Bash rewrite keeps `cd` in the host shell; shell-state builtins stay unwrapped
 
 Found by a bug-hunt pass over `src/plugins/cmd/hook.rs`. The PreToolUse rewrite turned `cd crates/x && cargo test` into `rtok run -- 'cd crates/x && cargo test'`, so the `cd` ran in `rtok run`'s child shell. Hosts that keep the shell's cwd between Bash calls (Claude Code) lost it: the next call ran in the old directory. `export`, `source`, `unset`, `alias`, `pushd`/`popd` had the same problem.
@@ -7902,6 +7941,18 @@ Execution plan:
 
 Status: done 2026-10-02
 Model: Claude Code / claude-opus-5-5
+
+### T367. `rtok graph index <path>` exits 0 for a path that does not exist
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A typo prints `indexed 0 files · 0 rows …` with exit 0, so a script or agent thinks the index was built. `src/cli.rs` (the `graph index` arm, `index::run_with` at `:1684`) passes `path` as-is and the walker yields nothing for a missing root. The sibling graph subcommands in `src/cli.rs` and `src/plugins/graph/status.rs` resolve `path` the same unchecked way (suspected, not reproduced).
+
+Repro: `rtok graph index /nonexistent; echo $?` prints the zero counts and `0`.
+
+Done when: every graph subcommand that takes a path checks it is an existing directory (or canonicalizes with the path as context) before walking, and exits non-zero with `Error: /nonexistent: No such file or directory`; the T356 home/`/` refusal stays as it is.
+
+Check: tests for `graph index` and each sibling path-taking graph subcommand with a missing path exit non-zero naming the path; indexing a temp project is unchanged; `just check`.
+
+**Result (2026-10-03, Claude Code / sonnet-5):** one `graph::cli_root` helper (`src/plugins/graph/mod.rs`) resolves the path (cwd by default) and fails on a missing or non-directory path with `<path>: No such file or directory (os error 2)` / `<path>: not a directory` before any walk; `graph index`, `dead`, `impact` (`src/cli.rs`) and `status` (`graph::status::run`) all call it. `index::run_with` keeps the T356 refusal of `/` and `$HOME` unchanged. Checked by two e2e tests in `tests/commands_e2e.rs` (a missing path for all four subcommands exits non-zero naming the path with empty stdout; a file path is rejected and a temp project still indexes) and `just check`.
 
 ### T357. rtok links `rtok-hook` next to itself on PATH
 

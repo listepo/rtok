@@ -1,6 +1,7 @@
 agents.enabled = true
 agents.idle = 30m
 agents.push_bytes = 1024
+agents.usage.by = agent
 agents.usage.hosts = []
 agents.usage.period = monthly
 agents.usage.since = 
