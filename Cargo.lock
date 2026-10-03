@@ -3944,6 +3944,7 @@ dependencies = [
 name = "rtok-sys"
 version = "0.0.1"
 dependencies = [
+ "libc",
  "rustix",
  "windows-sys 0.61.2",
 ]

@@ -150,6 +150,7 @@ impl State {
         let mut cfg = Config::load_lenient(None, crate::cli::hook_host_flag(host));
         // This process's env came from whichever call started it; the payload names the session.
         cfg.core.session_env.clear();
+        cfg.hook_client_pid = req.pid;
         let mut out = Vec::new();
         super::run(&req.event, &req.stdin[..], &mut out, &cfg);
         Some(out)

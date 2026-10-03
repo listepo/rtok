@@ -505,3 +505,27 @@ fn config_validate_checks_env_overrides_and_names_the_layer() {
     );
     let _ = fs::remove_dir_all(&home);
 }
+
+/// T379: a bad window is blamed on where it came from: the config key, or the flag.
+#[test]
+fn report_since_errors_name_their_source() {
+    let home = tmp("report-since");
+    let cfg = home.join("c.toml");
+    fs::write(&cfg, "[report]\nsince = \"7x\"\n").unwrap();
+    let cfg = cfg.to_str().unwrap();
+    let stderr = |args: &[&str]| {
+        let out = cmd(args, &home).assert().failure().get_output().clone();
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    let from_config = stderr(&["--config", cfg, "report"]);
+    assert!(
+        from_config.contains("report.since") && !from_config.contains("--since"),
+        "{from_config}"
+    );
+    let from_flag = stderr(&["report", "--since", "7x"]);
+    assert!(
+        from_flag.contains("--since") && !from_flag.contains("report.since"),
+        "{from_flag}"
+    );
+    let _ = fs::remove_dir_all(&home);
+}

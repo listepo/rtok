@@ -205,7 +205,7 @@ pub fn default_user_dir(insiders: bool) -> PathBuf {
 
 /// The `servers.rtok` entry [`register_mcp`] writes.
 fn mcp_entry(cmd: &str) -> Value {
-    json!({"type": "stdio", "command": cmd, "args": ["mcp"]})
+    json!({"type": "stdio", "command": cmd, "args": super::mcp_args("vscode")})
 }
 
 /// `servers.rtok = {type: "stdio", command, args}` in the profile `mcp.json`.
@@ -218,7 +218,7 @@ pub fn register_mcp(cfg: &Config, insiders: bool) -> Result<String> {
         "servers",
         NAME,
         mcp_entry(&cmd),
-        &format!("{cmd} mcp"),
+        &super::mcp_summary(&cmd, "vscode"),
     )
 }
 
@@ -363,7 +363,7 @@ mod tests {
         let doc: serde_json::Value = serde_json::from_str(&raw).unwrap();
         let rtok = &doc["servers"]["rtok"];
         assert_eq!(rtok["type"], "stdio");
-        assert_eq!(rtok["args"], json!(["mcp"]));
+        assert_eq!(rtok["args"], json!(["mcp", "--host", "vscode"]));
         assert_eq!(unregister_mcp(&c, false).unwrap(), "- servers.rtok");
         let _ = fs::remove_dir_all(dir);
     }
