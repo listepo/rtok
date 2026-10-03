@@ -49,6 +49,16 @@ Every effective key with its origin — the `config show --sources` page.
 | agents.idle | 30m | default |
 | agents.push_bytes | 1024 | default |
 | agents.usage.by | agent | default |
+| agents.usage.dirs.antigravity | [~/.gemini/antigravity] | default |
+| agents.usage.dirs.copilot | [~/.copilot/session-state] | default |
+| agents.usage.dirs.droid | [~/.factory/sessions] | default |
+| agents.usage.dirs.gemini | [~/.gemini/tmp] | default |
+| agents.usage.dirs.grok | [~/.grok/sessions] | default |
+| agents.usage.dirs.kilo | [~/.local/share/kilo] | default |
+| agents.usage.dirs.kimi | [~/.kimi-code/sessions] | default |
+| agents.usage.dirs.opencode | [~/.local/share/opencode] | default |
+| agents.usage.dirs.pi | [~/.pi/agent/sessions] | default |
+| agents.usage.dirs.zcode | [~/.zcode] | default |
 | agents.usage.hosts | [] | default |
 | agents.usage.period | monthly | default |
 | agents.usage.since |  | default |
@@ -129,13 +139,16 @@ Every effective key with its origin — the `config show --sources` page.
 | plugins.cmd.trailer_min_lines | 40 | default |
 | plugins.compress.enabled | true | default |
 | plugins.graph.auto_index | true | default |
+| plugins.graph.auto_link_references | true | default |
 | plugins.graph.backend | tags | default |
 | plugins.graph.body_lines | 40 | default |
 | plugins.graph.enabled | true | default |
 | plugins.graph.exclude | [] | default |
 | plugins.graph.include | [] | default |
 | plugins.graph.map_tokens | 0 | default |
+| plugins.graph.max_auto_projects | 20 | default |
 | plugins.graph.max_tokens | 2000 | default |
+| plugins.graph.reference_depth | 3 | default |
 | plugins.graph.watch | off | default |
 | plugins.guard.deny_grep_glob | false | default |
 | plugins.guard.enabled | true | default |
@@ -277,7 +290,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-231 keys.
+244 keys.
 
 ## Doctor
 
@@ -285,6 +298,8 @@ Live probes (the `rtok doctor` page), not store rows.
 
 ```text
 hooks 0
+hooks check none found
+duplicate hooks none found
 mcp
   rtok (19 tools, ~430 desc tokens) [CWD]/target/[..]
 proxy 

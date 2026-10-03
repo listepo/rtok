@@ -26,6 +26,7 @@ pub mod gemini;
 pub mod grok;
 pub mod jsonc;
 pub mod junk;
+pub mod junk_map;
 pub mod kilo;
 pub mod kimi;
 pub mod link;
@@ -273,7 +274,7 @@ fn under(home: &Path, path: PathBuf) -> PathBuf {
 
 /// The first `bin` on PATH (`.exe`/`.cmd` on Windows). Under [`HOST_SANDBOX_ENV`], only PATH
 /// entries under the home dir count.
-fn find_on_path(bin: &str) -> Option<PathBuf> {
+pub(crate) fn find_on_path(bin: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let sandbox = host_sandbox();
     let names: &[String] = if cfg!(windows) {
