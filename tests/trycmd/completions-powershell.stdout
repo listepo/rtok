@@ -273,7 +273,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('usage', 'usage', [CompletionResultType]::ParameterValue, 'Tokens and estimated cost per agent and month (or day), from the agents'' logs or rtok')
-            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
+            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear')
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
             [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
@@ -295,7 +295,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('usage', 'usage', [CompletionResultType]::ParameterValue, 'Tokens and estimated cost per agent and month (or day), from the agents'' logs or rtok')
-            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
+            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear')
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
             [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
@@ -544,8 +544,17 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free')
             [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agents;junk;list' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the text')
+            [CompletionResult]::new('--bytes', '--bytes', [CompletionResultType]::ParameterName, 'Exact byte counts instead of KB/MB/GB')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
         'rtok;agents;junk;clear' {
@@ -557,8 +566,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agents;junk;help' {
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free')
             [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agents;junk;help;list' {
             break
         }
         'rtok;agents;junk;help;clear' {
@@ -571,8 +584,17 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free')
             [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agent;junk;list' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the text')
+            [CompletionResult]::new('--bytes', '--bytes', [CompletionResultType]::ParameterName, 'Exact byte counts instead of KB/MB/GB')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
         'rtok;agent;junk;clear' {
@@ -584,8 +606,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agent;junk;help' {
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free')
             [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agent;junk;help;list' {
             break
         }
         'rtok;agent;junk;help;clear' {
@@ -673,7 +699,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('usage', 'usage', [CompletionResultType]::ParameterValue, 'Tokens and estimated cost per agent and month (or day), from the agents'' logs or rtok')
-            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
+            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear')
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
             [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
@@ -711,7 +737,11 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agents;help;junk' {
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free')
             [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
+            break
+        }
+        'rtok;agents;help;junk;list' {
             break
         }
         'rtok;agents;help;junk;clear' {
@@ -744,7 +774,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('usage', 'usage', [CompletionResultType]::ParameterValue, 'Tokens and estimated cost per agent and month (or day), from the agents'' logs or rtok')
-            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
+            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear')
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
             [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
@@ -782,7 +812,11 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agent;help;junk' {
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free')
             [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
+            break
+        }
+        'rtok;agent;help;junk;list' {
             break
         }
         'rtok;agent;help;junk;clear' {
@@ -1105,6 +1139,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Index health for the current or given root (T68.3)')
             [CompletionResult]::new('impact', 'impact', [CompletionResultType]::ParameterValue, 'Symbol impact or call paths to a target (T68.4)')
+            [CompletionResult]::new('projects', 'projects', [CompletionResultType]::ParameterValue, 'The project registry: list, add, remove, select (T329.2)')
             [CompletionResult]::new('affected', 'affected', [CompletionResultType]::ParameterValue, 'Tests that reach files changed in git (`git diff --name-only`)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
@@ -1138,6 +1173,86 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
+        'rtok;graph;projects' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of a table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Register a directory as a project (a known one only refreshes its last-used time)')
+            [CompletionResult]::new('select', 'select', [CompletionResultType]::ParameterValue, 'Make a project the selected one; the page and later the CLI answer for it')
+            [CompletionResult]::new('link', 'link', [CompletionResultType]::ParameterValue, 'Link a project into the selected one''s graph scope (indexes it when it never was)')
+            [CompletionResult]::new('unlink', 'unlink', [CompletionResultType]::ParameterValue, 'Remove a link; an auto link stays removed on re-index')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Drop a project and its index rows; its files are never touched')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;graph;projects;add' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of a table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;projects;select' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of a table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;projects;link' {
+            [CompletionResult]::new('--from', '--from', [CompletionResultType]::ParameterName, 'Link from this project instead of the selected one')
+            [CompletionResult]::new('--reason', '--reason', [CompletionResultType]::ParameterName, 'Why (shown next to the link)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--both', '--both', [CompletionResultType]::ParameterName, 'Also link the other way')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of a table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;projects;unlink' {
+            [CompletionResult]::new('--from', '--from', [CompletionResultType]::ParameterName, 'Unlink from this project instead of the selected one')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--both', '--both', [CompletionResultType]::ParameterName, 'Also remove the link the other way')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of a table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;projects;remove' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of a table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;projects;help' {
+            [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Register a directory as a project (a known one only refreshes its last-used time)')
+            [CompletionResult]::new('select', 'select', [CompletionResultType]::ParameterValue, 'Make a project the selected one; the page and later the CLI answer for it')
+            [CompletionResult]::new('link', 'link', [CompletionResultType]::ParameterValue, 'Link a project into the selected one''s graph scope (indexes it when it never was)')
+            [CompletionResult]::new('unlink', 'unlink', [CompletionResultType]::ParameterValue, 'Remove a link; an auto link stays removed on re-index')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Drop a project and its index rows; its files are never touched')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;graph;projects;help;add' {
+            break
+        }
+        'rtok;graph;projects;help;select' {
+            break
+        }
+        'rtok;graph;projects;help;link' {
+            break
+        }
+        'rtok;graph;projects;help;unlink' {
+            break
+        }
+        'rtok;graph;projects;help;remove' {
+            break
+        }
+        'rtok;graph;projects;help;help' {
+            break
+        }
         'rtok;graph;affected' {
             [CompletionResult]::new('--since', '--since', [CompletionResultType]::ParameterName, 'Diff against this ref')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
@@ -1152,6 +1267,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Index health for the current or given root (T68.3)')
             [CompletionResult]::new('impact', 'impact', [CompletionResultType]::ParameterValue, 'Symbol impact or call paths to a target (T68.4)')
+            [CompletionResult]::new('projects', 'projects', [CompletionResultType]::ParameterValue, 'The project registry: list, add, remove, select (T329.2)')
             [CompletionResult]::new('affected', 'affected', [CompletionResultType]::ParameterValue, 'Tests that reach files changed in git (`git diff --name-only`)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
@@ -1166,6 +1282,29 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;graph;help;impact' {
+            break
+        }
+        'rtok;graph;help;projects' {
+            [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Register a directory as a project (a known one only refreshes its last-used time)')
+            [CompletionResult]::new('select', 'select', [CompletionResultType]::ParameterValue, 'Make a project the selected one; the page and later the CLI answer for it')
+            [CompletionResult]::new('link', 'link', [CompletionResultType]::ParameterValue, 'Link a project into the selected one''s graph scope (indexes it when it never was)')
+            [CompletionResult]::new('unlink', 'unlink', [CompletionResultType]::ParameterValue, 'Remove a link; an auto link stays removed on re-index')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Drop a project and its index rows; its files are never touched')
+            break
+        }
+        'rtok;graph;help;projects;add' {
+            break
+        }
+        'rtok;graph;help;projects;select' {
+            break
+        }
+        'rtok;graph;help;projects;link' {
+            break
+        }
+        'rtok;graph;help;projects;unlink' {
+            break
+        }
+        'rtok;graph;help;projects;remove' {
             break
         }
         'rtok;graph;help;affected' {
@@ -1490,7 +1629,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('usage', 'usage', [CompletionResultType]::ParameterValue, 'Tokens and estimated cost per agent and month (or day), from the agents'' logs or rtok')
-            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home: log siblings and archive payloads past retention')
+            [CompletionResult]::new('junk', 'junk', [CompletionResultType]::ParameterValue, 'Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear')
             [CompletionResult]::new('whoami', 'whoami', [CompletionResultType]::ParameterValue, 'This session''s own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the store')
             [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Say what this agent (`RTOK_AGENT_ID`) is busy with: plain text, at most 120 chars')
@@ -1527,7 +1666,11 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;help;agents;junk' {
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free')
             [CompletionResult]::new('clear', 'clear', [CompletionResultType]::ParameterValue, 'List what `agents junk clear` would remove; `--yes` applies it')
+            break
+        }
+        'rtok;help;agents;junk;list' {
             break
         }
         'rtok;help;agents;junk;clear' {
@@ -1643,6 +1786,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Index health for the current or given root (T68.3)')
             [CompletionResult]::new('impact', 'impact', [CompletionResultType]::ParameterValue, 'Symbol impact or call paths to a target (T68.4)')
+            [CompletionResult]::new('projects', 'projects', [CompletionResultType]::ParameterValue, 'The project registry: list, add, remove, select (T329.2)')
             [CompletionResult]::new('affected', 'affected', [CompletionResultType]::ParameterValue, 'Tests that reach files changed in git (`git diff --name-only`)')
             break
         }
@@ -1656,6 +1800,29 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;help;graph;impact' {
+            break
+        }
+        'rtok;help;graph;projects' {
+            [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Register a directory as a project (a known one only refreshes its last-used time)')
+            [CompletionResult]::new('select', 'select', [CompletionResultType]::ParameterValue, 'Make a project the selected one; the page and later the CLI answer for it')
+            [CompletionResult]::new('link', 'link', [CompletionResultType]::ParameterValue, 'Link a project into the selected one''s graph scope (indexes it when it never was)')
+            [CompletionResult]::new('unlink', 'unlink', [CompletionResultType]::ParameterValue, 'Remove a link; an auto link stays removed on re-index')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Drop a project and its index rows; its files are never touched')
+            break
+        }
+        'rtok;help;graph;projects;add' {
+            break
+        }
+        'rtok;help;graph;projects;select' {
+            break
+        }
+        'rtok;help;graph;projects;link' {
+            break
+        }
+        'rtok;help;graph;projects;unlink' {
+            break
+        }
+        'rtok;help;graph;projects;remove' {
             break
         }
         'rtok;help;graph;affected' {

@@ -287,7 +287,7 @@ Live probes (the `rtok doctor` page), not store rows.
 hooks 0
 hooks check none found
 mcp
-  rtok (16 tools, ~308 desc tokens) [CWD]/target/[..]
+  rtok (18 tools, ~373 desc tokens) [CWD]/target/[..]
 proxy 
 proxy openai 
 BASH_MAX_OUTPUT_LENGTH (unset)
@@ -435,7 +435,7 @@ agents
     proxy   not supported: CodeWhale providers are [providers.<name>] tables with their own base_url and keys (docs/CONFIGURATION.md); setup does not edit them
     plugin  not supported: CodeWhale's plugin-bundle system needs a reviewed remote source and exact environment-source references (docs/PLUGIN_BUNDLES.md); there is no local directory to link
   mimo (cli)
-    hooks   not supported: MiMo Code has no shell hook events; like OpenCode, [..] run in-process through a linked plugin, which this task does not ship
+    hooks   not supported: MiMo Code has no shell hook events; like OpenCode, tool[..]cute.before/after run in-process through a linked plugin, which this task does not ship
     mcp     not installed
     proxy   not supported: MiMo Code has no documented base-URL override; MIMOCODE_HOME/MIMOCODE_CONFIG relocate config, not the model endpoint
     plugin  not supported: MiMo's in-process plugin package (the @mimo-ai/plugin analogue of @opencode-ai/plugin) is undocumented; linking one here would be a guess, not a verified path
