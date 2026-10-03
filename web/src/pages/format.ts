@@ -41,3 +41,5 @@ export function ago(ts: number, now: number): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
+
+export const nowSecs = (): number => Math.floor(Date.now() / 1000);
