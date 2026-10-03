@@ -144,6 +144,11 @@ fn update_rewrites_once_then_is_already_current() {
         is_current_rtok(&root["mcpServers"]["rtok"]["command"]),
         "{after}"
     );
+    // T283.2: an entry written before `--host` gains it on update.
+    assert_eq!(
+        root["mcpServers"]["rtok"]["args"],
+        serde_json::json!(["mcp", "--host", "windsurf"])
+    );
     assert_eq!(root["mcpServers"]["other"]["command"], "other-mcp");
     assert_eq!(backups(&path).len(), 1);
 

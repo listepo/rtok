@@ -15,7 +15,7 @@ from `rtok mcp` only. `remove` unlinks the extension and drops our server, keepi
 | --- | --- | --- |
 | plugin | `--yes` | the offer links `plugins/pi`; without a terminal only `--yes` accepts |
 | hooks | no | omp hooks are in-process TS modules; the linked pi extension owns that path |
-| mcp | yes | `mcpServers.rtok` → `rtok mcp` in `mcp.json`, `{command, args}` as the omp docs show it, no `type` (off with `[setup] mcp = false`) |
+| mcp | yes | `mcpServers.rtok` → `rtok mcp --host omp` in `mcp.json`, `{command, args}` as the omp docs show it, no `type` (off with `[setup] mcp = false`) |
 | proxy | no | omp provider base URLs live in models.yml, which setup does not edit |
 
 Verified on omp 18.1.14 (T92): the symlinked `plugins/pi` is discovered through `pi.extensions`;

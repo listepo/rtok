@@ -413,12 +413,12 @@ fn insert_ours(doc: &mut DocumentMut, path: impl std::fmt::Display) -> Result<St
     let cmd = super::rtok_command();
     let mut entry = Table::new();
     entry["command"] = value(cmd.as_str());
-    let mut args = Array::new();
-    args.push("mcp");
+    let args = Array::from_iter(super::mcp_args("codex"));
     entry["args"] = value(args);
     servers.insert(NAME, Item::Table(entry));
     Ok(format!(
-        "+ [mcp_servers.rtok]\ncommand = \"{cmd}\"\nargs = [\"mcp\"]"
+        "+ [mcp_servers.rtok]\ncommand = \"{cmd}\"\nargs = [\"{}\"]",
+        super::mcp_args("codex").join("\", \"")
     ))
 }
 
@@ -426,7 +426,7 @@ fn insert_ours(doc: &mut DocumentMut, path: impl std::fmt::Display) -> Result<St
 /// [`rtok_agent_sdk::judge_owned`] compares a live table against (T246.5, T275/D33). The
 /// literal command never matters — `judge_owned` folds every rtok binary string to one.
 fn mcp_entry() -> serde_json::Value {
-    json!({"command": "rtok", "args": ["mcp"]})
+    json!({"command": "rtok", "args": super::mcp_args("codex")})
 }
 
 /// Take the `rtok` slot back only as far as rtok wrote it (T246, T246.5, T275/D33):
@@ -470,7 +470,7 @@ fn is_ours(t: &Table) -> bool {
     t.get("command")
         .and_then(Item::as_str)
         .is_some_and(super::is_rtok_bin)
-        && args == ["mcp"]
+        && args == super::mcp_args("codex")
 }
 
 fn insert_proxy(doc: &mut DocumentMut, url: &str) -> Result<String> {
@@ -600,7 +600,10 @@ mod tests {
         fs::write(&path, "model = \"o3\" # keep me\n").unwrap();
         let out = run(&c, false).unwrap();
         assert!(out.starts_with("+ [mcp_servers.rtok]"), "{out}");
-        assert!(out.contains("args = [\"mcp\"]"), "{out}");
+        assert!(
+            out.contains("args = [\"mcp\", \"--host\", \"codex\"]"),
+            "{out}"
+        );
         assert_eq!(out.matches("[mcp_servers.rtok]").count(), 1);
         assert_eq!(
             fs::read_to_string(&path).unwrap(),
@@ -639,7 +642,10 @@ mod tests {
             "{raw}"
         );
         assert!(raw.contains("[mcp_servers.rtok]"), "{raw}");
-        assert!(raw.contains("args = [\"mcp\"]"), "{raw}");
+        assert!(
+            raw.contains("args = [\"mcp\", \"--host\", \"codex\"]"),
+            "{raw}"
+        );
         assert!(!raw.contains("\n[mcp_servers]\n"), "{raw}");
         let parsed: toml_edit::DocumentMut = raw.parse().unwrap();
         assert_eq!(
@@ -666,7 +672,10 @@ mod tests {
         run(&c, false).unwrap();
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("[mcp_servers.rtok]"), "{raw}");
-        assert!(raw.contains("args = [\"mcp\"]"), "{raw}");
+        assert!(
+            raw.contains("args = [\"mcp\", \"--host\", \"codex\"]"),
+            "{raw}"
+        );
         assert!(
             super::super::is_rtok_bin(
                 raw.parse::<toml_edit::DocumentMut>().unwrap()["mcp_servers"]["rtok"]["command"]
@@ -936,6 +945,21 @@ mod tests {
                 "codex plugin remove rtok@rtok && codex plugin marketplace remove rtok && codex plugin marketplace add listepo/rtok && codex plugin add rtok@rtok"
             ),
             "{report}"
+        );
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn an_entry_without_host_is_upgraded_and_still_removable() {
+        let (c, path) = cfg("legacy-host", false);
+        let seed = "# keep me\n[mcp_servers.other]\ncommand = \"x\"\n\n[mcp_servers.rtok]\ncommand = \"rtok\"\nargs = [\"mcp\"]\n";
+        crate::agents::mcp::assert_legacy_entry_upgraded(
+            &path,
+            seed,
+            "codex",
+            &["# keep me", "[mcp_servers.other]\ncommand = \"x\"\n"],
+            || run(&c, false),
+            || run(&c, true),
         );
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

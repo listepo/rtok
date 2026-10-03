@@ -309,6 +309,25 @@ fn worktrees_page_exists_on_both_surfaces() {
     );
 }
 
+/// T358.5: both surfaces render the Usage page from the one report `rtok agents usage` builds
+/// (`usage::report`): the tui shows its text, the SPA its rows as data.
+#[test]
+fn usage_page_exists_on_both_surfaces() {
+    let Surfaces { model, tui, .. } = SURFACES;
+    assert!(
+        model.contains("(\"usage\", \"agent_usage\")"),
+        "pages() offers usage"
+    );
+    assert!(
+        model.contains("usage::report("),
+        "the one report lives behind the model (D23)"
+    );
+    assert!(
+        tui.contains("\"usage\" =>"),
+        "the TUI renders the usage page"
+    );
+}
+
 /// Reading commands and the page of the model they render: (command path, page). The
 /// page must be one `model::pages()` offers — a page both surfaces carry in the frame.
 /// The mapping is many-to-one: several commands may render the same page.
@@ -342,6 +361,7 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     ("otel status", "services"),
     // the Worktrees page rides the snapshot since T232, so `worktree list` renders it
     ("worktree list", "worktrees"),
+    ("agents usage", "usage"),
 ];
 
 /// The commands D27 exempts, each with its reason. Streaming commands print a stream,
@@ -474,11 +494,6 @@ const EXEMPT: &[(&str, &str)] = &[
         "agents inbox",
         "one agent's framed message queue, marked read when the agent reads its own (T287); \
          not a shared model page",
-    ),
-    (
-        "agents usage",
-        "reading command whose Usage page on `rtok web` / `rtok tui` is T358.5 (D23/D27); it \
-         moves to COMMAND_PAGES with it",
     ),
     (
         "info",
@@ -618,6 +633,7 @@ const JSON_READERS: &[&str] = &[
     "otel status",
     "memory status",
     "worktree list",
+    "agents usage",
     "graph status",
     "graph dead",
 ];
