@@ -234,6 +234,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcom
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from usage" -l host -d 'Only these hosts, comma-separated (`claude,codex`)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from usage" -l since -d 'From a date (`2026-09-01`, whole days in `--tz`) or a duration back from now (`30d`)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from usage" -l until -d 'Through this date, inclusive' -r
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from usage" -l by -d 'Middle table grouping: `agent` (the default) or `model`' -r
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from usage" -l tz -d 'IANA time zone for day and month boundaries (default: the system zone)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from usage" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from usage" -l daily -d 'Bottom table by day'
@@ -351,6 +352,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcomm
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from usage" -l host -d 'Only these hosts, comma-separated (`claude,codex`)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from usage" -l since -d 'From a date (`2026-09-01`, whole days in `--tz`) or a duration back from now (`30d`)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from usage" -l until -d 'Through this date, inclusive' -r
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from usage" -l by -d 'Middle table grouping: `agent` (the default) or `model`' -r
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from usage" -l tz -d 'IANA time zone for day and month boundaries (default: the system zone)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from usage" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from usage" -l daily -d 'Bottom table by day'

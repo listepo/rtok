@@ -57,6 +57,5 @@
 - T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
 - T358.4. `rtok agents usage` readers: Grok, ZCode, Kimi, pi, Antigravity
 - T358.5. The Usage page on `rtok web` and `rtok tui`
-- T358.6. `rtok agents usage`: `--by`, saved columns and the `skipped` list
 - T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
 - T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
