@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Parsers for the Snapshot fields that are plain text on the wire: stats, graph, hosts,
 // config, services and worktrees. Rust renders each page as the same text its CLI command
 // prints (D27), so the SPA reads that text instead of a second structured contract. Every
