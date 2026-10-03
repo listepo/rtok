@@ -2045,6 +2045,11 @@ pub fn run() -> Result<()> {
             since,
             ai,
         } => {
+            // As for `stats`: the flag is parsed before it merges into `report.since`, so a later
+            // parse error can only come from the config or the environment and says so.
+            if let Some(s) = &since {
+                crate::measure::stats::parse_since(s)?;
+            }
             let cfg =
                 Config::load_with(config_file.as_deref(), report_flags(format, out, since, ai))?;
             // D24: the command picks the renderer and the sink; every number was already
