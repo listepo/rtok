@@ -163,7 +163,10 @@ export class Stage implements ViewApi {
     this.heads.count = this.edges.length;
     this.owner.forEach((i, n) => this.lines!.setColorAt(n, tint(this.edges[i]!)));
     this.edges.forEach((e, i) => this.heads!.setColorAt(i, tint(e)));
-    for (const m of [this.lines, this.heads]) m.instanceColor!.needsUpdate = true;
+    // No edge means no setColorAt call, and three.js leaves instanceColor null until the first.
+    for (const m of [this.lines, this.heads]) {
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    }
     for (const m of [this.lines, this.heads]) m.frustumCulled = false;
     this.group.add(this.lines, this.heads);
     this.onPositions();
