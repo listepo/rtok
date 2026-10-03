@@ -30,7 +30,7 @@ complete -c rtok -n "__fish_rtok_needs_command" -s V -l version -d 'Print versio
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "hook" -d 'Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "mcp" -d 'Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "proxy" -d 'Local API proxy for ANTHROPIC_BASE_URL'
-complete -c rtok -n "__fish_rtok_needs_command" -f -a "web" -d 'Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)'
+complete -c rtok -n "__fish_rtok_needs_command" -f -a "web" -d 'Local web UI over the same data as `rtok tui` (WebSocket API + React SPA)'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "tui" -d 'Terminal UI over the same data as `rtok web` (D23: one model, two renderings)'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "stats" -d 'Measurements from session logs and the proxy'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "bench" -d 'A/B benchmark of host configurations'
@@ -524,14 +524,15 @@ complete -c rtok -n "__fish_rtok_using_subcommand memory; and __fish_seen_subcom
 complete -c rtok -n "__fish_rtok_using_subcommand memory; and __fish_seen_subcommand_from help" -f -a "sync" -d 'Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)'
 complete -c rtok -n "__fish_rtok_using_subcommand memory; and __fish_seen_subcommand_from help" -f -a "status" -d 'Notes live/pinned/retired, recall and MCP call counts (T69.4)'
 complete -c rtok -n "__fish_rtok_using_subcommand memory; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
-complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact affected help" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
-complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact affected help" -s h -l help -d 'Print help'
-complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact affected help" -f -a "index" -d 'Walk a tree and insert definitions + references'
-complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact affected help" -f -a "dead" -d 'List unreferenced private definitions (skips pub, trait impls, tests, macros)'
-complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact affected help" -f -a "status" -d 'Index health for the current or given root (T68.3)'
-complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact affected help" -f -a "impact" -d 'Symbol impact or call paths to a target (T68.4)'
-complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact affected help" -f -a "affected" -d 'Tests that reach files changed in git (`git diff --name-only`)'
-complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact affected help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact projects affected help" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact projects affected help" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact projects affected help" -f -a "index" -d 'Walk a tree and insert definitions + references'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact projects affected help" -f -a "dead" -d 'List unreferenced private definitions (skips pub, trait impls, tests, macros)'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact projects affected help" -f -a "status" -d 'Index health for the current or given root (T68.3)'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact projects affected help" -f -a "impact" -d 'Symbol impact or call paths to a target (T68.4)'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact projects affected help" -f -a "projects" -d 'The project registry: list, add, remove, select (T329.2)'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact projects affected help" -f -a "affected" -d 'Tests that reach files changed in git (`git diff --name-only`)'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and not __fish_seen_subcommand_from index dead status impact projects affected help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from index" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from index" -l dry-run -d 'Report what would be indexed and write no rows'
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from index" -s h -l help -d 'Print help'
@@ -545,6 +546,15 @@ complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcomm
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from impact" -l to -r
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from impact" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from impact" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from projects" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from projects" -l json -d 'JSON instead of a table'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from projects" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from projects" -f -a "add" -d 'Register a directory as a project (a known one only refreshes its last-used time)'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from projects" -f -a "select" -d 'Make a project the selected one; the page and later the CLI answer for it'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from projects" -f -a "link" -d 'Link a project into the selected one/'s graph scope (indexes it when it never was)'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from projects" -f -a "unlink" -d 'Remove a link; an auto link stays removed on re-index'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from projects" -f -a "remove" -d 'Drop a project and its index rows; its files are never touched'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from projects" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from affected" -l since -d 'Diff against this ref' -r
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from affected" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from affected" -l staged -d 'Staged files only (`git diff --cached --name-only`)'
@@ -554,6 +564,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcomm
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from help" -f -a "dead" -d 'List unreferenced private definitions (skips pub, trait impls, tests, macros)'
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from help" -f -a "status" -d 'Index health for the current or given root (T68.3)'
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from help" -f -a "impact" -d 'Symbol impact or call paths to a target (T68.4)'
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from help" -f -a "projects" -d 'The project registry: list, add, remove, select (T329.2)'
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from help" -f -a "affected" -d 'Tests that reach files changed in git (`git diff --name-only`)'
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand guard; and not __fish_seen_subcommand_from check help" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
@@ -646,7 +657,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand report" -s h -l help -d 'Print
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor worktree info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "hook" -d 'Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor worktree info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "mcp" -d 'Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor worktree info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "proxy" -d 'Local API proxy for ANTHROPIC_BASE_URL'
-complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor worktree info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "web" -d 'Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)'
+complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor worktree info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "web" -d 'Local web UI over the same data as `rtok tui` (WebSocket API + React SPA)'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor worktree info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "tui" -d 'Terminal UI over the same data as `rtok web` (D23: one model, two renderings)'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor worktree info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "stats" -d 'Measurements from session logs and the proxy'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor worktree info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "bench" -d 'A/B benchmark of host configurations'
@@ -712,6 +723,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcomma
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from graph" -f -a "dead" -d 'List unreferenced private definitions (skips pub, trait impls, tests, macros)'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from graph" -f -a "status" -d 'Index health for the current or given root (T68.3)'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from graph" -f -a "impact" -d 'Symbol impact or call paths to a target (T68.4)'
+complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from graph" -f -a "projects" -d 'The project registry: list, add, remove, select (T329.2)'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from graph" -f -a "affected" -d 'Tests that reach files changed in git (`git diff --name-only`)'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from guard" -f -a "check" -d 'Print `{"allow":true}` or `{"allow":false,"reason":…}` (fail open: bad input allows)'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from demon" -f -a "start" -d 'Detach a supervisor that restarts the service whenever it dies'

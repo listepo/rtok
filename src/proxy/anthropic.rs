@@ -295,8 +295,8 @@ mod tests {
     fn skill_body_right_after_launching_skill_is_a_skill_ref() {
         let mut same = json!({"messages":[
             {"role":"user","content":[
-                {"type":"tool_result","tool_use_id":"tu1","content":"Launching skill: slint"},
-                {"type":"text","text":"Base directory for this skill: /s/slint\n\n# Slint\n"}
+                {"type":"tool_result","tool_use_id":"tu1","content":"Launching skill: pixel"},
+                {"type":"text","text":"Base directory for this skill: /s/pixel\n\n# Pixel\n"}
             ]},
             {"role":"assistant","content":"ok"},
             {"role":"user","content":[{"type":"text","text":"next"}]}
@@ -304,7 +304,7 @@ mod tests {
         let refs = ANTHROPIC.skill_refs(&mut same);
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].id, "tu1");
-        assert_eq!(refs[0].name, "slint");
+        assert_eq!(refs[0].name, "pixel");
         assert_eq!(refs[0].turn, 1);
 
         let mut next = json!({"messages":[
@@ -333,14 +333,14 @@ mod tests {
     fn a_non_body_block_before_the_skill_text_does_not_eat_the_pair() {
         let mut msgs = json!({"messages":[
             {"role":"user","content":[
-                {"type":"tool_result","tool_use_id":"tu1","content":"Launching skill: slint"},
+                {"type":"tool_result","tool_use_id":"tu1","content":"Launching skill: pixel"},
                 {"type":"text","text":"working on it"},
-                {"type":"text","text":"Base directory for this skill: /s/slint\n\n# Slint\n"}
+                {"type":"text","text":"Base directory for this skill: /s/pixel\n\n# Pixel\n"}
             ]}
         ]});
         let refs = ANTHROPIC.skill_refs(&mut msgs);
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].id, "tu1");
-        assert_eq!(refs[0].name, "slint");
+        assert_eq!(refs[0].name, "pixel");
     }
 }

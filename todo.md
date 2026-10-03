@@ -24,32 +24,20 @@
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T290. Docs, skill and one cross-host test for agents and worktrees
 - T310. React SPA replaces the Slint web UI (epic)
-- T310.6. Pages: overview, plugins (toggle), calls (expand)
-- T310.7. Pages: sessions, doctor, logs
-- T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
-- T310.9. Serve the SPA from `rtok web`
-- T310.10. Playwright e2e against the real binary
-- T310.11. CI job for the SPA
-- T310.12. Delete Slint, the WASM build and the HTML design
 - T329. Graph page: project selector, auto-added projects and linked projects (epic)
-- T329.2. `rtok graph projects`: list, add, remove, select, with per-project index status
-- T329.3. Project links and graph scope: `link`/`unlink`, cycle-safe scope, manual and auto kinds
 - T329.4. `project` argument and scoped traversal for symbol, callers, impact, explore and outline (CLI and MCP)
 - T329.5. Scoped `dead` and `affected`, whole-answer caps, watch across the scope
 - T329.6. Auto-adding projects rtok sees in use (sessions, worktrees, graph MCP calls) and its config keys
-- T329.7. Reference discovery from manifests (Cargo, npm, Go, Python, submodules)
-- T329.8. Following references: transitive, depth and project caps, auto-link lifecycle, remembered unlinks
 - T329.9. Graph backend `auto`: LSP first, tree-sitter second, chosen per project and language
 - T329.10. Graph text-search backend (rg/grep) including `ssh://` roots
 - T329.11. Graph capability cache: one probe per project until the process restarts
-- T329.12. `/ws` project messages and the SPA graph page selector, indicator and links panel
-- T329.13. Graph page level 1: 3D projects overview (Three.js, 2D fallback)
 - T329.14. Graph page level 2: drill-down into one project
 - T329.15. Graph page: two-part UI with the read-only live graph and live metrics
 - T329.16. Graph export: PNG, SVG, JSON, `rtok graph export`, MCP `graph_export`
 - T329.17. Graph alerts: linked project down or unreachable
 - T329.18. Graph diff: compare before and after a change
 - T329.19. Graph health score per project
+- T329.20. SPA graph page links panel: link, unlink, both ways, project badges
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 - T330.2. Junk: every host as an agent row, folders from `research.md` §22
 - T330.3. Junk: `cache`, `temp`, `build`, `locks`, `swap` kinds and rtok's own caches
@@ -57,6 +45,13 @@
 - T330.5. Junk: review kinds (`sessions`, `stale-worktrees`, `stale-tokens`, `crash-dumps`, `snapshots`, `logs`, `deps`, `backups`, `index`) and `[agents.junk]` config
 - T330.6. Junk: item breakdown, `doctor` line, web card
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
+- T331.3. Doctor: duplicate hooks
+- T331.4. Doctor: duplicate MCP entries
+- T331.5. Doctor `--fix` for broken hooks
+- T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
+- T331.7. Doctor: interactive checklist, web action, docs and property tests
+- T331.8. Doctor: hook files in TOML and other formats
+- T331.9. Doctor: `--agent <host>` and Windows hook rules
 - T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 - T333. Investigate: T271 desktop-entry sweep vs D33/T275
 - T334. Investigate: graph default backend: T329 `auto` (LSP first, fallback) vs graph PLAN.md P30 decisions
@@ -79,7 +74,3 @@
 - T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
 - T358.4. `rtok agents usage` readers: Grok, ZCode, Kimi, pi, Antigravity
 - T358.5. The Usage page on `rtok web` and `rtok tui`
-- T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
-- T361. `rtok memory import` reports success for a missing or unreadable file
-- T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal
-- T367. `rtok graph index <path>` exits 0 for a path that does not exist

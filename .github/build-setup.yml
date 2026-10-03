@@ -15,15 +15,15 @@
 # Build releases with the Rust that ci.yml tests: the `rust` pin in mise.toml (the
 # single source of the Rust version), not whatever stable the runner image ships.
 # Runs first so rust-cache keys on this rustc. Only `rust` is installed; the other
-# mise tools are not needed to build. rustfmt and clippy come from mise.toml.
+# mise tools are not needed to build, except `node` for the SPA. rustfmt and clippy come from mise.toml.
 - name: Install Rust from mise.toml
   uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
   with:
-    install_args: rust
+    install_args: rust node
     cache_key_prefix: mise-v1-release
 
-# Make the mise pin the active toolchain for every later rustup/cargo call (dist,
-# wasm-pack) and add the matrix cross targets to it.
+# Make the mise pin the active toolchain for every later rustup/cargo call (dist)
+# and add the matrix cross targets to it.
 - name: Add release targets to the mise toolchain
   shell: bash
   env:
@@ -46,20 +46,16 @@
     # Release builds are rare; always save so the next cut is warm.
     cache-on-failure: true
 
-# T111: the binary embeds the Slint WASM bundle (build.rs), so an installed
-# `rtok web` has a UI instead of explaining its absence (T80) — even from a ketch
-# install that keeps only the executable. Each matrix job builds the bundle before
-# `dist build`; RTOK_WEB_EMBED=require makes build.rs fail rather than embed nothing.
-- name: Install wasm-pack
-  uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
-  with:
-    tool: wasm-pack
-
-- name: Build the Slint WASM bundle
+# T310.9: the binary embeds the React SPA (build.rs reads web/dist), so an installed `rtok web`
+# has a UI even from a ketch install that keeps only the executable. Each matrix job builds the
+# SPA before `dist build`; RTOK_WEB_EMBED=require makes build.rs fail rather than embed the
+# "UI not built" placeholder.
+- name: Build the SPA
   shell: bash
   run: |
-    rustup target add wasm32-unknown-unknown
-    tools/webui-bundle.sh --require
+    set -euo pipefail
+    mise exec -- npm --prefix web ci
+    mise exec -- npm --prefix web run build
     echo "RTOK_WEB_EMBED=require" >> "$GITHUB_ENV"
 
 # T319: every archive carries share/ (dist `include`): man pages from `rtok man --dir` and the

@@ -113,6 +113,13 @@ const ALLOW_KEYS: &[&str] = &[
     "setup.exit_code",
     // `agents usage --unpriced` (T358.1): which view one call prints, not a stored setting.
     "agents.usage.unpriced",
+    // `graph projects link|unlink --from/--both/--reason` (T329.3): which two projects one call
+    // links and why, not stored settings.
+    "graph.projects.link.from",
+    "graph.projects.link.both",
+    "graph.projects.link.reason",
+    "graph.projects.unlink.from",
+    "graph.projects.unlink.both",
 ];
 
 #[test]
