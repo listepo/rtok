@@ -39,6 +39,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T310.11 | todo | P2 | 3 | 0% | |
 | T329 | todo | P2 | 5 | 0% | |
 | T330 | todo | P2 | 4 | 0% | |
+| T330.2 | todo | P2 | 3 | 0% | |
+| T330.3 | todo | P2 | 3 | 0% | |
+| T330.4 | todo | P2 | 4 | 0% | |
+| T330.5 | todo | P2 | 4 | 0% | |
+| T330.6 | todo | P3 | 3 | 0% | |
 | T331 | todo | P1 | 4 | 0% | |
 | T332 | todo | research | 1 | 0% | |
 | T333 | todo | research | 1 | 0% | |
@@ -929,6 +934,8 @@ Check: fixture repos under `tests/fixtures`, no network:
 
 ### T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 
+Split into T330.1 to T330.6 (one PR each); this card stays the spec and the epic.
+
 Ivan, 2026-10-01: one command group to see and clean junk for every agent: `rtok agents junk list` to view and `rtok agents junk clear` to remove. For each agent, show its folders (as links), the size of each folder in KB/MB/GB, and how much space a clear would free. `clear` stays a dry run by default and deletes only with `--yes`, as T182's `rtok agents junk clear` does today.
 
 Today `rtok agents junk clear` (T182, #286) only clears junk rtok itself owns under its home (rotated `rtok.log.<N>` siblings past `[log] files`, archive payloads past `core.retain_calls_days`). The per-host junk map is research only (`research.md` §22); T182.1 (wire the host folders after review) never landed. There is no `list`, no per-agent view and no sizes.
@@ -1098,6 +1105,36 @@ Check: fixture home under a temp dir, `HOME`/`XDG_*`/`LOCALAPPDATA` pointed at i
 - Permission-denied and timeout folders are reported, not fatal; exit code 1 when anything planned was not removed.
 - `--trash` moves items to the platform trash (tested on macOS and Linux CI).
 - `just check`.
+
+### T330.2. Junk: every host as an agent row, folders from `research.md` §22
+
+Part of T330. One row per host in `agents::HOSTS` (not installed hosts skipped, `--all` lists them), its config/data/cache/log folders from the §22 map with `file://` links (OSC 8) and sizes, environment overrides honoured (`XDG_CACHE_HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`), a folder shared by two agents counted once with a "shared with" note, permission-denied and per-agent timeout reported. Depends on T330.1 and on the open investigations T338 and T339 (what §22 allows to touch, §22 paths vs heuristic cache detection).
+
+Check: fixture HOME with Claude Code, Cursor and Codex folders: each agent, folder and size appears with exact `--bytes`; a symlink out of a folder is not followed; `just check`.
+
+### T330.3. Junk: `cache`, `temp`, `build`, `locks`, `swap` kinds and rtok's own caches
+
+Part of T330. The safe kinds of the T330 table plus rtok's cache (`.rtok-lsp-xdg/{cache,pub-cache}`, `$XDG_CACHE_HOME/rtok`, `CACHEDIR.TAG` dirs, T329 registry roots) and each agent's cache (§22 dirs, platform cache roots, Electron cache folders only where §22 confirms Electron). A bad `CACHEDIR.TAG` signature is not cache; settings, extensions and downloaded models are `never`. Depends on T330.2 and the investigations T339/T342.
+
+Check: the T330 "Cache" fixtures (exact sizes, kinds under the right agent, tag handling); `just check`.
+
+### T330.4. Junk `clear`: `--agent`, `--kind`, `--include review`, `--older-than`, `--trash`, re-check, exit codes
+
+Part of T330. `clear` takes the same scan as `list`, filters it (`--agent` repeatable, `--kind`, `--include review`, `--older-than`), re-checks every item before deleting (still there, not open, not a symlink out, not modified in the last minute), skips a running agent's temp/locks/swap/index, supports `--trash`, prints the planned and freed bytes per agent and kind, and exits 1 when something planned was not removed. `agents junk clear` with no flags and `--agent rtok` keep T182's behaviour (the existing tests stay green). Depends on T330.3 and the investigations T340/T344.
+
+Check: dry run changes no file (tree hash), `--yes` removes exactly the planned safe items, lockfiles/settings/`rtok.db` untouched, a changed item is skipped; `just check`.
+
+### T330.5. Junk: review kinds (`sessions`, `stale-worktrees`, `stale-tokens`, `crash-dumps`, `snapshots`, `logs`, `deps`, `backups`, `index`) and `[agents.junk]` config
+
+Part of T330. The review-class kinds with their keeps (`stale_session_days` default 3, time only; worktrees through `git worktree remove`; token files only by name), the `[agents.junk]` table (`stale_session_days`, `keep_logs_days`, `keep_snapshots_days`, `stale_worktree_days`, `crash_dump_min_age_days`, `temp_min_age_hours`, `exclude`, `extra`), `--session-days`, docs in `docs/config.md` (en, ru, uk). Depends on T330.4 and the investigations T338/T341.
+
+Check: the T330 "New kinds" and "Session threshold" fixtures; invalid values rejected naming the key; `just check`.
+
+### T330.6. Junk: item breakdown, `doctor` line, web card
+
+Part of T330. `list` and the `clear` dry run print every planned item (link, size, last used, reason, skip reason; 10 per kind plus "+N more", `--items`, `--sort`, `--min-size`), `--json` carries every item, `rtok doctor` adds one reclaimable-space line (hint when over 1 GB), the web hosts page gets the "clear safe junk" button (after T310.8), `docs/agents.md` gets a Junk section (en, ru, uk). Depends on T330.5 and the investigation T343 (the two `--sort` value sets).
+
+Check: the T330 "Breakdown" fixtures; `just check`.
 
 ### T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
 
