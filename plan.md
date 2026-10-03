@@ -45,9 +45,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T330.5 | todo | P2 | 4 | 0% | |
 | T330.6 | todo | P3 | 3 | 0% | |
 | T331 | todo | P1 | 4 | 0% | |
-| T331.6 | todo | P1 | 4 | 0% | |
 | T331.7 | todo | P2 | 3 | 0% | |
-| T331.9 | todo | P2 | 3 | 0% | |
 | T331.10 | todo | P2 | 2 | 0% | |
 | T332 | todo | research | 1 | 0% | |
 | T333 | todo | research | 1 | 0% | |
@@ -1195,24 +1193,11 @@ Check: all of the above pass on Linux, macOS and Windows CI; the "no real paths"
 
 Split (epic, too large for one PR: three detectors, a fix engine, an interactive UI, ~15 host config shapes; each part ships read-only value or a tested edit and is one PR). Order: T331.1 broken hooks (read-only, the injected `Fs`/`Env`/`Which` seam every later part reuses), T331.2 JSON hook files of the other hosts and of Claude plugins, T331.8 TOML hook files, T331.9 `--agent` and Windows rules, T331.3 duplicate hooks, T331.4 duplicate MCP entries, T331.5 `--fix` for broken hooks (the edit/backup/race engine), T331.6 `--fix` for duplicates, T331.7 interactive checklist, web doctor action, docs and the property/pty tests. T331.10 (rtok's own MCP entry in the duplicate check) and the rtok part of T331.6 wait for the T332 and T333 decisions; everything else does not depend on them.
 
-### T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
-
-Part of T331. Extends the T331.5 engine to the extra copies of T331.3 and T331.4: keep rules, choosing another copy, never the last copy, TOML `[mcp_servers.<name>]` removal, never a plugin's own files or a managed file. Depends on T331.3, T331.4, T331.5 and, for rtok's own entry, T331.10.
-
-Check: the duplicate scenarios of "User selecting cleanup" and the combined case; `just check`.
-
 ### T331.7. Doctor: interactive checklist, web action, docs and property tests
 
 Part of T331. The terminal checklist with the injected `Prompt` trait (pre-unselected project files, toggles, change the kept copy, per-file diff, confirmation), the "Fix selected" action on the web doctor page (T310.7), `docs/agents.md` and the help text with `docs/ru/` and `docs/uk/`, the `proptest` invariants and the pseudo-terminal test. Depends on T331.6 and T310.7.
 
 Check: the scripted-prompt scenarios, the property tests, the pty test; `just check`.
-
-### T331.9. Doctor: `--agent <host>` and Windows hook rules
-
-Part of T331. `rtok doctor --agent <host>` limits the hooks check to one host (the id of `agents::HOSTS`; an unknown id is an error naming the valid ones), and on Windows a hook command resolves by `PATHEXT` and the `cmd`/PowerShell word rules of the host instead of POSIX words. Depends on T331.2.
-
-Check: the host filter on mocks (known, unknown, a host without hooks), `PATHEXT` cases on a case-insensitive mock `Fs`; `just check`.
-
 
 ### T331.10. Doctor: rtok's own MCP entry in the duplicate check
 

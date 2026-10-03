@@ -1,7 +1,7 @@
 bin.name = "rtok"
 args = "--config tests/trycmd/input/json-readers.toml doctor --fix"
 stdout = """
-no broken hooks to remove
+nothing to remove
 """
 
 # Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false. An empty home has no hook
