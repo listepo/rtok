@@ -750,7 +750,7 @@ enum AgentCmd {
         #[arg(long)]
         json: bool,
     },
-    /// Junk rtok owns under its own home: log siblings and archive payloads past retention
+    /// Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear
     Junk {
         #[command(subcommand)]
         action: JunkCmd,
@@ -800,6 +800,15 @@ enum AgentCmd {
 
 #[derive(Subcommand)]
 enum JunkCmd {
+    /// Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free
+    List {
+        /// JSON instead of the text
+        #[arg(long)]
+        json: bool,
+        /// Exact byte counts instead of KB/MB/GB
+        #[arg(long)]
+        bytes: bool,
+    },
     /// List what `agents junk clear` would remove; `--yes` applies it
     Clear {
         /// Apply; without it this is a dry run that changes nothing
@@ -1556,6 +1565,17 @@ pub fn run() -> Result<()> {
                     print!("{}", report.unpriced_text());
                 } else {
                     print!("{}", report.to_text());
+                }
+            }
+            AgentCmd::Junk {
+                action: JunkCmd::List { json, bytes },
+            } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let report = crate::agents::junk::report(&cfg);
+                if json {
+                    print_json(&report)?;
+                } else {
+                    print!("{}", crate::agents::junk::to_list(&report, bytes));
                 }
             }
             AgentCmd::Junk {
