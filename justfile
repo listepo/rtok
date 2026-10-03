@@ -78,6 +78,15 @@ spa-typecheck:
 spa-test:
     {{npm}} --prefix web run test
 
+# T310.5: every story as a Vitest browser test (render, play function, axe). Needs Chromium
+# (`npx playwright install chromium` in web/, or SPA_BROWSER_CHANNEL=chrome).
+spa-stories:
+    {{npm}} --prefix web run test:stories
+
+# T310.5: static Storybook build of the UI kit.
+spa-storybook:
+    {{npm}} --prefix web run build-storybook
+
 # T183: tools/publish_marketplace's own test suite (no network, no real `gh`).
 python:
     {{pytest}} tools/tests

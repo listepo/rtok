@@ -64,16 +64,21 @@ pub struct Request {
     pub output: i64,
 }
 
-/// Every `token_count` request under `dir`, oldest file first. `collect` sums these and
-/// `measure::usage` buckets them (T358.2), so there is one parser for the format.
-pub fn requests(dir: &Path, cutoff: SystemTime) -> Vec<Request> {
+/// Every `token_count` request under `dir`, oldest file first, and the first rollout that
+/// could not be read or held no JSON line at all (T358.6: `rtok agents usage` names it).
+/// `collect` sums these and `measure::usage` buckets them (T358.2), so there is one parser
+/// for the format.
+pub fn requests(dir: &Path, cutoff: SystemTime) -> (Vec<Request>, Option<PathBuf>) {
     let mut paths = jsonl_paths(dir, cutoff);
     paths.sort();
     let mut out = Vec::new();
+    let mut unreadable = None;
     for p in paths {
         let Ok(text) = std::fs::read_to_string(&p) else {
+            unreadable.get_or_insert(p);
             continue;
         };
+        let mut json_lines = 0;
         let stem = p
             .file_stem()
             .and_then(OsStr::to_str)
@@ -84,6 +89,7 @@ pub fn requests(dir: &Path, cutoff: SystemTime) -> Vec<Request> {
             let Ok(v) = serde_json::from_str::<Value>(line) else {
                 continue;
             };
+            json_lines += 1;
             let kind = v.pointer("/payload/type").and_then(Value::as_str);
             if let Some(m) = v.pointer("/payload/model").and_then(Value::as_str) {
                 model = Some(m.to_string());
@@ -111,8 +117,11 @@ pub fn requests(dir: &Path, cutoff: SystemTime) -> Vec<Request> {
                 output: n("output_tokens"),
             });
         }
+        if json_lines == 0 && !text.trim().is_empty() {
+            unreadable.get_or_insert(p);
+        }
     }
-    out
+    (out, unreadable)
 }
 
 /// Sum of `last_token_usage` over every `token_count` line, as an `ApiRow` in the
@@ -120,7 +129,7 @@ pub fn requests(dir: &Path, cutoff: SystemTime) -> Vec<Request> {
 pub fn collect(dir: &Path, cutoff: SystemTime) -> Option<ApiRow> {
     let mut row = ApiRow::default();
     let mut lines = 0u64;
-    for r in requests(dir, cutoff) {
+    for r in requests(dir, cutoff).0 {
         row.input += r.input;
         row.cache_read += r.cache_read;
         row.cache_create += r.cache_create;
