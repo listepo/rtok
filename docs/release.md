@@ -54,11 +54,9 @@ checks are the gate instead.
 | `x86_64-unknown-linux-gnu` | `ubuntu-22.04` | `rtok-x86_64-unknown-linux-gnu.tar.xz` |
 | `x86_64-pc-windows-msvc` | `windows-latest` | `rtok-x86_64-pc-windows-msvc.zip` |
 
-Intel macOS (`x86_64-apple-darwin`) is intentionally omitted: GitHub's
-`macos-15-intel` runners queue and usually dominate release wall-clock. Release
-jobs install Rust from the `rust` pin in `mise.toml` (via `jdx/mise-action`, the same
-toolchain ci.yml tests), add the matrix targets to it, and restore a Cargo cache via
-[`.github/build-setup.yml`](../.github/build-setup.yml).
+macOS is Apple Silicon only. Release jobs install Rust from the `rust` pin in `mise.toml` (via
+`jdx/mise-action`, the same toolchain ci.yml tests), add the matrix targets to it, and restore a
+Cargo cache via [`.github/build-setup.yml`](../.github/build-setup.yml).
 
 Each build job prints archive sizes into the Actions step summary; the GitHub
 Release notes get a **Download sizes** table (MiB) so you do not have to open Assets.

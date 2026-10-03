@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Writes `.br` and `.gz` beside every text asset in dist/ so `rtok web` can serve the
 // encoding the browser asks for without compressing on each request (T310.9). Node's
 // zlib is enough: no dependency, and brotli at quality 11 is a one-off build cost.

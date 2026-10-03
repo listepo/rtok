@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,326 @@
+@@ -0,0 +1,335 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -44,6 +44,15 @@ target/tmp/t60-2-config-init.toml
 +[agents]                              # the rtok agent registry (T282, D34)
 +enabled = true                        # false = hooks skip agent register/touch/end (session bookkeeping is unaffected)
 +idle    = "30m"                       # `live()`'s window: no `ended_at` and `last_seen` within this of now
++
++[agents.usage]                        # rtok agents usage (T358)
++source = "logs"                       # logs = the agents' own session files (Claude Code, Codex); rtok = what passed through rtok; both
++hosts  = []                           # [] = every host; else host ids, e.g. ["claude", "codex"]
++since  = ""                           # "" = all time; a date (2026-09-01, whole days in tz) or a duration (30d)
++until  = ""                           # "" = through today; a date, inclusive
++period = "monthly"                    # monthly | daily: the bottom table
++by     = "agent"                      # agent | model: what the middle table groups by
++tz     = ""                           # IANA zone for day and month boundaries; "" = the system zone
 +
 +[mcp]                                 # rtok mcp
 +tools                   = []          # [] = all tools from enabled plugins; else an allow-list; `expand` always stays listed (D4)
