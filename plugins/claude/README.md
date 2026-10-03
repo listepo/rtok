@@ -37,8 +37,15 @@ Files:
   `rtok hook <event>`, `timeout` 5 s. The command execs `rtok` from PATH in Claude Code's own
   shell and runs `scripts/hook.sh` only when PATH has none: the second shell cost ~6 ms per call
   (`research.md` §19). A unit test in `src/agents/claude/mod.rs` keeps them equal.
+- `hooks/hooks.json` also carries `WorktreeCreate` and `WorktreeRemove` (T159, D31), plugin only and
+  never in `settings.json`: they replace the host's own create/remove, so each runs
+  `scripts/worktree.sh`, `timeout` 120 s, which routes through `rtok worktree` and falls back to
+  the host's default (`.claude/worktrees/<name>`) on any rtok failure.
 - `scripts/hook.sh` — resolves `rtok` from PATH or the ketch store; a missing `rtok` fails the
   hook open (exit 0), printing `ketch install pyrlyn/rtok`.
+- `scripts/worktree.sh` — the worktree hooks' launcher. `WorktreeCreate` must print a path, so a
+  missing, failing or too-old `rtok` ends in a plain `git worktree add` instead of silence;
+  `WorktreeRemove` without `rtok` is a plain `git worktree remove`, never forced.
 - `agents/rtok-scout.md` — a `model: haiku` sub-agent (T132) scoped to the rtok MCP's `read`,
   `search`, `outline`, `explore`, `expand` tools (named `mcp__rtok__<tool>`, the plain form for
   the `mcpServers.rtok` config entry — T275, this plugin ships no `.mcp.json` of its own), so
@@ -55,4 +62,6 @@ Host documentation this plugin is written against. Re-check every link when the 
 - Plugins reference (`${CLAUDE_PLUGIN_ROOT}`, hooks and MCP in a plugin): https://code.claude.com/docs/en/plugins-reference
 - Marketplaces (`marketplace.json`, relative `source`, `claude plugin marketplace add`): https://code.claude.com/docs/en/plugin-marketplaces
 - Hooks (`hooks.json` shape, events, `timeout`): https://code.claude.com/docs/en/hooks
+- Hooks, `WorktreeCreate` / `WorktreeRemove` (input, path output, exit codes): https://code.claude.com/docs/en/hooks#worktreecreate
+- Worktrees (default location, branch and cleanup the launcher falls back to): https://code.claude.com/docs/en/worktrees
 - Sub-agents (frontmatter: `name`, `description`, `tools`, `model`): https://code.claude.com/docs/en/sub-agents

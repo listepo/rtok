@@ -19,7 +19,7 @@ copy (D21). The plugin no longer carries an MCP declaration of its own (T275/D33
 | module | support | why |
 | --- | --- | --- |
 | hooks | no | no direct hooks file rtok writes; the linked plugin's hooks/hooks.json is what VS Code's Local harness runs (chat.useClaudeHooks) |
-| mcp | yes | `servers.rtok = {type: "stdio", command, args: ["mcp"]}` in each profile `mcp.json`; independent of the plugin (T275/D33): written on every install/update regardless of plugin state, only remove takes it out |
+| mcp | yes | `servers.rtok = {type: "stdio", command, args: ["mcp", "--host", "vscode"]}` in each profile `mcp.json`; independent of the plugin (T275/D33): written on every install/update regardless of plugin state, only remove takes it out |
 | proxy | no | Copilot in VS Code has no documented base-URL setting to point at the proxy |
 | plugin | `--yes` | registers `plugins/claude` (hooks only: T275/D33) in `chat.pluginLocations`, per profile; a stale or foreign destination is never overwritten |
 

@@ -10,6 +10,7 @@ use anyhow::{Context, Result, bail};
 use jiff::Timestamp;
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
+use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::config::{Config, ModelPrice};
@@ -20,7 +21,7 @@ use crate::store::{Store, UsageSlice};
 
 /// Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in
 /// the row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct Row {
     pub tokens: i64,
     pub input: i64,
@@ -48,7 +49,7 @@ impl Row {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Totals {
     #[serde(flatten)]
     pub row: Row,
@@ -64,7 +65,7 @@ pub struct Totals {
 /// Tokens rtok saved (`est_before - est_after` over the `measurements` ledger) and their
 /// worth at the average input price the same host's requests paid; `usd` is `None` when no
 /// model of that host has a price. An estimate, never a measurement.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Saved {
     #[serde(rename = "saved_tokens")]
     pub tokens: i64,
@@ -72,7 +73,7 @@ pub struct Saved {
     pub usd: Option<f64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Agent {
     pub host: String,
     pub name: String,
@@ -89,28 +90,28 @@ pub struct Agent {
     pub saved: Option<Saved>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ModelRow {
     pub model: String,
     #[serde(flatten)]
     pub row: Row,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Period {
     pub period: String,
     #[serde(flatten)]
     pub row: Row,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Unpriced {
     pub model: String,
     pub host: String,
     pub tokens: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Report {
     pub source: &'static str,
     pub tz: String,
@@ -150,10 +151,12 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
         by @ ("agent" | "model") => by,
         other => bail!("agents.usage.by `{other}`: expected `agent` or `model`"),
     };
-    if let Some(bad) = o.hosts.iter().find(|h| !super::HOSTS.contains(&h.as_str())) {
+    // Droid is not a host rtok installs into (`HOSTS`), but its sessions are on the machine.
+    let known: Vec<&str> = super::HOSTS.iter().copied().chain(["droid"]).collect();
+    if let Some(bad) = o.hosts.iter().find(|h| !known.contains(&h.as_str())) {
         bail!(
             "unknown host `{bad}` in agents.usage.hosts; known: {}",
-            super::HOSTS.join(", ")
+            known.join(", ")
         );
     }
     let tz = zone(&o.tz)?;
@@ -171,7 +174,7 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
     let wanted = |h: &str| o.hosts.is_empty() || o.hosts.iter().any(|w| w == h);
     let mut skipped = Vec::new();
     let mut from_logs = || {
-        let mut l = read(&cfg.stats.transcripts_dir, &cfg.stats.codex_dir, since);
+        let mut l = read(cfg, since);
         l.slices.retain(|b| b.ts < until);
         skipped = l.skipped.into_iter().filter(|s| wanted(&s.host)).collect();
         l.slices
@@ -1000,6 +1003,9 @@ Month   Tokens Estimated cost
         assert_eq!(r.totals.row.tokens, 3_600_000);
         cfg.agents.usage.until = "2026-10-01".into();
         assert_eq!(report(&cfg, &store, 0).unwrap().totals.row.tokens, 0);
+        // Droid is not in `HOSTS` yet is a host here: it is listed as unsupported, not refused.
+        cfg.agents.usage.hosts = vec!["droid".into()];
+        assert!(report(&cfg, &store, 0).is_ok());
         for (key, value) in [
             ("hosts", "nope"),
             ("tz", "Mars/Base"),

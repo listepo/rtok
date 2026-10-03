@@ -64,6 +64,18 @@ describe("parseFrame", () => {
       type: "snapshot_error",
       error: "boom",
     });
+    const plan = { items: [], diff: "", refused: [] };
+    expect(parseFrame(JSON.stringify({ type: "doctorplan", plan }))).toEqual({
+      type: "doctorplan",
+      plan,
+    });
+    const fixed = { text: "ok", code: 0 };
+    expect(parseFrame(JSON.stringify({ type: "doctorfixed", fixed }))).toEqual({
+      type: "doctorfixed",
+      fixed,
+    });
+    expect(parseFrame('{"type":"doctorplan","plan":null}')).toBeNull();
+    expect(parseFrame('{"type":"doctorfixed","fixed":{"text":"x"}}')).toBeNull();
     expect(parseFrame('{"type":"message","text":"refused key x"}')).toEqual({
       type: "message",
       text: "refused key x",

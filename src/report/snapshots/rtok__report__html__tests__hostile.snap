@@ -73,6 +73,7 @@ second line</td></tr>
 <pre><code>hooks 0
 hooks check none found
 duplicate hooks none found
+duplicate mcp servers none found
 mcp
 proxy &lt;script&gt;alert(1)&lt;/script&gt; | `tick`
 second line

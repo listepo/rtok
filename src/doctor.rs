@@ -22,10 +22,14 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
+pub mod checklist;
 mod dupes;
 pub mod fix;
 pub mod hooks;
+mod mcp_dupes;
+mod mcp_fix;
 pub mod probe;
+pub mod web;
 
 /// What `rtok doctor` found, as data.
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
@@ -150,6 +154,7 @@ impl Report {
             out.push_str(&format!("  {ev} {n}\n"));
         }
         out.push_str(&hooks::render(&self.problems));
+        out.push_str(&dupes::render_mcp(&self.problems));
         out.push_str("mcp\n");
         for s in &self.mcp {
             out.push_str(&format!(
@@ -365,8 +370,20 @@ pub fn page(cfg: &Config) -> Result<Report> {
                 })
             })
             .collect(),
-        problems: hooks::check_real(cfg),
+        problems: checks(cfg),
     })
+}
+
+/// Every config finding of this machine: hooks, then duplicate MCP entries.
+fn checks(cfg: &Config) -> Vec<hooks::Problem> {
+    let probes = hooks::Probes {
+        fs: &probe::RealFs,
+        env: &probe::RealEnv,
+        which: &probe::RealWhich,
+    };
+    let (mut problems, plugins) = hooks::check_with_plugins(cfg, &probes);
+    problems.extend(mcp_dupes::check(cfg, &probes, &plugins));
+    problems
 }
 
 /// The std-only fast hook client (T178) that installed hook commands try before `rtok hook`.

@@ -7,9 +7,10 @@
 //! `last_token_usage` is that request's counters (`input_tokens` includes
 //! `cached_input_tokens`, `output_tokens` includes reasoning). Read on the fly like the
 //! Claude Code transcripts, never written to the store, so a re-read is idempotent by
-//! construction. Surveyed 2026-09-17: OpenCode's `opencode.db` and Cursor's `state.vscdb`
-//! carry no token counts and Copilot CLI's `data.db` only a context size, so `codex` is the
-//! one host row here; the others are documented as unsupported, not estimated.
+//! construction. Surveyed 2026-09-17: Cursor's `state.vscdb` carries no token counts, so
+//! `codex` was the one host row here. The OpenCode and Kilo databases do carry them in
+//! `message.data` (re-surveyed 2026-10-03, `research.md`) and `measure::usage` reads those
+//! for `rtok agents usage`; this module stays the Codex reader.
 
 use super::stats::ApiRow;
 use serde_json::Value;
@@ -20,6 +21,11 @@ use std::time::SystemTime;
 /// Every `*.jsonl` under `dir` (recursive) modified at or after `cutoff`. Shared with the
 /// Claude Code transcript walk in `stats::collect` and the doctor skills audit (T61.3).
 pub(crate) fn jsonl_paths(dir: &Path, cutoff: SystemTime) -> Vec<PathBuf> {
+    paths_with_ext(dir, cutoff, "jsonl")
+}
+
+/// [`jsonl_paths`] for any one extension (`rtok agents usage` reads Gemini's legacy `.json`).
+pub(crate) fn paths_with_ext(dir: &Path, cutoff: SystemTime, ext: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
@@ -32,7 +38,7 @@ pub(crate) fn jsonl_paths(dir: &Path, cutoff: SystemTime) -> Vec<PathBuf> {
                 stack.push(p);
                 continue;
             }
-            if p.extension().and_then(OsStr::to_str) != Some("jsonl") {
+            if p.extension().and_then(OsStr::to_str) != Some(ext) {
                 continue;
             }
             let mtime = e

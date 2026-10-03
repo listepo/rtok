@@ -67,6 +67,7 @@ Live probes (the `rtok doctor` page), not store rows.
 hooks 0
 hooks check none found
 duplicate hooks none found
+duplicate mcp servers none found
 mcp
 proxy <script>alert(1)</script> | `tick`
 second line

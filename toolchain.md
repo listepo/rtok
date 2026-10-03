@@ -108,6 +108,7 @@ Project programs and direct packages from the manifests.
 | insta | local | https://crates.io/crates/insta | Snapshot tests for stable text output |
 | jiff | local | https://crates.io/crates/jiff | T358: IANA time zones with DST for `rtok agents usage` day and month buckets (`--tz`); already in the lock as a transitive dep of env_logger |
 | jsonc-parser | local | https://crates.io/crates/jsonc-parser | JSONC parse for Zed settings (T222) |
+| libc | local (`crates/rtok-sys`, macOS only) | https://crates.io/crates/libc | T283.3: `proc_pidinfo` reads another process's parent pid, which rustix lacks |
 | libfuzzer-sys | local | https://crates.io/crates/libfuzzer-sys | `fuzz/`: libFuzzer runtime for the cargo-fuzz targets |
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | Rust dependency |
 | log | local | https://crates.io/crates/log | T225: logging facade env_logger drains; D26 lines are mirrored into it |
@@ -117,6 +118,7 @@ Project programs and direct packages from the manifests.
 | pathdiff | local | https://crates.io/crates/pathdiff | Relative path between two paths |
 | printpdf | local | https://crates.io/crates/printpdf | Rust dependency |
 | proptest | local | https://crates.io/crates/proptest | T331.5: property test that `doctor --fix` leaves every byte outside the removed hook unchanged |
+| portable-pty | local | https://crates.io/crates/portable-pty | T331.7: pseudo-terminal for the `doctor --fix` checklist test (dev-dependency) |
 | ratatui | local | https://crates.io/crates/ratatui | TUI |
 | regex | local | https://crates.io/crates/regex | Rust dependency |
 | reqwest | local | https://crates.io/crates/reqwest | HTTP |

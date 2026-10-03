@@ -113,6 +113,41 @@ describe("graph page projects", () => {
         expect(await screen.findByText("project 9 is gone")).toBeTruthy();
     });
 
+    test("link, link both ways and unlink send their requests", async () => {
+        const rows = [
+            project(1, "a", {
+                selected: true,
+                links: [{ kind: "auto", name: "c", reason: "path dep", to: 3 }],
+            }),
+            project(2, "b"),
+            project(3, "c"),
+        ];
+        const w = wire(withProjects(rows));
+        mount(w.connect, "/graph");
+        const links = within(await screen.findByRole("region", { name: "links" }));
+        expect(links.getByText("path dep")).toBeTruthy();
+        expect(links.queryByRole("option", { name: "c" })).toBeNull();
+        fireEvent.change(links.getByLabelText("link to"), { target: { value: "2" } });
+        fireEvent.click(links.getByLabelText("both ways"));
+        fireEvent.click(links.getByRole("button", { name: "link" }));
+        fireEvent.click(links.getByRole("button", { name: "unlink c" }));
+        await waitFor(() => expect(w.sent).toHaveLength(2));
+        expect(w.sent).toEqual([
+            { project: { action: "link", from: "1", to: "2", both: true } },
+            { project: { action: "unlink", from: "1", to: "3", both: false } },
+        ]);
+    });
+
+    test("linking against the sample server shows the link", async () => {
+        mount(connectSample, "/graph");
+        const links = within(await screen.findByRole("region", { name: "links" }));
+        fireEvent.click(links.getByRole("button", { name: "unlink ketch" }));
+        expect(await links.findByText(/is not linked to another project/)).toBeTruthy();
+        fireEvent.change(links.getByLabelText("link to"), { target: { value: "2" } });
+        fireEvent.click(links.getByRole("button", { name: "link" }));
+        expect(await links.findByRole("button", { name: "unlink ketch" })).toBeTruthy();
+    });
+
     test("no registry degrades to the plain graph page; an empty one says how to add", async () => {
         mount(serving(withProjects(null)), "/graph");
         expect(await screen.findByText("pending files")).toBeTruthy();

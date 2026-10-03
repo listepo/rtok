@@ -3,11 +3,13 @@
 Every host `rtok agents install <host>` configures, per app, with what rtok writes into it and which rtok plugins then reach that app.
 
 - **Hooks**, **MCP**, **Proxy**, **Plugin** are the four modules an install can carry. `yes` is written by a plain install; a flag (`--proxy`, `--yes`) means the module is written only with that flag; `—` means the host has no way to carry it. The host README (linked from the Host column) gives the reason for every `—`.
-- **MCP** is the `rtok` entry in the app's own config file (D33): install and update always write it, only `remove` takes it out, and a plugin never stands in for it.
+- **MCP** is the `rtok` entry in the app's own config file (D33): install and update always write it, only `remove` takes it out, and a plugin never stands in for it. The entry runs `rtok mcp --host <id>` (the host's id in this table), so the MCP process knows its host; `agents update` adds `--host` to an entry an older rtok wrote without it, and `remove` still takes either form out.
 - **Plugin** is a directory from `plugins/<host>/` that rtok links into the host (Cursor and ZCode: the hooks; OpenCode and pi: the bash call path). Where the app would list a plugin's server next to the config entry (Claude Code and Desktop, Cursor, Copilot, Codex, VS Code, ZCode, Kimi, Grok), the rtok plugin ships no MCP server; Gemini's extension keeps one, which the `settings.json` entry overrides.
 - **rtok plugins reached** lists every catalogue plugin with at least one surface (hook, bash call path, MCP, proxy) a module above can carry. `(off)` plugins are disabled by default and need `[plugins.<id>] enabled = true`.
 
 Check what is installed on this machine with `rtok agents list`; `rtok doctor` reports the same modules, and warns when an installed host's config has no `rtok` MCP entry, or a stale one, naming the `rtok agents install <host>` (with `--cli` or `--desktop`) that writes it.
+
+`rtok doctor` also reports broken hooks, duplicate hooks and duplicate MCP entries in the hosts' config files. `rtok doctor --fix` cleans them up. In a terminal it opens a checklist of every removable item: a number toggles it, `k N` keeps copy N of a duplicate instead, `d` shows the diff of each file, `y` asks for the last confirmation and writes (after a backup in `_backup/`), `q` leaves. Items in a shared project file start unselected, since the change reaches your teammates. Without a terminal, `--fix` prints the diffs and writes nothing; `--fix --yes` writes the default selection without asking; `--only broken-hooks|duplicate-hooks|duplicate-mcp` (repeatable) limits it and `--agent <host>` limits it to one host. The kept copy of a duplicate, a plugin's own files and rtok's own entries are never removed, and every byte outside the removed entries stays as it was.
 
 After an rtok upgrade, `rtok agents update` brings every installed host up to date; for Claude Code it decides by plugin version — see [Plugin versions and updates](plugin-versions.md).
 
@@ -94,6 +96,25 @@ them the proxy stays the only path.
 
 Every one of those tasks begins by re-verifying the host's API against its current
 documentation: the table above is a survey of vendor docs, not a measurement.
+
+## Which hosts `rtok agents usage` reads
+
+`rtok agents usage --source logs` totals tokens from each host's own session files (the directories are `[agents.usage.dirs]` in `docs/config.md`, and `research.md` section 30 cites the source of every format).
+
+| Host | Reads | Status |
+| --- | --- | --- |
+| Claude Code, Codex | transcripts under `[stats]` | supported |
+| OpenCode, Kilo | `message` rows of the host's SQLite file, opened read-only | supported |
+| Copilot CLI | the per-model totals of each finished session | supported, per session |
+| Gemini CLI | `tokens` of each reply in the chat logs | supported |
+| pi | `usage` of each entry in the session logs | supported |
+| Kimi Code | `usage.record` lines of each agent's wire log | supported |
+| Droid | none: the token fields of its settings file are not documented | `unsupported` |
+| Grok | none: xAI documents `grok usage`, which rtok does not run, not the files | `unsupported` |
+| ZCode | none: the session records are not documented | `unsupported` |
+| Antigravity | none: its local data is not documented | `unsupported` |
+
+An `unsupported` host whose directory has files is named under `skipped` in the report, so a missing agent is visible instead of silently counted as zero.
 
 ## Outdated plugins
 

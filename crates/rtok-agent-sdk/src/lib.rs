@@ -515,8 +515,8 @@ pub fn keep_edited(apply: &Apply, at: &str) -> Option<String> {
 }
 
 /// True when `v` (or anything nested in it) is a string naming the rtok binary — [`judge_owned`]'s
-/// "not rtok's" check.
-fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
+/// "not rtok's" check, and the doctor's way to tell rtok's own MCP entry from any other server.
+pub fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
     match v {
         Value::String(s) => is_bin(s),
         Value::Array(a) => a.iter().any(|x| runs_bin(x, is_bin)),
@@ -538,12 +538,33 @@ fn without_default_type(v: &Value) -> Value {
     }
 }
 
+/// The elements of an argv without the `--host <id>` pair that follows `mcp`: every host's
+/// `rtok mcp` entry carries it since T283.2, and an entry written before that has none. Both
+/// are rtok's own, so the ownership check must not call either one an edit.
+fn without_host_arg(argv: &[Value]) -> impl Iterator<Item = &Value> {
+    let mut after_mcp = false;
+    let mut skip = false;
+    argv.iter().filter(move |x| {
+        if std::mem::take(&mut skip) {
+            return false;
+        }
+        if after_mcp && *x == "--host" {
+            skip = true;
+            return false;
+        }
+        after_mcp = *x == "mcp";
+        true
+    })
+}
+
 /// `v` with every string naming the rtok binary replaced by one placeholder — [`judge_owned`]'s
 /// "did the user change it" comparison.
 fn rtok_as_one(v: &Value, is_bin: fn(&str) -> bool) -> Value {
     match v {
         Value::String(s) if is_bin(s) => Value::Null,
-        Value::Array(a) => a.iter().map(|x| rtok_as_one(x, is_bin)).collect(),
+        Value::Array(a) => without_host_arg(a)
+            .map(|x| rtok_as_one(x, is_bin))
+            .collect(),
         Value::Object(m) => m
             .iter()
             .map(|(k, x)| (k.clone(), rtok_as_one(x, is_bin)))
@@ -1143,6 +1164,32 @@ mod tests {
         let foreign = go(&YES).unwrap();
         assert!(foreign.contains("not rtok's"), "{foreign}");
         assert!(read_json(&path).unwrap()["mcpServers"]["rtok"].is_object());
+    }
+
+    /// T283.2: an entry with or without the `--host <id>` pair is rtok's own, whichever of the
+    /// two the installer writes now; any other extra argument is still the user's edit.
+    #[test]
+    fn unregister_owned_ignores_the_host_argument_either_way() {
+        let path = tmp("owned-host").join("mcp.json");
+        let go = |ours: &Value| {
+            unregister_owned(&apply(), &path, "mcpServers", "rtok", ours, rtok_stem).unwrap()
+        };
+        let seed = |entry: Value| {
+            let body = json!({"mcpServers": {"rtok": entry}});
+            fs::write(&path, body.to_string()).unwrap();
+        };
+        let old = mcp_entry("rtok", &["mcp"]);
+        let new = mcp_entry("rtok", &["mcp", "--host", "cursor"]);
+
+        seed(old.clone());
+        assert_eq!(go(&new), "- mcpServers.rtok", "old entry, new installer");
+        seed(new.clone());
+        assert_eq!(go(&old), "- mcpServers.rtok", "new entry, old installer");
+        seed(mcp_entry("rtok", &["mcp", "--host", "cursor", "--extra"]));
+        assert!(
+            go(&new).starts_with("leave mcpServers.rtok"),
+            "an edit stays"
+        );
     }
 
     /// T265: an entry Claude.app re-saved without `type` is still rtok's; a changed `args`

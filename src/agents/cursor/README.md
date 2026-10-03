@@ -17,7 +17,7 @@ https://cursor.com/docs/cli/overview). `--desktop` checks `mcp.json` and prints 
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | yes | `beforeShellExecution` → PreToolUse, `afterShellExecution` → PostToolUse, `preCompact` → PreCompact; all `--host cursor`; in `hooks.json` only without the plugin — the linked plugin carries the same events, so setup strips ours there (T244) |
-| mcp | yes | `mcpServers.rtok` in `mcp.json` (off with `[setup] mcp = false`); independent of the plugin (T275/D33): written on every install/update regardless of plugin state, only remove takes it out |
+| mcp | yes | `mcpServers.rtok` → `rtok mcp --host cursor` in `mcp.json` (off with `[setup] mcp = false`); independent of the plugin (T275/D33): written on every install/update regardless of plugin state, only remove takes it out |
 | plugin | yes | links `plugins/cursor` (hooks only: T275/D33) by default, once Cursor itself is detected; a stale or foreign destination is never overwritten |
 | proxy | no | Cursor has no base-URL setting to point at the proxy |
 

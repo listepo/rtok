@@ -541,7 +541,7 @@ async fn the_embedded_ui_revalidates_by_etag_and_matches_web_dist() {
 }
 
 #[tokio::test]
-async fn ws_project_select_reaches_the_next_snapshot_and_a_bad_id_is_refused() {
+async fn ws_project_select_link_and_unlink_reach_the_next_snapshot_and_a_bad_id_is_refused() {
     let (_addr, state, dir, task) = serve("projects").await;
     let roots: Vec<_> = ["a", "b"]
         .iter()
@@ -569,7 +569,7 @@ async fn ws_project_select_reaches_the_next_snapshot_and_a_bad_id_is_refused() {
     assert_eq!(rows(&state).len(), 2, "the snapshot lists the registry");
 
     let send = |m: serde_json::Value| state.inbound(&m.to_string());
-    let b = ids[1].to_string();
+    let (a, b) = (ids[0].to_string(), ids[1].to_string());
     assert!(send(serde_json::json!({"project": {"action": "select", "project": b}})).is_none());
     let sel: Vec<_> = rows(&state).iter().map(|r| r["selected"].clone()).collect();
     assert_eq!(
@@ -577,6 +577,15 @@ async fn ws_project_select_reaches_the_next_snapshot_and_a_bad_id_is_refused() {
         [false, true],
         "the selection reaches the next snapshot"
     );
+
+    let link = serde_json::json!({"project": {"action": "link", "from": a, "to": b, "both": true}});
+    assert!(send(link).is_none());
+    let links = |r: &serde_json::Value| r["links"].as_array().unwrap().len();
+    assert_eq!(rows(&state).iter().map(links).collect::<Vec<_>>(), [1, 1]);
+
+    let unlink = serde_json::json!({"project": {"action": "unlink", "from": a, "to": b}});
+    assert!(send(unlink).is_none());
+    assert_eq!(rows(&state).iter().map(links).collect::<Vec<_>>(), [0, 1]);
 
     let bad = send(serde_json::json!({"project": {"action": "select", "project": "9999"}}));
     let bad: serde_json::Value = serde_json::from_str(&bad.expect("refused")).unwrap();

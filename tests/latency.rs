@@ -50,7 +50,10 @@ fn p95_under_10ms(event: &str, fixture: &[u8]) {
         let out = spawn();
         samples.push(start.elapsed());
         assert!(out.status.success(), "hook must fail open with exit 0");
-        assert_eq!(out.stdout, b"{}");
+        // SessionStart injects the agent id and the memory line; the others stay `{}`.
+        if event != "SessionStart" {
+            assert_eq!(out.stdout, b"{}");
+        }
     }
 
     samples.sort();
@@ -215,4 +218,14 @@ fn hook_returns_despite_exclusive_lock() {
     );
 
     let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// T329.6: `SessionStart` with a real cwd also upserts the session's project (the
+/// `auto_add_projects` default); the fixture's own cwd does not exist and would skip it.
+#[test]
+fn latency_hook_session_start_with_project_registration_p95_under_10ms() {
+    let mut v: serde_json::Value =
+        serde_json::from_slice(include_bytes!("fixtures/hooks/session_start.json")).unwrap();
+    v["cwd"] = std::env::temp_dir().to_string_lossy().into_owned().into();
+    p95_under_10ms("SessionStart", v.to_string().as_bytes());
 }

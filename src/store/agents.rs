@@ -30,6 +30,8 @@ pub struct AgentRow {
     pub last_seen: i64,
     pub ended_at: Option<i64>,
     pub activity: Option<String>,
+    /// T283.3: the hook process's ancestors, nearest first (empty when never recorded).
+    pub ancestors: Vec<i32>,
 }
 
 type AgentTuple = (
@@ -42,6 +44,7 @@ type AgentTuple = (
     i64,
     i64,
     Option<i64>,
+    Option<String>,
     Option<String>,
 );
 
@@ -57,6 +60,12 @@ fn row_from(t: AgentTuple) -> AgentRow {
         last_seen: t.7,
         ended_at: t.8,
         activity: t.9,
+        ancestors: t
+            .10
+            .iter()
+            .flat_map(|a| a.split_whitespace())
+            .filter_map(|p| p.parse().ok())
+            .collect(),
     }
 }
 
@@ -73,6 +82,7 @@ fn agent_cols() -> (
     agents::last_seen,
     agents::ended_at,
     agents::activity,
+    agents::ancestors,
 ) {
     (
         agents::id,
@@ -85,6 +95,7 @@ fn agent_cols() -> (
         agents::last_seen,
         agents::ended_at,
         agents::activity,
+        agents::ancestors,
     )
 }
 
@@ -330,6 +341,29 @@ impl Store {
             .collect())
     }
 
+    /// T283.3: record the pids above the hook process that registered `id` (nearest first).
+    /// Written only when it differs, so a hook repeating the same chain adds no write; an empty
+    /// chain says nothing and keeps what is stored.
+    pub fn set_agent_ancestors(&self, id: &str, chain: &[i32]) -> Result<()> {
+        if chain.is_empty() {
+            return Ok(());
+        }
+        let text = chain
+            .iter()
+            .map(i32::to_string)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut conn = self.lock()?;
+        diesel::update(
+            agents::table
+                .filter(agents::id.eq(id))
+                .filter(agents::ancestors.is_null().or(agents::ancestors.ne(&text))),
+        )
+        .set(agents::ancestors.eq(&text))
+        .execute(&mut *conn)?;
+        Ok(())
+    }
+
     /// Test-only: place `last_seen` at an exact time, so a fixture can say "seen before the
     /// MCP process started" without sleeping.
     #[cfg(test)]
@@ -505,6 +539,24 @@ mod tests {
             !ids.contains(&stale),
             "a last_seen older than idle is never live"
         );
+    }
+
+    #[test]
+    fn ancestors_are_stored_in_order_and_an_empty_chain_keeps_what_is_there() {
+        let store = Store::open_in_memory().unwrap();
+        let claude = store.host_id("claude").unwrap().unwrap();
+        let id = store
+            .register_agent(claude, "sess-anc", None, None, None)
+            .unwrap();
+        assert!(store.agent_row(&id).unwrap().unwrap().ancestors.is_empty());
+        store.set_agent_ancestors(&id, &[300, 200, 100]).unwrap();
+        store.set_agent_ancestors(&id, &[300, 200, 100]).unwrap();
+        store.set_agent_ancestors(&id, &[]).unwrap();
+        let row = store.agent_row(&id).unwrap().unwrap();
+        assert_eq!(row.ancestors, [300, 200, 100]);
+        // A later hook under a restarted host replaces the chain.
+        store.set_agent_ancestors(&id, &[400, 200]).unwrap();
+        assert_eq!(store.agent_row(&id).unwrap().unwrap().ancestors, [400, 200]);
     }
 
     #[test]

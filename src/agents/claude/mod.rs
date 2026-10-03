@@ -51,6 +51,11 @@ fn claude_entries() -> &'static [(&'static str, &'static str)] {
         .expect("plugins/claude/hooks/hooks.json parses (plugin_tree_matches_the_installer)")
         .hooks
         .0
+        .into_iter()
+        // T159: the worktree hooks replace the host's own create/remove, so they need the
+        // launcher's plain-git fallback — only the plugin carries that, never settings.json.
+        .filter(|(event, _)| !event.starts_with("Worktree"))
+        .collect()
     });
     &LIST
 }
@@ -372,7 +377,13 @@ pub(super) fn strip_ours_as(
 /// Add `rtok mcp` to `mcpServers` in `~/.claude.json` (T4.7).
 pub fn register_mcp(cfg: &Config) -> Result<String> {
     let cmd = super::rtok_command();
-    rtok_agent_sdk::register_mcp(&apply(cfg), &cfg.doctor.claude_json, "rtok", &cmd, &["mcp"])
+    rtok_agent_sdk::register_mcp(
+        &apply(cfg),
+        &cfg.doctor.claude_json,
+        "rtok",
+        &cmd,
+        &super::mcp_args("claude"),
+    )
 }
 
 /// Drop `mcpServers.rtok` from `~/.claude.json` (`rtok agents remove claude`).
@@ -910,7 +921,13 @@ impl Agent for Claude {
                 if remove {
                     super::unregister_mcp_ours(cfg, &path, "rtok")?
                 } else if cfg.setup.mcp {
-                    rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"])?
+                    rtok_agent_sdk::register_mcp(
+                        &a,
+                        &path,
+                        "rtok",
+                        &desktop_command(),
+                        &super::mcp_args("claude"),
+                    )?
                 } else {
                     NO_CHANGES.into()
                 },
@@ -995,6 +1012,8 @@ mod tests {
             )),
             "{report}"
         );
+        // T159: the worktree hooks are the plugin's alone.
+        assert!(!report.contains("Worktree"), "{report}");
         assert!(!path.exists());
     }
 
@@ -1130,7 +1149,14 @@ mod tests {
         // the real `desktop_path()`, which is not overridable from a Config).
         let path = tmp("desktop-mcp");
         let a = apply(&cfg(path.clone(), false));
-        rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"]).unwrap();
+        rtok_agent_sdk::register_mcp(
+            &a,
+            &path,
+            "rtok",
+            &desktop_command(),
+            &crate::agents::mcp_args("claude"),
+        )
+        .unwrap();
         // Compare the parsed value: a Windows path's `\` is `\\` in the raw JSON (T83.5).
         let raw = fs::read_to_string(&path).unwrap();
         let written: Value = serde_json::from_str(&raw).unwrap();
@@ -1158,11 +1184,21 @@ mod tests {
         let path = tmp("desktop-mcp-independent");
         let a = apply(&cfg(path.clone(), false));
         for _ in 0..2 {
-            rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"]).unwrap();
+            rtok_agent_sdk::register_mcp(
+                &a,
+                &path,
+                "rtok",
+                &desktop_command(),
+                &crate::agents::mcp_args("claude"),
+            )
+            .unwrap();
         }
         assert!(mcp::has_entry(&path, "mcpServers", "rtok"));
         let raw: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(raw["mcpServers"]["rtok"]["args"], json!(["mcp"]));
+        assert_eq!(
+            raw["mcpServers"]["rtok"]["args"],
+            json!(["mcp", "--host", "claude"])
+        );
     }
 
     /// T246 via the Claude wrapper: an entry the user pointed elsewhere is left alone on
@@ -1466,6 +1502,13 @@ mod tests {
                 e["matcher"] = json!(matcher);
             }
             array_at(&mut want, event).push(e);
+        }
+        // T159: once each, plugin only (D21 singleton), through the launcher with its own
+        // fallback and a timeout that fits a fetch plus `git worktree add`.
+        for event in ["WorktreeCreate", "WorktreeRemove"] {
+            let cmd = format!("\"${{CLAUDE_PLUGIN_ROOT}}/scripts/worktree.sh\" {event}");
+            let entry = json!({"hooks": [{"type": "command", "command": cmd, "timeout": 120}]});
+            array_at(&mut want, event).push(entry);
         }
         assert_eq!(hooks["hooks"], want);
         let manifest = parse(include_str!(
