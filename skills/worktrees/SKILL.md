@@ -10,29 +10,29 @@ unless `AGENTS.md` or the user says otherwise.
 
 Use rtok, not raw `git worktree`: git records no owner, age or size and never cleans build output.
 
-No `rtok` on PATH? `ketch install pyrlyn/rtok`. Until then: `git worktree add --lock --reason
+No `rtok`? `ketch install pyrlyn/rtok`; meanwhile `git worktree add --lock --reason
 "<owner> | <task> | <date>" --no-track -b <task> <path> origin/main`.
 
 ## Create
 
-`rtok worktree add <task> [slug] --owner "<provider> / <model>"` — run inside the repository;
-it prints the new path. One location (`_worktrees/<repo>-<task>` beside the repository, never
-`/tmp`), one name (branch `<task>[-<slug>]` off a fresh `origin/<default>` with no upstream, so
-a bare `git push` cannot reach `main`), one owner (lock reason `<owner> | <task> | <date>`).
-A host-made worktree (Cursor, Codex, Kilo, Devin, Grok, MiMo, omp, Antigravity): bind it with
-MCP `worktree_adopt` (`path`; `task` on a detached HEAD) or `rtok worktree adopt --task <task>`;
-else `git worktree lock --reason "<owner> | <task> | <date>" .`
+MCP `worktree_add` (task, slug) or `rtok worktree add <task> [slug] --owner "<provider> / <model>"`
+— the CLI runs inside the repository; both give the path and bind your agent id, which you
+quote when you report. One location (`_worktrees/<repo>-<task>`, never `/tmp`), one name (branch
+`<task>[-<slug>]` off a fresh `origin/<default>`, no upstream, so a bare `git push` cannot
+reach `main`), one owner (lock `<owner> | <task> | <date>`).
+A host-made worktree (Cursor, Codex, Kilo, Devin, Grok, MiMo, omp, Antigravity): `worktree_adopt`
+(`path`; `task` on a detached HEAD) or `rtok worktree adopt --task <task>`.
 
 ## See
 
-`rtok worktree list` — every worktree and orphan with owner, origin, state, last session and sizes; `--json`.
+`worktree_list` / `rtok worktree list`: owner, agent, origin, state, sizes, orphans; `--json`.
 
 ## Finish
 
-After the PR is merged, from the main checkout: `rtok worktree remove <path|task>` removes
-your worktree with its merged branch; it refuses uncommitted files, a foreign lock and an
-unmerged branch (`--keep-branch` keeps that). Then delete the remote branch if the forge did
-not, and `git fetch --prune`. `rtok worktree gc --yes` sweeps many.
+After the PR is merged, `worktree_remove` (or `rtok worktree remove <path|task>` from the main
+checkout) removes your worktree with its merged branch; it refuses uncommitted files, a foreign
+lock and an unmerged branch (`--keep-branch` keeps that). Then delete the remote branch if the
+forge did not, and `git fetch --prune`. `rtok worktree gc --yes` sweeps many.
 
 ## Free disk
 
@@ -43,5 +43,5 @@ not, and `git fetch --prune`. `rtok worktree gc --yes` sweeps many.
 
 - Never `rm -rf` a worktree, never `--force` past a refusal, never `git worktree prune`.
 - Never remove, unlock, move or clean a worktree locked by another owner or without a
-  reason, or with changes you did not make — report it to the creator.
+  reason, or with changes you did not make: report it.
 - A directory with a `.git` *file* that `git worktree list` omits is an orphan: report it, never delete it.
