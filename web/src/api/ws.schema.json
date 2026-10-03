@@ -449,6 +449,55 @@
         "stats"
       ]
     },
+    "Problem": {
+      "description": "One finding of a doctor config check. The list is shared by every T331 detector.",
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "command": {
+          "description": "The command as written, never expanded.",
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "event": {
+          "type": "string"
+        },
+        "fixable": {
+          "description": "Whether `doctor --fix` may remove it (T331.5): only `broken-hook`.",
+          "type": "boolean"
+        },
+        "kind": {
+          "description": "`broken-hook`, `suspect-hook`, `unverified-hook` or `unreadable-config`.",
+          "type": "string"
+        },
+        "matcher": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "The key path of the entry inside `source`.",
+          "type": "string"
+        },
+        "source": {
+          "description": "The config file the entry lives in.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "agent",
+        "source",
+        "path",
+        "detail",
+        "fixable"
+      ]
+    },
     "ProjectIndex": {
       "description": "`graph status` numbers for one project; absent for a missing root, which has nothing\nreadable to count.",
       "type": "object",
@@ -693,6 +742,13 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "problems": {
+          "description": "Hooks that lead nowhere or cannot be checked (T331.1); the list later detectors extend.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Problem"
           }
         },
         "proxy": {

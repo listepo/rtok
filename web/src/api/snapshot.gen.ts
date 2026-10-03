@@ -248,6 +248,10 @@ export interface Report {
    */
   overlaps?: string[];
   /**
+   * Hooks that lead nowhere or cannot be checked (T331.1); the list later detectors extend.
+   */
+  problems?: Problem[];
+  /**
    * The proxy chain behind `ANTHROPIC_BASE_URL`, hops joined with `→`.
    */
   proxy: string;
@@ -316,6 +320,38 @@ export interface ServerInfo {
   desc_tokens: number;
   name: string;
   tools: number;
+}
+/**
+ * One finding of a doctor config check. The list is shared by every T331 detector.
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Problem".
+ */
+export interface Problem {
+  agent: string;
+  /**
+   * The command as written, never expanded.
+   */
+  command?: string;
+  detail: string;
+  event?: string;
+  /**
+   * Whether `doctor --fix` may remove it (T331.5): only `broken-hook`.
+   */
+  fixable: boolean;
+  /**
+   * `broken-hook`, `suspect-hook`, `unverified-hook` or `unreadable-config`.
+   */
+  kind: string;
+  matcher?: string | null;
+  /**
+   * The key path of the entry inside `source`.
+   */
+  path: string;
+  /**
+   * The config file the entry lives in.
+   */
+  source: string;
 }
 /**
  * Share of Read-class transcript tokens spent in native Grep/Glob (T50.4):
