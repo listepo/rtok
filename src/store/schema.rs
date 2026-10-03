@@ -329,6 +329,18 @@ diesel::table! {
     }
 }
 
+// 0028 (T329.3): directed project links; `unlinked = 1` is a remembered removal of an auto link.
+diesel::table! {
+    project_links (from_id, to_id) {
+        from_id -> Integer,
+        to_id -> Integer,
+        kind -> Text,
+        reason -> Nullable<Text>,
+        unlinked -> Integer,
+        created_at -> BigInt,
+    }
+}
+
 diesel::joinable!(archive_decisions -> archive (archive_id));
 diesel::joinable!(models -> providers (provider_id));
 diesel::joinable!(sessions -> hosts (host_id));
@@ -369,4 +381,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     worktree_claims,
     messages,
     projects,
+    project_links,
 );
