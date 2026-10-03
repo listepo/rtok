@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   pages:
-    uses: pyrlyn/infra/.github/workflows/pages.yml@863d8960601216eec62d4aa78924f84ce61d72b9 # main
+    uses: pyrlyn/infra/.github/workflows/pages.yml@0603d0ae610af9f792c5caf925041292a857e480 # main
     permissions:
       contents: read
       pages: write
