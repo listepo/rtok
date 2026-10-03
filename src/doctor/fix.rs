@@ -928,6 +928,7 @@ pub(in crate::doctor) mod tests {
         #![proptest_config(ProptestConfig::with_cases(64))]
         /// Whatever the user types, a duplicate never loses its last copy and an unrelated
         /// hook never moves.
+        #[cfg(unix)] // POSIX paths and command words
         #[test]
         fn no_answers_remove_the_last_copy_or_an_unrelated_hook(
             answers in prop::collection::vec(
