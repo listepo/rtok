@@ -10,6 +10,7 @@
 
 use std::collections::BTreeSet;
 use std::io::{self, Write};
+use std::path::Path;
 
 use super::fix::removable;
 use super::hooks::Problem;
@@ -39,14 +40,15 @@ pub enum Choice {
     Apply(BTreeSet<(String, String)>),
 }
 
-type Key = (String, String);
+/// An entry's identity: its file and its key path.
+pub type Key = (String, String);
 
-fn key(x: &Problem) -> Key {
+pub fn key(x: &Problem) -> Key {
     (x.source.clone(), x.path.clone())
 }
 
 /// The finding of `found[i]`'s entry that says it is a copy of a duplicate, if it has one.
-fn copy_of(found: &[Problem], i: usize) -> usize {
+pub fn copy_of(found: &[Problem], i: usize) -> usize {
     let k = key(&found[i]);
     (0..found.len())
         .find(|&j| key(&found[j]) == k && found[j].kind.starts_with("duplicate-"))
@@ -114,8 +116,36 @@ fn screen(
     out + "> "
 }
 
+/// The entries a project's shared file holds start unselected: the change reaches teammates, while
+/// its `.local` files and the user's own files do not.
+pub fn shared_in<'a>(
+    cwd: Option<&'a Path>,
+    home: Option<&'a Path>,
+) -> impl Fn(&Problem) -> bool + 'a {
+    move |x| {
+        let path = Path::new(&x.source);
+        cwd.is_some_and(|c| {
+            path.starts_with(c)
+                && home != Some(c)
+                && !path
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().contains(".local"))
+        })
+    }
+}
+
+/// The entries that start deselected.
+pub fn defaults(
+    found: &[Problem],
+    kinds: &[&str],
+    shared: &dyn Fn(&Problem) -> bool,
+) -> BTreeSet<Key> {
+    let removing = found.iter().filter(|x| removable(x, kinds));
+    removing.filter(|x| shared(x)).map(key).collect()
+}
+
 /// One line per entry: a hook that is both broken and an extra copy is listed once.
-fn items(found: &[Problem], kinds: &[&str]) -> Vec<usize> {
+pub fn items(found: &[Problem], kinds: &[&str]) -> Vec<usize> {
     let mut seen = BTreeSet::new();
     (0..found.len())
         .filter(|&i| removable(&found[i], kinds) && seen.insert(key(&found[i])))
@@ -131,11 +161,7 @@ pub fn run(
     preview: &dyn Fn(&[Problem], &BTreeSet<Key>) -> String,
     prompt: &mut dyn Prompt,
 ) -> Choice {
-    let mut off: BTreeSet<Key> = found
-        .iter()
-        .filter(|x| removable(x, kinds) && shared(x))
-        .map(key)
-        .collect();
+    let mut off = defaults(found, kinds, shared);
     let mut note = String::new();
     loop {
         let items = items(found, kinds);

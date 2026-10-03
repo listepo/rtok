@@ -31,7 +31,7 @@ use tokio::sync::watch;
 
 use crate::config::{Config, validate};
 use crate::plugins::Registry;
-use protocol::{ClientMessage, ServerFrame};
+use protocol::{ClientMessage, DoctorAction, DoctorRequest, ServerFrame};
 
 /// Builds one snapshot frame from a config. Production always uses [`frame`]; tests can
 /// substitute a slower or instrumented builder to exercise T206's build coalescing (a real
@@ -358,11 +358,15 @@ fn inbound(state: &DashState, text: &str) -> Option<String> {
                 .map(|e| message_frame(&format!("{e:#}")));
         }
         Ok(ClientMessage::Set { set }) => set,
+        Ok(ClientMessage::Doctor { doctor }) => return Some(doctor_reply(state, &doctor)),
         Err(_) if v.get("project").is_some() => {
             return Some(message_frame("unknown project request"));
         }
         Err(_) if v.get("set").is_some() => {
             return Some(message_frame("set needs a string key and a bool value"));
+        }
+        Err(_) if v.get("doctor").is_some() => {
+            return Some(message_frame("doctor needs an action and a selection"));
         }
         Err(_) => return None,
     };
@@ -407,6 +411,33 @@ fn project_write(cfg: &Config, req: protocol::ProjectRequest) -> Result<()> {
 #[cfg(not(feature = "graph"))]
 fn project_write(_cfg: &Config, _req: protocol::ProjectRequest) -> Result<()> {
     anyhow::bail!("the graph feature is not built in")
+}
+
+/// T331.12: the `doctor --fix` checklist for the page. The upgrade's origin guard covers it like
+/// `set`; only `apply` writes, through the engine's backup and refusals.
+fn doctor_reply(state: &DashState, r: &DoctorRequest) -> String {
+    let cfg = state
+        .cfg
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let kinds = crate::doctor::fix::KINDS;
+    crate::doctor::fix::on_this_machine(|probes, w| {
+        let o = crate::doctor::fix::Opts {
+            keep: cfg.setup.backup_files as usize,
+            agent: None,
+            kinds: &kinds,
+        };
+        match r.action {
+            DoctorAction::Plan => ServerFrame::DoctorPlan {
+                plan: crate::doctor::web::plan(&cfg, probes, w, &o, &r.selection),
+            },
+            DoctorAction::Apply => ServerFrame::DoctorFixed {
+                fixed: crate::doctor::web::apply(&cfg, probes, w, &o, &r.selection),
+            },
+        }
+        .to_json()
+    })
 }
 
 /// `plugins.<id>.enabled` for a catalogue id (D23: Registry, not a second list).

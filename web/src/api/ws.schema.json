@@ -288,7 +288,69 @@
           "required": [
             "project"
           ]
+        },
+        {
+          "description": "The `doctor --fix` checklist: plan it, or write it once the user confirmed.",
+          "type": "object",
+          "properties": {
+            "doctor": {
+              "$ref": "#/$defs/DoctorRequest"
+            }
+          },
+          "required": [
+            "doctor"
+          ]
         }
+      ]
+    },
+    "DoctorAction": {
+      "oneOf": [
+        {
+          "description": "Return the items and the diff; nothing is written.",
+          "type": "string",
+          "const": "plan"
+        },
+        {
+          "description": "Write the selection: the page sends this only after its confirmation.",
+          "type": "string",
+          "const": "apply"
+        }
+      ]
+    },
+    "DoctorRequest": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/DoctorAction"
+        },
+        "selection": {
+          "$ref": "#/$defs/Selection",
+          "default": {
+            "keep": [],
+            "toggled": []
+          }
+        }
+      },
+      "required": [
+        "action",
+        "selection"
+      ]
+    },
+    "Fixed": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "description": "1 when a selected entry was skipped or failed.",
+          "type": "integer",
+          "format": "int32"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "code"
       ]
     },
     "InstructionRow": {
@@ -348,6 +410,61 @@
       "required": [
         "rows",
         "duplicates"
+      ]
+    },
+    "Item": {
+      "description": "One line of the checklist.",
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "can_keep": {
+          "description": "Whether this copy may be made the kept one.",
+          "type": "boolean"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "kept_in": {
+          "description": "The file that holds the copy kept instead, for a duplicate.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "label": {
+          "description": "What the entry runs or is called.",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "shared": {
+          "description": "In a project's shared file: starts unselected.",
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "path",
+        "kind",
+        "agent",
+        "label",
+        "detail",
+        "kept_in",
+        "shared",
+        "selected",
+        "can_keep"
       ]
     },
     "LinkKind": {
@@ -550,6 +667,33 @@
         "cache_read",
         "output",
         "cost_usd"
+      ]
+    },
+    "Plan": {
+      "type": "object",
+      "properties": {
+        "diff": {
+          "description": "The diff of every file the selection would change.",
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Item"
+          }
+        },
+        "refused": {
+          "description": "Selected entries the engine will not remove, with why.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "items",
+        "diff",
+        "refused"
       ]
     },
     "PluginPage": {
@@ -907,6 +1051,22 @@
         "share"
       ]
     },
+    "Ref": {
+      "description": "An entry as the page names it: the file and the key path inside it.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "path"
+      ]
+    },
     "Report": {
       "description": "What `rtok doctor` found, as data.",
       "type": "object",
@@ -1103,6 +1263,32 @@
         "skipped"
       ]
     },
+    "Selection": {
+      "description": "What the user changed since the defaults.",
+      "type": "object",
+      "properties": {
+        "keep": {
+          "description": "Entries made the kept copy of their duplicate.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Ref"
+          }
+        },
+        "toggled": {
+          "description": "Entries whose selection is the opposite of their default.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Ref"
+          }
+        }
+      },
+      "required": [
+        "keep",
+        "toggled"
+      ]
+    },
     "ServerFrame": {
       "description": "A frame the server pushes besides the [`Snapshot`] itself.",
       "oneOf": [
@@ -1142,6 +1328,40 @@
             "type",
             "id",
             "text"
+          ]
+        },
+        {
+          "description": "The checklist of `rtok doctor --fix` and the diff of the selection (T331.12).",
+          "type": "object",
+          "properties": {
+            "plan": {
+              "$ref": "#/$defs/Plan"
+            },
+            "type": {
+              "type": "string",
+              "const": "doctorplan"
+            }
+          },
+          "required": [
+            "type",
+            "plan"
+          ]
+        },
+        {
+          "description": "What a confirmed `doctor` apply did.",
+          "type": "object",
+          "properties": {
+            "fixed": {
+              "$ref": "#/$defs/Fixed"
+            },
+            "type": {
+              "type": "string",
+              "const": "doctorfixed"
+            }
+          },
+          "required": [
+            "type",
+            "fixed"
           ]
         }
       ]
