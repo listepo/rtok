@@ -10,7 +10,7 @@ stdin = """
   "source": "startup"
 }
 """
-stdout = """{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok agent id: [..] (full: [..]). Use it with rtok's agent_* and worktree_* MCP tools./nmemory project [..]: no notes"}}"""
+stdout = """{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok agent id: [..] (full: [..]). Use it with rtok's agent_* and worktree_* MCP tools; agent_inbox reads messages sent to you./nmemory project [..]: no notes"}}"""
 
 # Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
 [env]
