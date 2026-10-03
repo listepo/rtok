@@ -55,7 +55,7 @@ including rtok's own.
 
 ## Install
 
-macOS (Apple silicon or Intel) and Linux x86-64, installed into `~/.cargo/bin`:
+macOS (Apple silicon) and Linux x86-64, installed into `~/.cargo/bin`:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/pyrlyn/rtok/releases/latest/download/rtok-installer.sh | sh

@@ -174,16 +174,18 @@ section! {
 
 section! {
     /// `[agents.usage]` — `rtok agents usage` (T358): tokens and estimated cost per agent, day
-    /// and month. `source` is `rtok` until T358.2 adds the agents' own logs and makes `logs`
-    /// the default. `hosts` empty = every host; `since` / `until` are a date (`2026-09-01`, a
-    /// whole day in `tz`) or, for `since`, a duration (`30d`), empty = unbounded; `period` is
-    /// `monthly` or `daily`; `tz` is an IANA zone, empty = the system zone.
+    /// and month. `source` is `logs` (the agents' own session files, read from
+    /// `[stats] transcripts_dir` and `codex_dir`), `rtok` (the store) or `both`. `hosts` empty = every
+    /// host; `since` / `until` are a date (`2026-09-01`, a whole day in `tz`) or, for `since`, a
+    /// duration (`30d`), empty = unbounded; `period` is `monthly` or `daily`; `by` groups
+    /// the middle table by `agent` or `model`; `tz` is an IANA zone, empty = the system zone.
     AgentsUsage {
-        source: String = s("rtok"),
+        source: String = s("logs"),
         hosts: Vec<String> = Vec::new(),
         since: String = String::new(),
         until: String = String::new(),
         period: String = s("monthly"),
+        by: String = s("agent"),
         tz: String = String::new(),
     }
 }
@@ -234,7 +236,7 @@ section! {
 }
 
 section! {
-    /// `[web]` — `rtok web` (P19). Slint WASM UI + WebSocket API, the same data as `rtok tui`.
+    /// `[web]` — `rtok web` (P19). React SPA + WebSocket API, the same data as `rtok tui`.
     Web {
         host: String = s("127.0.0.1"),
         port: u16 = 3333,
@@ -832,6 +834,13 @@ section! {
         auto_index: bool = true,
         backend: String = s("tags"),
         watch: String = s("off"),
+        /// T329.8: follow the references a project's manifests make to other directories on this
+        /// machine, register them and link them into the graph scope.
+        auto_link_references: bool = true,
+        /// T329.8: how many reference levels are followed from the project; 0 follows none.
+        reference_depth: u32 = 3,
+        /// T329.8: the most projects references may add to the registry.
+        max_auto_projects: u32 = 20,
         exclude: Vec<String> = vec![],
         include: Vec<String> = vec![],
         extensions: std::collections::HashMap<String, String> = std::collections::HashMap::new(),
