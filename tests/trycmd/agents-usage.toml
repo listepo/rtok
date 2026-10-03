@@ -1,5 +1,5 @@
 bin.name = "rtok"
-args = "--config tests/trycmd/input/json-readers.toml agents usage --tz UTC"
+args = "--config tests/trycmd/input/json-readers.toml agents usage --source rtok --tz UTC"
 stdout = """
 rtok agents usage: through rtok, no usage recorded (UTC)
 """
