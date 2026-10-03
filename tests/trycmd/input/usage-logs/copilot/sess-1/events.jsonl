@@ -1,0 +1,3 @@
+{"type":"session.start","timestamp":"2026-10-01T09:00:00.000Z","data":{"sessionId":"sess-1"}}
+{"type":"assistant.message","timestamp":"2026-10-01T09:05:00.000Z","data":{"outputTokens":50}}
+{"type":"session.shutdown","timestamp":"2026-10-01T10:00:00.000Z","data":{"modelMetrics":{"gpt-x":{"requests":{"count":2},"usage":{"inputTokens":1000,"cacheReadTokens":600,"cacheWriteTokens":0,"outputTokens":80,"reasoningTokens":10}}}}}

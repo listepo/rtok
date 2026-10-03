@@ -11,7 +11,7 @@ every hook or server that is not ours.
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | yes | `[[hooks]]` with `event`, `matcher`, `command = "rtok hook <event>"`, `timeout` (seconds) on PreToolUse (Bash, Read), PostToolUse, UserPromptSubmit, SessionStart, PreCompact, PostCompact, SessionEnd |
-| mcp | yes | `mcpServers.rtok` → `rtok mcp` in `mcp.json`, `{command, args}` as the Kimi docs show it, no `type` (off with `[setup] mcp = false`); independent of the plugin (T275/D33): written on every install/update regardless of plugin state, only remove takes it out |
+| mcp | yes | `mcpServers.rtok` → `rtok mcp --host kimi` in `mcp.json`, `{command, args}` as the Kimi docs show it, no `type` (off with `[setup] mcp = false`); independent of the plugin (T275/D33): written on every install/update regardless of plugin state, only remove takes it out |
 | plugin | `--yes` | install prints `/plugins install <resolved plugins/kimi path>` behind the flag — rtok never writes `plugins/managed/`, that store is Kimi's and undocumented. While the plugin is installed (`<kimi home>/plugins/managed/rtok/kimi.plugin.json` exists), setup strips rtok's own `[[hooks]]` tables instead of adding them (D21 singleton, hooks only); MCP is independent of it (T275/D33) |
 | proxy | no | Kimi Code providers are [providers.<name>] tables with their own base_url and keys; setup does not edit them |
 

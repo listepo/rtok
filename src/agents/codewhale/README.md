@@ -10,7 +10,7 @@ One directory, `[setup.codewhale] dir` (default `~/.codewhale`, `$CODEWHALE_HOME
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | yes | `[[hooks.hooks]]` → `{name, event: "message_submit", command: "rtok hook UserPromptSubmit --host codewhale", timeout_secs}` in `config.toml` — the only one of CodeWhale's 15 events that is both steering (its stdout can rewrite the payload) and carries real stdin JSON; the other 2 steering events (`tool_call_before`, `shell_env`) are env-var-only with no stdin, and the 12 observer events discard their hook's result outright |
-| mcp | yes | `mcpServers.rtok` → `rtok mcp` in `mcp.json` as `{type: "stdio", command, args}` (off with `[setup] mcp = false`) |
+| mcp | yes | `mcpServers.rtok` → `rtok mcp --host codewhale` in `mcp.json` as `{type: "stdio", command, args}` (off with `[setup] mcp = false`) |
 | proxy | no | CodeWhale providers are [providers.<name>] tables with their own base_url and keys (docs/CONFIGURATION.md); setup does not edit them |
 | plugin | no | CodeWhale's plugin-bundle system needs a reviewed remote source and exact environment-source references (docs/PLUGIN_BUNDLES.md); there is no local directory to link |
 

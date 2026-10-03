@@ -74,3 +74,82 @@ fn every_plugin_script_is_referenced_or_readme_allowlisted() {
         "scripts no manifest/hooks file references and no README allowlists: {unreferenced:?}"
     );
 }
+
+/// T159: with no rtok anywhere, `claude/scripts/worktree.sh` makes exactly the host's own
+/// default for `foo` — `.claude/worktrees/foo` on `worktree-foo`. A POSIX `sed` ends the
+/// `field` output with a newline, which `tr -c` once turned into a trailing `-`; the shim
+/// stands in for such a `sed` (the stock one on macOS and GNU sed drop the newline).
+#[cfg(unix)]
+#[test]
+fn worktree_launcher_fallback_names_the_worktree_exactly_as_the_host_does() {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::process::{Command, Stdio};
+
+    let tmp = rtok::testutil::tmp_dir("worktree-launcher-name");
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(tmp.join("repo"))
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+            .args([
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "init.defaultBranch=main",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {:?}", out.stderr);
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    fs::create_dir_all(tmp.join("repo")).unwrap();
+    git(&["init", "-q"]);
+    git(&["commit", "-q", "--allow-empty", "-m", "init"]);
+
+    let shim = tmp.join("bin");
+    fs::create_dir_all(&shim).unwrap();
+    let sed = shim.join("sed");
+    fs::write(
+        &sed,
+        "#!/bin/sh\n/usr/bin/sed \"$@\" | /usr/bin/awk '{print}'\n",
+    )
+    .unwrap();
+    fs::set_permissions(&sed, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let script = plugins().join("claude/scripts/worktree.sh");
+    let payload = serde_json::json!({"session_id": "s", "cwd": tmp.join("repo"), "name": "foo"});
+    let mut child = Command::new("/bin/sh")
+        .arg(&script)
+        .arg("WorktreeCreate")
+        .env("HOME", &tmp)
+        .env("PATH", format!("{}:/usr/bin:/bin", shim.display()))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stdin = child.stdin.take().unwrap();
+    { stdin }.write_all(payload.to_string().as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let want = tmp.join("repo/.claude/worktrees/foo");
+    let printed = String::from_utf8(out.stdout).unwrap();
+    let printed = fs::canonicalize(printed.trim_end()).expect("the printed path exists");
+    assert_eq!(printed, fs::canonicalize(&want).unwrap());
+    let branch = git(&[
+        "-C",
+        want.to_str().unwrap(),
+        "rev-parse",
+        "--abbrev-ref",
+        "HEAD",
+    ]);
+    assert_eq!(branch, "worktree-foo");
+    let _ = fs::remove_dir_all(&tmp);
+}

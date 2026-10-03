@@ -81,7 +81,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
 
 /// The `mcp.servers.rtok` entry [`register_mcp`] writes.
 fn mcp_entry(cmd: &str) -> Value {
-    json!({"command": cmd, "args": ["mcp"]})
+    json!({"command": cmd, "args": super::mcp_args("zcode")})
 }
 
 /// `mcp.servers.rtok` → `<abs rtok> mcp`.
@@ -93,7 +93,7 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
         "mcp.servers",
         NAME,
         mcp_entry(&cmd),
-        &format!("{cmd} mcp"),
+        &super::mcp_summary(&cmd, "zcode"),
     )
 }
 
