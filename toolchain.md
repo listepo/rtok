@@ -76,6 +76,9 @@ Project programs and direct packages from the manifests.
 | @testing-library/react | local | https://github.com/testing-library/react-testing-library | T310.4: renders the shell and routes in Vitest |
 | @testing-library/dom | local | https://github.com/testing-library/dom-testing-library | T310.4: peer of @testing-library/react (queries, events) |
 | happy-dom | local | https://github.com/capricorn86/happy-dom | T310.4: DOM for component tests (`// @vitest-environment happy-dom`, faster than jsdom) |
+| three | local | https://github.com/mrdoob/three.js | T329.13: WebGL scene of the projects overview (lazy chunk `Scene3D`, 575 kB, 143 kB gzip; the first bundle does not grow) |
+| d3-force-3d | local | https://github.com/vasturiano/d3-force-3d | T329.13: force layout run in a web worker (`layout.worker`, 29 kB); `3d-force-graph` would simulate on the main thread, and this is the engine it uses. Last push 2025-04-09, so watch its upkeep |
+| @types/three | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T329.13: Three.js types |
 
 ## cargo
 
@@ -98,6 +101,7 @@ Project programs and direct packages from the manifests.
 | env_logger | local | https://crates.io/crates/env_logger | T225: `RUST_LOG` debug log on stderr, off by default |
 | figment | local | https://crates.io/crates/figment | Config |
 | futures-util | local | https://crates.io/crates/futures-util | Rust dependency |
+| globset | local | https://crates.io/crates/globset | T329.7: workspace member globs of project references; already in the tree through `ignore` |
 | httpmock | local | https://crates.io/crates/httpmock | Rust dependency |
 | humantime | local | https://crates.io/crates/humantime | T282: `[agents] idle` duration parsing; already in the lock as a transitive dep |
 | i-slint-backend-testing | local | https://crates.io/crates/i-slint-backend-testing | Headless backend for Slint UI e2e tests |
@@ -127,6 +131,7 @@ Project programs and direct packages from the manifests.
 | schemars | local | https://github.com/GREsau/schemars | T310.2: JSON Schema of the `/ws` protocol, committed as `web/src/api/ws.schema.json` |
 | shlex | local | https://github.com/comex/rust-shlex | T331.1: POSIX word splitting of a hook command in `rtok doctor` |
 | serde_json | local | https://crates.io/crates/serde_json | JSON |
+| serde-saphyr | local | https://crates.io/crates/serde-saphyr | T329.7: `pnpm-workspace.yaml` of project references; maintained (serde_yaml is deprecated) |
 | sha2 | local | https://crates.io/crates/sha2 | Rust dependency |
 | similar | local | https://crates.io/crates/similar | Rust dependency |
 | slint | local | https://crates.io/crates/slint | Rust dependency |
@@ -150,6 +155,7 @@ Project programs and direct packages from the manifests.
 | tree-sitter-tags | local | https://crates.io/crates/tree-sitter-tags | Rust dependency |
 | tree-sitter-typescript | local | https://crates.io/crates/tree-sitter-typescript | Rust dependency |
 | trycmd | local | https://crates.io/crates/trycmd | Full CLI command-output fixtures in tests/trycmd/ |
+| pulldown-cmark | local (dev) | https://crates.io/crates/pulldown-cmark | CommonMark parse of README and docs in tests/docs_structure.rs: unclosed fences, skipped heading levels (T359) |
 | tokio-tungstenite | local | https://crates.io/crates/tokio-tungstenite | WebSocket client for the `rtok web` e2e (tests/web_e2e.rs) |
 | url | local | https://crates.io/crates/url | `file://` MCP roots → path (T263) |
 | uuid | local | https://crates.io/crates/uuid | T282: random UUIDv4 rtok agent id (D34); already in the lock as a transitive dep |
