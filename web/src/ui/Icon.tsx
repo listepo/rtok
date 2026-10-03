@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Raw SVGs so `currentColor` follows the text colour; they are our own bundled assets.
 const icons = import.meta.glob<string>("../../assets/icons/*.svg", {
     query: "?raw",

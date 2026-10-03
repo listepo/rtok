@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T5.0: httpmock upstream harness for Anthropic and OpenAI wires.
 //!
 //! Cargo compiles this as `tests/proxy.rs` (not `tests/proxy/mod.rs`) so

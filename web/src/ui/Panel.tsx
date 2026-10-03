@@ -1,22 +1,31 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 import { useId, type ReactNode } from "react";
 
 export function Panel({
     title,
     hint,
+    action,
+    className = "",
     children,
 }: {
     title: string;
     hint?: string;
+    action?: ReactNode;
+    className?: string;
     children: ReactNode;
 }) {
     const id = useId();
     return (
-        <section aria-labelledby={id} className="glass flex min-w-0 flex-col">
+        <section aria-labelledby={id} className={`glass flex min-w-0 flex-col ${className}`}>
             <header className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-border/70 px-4 py-3">
                 <h2 id={id} className="text-sm font-bold">
                     {title}
                 </h2>
                 {hint && <p className="text-2xs text-fg-muted">{hint}</p>}
+                {action && <div className="ml-auto text-2xs">{action}</div>}
             </header>
             <div className="flex min-w-0 flex-col gap-4 p-4">{children}</div>
         </section>

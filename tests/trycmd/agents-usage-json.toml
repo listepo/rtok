@@ -1,0 +1,33 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml agents usage --source rtok --json --tz UTC"
+stdout = """
+{
+  "source": "rtok",
+  "tz": "UTC",
+  "through": null,
+  "totals": {
+    "tokens": 0,
+    "input": 0,
+    "cache_write": 0,
+    "cache_read": 0,
+    "output": 0,
+    "cost_usd": null,
+    "sessions": 0,
+    "daily_rows": 0,
+    "saved_tokens": 0,
+    "saved_usd": null
+  },
+  "unpriced_models": 0,
+  "unpriced": [],
+  "agents": [],
+  "periods": [],
+  "skipped": []
+}
+"""
+
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t358-1-agents-usage-json"
+RTOK_HOME = "target/tmp/t358-1-agents-usage-json"

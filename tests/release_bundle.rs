@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T81/T111/T310.9: the web UI ships inside the release binary, and the places that say so
 //! stay in step. Pure file reads — the release itself is built in CI, but a dropped
 //! embed guard, a hand-edited `release.yml` or a SPA build that stops feeding `build.rs` is

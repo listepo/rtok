@@ -156,6 +156,7 @@ diesel_migrations = { version = "2.2", features = ["sqlite"] } # T163.4: embedde
 semver = { version = "1.0", features = ["serde"] } # T279: plugin version compare + version-file (de)serialization; already in the lock as a transitive dep
 uuid = { version = "1.26", features = ["v4"] } # T282: the rtok agent id (D34, random so short prefixes are unique); already in the lock as a transitive dep
 humantime = "2.4" # T282 review: [agents] idle parsing, replacing a hand-rolled duplicate of measure::stats::parse_since; already in the lock as a transitive dep
+jiff = "0.2" # T358: IANA time zones with DST for `rtok agents usage` day and month buckets (`--tz`); already in the lock as a transitive dep of env_logger
 
 [dev-dependencies]
 assert_cmd = "2" # CLI e2e through `Command::cargo_bin` (plan Working agreement)

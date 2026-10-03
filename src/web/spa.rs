@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The React SPA `rtok web` serves (T310.9): the built `web/dist`, baked into the binary by
 //! `rust-embed`, or a directory read at run time when `RTOK_WEB_DIST` names one.
 //!

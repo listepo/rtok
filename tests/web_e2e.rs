@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! End to end: the real `rtok web` binary on a real port — the SPA it embeds (T310.9), the
 //! `RTOK_WEB_DIST` override and a real WebSocket client on `/ws`. `tests/web.rs` drives the
 //! router in-process; this is what a user's browser sees.

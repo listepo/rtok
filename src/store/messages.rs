@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T287: messages between agents and the user — `rtok agents send` / `inbox` (MCP in PR 2).
 //! Local store only. `from_agent: None` is the user at a terminal. Rendering lives in one
 //! place, [`crate::render::agent_message_frame`], so every surface frames a body the same.

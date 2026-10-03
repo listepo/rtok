@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Clap tree. `tests/config_coverage.rs` walks [`Cli::command`] (plan T12.4).
 
 use std::io::{self, IsTerminal, Read, Write};
@@ -52,6 +56,10 @@ enum Cmd {
         /// JSON arguments for `--call`
         #[arg(long, value_name = "ARGS")]
         json: Option<String>,
+        /// The host this MCP entry belongs to (`claude`, `cursor`, `grok`, …): overlays `[hook] host` so
+        /// the process can find its rtok agent (T283.1)
+        #[arg(long, value_name = "HOST")]
+        host: Option<String>,
         /// Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`)
         #[arg(last = true)]
         wrap: Vec<String>,
@@ -662,6 +670,42 @@ enum AgentCmd {
         #[command(subcommand)]
         action: Option<SessionsCmd>,
     },
+    /// Tokens and estimated cost per agent and month (or day), from the agents' logs or rtok
+    ///
+    /// Prices come from `[stats.prices]`; a model without one counts in the tokens and is
+    /// left out of the cost (`--unpriced` names those).
+    Usage {
+        /// Data source: `logs` (the agents' own session files, the default), `rtok` (what passed through rtok) or `both`
+        #[arg(long, value_name = "SOURCE")]
+        source: Option<String>,
+        /// Only these hosts, comma-separated (`claude,codex`)
+        #[arg(long, value_name = "IDS")]
+        host: Option<String>,
+        /// From a date (`2026-09-01`, whole days in `--tz`) or a duration back from now (`30d`)
+        #[arg(long, value_name = "DATE|DUR")]
+        since: Option<String>,
+        /// Through this date, inclusive
+        #[arg(long, value_name = "DATE")]
+        until: Option<String>,
+        /// Bottom table by day
+        #[arg(long, conflicts_with = "monthly")]
+        daily: bool,
+        /// Bottom table by month (the default)
+        #[arg(long)]
+        monthly: bool,
+        /// Middle table grouping: `agent` (the default) or `model`
+        #[arg(long, value_name = "AGENT|MODEL")]
+        by: Option<String>,
+        /// IANA time zone for day and month boundaries (default: the system zone)
+        #[arg(long, value_name = "ZONE")]
+        tz: Option<String>,
+        /// List the models without a price instead of the tables
+        #[arg(long)]
+        unpriced: bool,
+        /// One JSON document
+        #[arg(long)]
+        json: bool,
+    },
     /// Junk rtok owns under its own home: log siblings and archive payloads past retention
     Junk {
         #[command(subcommand)]
@@ -970,6 +1014,11 @@ pub fn run() -> Result<()> {
                     }
                 }
                 ConfigCmd::Validate { path } => {
+                    // T362: only the implicit default file is created, as `load_with` does;
+                    // a path the user typed must exist.
+                    if path.is_none() {
+                        Config::ensure_user_file(&home, config_file.as_deref())?;
+                    }
                     let path = path.unwrap_or(user);
                     let mut errs = validate::issues(&path)?;
                     // The filter drop-ins are deployment state, not part of the
@@ -1030,6 +1079,11 @@ pub fn run() -> Result<()> {
             cache,
             price,
         } => {
+            // The flag is parsed here, before it merges into `stats.since`, so a later parse error
+            // can only come from the config or the environment and says so.
+            if let Some(s) = &since {
+                crate::measure::stats::parse_since(s)?;
+            }
             let cfg = Config::load_with(
                 config_file.as_deref(),
                 stats_flags(since, json, plugin.clone(), compare.clone(), price),
@@ -1393,6 +1447,42 @@ pub fn run() -> Result<()> {
                     print!("{}", crate::render::sessions_table(&rows, all, now));
                 }
             }
+            AgentCmd::Usage {
+                source,
+                host,
+                since,
+                until,
+                daily,
+                monthly,
+                by,
+                tz,
+                unpriced,
+                json,
+            } => {
+                let period = daily.then_some("daily").or(monthly.then_some("monthly"));
+                let flags = usage_flags([
+                    ("source", source),
+                    ("hosts", host),
+                    ("since", since),
+                    ("until", until),
+                    ("period", period.map(str::to_string)),
+                    ("by", by),
+                    ("tz", tz),
+                ]);
+                let cfg = Config::load_with(config_file.as_deref(), flags)?;
+                let store = crate::store::Store::open(&cfg.core.db_path)?;
+                let report = crate::agents::usage::report(&cfg, &store, crate::log::now() as i64)?;
+                for s in &report.skipped {
+                    eprintln!("skipped {}: {} in {}", s.host, s.reason, s.path.display());
+                }
+                if json {
+                    print_json(&report)?;
+                } else if unpriced {
+                    print!("{}", report.unpriced_text());
+                } else {
+                    print!("{}", report.to_text());
+                }
+            }
             AgentCmd::Junk {
                 action: JunkCmd::Clear { yes, json },
             } => {
@@ -1495,9 +1585,10 @@ pub fn run() -> Result<()> {
             action,
             call,
             json,
+            host,
             wrap,
         } => {
-            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let cfg = Config::load_with(config_file.as_deref(), hook_host_flag(host))?;
             if let Some(McpCmd::Ping {
                 agent,
                 cli,
@@ -1678,7 +1769,7 @@ pub fn run() -> Result<()> {
             let cx = crate::plugin::Runtime::open(cfg.clone(), "graph")?;
             match action {
                 GraphCmd::Index { path, dry_run } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let pb = crate::render::spinner("indexing");
                     let r = crate::plugins::graph::index::run_with(
                         &crate::plugin::Ctx::new(&cx),
@@ -1699,7 +1790,7 @@ pub fn run() -> Result<()> {
                     println!("{}", style::success(&summary));
                 }
                 GraphCmd::Dead { path, json } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let ctx = crate::plugin::Ctx::new(&cx);
                     if json {
                         let rows = crate::plugins::graph::dead_rows(&ctx, &root)?;
@@ -1717,7 +1808,7 @@ pub fn run() -> Result<()> {
                     to,
                     path,
                 } => {
-                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let root = crate::plugins::graph::cli_root(path)?;
                     let ctx = crate::plugin::Ctx::new(&cx);
                     print!(
                         "{}",
@@ -1933,6 +2024,35 @@ fn stats_flags(
     }
     let mut flags = Dict::new();
     flags.insert("stats".into(), Value::from(stats));
+    Some(flags)
+}
+
+/// The `[agents.usage]` overlay for the flags the caller gave. `hosts` is the one list key,
+/// so its comma-separated flag is split here.
+fn usage_flags<const N: usize>(given: [(&str, Option<String>); N]) -> Option<figment::value::Dict> {
+    use figment::value::{Dict, Value};
+    let mut usage = Dict::new();
+    for (key, value) in given {
+        let Some(value) = value else { continue };
+        let value = if key == "hosts" {
+            Value::from(
+                value
+                    .split(',')
+                    .map(|h| h.trim().to_string())
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            Value::from(value)
+        };
+        usage.insert(key.into(), value);
+    }
+    if usage.is_empty() {
+        return None;
+    }
+    let mut agents = Dict::new();
+    agents.insert("usage".into(), Value::from(usage));
+    let mut flags = Dict::new();
+    flags.insert("agents".into(), Value::from(agents));
     Some(flags)
 }
 

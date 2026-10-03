@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok stats` (plan T1.2): per-tool sizes, Bash families, MCP groups, CTT.
 //!
 //! Tool-result tokens use 4 chars/token (`research.md` §2 heuristic) so this report is
@@ -793,19 +797,26 @@ fn skills_section(skills: &BTreeMap<String, SkillRow>) -> String {
     table(&cols, &out)
 }
 
+/// `<n>`, `<n>d` or `<n>h` from the `--since` flag.
 pub fn parse_since(s: &str) -> Result<Duration> {
+    parse_since_from(s, "--since")
+}
+
+/// [`parse_since`] for a value read from `source` (`stats.since`, `report.since`): the error
+/// names where the bad value came from, so a config typo is not blamed on a flag nobody passed.
+pub fn parse_since_from(s: &str, source: &str) -> Result<Duration> {
     let s = s.trim();
     let (n, unit) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
-    let n: u64 = n.parse().map_err(|_| anyhow::anyhow!("bad --since {s}"))?;
+    let n: u64 = n.parse().map_err(|_| anyhow::anyhow!("bad {source} {s}"))?;
     let per_unit = match unit {
         "" | "d" => 86_400u64,
         "h" => 3_600,
-        _ => bail!("bad --since unit in {s}"),
+        _ => bail!("bad {source} unit in {s}"),
     };
     // `--since 99999999999999999d` used to panic in a debug build and wrap in a release one.
     let secs = n
         .checked_mul(per_unit)
-        .ok_or_else(|| anyhow::anyhow!("--since {s} is out of range"))?;
+        .ok_or_else(|| anyhow::anyhow!("{source} {s} is out of range"))?;
     Ok(Duration::from_secs(secs))
 }
 
@@ -1807,6 +1818,31 @@ mod tests {
         let table = cost.to_table();
         assert!(table.contains("11.60"), "{table}");
         assert!(table.contains("mystery-1"), "{table}");
+    }
+
+    /// T364: a bad value is blamed on the place it came from, not always on `--since`.
+    #[test]
+    fn parse_since_names_its_source() {
+        for bad in ["7x", "d", "-1d", ""] {
+            let flag = parse_since(bad).unwrap_err().to_string();
+            assert!(
+                flag.contains("--since") && !flag.contains("stats.since"),
+                "{flag}"
+            );
+            let cfg = parse_since_from(bad, "stats.since")
+                .unwrap_err()
+                .to_string();
+            assert!(
+                cfg.contains("stats.since") && !cfg.contains("--since"),
+                "{cfg}"
+            );
+        }
+        let huge = parse_since_from("99999999999999999d", "stats.since").unwrap_err();
+        assert!(huge.to_string().contains("stats.since"), "{huge}");
+        assert_eq!(
+            parse_since_from("12h", "stats.since").unwrap(),
+            Duration::from_secs(12 * 3600)
+        );
     }
 
     /// A window wider than the calendar is a typo, not a wrapped duration: the multiply

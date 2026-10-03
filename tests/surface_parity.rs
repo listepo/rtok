@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! D23's gate: `rtok web` and `rtok tui` are two renderings of one operator model, so
 //! a page that exists on one surface and not the other is a defect. Each surface
 //! contributes its own set here and the assert fails naming the page that drifted;
@@ -466,6 +470,11 @@ const EXEMPT: &[(&str, &str)] = &[
         "agents inbox",
         "one agent's framed message queue, marked read when the agent reads its own (T287); \
          not a shared model page",
+    ),
+    (
+        "agents usage",
+        "reading command whose Usage page on `rtok web` / `rtok tui` is T358.5 (D23/D27); it \
+         moves to COMMAND_PAGES with it",
     ),
     (
         "info",

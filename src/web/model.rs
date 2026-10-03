@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The one operator model behind `rtok web` and `rtok tui` (D23, T15.0).
 //!
 //! Both surfaces render *these* values; neither owns data. Since T15.11 the reading
@@ -271,7 +275,10 @@ pub fn memory_status(
     since: Option<&str>,
 ) -> Result<MemoryStatus> {
     let since_label = since.unwrap_or(&cfg.stats.since);
-    let span = stats::parse_since(since_label)?;
+    let span = match since {
+        Some(flag) => stats::parse_since(flag)?,
+        None => stats::parse_since_from(&cfg.stats.since, "stats.since")?,
+    };
     let since_unix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -381,7 +388,7 @@ pub fn sessions(cfg: &Config, since: i64) -> Result<Vec<SessionTotals>> {
 /// `usage`, D27) is the Sessions page T25.1 adds; both definitions live here, one per page,
 /// rather than one number quietly serving two questions.
 pub fn stats_report(cfg: &Config) -> Result<stats::Report> {
-    let since = stats::parse_since(&cfg.stats.since)?;
+    let since = stats::parse_since_from(&cfg.stats.since, "stats.since")?;
     let mut report = stats::collect(
         &cfg.stats.transcripts_dir,
         since,
@@ -625,7 +632,8 @@ fn report_window(
 ) -> Result<ReportWindow> {
     let since = cfg.report.since.clone();
     let to_unix = crate::log::now() as i64;
-    let span = i64::try_from(stats::parse_since(&since)?.as_secs()).unwrap_or(i64::MAX);
+    let span = i64::try_from(stats::parse_since_from(&since, "report.since")?.as_secs())
+        .unwrap_or(i64::MAX);
     let from_unix = to_unix.saturating_sub(span);
     let date = |secs: i64| crate::log::stamp(secs.max(0) as u64)[..10].to_string();
     Ok(ReportWindow {

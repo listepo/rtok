@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok agents outdated` / `rtok agents update --check` (T279.1).
 
 use anyhow::{Context, Result, bail};
@@ -107,7 +111,13 @@ fn installed_row(
     if !is_behind(&got.version, target) {
         return Ok(None);
     }
-    let installed = if got.legacy {
+    // `got.legacy` only says the installed copy has no version file. The card lists as `legacy`
+    // an install with no recorded version at all; one the receipt or the host record dates
+    // (Claude's `installed_plugins.json` says `0.0.1`) shows that version.
+    let recorded =
+        receipt.get(agent).is_some() || host_record.is_some_and(|v| Version::parse(v).is_ok());
+    let legacy = got.legacy && !recorded;
+    let installed = if legacy {
         "legacy".to_string()
     } else {
         got.version.to_string()
@@ -118,7 +128,7 @@ fn installed_row(
         installed,
         available: target.to_string(),
         source: got.source.to_string(),
-        legacy: got.legacy,
+        legacy,
     }))
 }
 

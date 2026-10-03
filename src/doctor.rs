@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `rtok doctor` (plan T1.4): hooks, MCP servers, proxy chain.
 //!
 //! Since T15.11 the probes live in [`page`] and the text in [`Report::to_text`]: the page is
@@ -1060,7 +1064,7 @@ fn nonempty(s: Option<String>) -> Option<String> {
 /// than `[stats] since`, or when no Read-class tool ran — doctor stays fail-open
 /// and the deny stays off on no data.
 fn read_share(cfg: &Config) -> Option<ReadShare> {
-    let since = crate::measure::stats::parse_since(&cfg.stats.since).ok()?;
+    let since = crate::measure::stats::parse_since_from(&cfg.stats.since, "stats.since").ok()?;
     let cutoff = std::time::SystemTime::now()
         .checked_sub(since)
         .unwrap_or(std::time::UNIX_EPOCH);

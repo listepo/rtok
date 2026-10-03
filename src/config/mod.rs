@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `~/.rtok/config.toml` — every setting rtok has (plan T0.2, T12.1, decision D12).
 //!
 //! `config/default.toml` is the reference file: it is embedded with `include_str!`, written
@@ -164,6 +168,25 @@ section! {
         /// T288: bytes of framed messages one `UserPromptSubmit`/`PostToolUse` pushes into
         /// the agent's context; the rest become one "and N more" line.
         push_bytes: u32 = 1024,
+        usage: AgentsUsage = AgentsUsage::default(),
+    }
+}
+
+section! {
+    /// `[agents.usage]` — `rtok agents usage` (T358): tokens and estimated cost per agent, day
+    /// and month. `source` is `logs` (the agents' own session files, read from
+    /// `[stats] transcripts_dir` and `codex_dir`), `rtok` (the store) or `both`. `hosts` empty = every
+    /// host; `since` / `until` are a date (`2026-09-01`, a whole day in `tz`) or, for `since`, a
+    /// duration (`30d`), empty = unbounded; `period` is `monthly` or `daily`; `by` groups
+    /// the middle table by `agent` or `model`; `tz` is an IANA zone, empty = the system zone.
+    AgentsUsage {
+        source: String = s("logs"),
+        hosts: Vec<String> = Vec::new(),
+        since: String = String::new(),
+        until: String = String::new(),
+        period: String = s("monthly"),
+        by: String = s("agent"),
+        tz: String = String::new(),
     }
 }
 
