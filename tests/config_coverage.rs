@@ -87,6 +87,9 @@ const ALLOW_KEYS: &[&str] = &[
     "worktree.add.owner",
     // `worktree claim --owner` (T285): the name an old lock carries, per call like `add --owner`.
     "worktree.claim.owner",
+    // `worktree adopt` (T289): per call like `claim` — which task and whose lock.
+    "worktree.adopt.owner",
+    "worktree.adopt.task",
     // `worktree remove` (T286): per call like `claim` — whose old lock, and whether an
     // unmerged branch survives this one removal.
     "worktree.remove.owner",
@@ -113,6 +116,12 @@ const ALLOW_KEYS: &[&str] = &[
     "setup.exit_code",
     // `agents usage --unpriced` (T358.1): which view one call prints, not a stored setting.
     "agents.usage.unpriced",
+    // `doctor --fix --yes --dry-run --only` (T331.5): same per-call rule as `worktree gc` —
+    // a stored `yes` would rewrite host configs without anyone typing it.
+    "doctor.fix",
+    "doctor.yes",
+    "doctor.dry_run",
+    "doctor.only",
     // `graph projects link|unlink --from/--both/--reason` (T329.3): which two projects one call
     // links and why, not stored settings.
     "graph.projects.link.from",

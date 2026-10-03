@@ -95,6 +95,25 @@ them the proxy stays the only path.
 Every one of those tasks begins by re-verifying the host's API against its current
 documentation: the table above is a survey of vendor docs, not a measurement.
 
+## Which hosts `rtok agents usage` reads
+
+`rtok agents usage --source logs` totals tokens from each host's own session files (the directories are `[agents.usage.dirs]` in `docs/config.md`, and `research.md` section 30 cites the source of every format).
+
+| Host | Reads | Status |
+| --- | --- | --- |
+| Claude Code, Codex | transcripts under `[stats]` | supported |
+| OpenCode, Kilo | `message` rows of the host's SQLite file, opened read-only | supported |
+| Copilot CLI | the per-model totals of each finished session | supported, per session |
+| Gemini CLI | `tokens` of each reply in the chat logs | supported |
+| pi | `usage` of each entry in the session logs | supported |
+| Kimi Code | `usage.record` lines of each agent's wire log | supported |
+| Droid | none: the token fields of its settings file are not documented | `unsupported` |
+| Grok | none: xAI documents `grok usage`, which rtok does not run, not the files | `unsupported` |
+| ZCode | none: the session records are not documented | `unsupported` |
+| Antigravity | none: its local data is not documented | `unsupported` |
+
+An `unsupported` host whose directory has files is named under `skipped` in the report, so a missing agent is visible instead of silently counted as zero.
+
 ## Outdated plugins
 
 `rtok agents outdated` lists only hosts where rtok's plugin is installed and its version is

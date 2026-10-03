@@ -404,6 +404,52 @@ fn config_validate_creates_the_default_file_but_not_an_explicit_one() {
     assert!(String::from_utf8_lossy(&out.stderr).contains(missing));
 }
 
+/// T331.5: `doctor --fix` is a dry run until `--yes`; then it backs the file up, drops only the
+/// broken hook and keeps every other byte.
+#[cfg(unix)] // POSIX hook paths
+#[test]
+fn doctor_fix_removes_only_the_broken_hook_after_a_backup() {
+    let home = tmp("doctor-fix");
+    let claude = home.join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let settings = claude.join("settings.json");
+    let raw = format!(
+        "{{\n  // mine\n  \"hooks\": {{\n    \"Stop\": [\n      {{ \"hooks\": [\n        {{ \"type\": \"command\", \"command\": \"{}/gone.sh\" }},\n        {{ \"type\": \"command\", \"command\": \"echo done\" }}\n      ] }}\n    ]\n  }}\n}}\n",
+        home.display()
+    );
+    fs::write(&settings, &raw).unwrap();
+    let run = |args: &[&str]| {
+        let mut c = cmd(args, &home);
+        c.current_dir(&home);
+        c.assert().get_output().clone()
+    };
+
+    let dry = run(&["doctor", "--fix"]);
+    assert_eq!(dry.status.code(), Some(0));
+    let text = String::from_utf8_lossy(&dry.stdout);
+    assert!(text.contains("dry run: nothing is written"), "{text}");
+    assert!(text.contains("would remove Stop"), "{text}");
+    assert_eq!(fs::read_to_string(&settings).unwrap(), raw);
+
+    let done = run(&["doctor", "--fix", "--yes"]);
+    assert_eq!(done.status.code(), Some(0), "{done:?}");
+    let text = String::from_utf8_lossy(&done.stdout);
+    assert!(text.contains("1 broken hook(s) removed, 0 left"), "{text}");
+    let after = fs::read_to_string(&settings).unwrap();
+    assert!(
+        after.contains("// mine") && after.contains("echo done"),
+        "{after}"
+    );
+    assert!(!after.contains("gone.sh"), "{after}");
+    let backups: Vec<_> = fs::read_dir(claude.join("_backup")).unwrap().collect();
+    assert_eq!(backups.len(), 1);
+    let bak = backups[0].as_ref().unwrap().path();
+    assert_eq!(fs::read_to_string(bak).unwrap(), raw);
+
+    let again = run(&["doctor", "--fix", "--yes"]);
+    assert!(String::from_utf8_lossy(&again.stdout).contains("no broken hooks to remove"));
+}
+
 /// T365: a value `config validate` rejects in the file is rejected the same way when it arrives
 /// through the environment, and the message names that layer.
 #[test]
@@ -431,6 +477,30 @@ fn config_validate_checks_env_overrides_and_names_the_layer() {
     assert!(
         stderr.contains("env: log.level must be error, warn, info, or debug"),
         "{stderr}"
+    );
+    let _ = fs::remove_dir_all(&home);
+}
+
+/// T379: a bad window is blamed on where it came from: the config key, or the flag.
+#[test]
+fn report_since_errors_name_their_source() {
+    let home = tmp("report-since");
+    let cfg = home.join("c.toml");
+    fs::write(&cfg, "[report]\nsince = \"7x\"\n").unwrap();
+    let cfg = cfg.to_str().unwrap();
+    let stderr = |args: &[&str]| {
+        let out = cmd(args, &home).assert().failure().get_output().clone();
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    let from_config = stderr(&["--config", cfg, "report"]);
+    assert!(
+        from_config.contains("report.since") && !from_config.contains("--since"),
+        "{from_config}"
+    );
+    let from_flag = stderr(&["report", "--since", "7x"]);
+    assert!(
+        from_flag.contains("--since") && !from_flag.contains("report.since"),
+        "{from_flag}"
     );
     let _ = fs::remove_dir_all(&home);
 }

@@ -31,7 +31,7 @@ pub(super) fn pending(cx: &Runtime, agent: Option<&str>) -> Option<Push> {
 }
 
 fn more_line(n: usize) -> String {
-    format!("… and {n} more: run rtok agents inbox")
+    format!("… and {n} more: call agent_inbox (or run rtok agents inbox)")
 }
 
 /// Frames in send order while they fit `cap` bytes; once one does not, it and every later one

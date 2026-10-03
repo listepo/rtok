@@ -158,7 +158,7 @@ fn agent_id_injection(agent: Option<&str>) -> Option<Injection> {
     Some(Injection {
         plugin: "agent_id",
         text: format!(
-            "rtok agent id: {short} (full: {id}). Use it with rtok's agent_* and worktree_* MCP tools."
+            "rtok agent id: {short} (full: {id}). Use it with rtok's agent_* and worktree_* MCP tools; agent_inbox reads messages sent to you."
         ),
         // Highest offered priority (`Inject`'s own compact/startup recall tops out at 9): a
         // few words wide, so it never meaningfully competes with a real offering for budget,
@@ -1947,7 +1947,7 @@ mod tests {
     /// spec's exact sentence, not just whatever the function happens to emit.
     fn expected_agent_line(id: &str) -> String {
         format!(
-            "rtok agent id: {} (full: {id}). Use it with rtok's agent_* and worktree_* MCP tools.",
+            "rtok agent id: {} (full: {id}). Use it with rtok's agent_* and worktree_* MCP tools; agent_inbox reads messages sent to you.",
             &id[..8]
         )
     }
@@ -2091,7 +2091,7 @@ mod tests {
             cx.store.send_message(None, &id, body).unwrap();
         }
         let f = frames(&cx, &id);
-        let more = |n| format!("… and {n} more: run rtok agents inbox");
+        let more = |n| format!("… and {n} more: call agent_inbox (or run rtok agents inbox)");
         cx.config.agents.push_bytes = (f[0].len() + more(3).len() + 1) as u32;
         let ctx = || additional_context(&dispatch(&stdin, &input, &cx));
         assert_eq!(ctx(), format!("{}{}", f[0], more(2)));
@@ -2106,7 +2106,10 @@ mod tests {
         cx.store.send_message(None, &id, "hello").unwrap();
         cx.config.agents.push_bytes = 64;
         let ctx = additional_context(&dispatch(&stdin, &input, &cx));
-        assert_eq!(ctx, "… and 1 more: run rtok agents inbox");
+        assert_eq!(
+            ctx,
+            "… and 1 more: call agent_inbox (or run rtok agents inbox)"
+        );
         assert_eq!(dispatch(&stdin, &input, &cx), b"{}");
         assert_eq!(cx.store.inbox(&id, true, false).unwrap().len(), 1);
     }

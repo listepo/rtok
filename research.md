@@ -1558,6 +1558,19 @@ This table records what Claude Code's docs promise. The "probe" column is for th
 
 What this means for T159: the hook does not just observe creation, it is the only thing that creates the worktree. When `rtok worktree add` fails, the hook itself must still print a usable path. It also has to do the work of `.worktreeinclude`.
 
+Re-checked for T159, 2026-10-02, against the raw pages https://code.claude.com/docs/en/hooks.md (sections `WorktreeCreate`, `WorktreeRemove`) and https://code.claude.com/docs/en/worktrees.md (`Customize worktree creation`, `Clean up worktrees`). The table above still holds: create input is the common fields plus `name` (the docs' example has `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `name`), remove input is the common fields plus `worktree_path`, and neither event has a matcher. What T159 builds on, all from those two pages:
+
+| Fact | Source |
+| --- | --- |
+| A command hook returns the path as the last non-empty stdout line; any failure or a missing path fails the creation, so a hook cannot fail open by printing nothing | hooks `#worktreecreate-output` |
+| `WorktreeRemove` exit 0 counts as removed whatever is on disk; non-zero fails the removal only while the directory at `worktree_path` still exists, and then there is no `git worktree remove --force` fallback. With no `WorktreeRemove` hook the host falls back to `git worktree remove --force` on the path the create hook returned | hooks `#worktreeremove` |
+| The host never deletes the branch of a hook-created worktree; the remove hook has to | hooks `#worktreeremove` |
+| Default creation, which the launcher's plain-git fallback reproduces: `<repo>/.claude/worktrees/<name>` on branch `worktree-<name>`, from the default branch, or from the local `HEAD` when `origin/HEAD` is not available | worktrees `#start-claude-in-a-worktree`, `#choose-the-base-branch` |
+| A relative path is resolved against the hook's cwd; an absolute path with `.` or `..` segments, or one through a symlink below the repository root, is refused (since 2.1.216); other output belongs on stderr | hooks `#worktreecreate-output` |
+| Default hook `timeout` is 600 s for command hooks | hooks `#common-fields` |
+
+Still **unverified** (needs the creator's live run, T156 part 1): whether a sub-agent's create and remove payloads carry `agent_id`, and which `session_id` a sub-agent's `WorktreeRemove` carries. T159 resolves the owner from `session_id` and, when present, `agent_id`, and removes under any agent of the payload's session, so either answer works; the docs name `agent_id` only for hooks that fire inside a sub-agent call.
+
 ### 18.4 Libraries and tools
 
 - `git2` 0.21: add, list, lock, prune — no `move`, `repair`, or dirty-checked `remove`; adds libgit2. `gix` 0.87: worktrees read-only (create/move/remove/repair open in its `crate-status.md`). worktrunk and `git-worktree-runner` shell out to `git`. rtok already shells out to `git` (`git_changed_files`, `src/plugins/graph/mod.rs`) and has no shared git helper; `git_root` exists twice (`src/config/layers.rs`, `src/doctor.rs`). **Decision: `git worktree list --porcelain -z` through one helper, no new dependency.**
@@ -1769,7 +1782,9 @@ Default-deny: no host is decrypted unless it is on an explicit allow-list of hos
 ## 22. Host junk map (T182) (2026-09-24)
 
 Nothing here is deleted by rtok until the creator reviews the map; all 17 hosts (`HOSTS` in `src/agents/mod.rs`) were re-verified against official docs or source repos via WebSearch/WebFetch on 2026-09-24, and a cell reads "not documented" rather than a guess whenever no host-specific official source names a path — a wrong row here can destroy a user's real data. Evidence: "documented" = the host's own docs site; "source" = the host's own repo (file cited); both give the full URL, never a site name.
-Never junk, on any host: settings/config files, credentials and auth tokens, session or conversation history (e.g. pi's `~/.pi/agent/sessions`, aider's `.aider.chat.history.md`/`.aider.input.history`), installed extensions/plugins, and a whole config/state directory named as if it were all junk (`~/.gemini/`, `~/.kimi-code/`, `~/Library/Application Support/Zed`, `~/.config/Code/` are never junk as a whole).
+Never junk, on any host: settings/config files, credentials and auth tokens (never read for expiry, never deleted), installed extensions/plugins, and a whole config/state directory named as if it were all junk (`~/.gemini/`, `~/.kimi-code/`, `~/Library/Application Support/Zed`, `~/.config/Code/` are never junk as a whole).
+Session or conversation history and snapshots (e.g. pi's `~/.pi/agent/sessions`, aider's `.aider.chat.history.md`/`.aider.input.history`, Gemini's checkpoints) are never junk by default: rtok clears a session only when the user names `--kind sessions`, only on a host whose sessions cell in §22.1 documents the whole session unit and the index the host keeps beside it, and never the host's memory, index or store files; per-project snapshot stores are never cleared (D36, §22.1).
+rtok clears only paths in this table, directories carrying a valid `CACHEDIR.TAG`, and paths the user names in `[agents.junk] extra`; platform cache roots and Electron subfolders without a row here are listed read-only with their size and never cleared (D36, §22.2).
 
 | Host | Temp | Logs | Cache | Evidence | Checked |
 | --- | --- | --- | --- | --- | --- |
@@ -1790,6 +1805,66 @@ Never junk, on any host: settings/config files, credentials and auth tokens, ses
 | zed | not documented | macOS `~/Library/Logs/Zed/Zed.log`; Linux `~/.local/share/zed/logs/Zed.log` (or `$XDG_DATA_HOME/zed/logs/Zed.log`) | macOS `~/Library/Caches/Zed`; Linux `$XDG_CACHE_HOME/zed` — caution, issue #17835 shows Zed has also written `~/.cache/zed` on macOS by bug; verify the installed version first | documented: https://zed.dev/docs/troubleshooting, https://zed.dev/docs/macos; source (bug): https://github.com/zed-industries/zed/issues/17835 | 2026-09-24 |
 | gemini | not documented — `~/.gemini/tmp/<hash>/` exists but holds checkpoints/shell history, which is session history, not junk | not documented | not documented | documented: https://geminicli.com/docs/cli/settings/, https://geminicli.com/docs/resources/troubleshooting/ | 2026-09-24 |
 | codewhale | not documented | not documented — `audit.log` is tied to session reconciliation, not a pure rotating log | `~/.codewhale/update-check.json` (single file; caches the update-check result, reused for `check_interval_hours`) | source: https://github.com/Hmbown/Codewhale/blob/main/docs/CONFIGURATION.md | 2026-09-24 |
+
+### 22.1 T330 junk kinds vs "never junk": sessions, tokens, snapshots (T338) (2026-10-03)
+
+The conflict: T330 deletes `sessions` (`review`, default threshold 3 days), `stale-tokens` (explicit only) and `snapshots` (`review`); the §22 rule above says credentials, auth tokens and session or conversation history are never junk on any host. T330.1 (PR #651, open) ships only the read-only `list` over rtok's own T182 junk, so no shipped code takes a side yet. Checked 2026-10-03; primary sources only, secondary ones marked **unverified**.
+
+**What the hosts themselves say about these files.**
+
+| Host | Sessions (where, who prunes) | Credentials | Snapshots / checkpoints | Source |
+| --- | --- | --- | --- | --- |
+| claude | `~/.claude/projects/<project>/<session>.jsonl` plus `<session>/subagents/` and `<session>/tool-results/`; Claude Code's own retention sweep deletes them after `cleanupPeriodDays` (default 30, minimum 1, `0` is a validation error); `claude project purge [--dry-run] [-i]` deletes one project's state. The same `projects/` tree also holds **auto memory**, and deleting it loses "Resume, continue, and rewind for past sessions, and auto memory for every project". | macOS Keychain; `~/.claude/.credentials.json` (mode `0600`) on Linux/Windows and as the macOS fallback; logins refresh automatically; `/logout` "removes and revokes" the credential | `~/.claude/file-history/<session>/`, used by `/rewind`, deleted by the same sweep "about 30 days after the session last saved one" | https://code.claude.com/docs/en/claude-directory, https://code.claude.com/docs/en/authentication, https://code.claude.com/docs/en/checkpointing (read 2026-10-03) |
+| codex | `$CODEX_HOME/sessions/` and `archived_sessions/` (constants `SESSIONS_SUBDIR`, `ARCHIVED_SESSIONS_SUBDIR`); a reference index records fork edges between rollout files, and a SQLite state DB (`sqlite_home`) holds resumable state; no session retention key in the config reference (only `history.max_bytes` for `history.jsonl`) | `$CODEX_HOME/auth.json` holds `OPENAI_API_KEY`, `tokens` (id, access, refresh) and `last_refresh` in one file; `cli_auth_credentials_store` = `file \| keyring \| auto \| ephemeral` | not documented | https://github.com/openai/codex/blob/dff5270b298b/codex-rs/rollout/src/lib.rs#L86-L87, …/codex-rs/rollout/src/rollout_reference_index.rs, …/codex-rs/login/src/auth/storage.rs#L47-L63, https://learn.chatgpt.com/docs/config-file/config-reference (main `dff5270b298b`, release `rust-v0.160.0`, read 2026-10-03) |
+| gemini | `~/.gemini/tmp/<project_hash>/chats/`; Gemini CLI's own `general.sessionRetention` (`enabled` default true, `maxAge` default 30 days, `maxCount`, `minRetention` default 1 day) | OAuth credentials move from `~/.gemini/oauth_creds.json` into keychain-backed storage on first read (`migrateFromFileStorage`) | shadow git repo `~/.gemini/history/<project_hash>` plus `~/.gemini/tmp/<project_hash>/checkpoints`, used by `/restore`; the checkpointing page documents no cleanup | https://geminicli.com/docs/cli/session-management/, https://geminicli.com/docs/cli/checkpointing/, https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/config/storage.ts, …/packages/core/src/code_assist/oauth-credential-storage.ts (release `v0.62.0`, read 2026-10-03) |
+| copilot | `~/.copilot/session-state/` "Session history and workspace data", not auto-cleaned, "With caution": "You will no longer be able to resume past sessions"; `session-store.db` holds cross-session data | `config.json` holds authentication together with installed plugins and internal state; `mcp-oauth-config/` holds MCP OAuth tokens | not documented | https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference (read 2026-10-03) |
+| kimi | `~/.kimi-code/sessions/<workDirKey>/<sessionId>/` indexed by `session_index.jsonl`; the docs' cleanup recipe deletes both together and calls it removing "all conversation history" | `~/.kimi-code/credentials/<name>.json`; the documented way to clear provider auth is `/logout` | not documented | https://github.com/MoonshotAI/kimi-code/blob/main/docs/en/configuration/data-locations.md (read 2026-10-03) |
+| opencode | `~/.local/share/opencode/project/<slug>/storage/` ("session and message data") | `~/.local/share/opencode/auth.json` ("API keys, OAuth tokens") | not documented | https://opencode.ai/docs/troubleshooting/ (read 2026-10-03) |
+| cline | not documented | not documented | a shadow git repo per workspace; the docs give no path and no cleanup | https://docs.cline.bot/core-workflows/checkpoints (read 2026-10-03) |
+
+Every other host in `HOSTS`: not documented for these three columns (§22 table above and §26).
+
+**Findings that decide the question.**
+
+1. Sessions are user data on every host that documents them: they back resume, rewind and history search, and two hosts already age them out themselves (Claude Code and Gemini CLI, both 30 days by default). T330's 3-day default is ten times more aggressive than either host's own default.
+2. Sessions are not self-contained files. Claude Code keeps auto memory inside the same `projects/` tree; Codex indexes fork edges between rollouts (a forked session can rest on an older one) and keeps a state DB; Kimi and Copilot keep an index or store next to the session files. A time-only `rm` behind the host's back can delete the base of a newer fork or leave the host's index pointing at missing files. Where a host ships its own delete (`claude project purge`, Gemini's retention), that path keeps the host consistent; rtok's own walk does not.
+3. Token files are not caches. Access-token expiry is normal: Claude Code and Codex refresh it (`last_refresh`, a stored refresh token), so "stored expiry in the past" does not mean the file is stale. Codex's `auth.json` mixes an API key with tokens; Copilot's `config.json` mixes auth with plugins and state; Gemini migrates the legacy file into the keychain on first read. Deleting the file does not revoke anything server-side (Claude Code's `/logout` does). The space freed is a few KB.
+4. Snapshots are rewind data. Claude Code ties them to the session and already ages them out; Gemini's shadow-git history has no documented cleanup and can grow, but it is the only way to `/restore`.
+
+**Approach A: keep T330, relax §22.** Sessions are `review` (in `--include review`, 3-day threshold), snapshots `review`, token files deletable by name. Useful: the largest folders on a heavy user's disk are often transcripts. Risk: highest. A broad `--include review` run deletes resumable sessions, Claude Code auto memory if the walk is not exact, Gemini restore points, and signs the user out; a wrong row in §22 now costs history instead of a cache. Maintenance: rtok must track every host's session layout and index files, which change between releases (Claude Code's table above changed in v2.1.248 and v2.1.274).
+
+**Approach B: keep §22, drop the three kinds.** `sessions`, `snapshots` and token files become `never`: listed with size only, never deleted, and the row names the host's own control where one exists (`cleanupPeriodDays` / `claude project purge`, `general.sessionRetention`). Risk: none added. Usefulness: `list` still shows where the space is and how to free it; `clear` frees less. Maintenance: low; rtok only reads sizes.
+
+**Approach C: keep §22 as the default, allow sessions by explicit name only.** Credentials stay absolute (token files dropped, as in B). Sessions and snapshots are class `never` for every default and `--include review` run, and are deleted only with `--kind sessions` (snapshots go with their session where the host ties them, as Claude Code's `file-history/<session>/`), only on hosts whose §22 row documents the whole session unit and its index, never the host's memory, index or store files themselves; per-project shadow-git history (Gemini) stays `never`. `list` shows the host's own retention setting next to rtok's threshold. Risk: low; deleting history needs a deliberate flag and a documented layout. Usefulness: keeps the creator's `stale_session_days` feature for hosts that do not prune themselves (Codex, Copilot, Kimi, opencode). Maintenance: one new §22 column (Sessions), verified per host like the others.
+
+**Recommendation: C.** It keeps the §22 safety rule as the default, removes the one kind with no upside (token files: KB freed, sign-out and keychain-migration risk), and keeps session cleanup as an explicit, documented-only action instead of dropping it. If the creator prefers the smallest surface, B is the fallback; A is not recommended. The 3-day default then applies only to an explicit `--kind sessions` run.
+
+**Decision (creator, 2026-10-03):** C, recorded as D36; `stale_session_days` default raised from 3 to 30 to match Claude Code and Gemini.
+
+### 22.2 T330 cache detection: §22 paths only vs heuristics (T339) (2026-10-03)
+
+The conflict: T330 says paths come only from §22 and "not documented" cells are not scanned, yet detects agent caches from platform cache roots, Electron/Chromium subfolders, `CACHEDIR.TAG` and all of `~/Library/Caches`, and its Check clears Cursor caches although every Cursor cell in §22 is "not documented". Checked 2026-10-03.
+
+**What each heuristic rests on.**
+
+| Heuristic | Primary evidence | What it does not prove |
+| --- | --- | --- |
+| `CACHEDIR.TAG` with the signature `Signature: 8a477f597d28d172789f06886806bc55` | The spec: the tag means the entire directory "consists of cached information that can be re-generated if necessary". The owning program writes it, so it is that program's own declaration. https://bford.info/cachedir/ (read 2026-10-03) | The spec grants backup tools leave to skip the directory; it does not say other programs may delete it (T342 covers the T152 rules for deleting tagged dirs). |
+| macOS `~/Library/Caches/<app>` | Apple: put "support files that your app can re-create easily" there. https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html (read 2026-10-03) | Apple's guarantee is a convention for the app's author, not proof that a given third-party app follows it (Zed has written caches to the wrong root by bug, §22 table). Which entry belongs to which agent needs the host's bundle id or name, which §22 does not record for most hosts. |
+| `$XDG_CACHE_HOME/<app>`, `%LOCALAPPDATA%\<app>\Cache` | Same convention per platform; §22 already cites hosts that document theirs (copilot, opencode, zed). | Same: a convention, not a host statement. |
+| Electron/Chromium subfolders (`Cache`, `Code Cache`, `GPUCache`, `DawnCache`, `Service Worker/CacheStorage`) | Electron: `sessionData` holds "localStorage, cookies, disk cache, downloaded dictionaries, network state, DevTools files and compiled GPU shaders" and "By default this points to `userData`". https://www.electronjs.org/docs/latest/api/app (latest, read 2026-10-03) | The same folder mixes caches with localStorage and cookies, so only individual subfolders can be cache; Electron's API docs do not name the subfolders. `Service Worker/CacheStorage` is the web Cache API, i.e. stored app data, not a disk cache (**unverified** as a Chromium statement). |
+| VS Code `CachedData/<commit>` | VS Code source: code cache at `<userData>/CachedData/<commit>`; VS Code deletes folders other than the current commit's after ~3 months (stable) or 1 week (insiders). https://github.com/microsoft/vscode/blob/8002c7893fcc/src/mainImpl.ts#L667, …/src/vs/code/electron-utility/sharedProcess/contrib/codeCacheCleaner.ts#L27-L35 (main `8002c7893fcc`, read 2026-10-03) | Source-backed for VS Code only. That Cursor inherits this layout and cleaner is **unverified** (closed source; a Cursor forum report says its `~/.config/Cursor/CachedData` grows without cleanup, https://forum.cursor.com/t/old-cache-directories-in-config-cursor-cacheddata-accumulate-indefinitely-without-automatic-cleanup/141573, **unverified**). |
+| Cursor | No Cursor docs page names a data, cache or log path (§22 row; re-checked 2026-10-03 with a search limited to cursor.com and docs.cursor.com). | The paths in circulation (`~/Library/Application Support/Cursor/Cache`, `CachedData`, `User/workspaceStorage`) come from forum posts only, **unverified**; `User/workspaceStorage` holds chat history, so a wrong guess there destroys sessions. |
+
+**Approach A: §22 only.** Scan and clear only cells §22 documents; everything else is invisible. Risk: lowest. Usefulness: low on today's map: most hosts' Cache cells are "not documented", Cursor has nothing, so `list` hides the space the user is asking about. Maintenance: every new path needs a cited §22 row first.
+
+**Approach B: heuristics as written.** Scan and clear platform roots, Electron folders and tagged dirs for every host. Useful: finds most cache bytes, Cursor included. Risk: the one §22 warns about; Cursor's guessed paths sit next to chat history, `~/Library/Caches` attribution is a guess, and a running Electron app may hold the files. Maintenance: low to write, high to keep correct across host releases.
+
+**Approach C: evidence decides what is cleared; heuristics only inform `list`.** `clear` deletes only paths with evidence: (1) a §22 cell (docs or source); (2) a directory carrying a valid `CACHEDIR.TAG`, the owner's own declaration (deletion rules per T342); (3) a path the user names in `[agents.junk] extra`. Platform cache roots and Electron subfolders are scanned read-only: `list` shows them under the agent with size and the note "not documented: not cleared (add to `[agents.junk] extra` to clear)", and they never count toward "Freed by `clear`". Cursor is `list`-only until a primary source names its paths. A heuristic path that later gets a cited §22 row moves to (1) with no code change beyond the map. Risk: low; nothing is deleted on a guess. Usefulness: the user sees every large cache folder, and freeing the undocumented ones takes one explicit config line. Maintenance: same as A for deletion, plus a small read-only scanner.
+
+**Recommendation: C.** `list` is read-only (T330.1 shipped it that way in PR #651), so showing heuristic finds costs no data; only deletion needs evidence. It keeps §22's rule for everything `clear` removes and makes the user, not rtok, the source for any undocumented path. Candidate §22 rows for T330.3, each to be added only with its citation: VS Code `CachedData/<commit>` other than the current commit (VS Code source above).
+
+**Decision (creator, 2026-10-03):** C, recorded as D36.
 
 ## 23. Subagent-start context injection per host (T262.2) (2026-09-24)
 
@@ -2140,3 +2215,72 @@ FROM g JOIN h x ON x.id = g.id GROUP BY 1, 2 ORDER BY 1, 3 DESC;
 ### 29.3 Recommendation
 
 Narrow the deny. A ranged native `Read` already costs less than the rtok `read` that replaces it, so the deny loses about 780 tokens and one or two turns on 70 % of its hits. Only an unranged read of a large file pays (about 18,000 tokens per deny). Proposed change (a separate task, not part of T355): let a native `Read` with `limit` ≤ 300 lines pass like the edit gate does, keep the deny for unranged reads and larger ranges, and write a `Measurement` row per deny so the saving is claimed from data rather than from this estimate.
+
+## 30. Where each agent keeps its token counts (T358.3, T358.4, 2026-10-03)
+
+What `rtok agents usage --source logs` reads per host, from each host's own source or documentation. A repository is cited by commit, a documentation page by the day it was read. Anything backed only by a secondary source is marked **unverified**; the ccusage guide (https://ccusage.com/guide/, fetched 2026-10-02) was used as a lead for locations only.
+
+| Host | Reads | Verdict |
+| --- | --- | --- |
+| OpenCode | `message.data` JSON in `opencode.db` | supported |
+| Kilo | `message.data` JSON in `kilo.db` | supported, not run on real data (the local `kilo.db` holds no messages) |
+| Copilot CLI | `modelMetrics` of `session.shutdown` in `session-state/*/events.jsonl` | supported, per session |
+| Gemini CLI | `tokens` of `gemini` messages in `tmp/*/chats/session-*.jsonl` (and legacy `.json`) | supported, not run on real data (no chats on this machine) |
+| Droid | none | `unsupported` |
+| pi | `usage` of entries in `sessions/*/*.jsonl` | supported, matches an independent sum on real files |
+| Kimi Code | `usage.record` lines of `sessions/*/*/agents/*/wire.jsonl` | supported, matches an independent sum on real files |
+| Grok | none | `unsupported` (T358.4) |
+| ZCode | none | `unsupported` (T358.4) |
+| Antigravity | none | `unsupported` (T358.4) |
+
+### 30.1 OpenCode and Kilo
+
+- Sessions live in a SQLite file under the data directory, `${XDG_DATA_HOME}/opencode` (https://github.com/anomalyco/opencode, commit `c42ae0d56b6f86f8df39d451d6d2cfe6414b3928`, `packages/core/src/global.ts`: `path.join(xdgData, "opencode")`). Kilo uses `kilo` the same way (https://github.com/Kilo-Org/kilocode, commit `76bcfd40be616a72f4697b3041565f322245b462`, `packages/core/src/global.ts`) and names its file `kilo.db`, or `kilo-<channel>.db` for a non-stable channel (`packages/opencode/src/storage/db.ts`).
+- The `message` table has `id`, `session_id`, `time_created` (milliseconds) and a JSON `data` column (`packages/core/src/session/sql.ts`). An assistant message's `data` carries `role`, `modelID`, `providerID`, `time.created`, and `tokens` = `{input, output, reasoning, cache: {read, write}}` (`packages/core/src/v1/session.ts`, `Assistant`).
+- `input` already excludes the cache legs and `output` excludes the reasoning tokens: `input = inputTokens - cacheRead - cacheWrite`, `output = outputTokens - reasoningTokens` (`packages/opencode/src/session/session.ts`, `getUsage`, and the same arithmetic in Kilo's `packages/core/src/v1/session.ts`). The reader adds reasoning back into output, as it is billed as output.
+- This corrects the 2026-09-17 note in `measure::codex` that `opencode.db` carries no token counts. Checked on this machine on 2026-10-03: the sums over `role = 'assistant'` messages (input, cache read, cache write, output + reasoning) match what `rtok agents usage --host opencode` prints for all four legs.
+
+### 30.2 Copilot CLI
+
+- The config directory is `~/.copilot`, relocated by `COPILOT_HOME`; `session-state/<session id>/events.jsonl` is the session event log (https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference, read 2026-10-03).
+- The SDK's event schema (https://github.com/github/copilot-sdk, commit `5b2d7cdd7da1e5d082ae316a533cbb7584a495c1`, `nodejs/src/generated/session-events.ts`) marks `assistant.usage` (per API call) as ephemeral, "not persisted to the session event log on disk". What is persisted is `session.shutdown.data.modelMetrics[<model>].usage`: `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `reasoningTokens?`, totals over the whole run. A session that never shut down cleanly has no totals and is not counted.
+- **Unverified** (no primary text says it): that `inputTokens` includes the cache legs and `outputTokens` includes reasoning. The one real log on this machine has cache reads below `inputTokens` (18.6M against 17.7M), so the reader treats input as inclusive, and its printed totals are exactly that file's `usage` block. The same event's `tokenDetails` block disagrees with `usage` (uncached input 2.10M plus 17.7M cache reads, output 18.9K against 9.8K): the SDK does not say why, and the reader follows `usage`, the block with documented per-field meaning. Also unverified: whether a resumed session writes a second shutdown with run-only or cumulative totals (the reader sums them).
+
+### 30.3 Gemini CLI
+
+- https://github.com/google-gemini/gemini-cli, commit `fb972b2f87fe7d5b06d37eac711490162d98de2c`. `packages/core/src/config/storage.ts`: the project temp directory is `<home>/.gemini/tmp/<project identifier>`, chats are in its `chats/` directory, and `GEMINI_CLI_HOME` replaces the home directory (`packages/core/src/utils/paths.ts`). Sub-agent chats sit in `chats/<parent session id>/`.
+- `packages/core/src/services/chatRecordingService.ts` and `chatRecordingTypes.ts`: a chat is an append-only JSONL log of messages, `$patch` records, `$rewindTo` records and `$set` metadata; a `gemini` message has `id`, `timestamp`, `model` and `tokens` = `{input, output, cached, thoughts?, tool?, total}` where `input` is `promptTokenCount` (which includes `cached`), `output` `candidatesTokenCount`, `thoughts` `thoughtsTokenCount` and `tool` `toolUsePromptTokenCount`. The last record with a given message id wins. An older release wrote one `session-*.json` document with a `messages` array; the CLI migrates it only when the session is opened again.
+- Not run on real files: this machine has no Gemini chats.
+
+### 30.4 Droid (Factory)
+
+- Sessions are `~/.factory/sessions/<project folder>/<uuid>.jsonl` plus `<uuid>.settings.json`; the settings file holds "which model, how long it ran, token counts, autonomy mode" (https://github.com/Factory-AI/factory-plugins, commit `d362dc1823301bee56315bd73f22b5614392365c`, `plugins/core/skills/session-navigation/SKILL.md`). No Factory page read on 2026-10-03 (docs.factory.ai CLI settings and session API reference, the plugin above) names the keys, and `DROID_SESSIONS_DIR` is ccusage's variable, not one a Factory page documents. Reading it would be a guess, so the host is `unsupported` and listed in `skipped` when the directory has content. No Droid files exist on this machine.
+
+### 30.5 pi (T358.4)
+
+- https://github.com/earendil-works/pi (the former badlogic/pi-mono), commit `69f0be6f0a6ca1bf66a2a9cf59c821b632e6bca1`, `packages/coding-agent/docs/sessions.md`: sessions are stored under `~/.pi/agent/sessions/`, grouped by working directory; `--session-dir`, `PI_CODING_AGENT_SESSION_DIR` or the `sessionDir` setting moves them. `docs/environment-variables.md` names `PI_CODING_AGENT_DIR` as the agent folder.
+- `docs/session-format.md`: a session is JSONL, one entry per line, each with `id` and an ISO `timestamp`. An assistant `message` carries `provider`, `model` and `usage`; `compaction`, `branch_summary` and `usage` entries carry `usage` themselves, and the doc says they all "contribute to session token and cost totals". `docs/message-types.md`: `usage` is `{input, output, cacheRead, cacheWrite, totalTokens, cost}` and `reasoning`, when present, is already inside `output`, so it is not added again. A `usage` entry with an unknown `kind` is normal usage.
+- Not documented: whether a forked session copies the parent's entries with their ids. The reader counts an entry once by (`id`, `timestamp`) across all files, which is the same result either way. **unverified**
+- Checked on this machine on 2026-10-03: a read-only run of `rtok agents usage --source logs --host pi` against the real `~/.pi/agent/sessions` (10 files, 953 usage entries) and an independent `jq` sum of the same entries give identical totals for all four legs (input 8,063,051; cache read 129,106,459; cache write 0; output 744,047). No file content was copied.
+
+### 30.6 Kimi Code (T358.4)
+
+- https://github.com/MoonshotAI/kimi-code, commit `21406fb4c805cc8c715e6d1f16ad3fb5f25f4fe3`, `docs/en/configuration/data-locations.md`: the data root is `~/.kimi-code`, or `$KIMI_CODE_HOME` when set (`docs/en/configuration/env-vars.md`); sessions are under `sessions/<workDirKey>/<sessionId>/`.
+- `packages/agent-core-v2/src/agent/usage/usageOps.ts` and `src/session/usage/usageAgentModel.ts`: each LLM request is recorded as a `usage.record` wire line with `model`, `usage` (`inputOther`, `inputCacheRead`, `inputCacheCreation`, `output`) and `usageScope`, which is `turn` for a request a turn issued and `session` otherwise. Both are single requests that the agent's own totals add up, so the reader sums all of them. The wire files live at `agents/<agent>/wire.jsonl` (`docs/en/guides/sessions.md`); a sub-agent has its own, and counts toward the session above it. `time` is in milliseconds (the wire fixture in the repository's tests).
+- The archived MoonshotAI/kimi-cli keeps `~/.kimi` in a different layout; it is not read.
+- Checked on this machine on 2026-10-03: a read-only run against the real `~/.kimi-code/sessions` (306 wire files, 360 `usage.record` lines) and an independent `jq` sum give identical totals (input 3,398,492; cache read 33,477,393; cache write 0; output 250,065). No file content was copied.
+
+### 30.7 Grok (T358.4)
+
+- xAI's own guide, shipped in `~/.grok/docs/user-guide/17-sessions.md` of grok 1.0.34 (read 2026-10-03; `~/.grok/version.json`): sessions are `~/.grok/sessions/<encoded-cwd>/<session-id>/` (`$GROK_HOME` moves the base), and `signals.json` holds "token usage, tool/turn counters". It names no keys. The same page documents `grok usage <session-id>` ("Use this instead of reading session files") that prints per-session and per-turn tokens and cost as JSON.
+- Verdict: `unsupported`. The documented route is another program, which rtok does not run (D6), and the file's keys are not documented. Reading `signals.json` from observed keys would be a guess. If the creator accepts observed keys as a source, it is a small reader.
+
+### 30.8 ZCode (T358.4)
+
+- https://zcode.z.ai/en/docs/usage-stats (read 2026-10-03): "App Usage" reads "local ZCode session records". No path, file name or token field is given anywhere in the documentation read; `~/.zcode` exists on this machine but what it holds is not documented.
+- Verdict: `unsupported`; named in `skipped` when the directory has content.
+
+### 30.9 Antigravity (T358.4)
+
+- Google's Antigravity documentation (https://antigravity.google/docs, read 2026-10-03) says nothing about where Antigravity keeps conversations or token counts. `~/.gemini/antigravity` exists on this machine and holds only an MCP config.
+- Verdict: `unsupported`; named in `skipped` when the directory has content.

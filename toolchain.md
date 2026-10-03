@@ -117,6 +117,7 @@ Project programs and direct packages from the manifests.
 | owo-colors | local | https://crates.io/crates/owo-colors | Rust dependency |
 | pathdiff | local | https://crates.io/crates/pathdiff | Relative path between two paths |
 | printpdf | local | https://crates.io/crates/printpdf | Rust dependency |
+| proptest | local | https://crates.io/crates/proptest | T331.5: property test that `doctor --fix` leaves every byte outside the removed hook unchanged |
 | ratatui | local | https://crates.io/crates/ratatui | TUI |
 | regex | local | https://crates.io/crates/regex | Rust dependency |
 | reqwest | local | https://crates.io/crates/reqwest | HTTP |

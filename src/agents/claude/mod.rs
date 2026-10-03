@@ -51,6 +51,11 @@ fn claude_entries() -> &'static [(&'static str, &'static str)] {
         .expect("plugins/claude/hooks/hooks.json parses (plugin_tree_matches_the_installer)")
         .hooks
         .0
+        .into_iter()
+        // T159: the worktree hooks replace the host's own create/remove, so they need the
+        // launcher's plain-git fallback — only the plugin carries that, never settings.json.
+        .filter(|(event, _)| !event.starts_with("Worktree"))
+        .collect()
     });
     &LIST
 }
@@ -1007,6 +1012,8 @@ mod tests {
             )),
             "{report}"
         );
+        // T159: the worktree hooks are the plugin's alone.
+        assert!(!report.contains("Worktree"), "{report}");
         assert!(!path.exists());
     }
 
@@ -1495,6 +1502,13 @@ mod tests {
                 e["matcher"] = json!(matcher);
             }
             array_at(&mut want, event).push(e);
+        }
+        // T159: once each, plugin only (D21 singleton), through the launcher with its own
+        // fallback and a timeout that fits a fetch plus `git worktree add`.
+        for event in ["WorktreeCreate", "WorktreeRemove"] {
+            let cmd = format!("\"${{CLAUDE_PLUGIN_ROOT}}/scripts/worktree.sh\" {event}");
+            let entry = json!({"hooks": [{"type": "command", "command": cmd, "timeout": 120}]});
+            array_at(&mut want, event).push(entry);
         }
         assert_eq!(hooks["hooks"], want);
         let manifest = parse(include_str!(
