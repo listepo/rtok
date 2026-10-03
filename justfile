@@ -60,16 +60,18 @@ js:
 js-fmt:
     {{oxfmt}} {{js_files}}
 
-# T310.1: the rtok admin SPA in web/ (Vite + React + TypeScript), separate from `just check`
-# until it covers the same screens as crates/rtok-webui.
+# T310.1: the rtok admin SPA in web/ (Vite + React + TypeScript), embedded by build.rs (T310.9).
 spa-install:
     {{npm}} --prefix web ci
 
 spa-dev:
     {{npm}} --prefix web run dev
 
+# `touch build.rs`: build.rs only watches web/dist once it exists, so a binary compiled before the
+# first SPA build (the placeholder) would otherwise keep the placeholder (T310.9).
 spa-build:
     {{npm}} --prefix web run build
+    touch build.rs
 
 spa-typecheck:
     {{npm}} --prefix web run typecheck
@@ -194,20 +196,13 @@ site:
 site-serve:
     {{hugo}} server --buildDrafts
 
-# Slint WASM UI, then API+UI on host:port (T60.7 profile + wasm-opt; T81 shares the script with CI)
-web host="127.0.0.1" port="3333": web-bundle
-    {{cargo}} run -q -- web --host {{host}} --port {{port}}
-
-# Just the WASM bundle `rtok web` serves and the release archive carries (T81).
-# Fails open without wasm-pack; CI runs the same script with --require.
-web-bundle:
-    tools/webui-bundle.sh --compress
-
-# `crates/rtok-webui` is excluded from the workspace, so `just check` never compiles
-# it — a wasm-only break reaches main unseen (T81 hit one). CI runs this.
-webui-check:
-    rustup target add wasm32-unknown-unknown
-    {{cargo}} check --manifest-path crates/rtok-webui/Cargo.toml --target wasm32-unknown-unknown
+# T310.9: build the SPA, then API+UI on host:port. `RTOK_WEB_DIST` makes `rtok web` read
+# web/dist at run time, so the UI is the one just built even when the binary was compiled earlier
+# without it (build.rs embeds a placeholder then).
+web host="127.0.0.1" port="3333":
+    [ -d web/node_modules ] || {{npm}} --prefix web ci
+    {{npm}} --prefix web run build
+    RTOK_WEB_DIST=web/dist {{cargo}} run -q -- web --host {{host}} --port {{port}}
 
 # cargo-fuzz targets in fuzz/ (fuzz/README.md). Nightly for this build only; not in `check`.
 # `just fuzz` lists them, `just fuzz <target> [secs]` runs one, `just fuzz all [secs]` each in turn.
