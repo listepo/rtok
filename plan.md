@@ -1205,12 +1205,6 @@ Part of T331. T331.4 leaves rtok's own MCP server out of the duplicate check, be
 
 Check: the rtok scenarios of "Duplicate MCP entries" in T331 per host once T332 and T333 are decided; `just check`.
 
-### T331.10. Doctor: rtok's own MCP entry in the duplicate check
-
-Part of T331. T331.4 leaves rtok's own MCP server out of the duplicate check, because what to report depends on the T332 and T333 decisions (the T331 keep rule against D33/T275: a plugin serving MCP while a config entry also exists, and the Claude `plugin:rtok:rtok` namespacing). Once those are decided, include rtok's own entry (detected with `rtok_agent_sdk::runs_bin` and `agents::is_rtok_bin`, as T331.4 does to exclude it) in the detector and the keep recommendation of T331.4, with the decided rules. Depends on T331.4, T332 and T333.
-
-Check: the rtok scenarios of "Duplicate MCP entries" in T331 per host once T332 and T333 are decided; `just check`.
-
 ### T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 
 In the plan, T331 (plan.md on branch `docs/plan-doctor-hooks-mcp`, ~line 711, from PR #542 (T331), not merged yet) says "for rtok's own server, the rules of T275 (plugin serves MCP, so the separate entry goes)" and keeps the "plugin-provided first" copy by default, reporting a host that de-duplicates by name as "shadowed, unused, still removable" (~line 706). D33 (plan.md@966f067 line 709) and T275 (plan.md@966f067 lines 171-175) say "Install and update always write the config entry `rtok`; only `remove` takes it out, and a plugin no longer suppresses or strips it", "the rtok plugin ships no MCP server", and "Gemini keeps both, since settings.json wins over an extension's same-name server". These contradict each other because `rtok doctor --fix --yes` would delete exactly the config entry D33 requires (on Gemini, and on any host where an old plugin still serves MCP), and the next `rtok agents install|update` would write it back, so the two features undo each other.
