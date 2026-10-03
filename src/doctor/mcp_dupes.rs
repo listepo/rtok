@@ -12,7 +12,7 @@
 //! user, research.md section 25): the overridden entry is reported as unused. A server a file
 //! marks disabled is not running and not compared. Env values take part in the comparison and are
 //! never printed. rtok's own entry waits for T332/T333 and is neither compared nor reported.
-//! Report only: nothing here is fixable before T331.6.
+//! An extra or unused copy is fixable (T331.6); the kept and the used one never are.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -77,6 +77,28 @@ struct Srv {
     key: String,
     version: Option<String>,
     scope: Scope,
+    spec: McpSpec,
+}
+
+/// Where an entry sits in its file, for `--fix` to remove it (T331.6): the table and the name.
+pub(super) struct Loc {
+    pub source: String,
+    pub path: String,
+    pub spec: McpSpec,
+    pub name: String,
+}
+
+/// The location of every entry the check reads; a finding's `source` and `path` find it.
+pub(super) fn locations(cfg: &crate::config::Config, p: &Probes) -> Vec<Loc> {
+    entries(cfg, p)
+        .into_iter()
+        .map(|s| Loc {
+            source: s.source,
+            path: s.path,
+            spec: s.spec,
+            name: s.name,
+        })
+        .collect()
 }
 
 /// The `rtok_mcp` reader over the injected [`Fs`], so mocks serve it too.
@@ -225,6 +247,7 @@ fn entries(cfg: &crate::config::Config, p: &Probes) -> Vec<Srv> {
                     key,
                     version,
                     scope: s.scope,
+                    spec: s.spec.clone(),
                 });
             }
         }
@@ -242,7 +265,7 @@ fn problem(s: &Srv, kind: &'static str, group: u32, keep: bool, detail: String) 
         matcher: None,
         command: s.shown.clone(),
         detail,
-        fixable: false,
+        fixable: kind == "duplicate-mcp" && !keep,
         group: Some(group),
         keep,
     }
@@ -547,7 +570,8 @@ mod tests {
         );
         assert!(found[1].path.starts_with("projects./proj.mcpServers"));
         assert!(found[0].detail.contains("unused"), "{}", found[0].detail);
-        assert!(found.iter().all(|p| !p.fixable));
+        // Only the entries the host does not use may go.
+        assert!(found.iter().all(|p| p.fixable != p.keep));
     }
 
     #[cfg(unix)]
