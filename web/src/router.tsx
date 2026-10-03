@@ -13,17 +13,17 @@ import {
 } from "@tanstack/react-router";
 import { Calls } from "./pages/Calls";
 import { Config } from "./pages/Config";
+import { Doctor } from "./pages/Doctor";
 import { Graph } from "./pages/Graph";
 import { Hosts } from "./pages/Hosts";
+import { Logs } from "./pages/Logs";
 import { Overview } from "./pages/Overview";
 import { Plugins } from "./pages/Plugins";
 import { Services } from "./pages/Services";
+import { Sessions } from "./pages/Sessions";
 import { Skills } from "./pages/Skills";
 import { Stats } from "./pages/Stats";
 import { Worktrees } from "./pages/Worktrees";
-import { Doctor } from "./pages/Doctor";
-import { Logs } from "./pages/Logs";
-import { Sessions } from "./pages/Sessions";
 import { PAGES, type Page } from "./pages";
 import { NotFound, Shell } from "./Shell";
 

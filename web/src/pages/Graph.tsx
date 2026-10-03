@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { Empty } from "../states";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Kpi } from "../ui/Kpi";
@@ -10,28 +10,42 @@ import { Panel } from "../ui/Panel";
 import { Pill } from "../ui/Pill";
 import { fmt } from "./format";
 import { OtherLines, responsive, TextPage, useMinWidth, WithSnapshot } from "./parts";
+import { Projects } from "./Projects";
 import { parseGraph, type DeadSymbol, type GraphView } from "./text";
+
+// The overview, its force layout and Three.js load only when the graph page opens.
+const ProjectsOverview = lazy(() =>
+    import("./graph3d/ProjectsOverview").then((m) => ({ default: m.ProjectsOverview })),
+);
 
 export function Graph() {
     return (
         <WithSnapshot>
             {(snap) => (
-                <TextPage
-                    page="graph"
-                    text={snap.graph}
-                    command="rtok graph status"
-                    absent={
-                        <Panel title="graph">
-                            <Empty
-                                title="Graph page off"
-                                hint="The graph feature is not built in, or the store read failed (Snapshot.graph = null)."
-                            />
-                        </Panel>
-                    }
-                    note="`rtok graph status` index health plus `rtok graph dead`"
-                >
-                    {(text) => <GraphBody view={parseGraph(text)} />}
-                </TextPage>
+                <>
+                    {snap.projects && <Projects rows={snap.projects} />}
+                    {snap.projects && snap.projects.length > 0 && (
+                        <Suspense fallback={null}>
+                            <ProjectsOverview rows={snap.projects} />
+                        </Suspense>
+                    )}
+                    <TextPage
+                        page="graph"
+                        text={snap.graph}
+                        command="rtok graph status"
+                        absent={
+                            <Panel title="graph">
+                                <Empty
+                                    title="Graph page off"
+                                    hint="The graph feature is not built in, or the store read failed (Snapshot.graph = null)."
+                                />
+                            </Panel>
+                        }
+                        note="`rtok graph status` index health plus `rtok graph dead`"
+                    >
+                        {(text) => <GraphBody view={parseGraph(text)} />}
+                    </TextPage>
+                </>
             )}
         </WithSnapshot>
     );
