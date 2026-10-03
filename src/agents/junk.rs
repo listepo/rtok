@@ -16,7 +16,8 @@
 //! `rtok.db`, not as loose files — this command makes the first two runnable on demand and
 //! reports what they would do before anyone applies them.
 
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -162,6 +163,150 @@ pub fn to_table(outcomes: &[Outcome], yes: bool) -> String {
     out
 }
 
+/// One folder an agent writes to, with its disk usage.
+#[derive(Debug, Serialize)]
+pub struct Folder {
+    pub path: String,
+    pub size_bytes: u64,
+}
+
+/// One junk kind under an agent: what `clear` would remove, summed.
+#[derive(Debug, Serialize)]
+pub struct KindRow {
+    pub kind: &'static str,
+    /// `safe`: always regenerated, cleared by default (T330 classes).
+    pub class: &'static str,
+    pub items: usize,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AgentJunk {
+    pub name: &'static str,
+    pub folders: Vec<Folder>,
+    pub kinds: Vec<KindRow>,
+    pub freed_default_bytes: u64,
+}
+
+/// `rtok agents junk list` (T330.1): per-agent folders, junk kinds and space `clear` frees.
+#[derive(Debug, Serialize)]
+pub struct Report {
+    pub agents: Vec<AgentJunk>,
+    pub freed_default_bytes: u64,
+}
+
+/// Disk usage, not apparent size: allocated blocks on Unix so sparse files and APFS clones are
+/// not over-counted, a hard link once. Elsewhere it is the apparent size with every link
+/// counted, because std has no stable file id to dedupe by there. A symlink costs itself and is
+/// never followed, so a link out of an agent folder cannot pull foreign bytes into the total.
+pub fn disk_usage(path: &Path) -> u64 {
+    fn walk(path: &Path, seen: &mut HashSet<(u64, u64)>) -> u64 {
+        let Ok(meta) = std::fs::symlink_metadata(path) else {
+            return 0;
+        };
+        let mut total = 0;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if meta.nlink() < 2 || seen.insert((meta.dev(), meta.ino())) {
+                total += meta.blocks() * 512;
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = &seen;
+            total += meta.len();
+        }
+        if meta.is_dir() {
+            for entry in std::fs::read_dir(path).into_iter().flatten().flatten() {
+                total += walk(&entry.path(), seen);
+            }
+        }
+        total
+    }
+    walk(path, &mut HashSet::new())
+}
+
+/// The directories rtok's junk lives in: the log directory and the archive directory. One
+/// nested inside the other is folded into the outer so a byte is shown once.
+fn rtok_folders(cfg: &Config) -> Vec<Folder> {
+    let mut dirs: Vec<PathBuf> = [cfg.log.path.parent(), Some(cfg.core.archive_dir.as_path())]
+        .into_iter()
+        .flatten()
+        .filter(|d| d.is_dir())
+        .map(Path::to_path_buf)
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    let all = dirs.clone();
+    dirs.retain(|d| !all.iter().any(|o| o != d && d.starts_with(o)));
+    dirs.into_iter()
+        .map(|d| Folder {
+            size_bytes: disk_usage(&d),
+            path: d.display().to_string(),
+        })
+        .collect()
+}
+
+/// Read-only: the same [`scan`] `clear` runs, summed per kind. Only rtok's own junk exists
+/// until the per-host map is wired (T330.2), so there is one agent row.
+pub fn report(cfg: &Config) -> Report {
+    let outcomes = scan(cfg);
+    let kinds: Vec<KindRow> = ["log", "archive"]
+        .into_iter()
+        .filter_map(|kind| {
+            let rows = outcomes.iter().filter(|o| o.kind == kind);
+            let (items, size_bytes) = rows.fold((0, 0), |(n, b), o| (n + 1, b + o.bytes));
+            (items > 0).then_some(KindRow {
+                kind,
+                class: "safe",
+                items,
+                size_bytes,
+            })
+        })
+        .collect();
+    let freed = kinds.iter().map(|k| k.size_bytes).sum();
+    Report {
+        agents: vec![AgentJunk {
+            name: "rtok",
+            folders: rtok_folders(cfg),
+            kinds,
+            freed_default_bytes: freed,
+        }],
+        freed_default_bytes: freed,
+    }
+}
+
+/// Text of `agents junk list` and of the Hosts page's junk section; `exact` prints raw bytes.
+pub fn to_list(report: &Report, exact: bool) -> String {
+    let size = |n: u64| if exact { n.to_string() } else { human_bytes(n) };
+    let mut out = String::new();
+    for a in &report.agents {
+        out.push_str(&format!("{}\n", a.name));
+        for f in &a.folders {
+            out.push_str(&format!("  {}  {}\n", f.path, size(f.size_bytes)));
+        }
+        for k in &a.kinds {
+            out.push_str(&format!(
+                "    {} ({}): {} items, {}\n",
+                k.kind,
+                k.class,
+                k.items,
+                size(k.size_bytes)
+            ));
+        }
+        out.push_str(&format!(
+            "  Freed by `clear`: {}\n",
+            size(a.freed_default_bytes)
+        ));
+    }
+    out.push_str(&format!(
+        "total\n  Freed by `clear`: {}\n",
+        size(report.freed_default_bytes)
+    ));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +403,55 @@ mod tests {
             .filter_map(|e| e.ok())
             .collect();
         assert_eq!(left.len(), 1, "the referenced archive survives");
+    }
+
+    /// Unix only: elsewhere `disk_usage` has no file id and counts each hard link.
+    #[cfg(unix)]
+    #[test]
+    fn disk_usage_counts_a_hard_link_once_and_never_follows_a_symlink() {
+        let (_cfg, dir) = crate::testutil::config("junk-disk-usage");
+        let root = dir.join("agent");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = dir.join("outside.bin");
+        std::fs::write(&outside, vec![1u8; 64 * 1024]).unwrap();
+        let a = root.join("a.bin");
+        std::fs::write(&a, vec![2u8; 8 * 1024]).unwrap();
+        let alone = disk_usage(&root);
+        std::fs::hard_link(&a, root.join("b.bin")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+        let with_links = disk_usage(&root);
+        assert!(
+            alone >= 8 * 1024,
+            "allocated blocks cover the file: {alone}"
+        );
+        // The extra entries cost directory/inode metadata at most, never another 8 KB or the
+        // 64 KB the link points at.
+        assert!(with_links < alone + 8 * 1024, "{alone} -> {with_links}");
+    }
+
+    #[test]
+    fn report_sums_the_kinds_the_clear_plan_lists_and_the_text_prints_them() {
+        let (mut cfg, _dir) = crate::testutil::config("junk-report");
+        cfg.log.files = 1;
+        let logs = log_dir(&cfg);
+        std::fs::write(logs.join("rtok.log.4"), b"1234").unwrap();
+        std::fs::write(logs.join("rtok.log.5"), b"12345678").unwrap();
+
+        let report = report(&cfg);
+        let planned: u64 = scan(&cfg).iter().map(|o| o.bytes).sum();
+        assert_eq!(planned, 12);
+        assert_eq!(report.freed_default_bytes, planned);
+        let rtok = &report.agents[0];
+        assert_eq!(rtok.name, "rtok");
+        assert_eq!((rtok.kinds[0].kind, rtok.kinds[0].items), ("log", 2));
+        assert!(
+            rtok.folders
+                .iter()
+                .any(|f| f.path == logs.display().to_string())
+        );
+
+        let text = to_list(&report, true);
+        assert!(text.contains("log (safe): 2 items, 12"), "{text}");
+        assert!(text.contains("Freed by `clear`: 12"), "{text}");
     }
 }

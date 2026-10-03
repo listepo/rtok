@@ -8,8 +8,7 @@
 version: 2
 updates:
   - package-ecosystem: cargo
-    # crates/rtok-webui is excluded from the workspace and keeps its own Cargo.lock.
-    directories: ["/", "/crates/rtok-webui"]
+    directory: "/"
     schedule:
       interval: weekly
     # A release waits a week before a pull request opens, so a yanked or broken version is

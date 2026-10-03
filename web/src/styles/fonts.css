@@ -1,5 +1,5 @@
-/* IBM Plex Mono (SIL OFL 1.1, see web/assets/fonts/OFL.txt). Adapted from
- * design/html/css/fonts.css to point at web/assets/fonts/ (Vite-resolved). */
+/* IBM Plex Mono (SIL OFL 1.1, see web/assets/fonts/OFL.txt). Resolved by
+ * Vite from web/assets/fonts/. */
 @font-face {
   font-family: "IBM Plex Mono";
   font-style: normal;
