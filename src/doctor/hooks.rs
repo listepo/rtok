@@ -68,11 +68,11 @@ pub struct Probes<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-struct Entry {
-    event: String,
-    matcher: Option<String>,
-    command: String,
-    key: String,
+pub(super) struct Entry {
+    pub event: String,
+    pub matcher: Option<String>,
+    pub command: String,
+    pub key: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -123,7 +123,7 @@ fn sources(cfg: &Config, project: Option<&Path>) -> Vec<(PathBuf, u8)> {
 
 /// Every command hook of a settings document: `hooks.<Event>[].{matcher, hooks[].command}`,
 /// plus the flat `hooks.<Event>[].command` shape `doctor`'s hook count also accepts.
-fn entries(doc: &Value) -> Vec<Entry> {
+pub(super) fn entries(doc: &Value) -> Vec<Entry> {
     let mut out = Vec::new();
     let Some(events) = doc.get("hooks").and_then(Value::as_object) else {
         return out;
@@ -418,13 +418,16 @@ pub fn check(cfg: &Config, p: &Probes) -> Vec<Problem> {
         Some(project.as_path()).filter(|d| !d.as_os_str().is_empty()),
     );
     for (source, rank) in &user_sources {
+        // The working directory may reach `$HOME` through a symlink; the file is still one file.
+        if !seen.insert(p.fs.canonical(source)) {
+            continue;
+        }
         if let Some(doc) = scan(p, "claude", source, *rank, &claude, &mut acc) {
             enabled.extend(enabled_plugins(&doc));
         }
     }
-    seen.extend(user_sources.into_iter().map(|(path, _)| path));
     for (agent, source) in host_sources(cfg) {
-        if seen.insert(source.clone()) {
+        if seen.insert(p.fs.canonical(&source)) {
             scan(p, agent, &source, RANK_USER, &other, &mut acc);
         }
     }
@@ -705,6 +708,9 @@ mod tests {
     }
 
     impl Fs for Mock {
+        fn canonical(&self, path: &Path) -> PathBuf {
+            path.to_path_buf()
+        }
         fn read(&self, path: &Path) -> io::Result<String> {
             if self
                 .unreadable

@@ -156,9 +156,13 @@ _arguments "${_arguments_options[@]}" : /
 ;;
 (doctor)
 _arguments "${_arguments_options[@]}" : /
+'--only=[With --fix/: which problems to fix (only /`broken-hooks/` for now)]:ONLY:(broken-hooks)' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--instructions[Also run the instruction-file audit (T7.2)]' /
-'--json[JSON instead of the table]' /
+'(--fix)--json[JSON instead of the table]' /
+'--fix[Remove the hooks whose script no longer exists; prints the diff, writes only with --yes]' /
+'--yes[With --fix/: write the changes (a copy goes to /`_backup//` first)]' /
+'--dry-run[With --fix --yes/: print the diffs and write nothing]' /
 '-h[Print help]' /
 '--help[Print help]' /
 && ret=0

@@ -107,9 +107,13 @@ complete -c rtok -n "__fish_rtok_using_subcommand bench" -l suite -d 'Task suite
 complete -c rtok -n "__fish_rtok_using_subcommand bench" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand bench" -l dry-run -d 'Print the schedule and exit'
 complete -c rtok -n "__fish_rtok_using_subcommand bench" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l only -d 'With --fix: which problems to fix (only `broken-hooks` for now)' -r -f -a "broken-hooks/t''"
 complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l instructions -d 'Also run the instruction-file audit (T7.2)'
 complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l json -d 'JSON instead of the table'
+complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l fix -d 'Remove the hooks whose script no longer exists; prints the diff, writes only with --yes'
+complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l yes -d 'With --fix: write the changes (a copy goes to `_backup/` first)'
+complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l dry-run -d 'With --fix --yes: print the diffs and write nothing'
 complete -c rtok -n "__fish_rtok_using_subcommand doctor" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand worktree; and not __fish_seen_subcommand_from add claim adopt remove list gc clean help" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand worktree; and not __fish_seen_subcommand_from add claim adopt remove list gc clean help" -s h -l help -d 'Print help'

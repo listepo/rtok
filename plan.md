@@ -50,7 +50,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T330.6 | todo | P3 | 3 | 0% | |
 | T331 | todo | P1 | 4 | 0% | |
 | T331.4 | todo | P1 | 4 | 0% | |
-| T331.5 | todo | P1 | 4 | 0% | |
 | T331.6 | todo | P1 | 4 | 0% | |
 | T331.7 | todo | P2 | 3 | 0% | |
 | T331.8 | todo | P2 | 3 | 0% | |
@@ -1232,12 +1231,6 @@ Split (epic, too large for one PR: three detectors, a fix engine, an interactive
 Part of T331. Section 3 of T331: same name in two loaded sources, different names with the same launch, normalization (PATH and symlink resolution, `npx pkg@x`, URL case and trailing slash, env values never printed), the not-duplicates cases and the keep recommendation. Report only. rtok's own server follows the T332 and T333 decisions, not a guess. Depends on T331.1, T332 and T333.
 
 Check: the "Duplicate MCP entries" and "MCP that must not be called duplicate" scenarios of T331; `just check`.
-
-### T331.5. Doctor `--fix` for broken hooks
-
-Part of T331. The edit engine of section 4 for the `broken-hook` class only: `--fix`, `--yes`, `--only broken-hooks`, `--dry-run` with diffs, a minimal JSONC edit that drops the entry and its empty group and event key and keeps everything else byte for byte, `_backup` generations (T249) with the path printed, the changed-since-check skip, per-file failure reporting with exit code 1, the re-check summary, and the refusals (valid, suspect, unverified hooks and managed files are never removed). Depends on T331.1.
-
-Check: the "User selecting cleanup", "Refusing to delete valid hooks and entries" and "Failure and race cases" scenarios for broken hooks, golden files byte for byte; `just check`.
 
 ### T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
 
