@@ -1394,8 +1394,8 @@ mod tests {
             "XDG_DATA_HOME" => Some(format!("{root}/data").into()),
             "COPILOT_HOME" => Some(format!("{root}/cop").into()),
             "GEMINI_CLI_HOME" => Some("relative/is/ignored".into()),
-            "PI_CODING_AGENT_DIR" => Some("/pi".into()),
-            "KIMI_CODE_HOME" => Some("/kimi".into()),
+            "PI_CODING_AGENT_DIR" => Some(format!("{root}/pi").into()),
+            "KIMI_CODE_HOME" => Some(format!("{root}/kimi").into()),
             _ => None,
         };
         let mut d = super::UsageDirs {
@@ -1413,18 +1413,18 @@ mod tests {
         assert_eq!(one(&d.kilo), ["/mine"]);
         assert_eq!(one(&d.gemini), ["~/.gemini/tmp"]);
         assert_eq!(one(&d.droid), ["~/.factory/sessions"]);
-        assert_eq!(one(&d.pi), ["/pi/sessions"]);
-        assert_eq!(one(&d.kimi), ["/kimi/sessions"]);
+        assert_eq!(one(&d.pi), [format!("{root}/pi/sessions")]);
+        assert_eq!(one(&d.kimi), [format!("{root}/kimi/sessions")]);
         assert_eq!(one(&d.grok), ["~/.grok/sessions"]);
         // The narrower pi variable names the folder itself and wins over the agent dir.
         let narrow = |k: &str| match k {
-            "PI_CODING_AGENT_SESSION_DIR" => Some("/s".into()),
-            "PI_CODING_AGENT_DIR" => Some("/pi".into()),
+            "PI_CODING_AGENT_SESSION_DIR" => Some(format!("{root}/s").into()),
+            "PI_CODING_AGENT_DIR" => Some(format!("{root}/pi").into()),
             _ => None,
         };
         let mut d = super::UsageDirs::default();
         d.follow_env(narrow);
-        assert_eq!(one(&d.pi), ["/s"]);
+        assert_eq!(one(&d.pi), [format!("{root}/s")]);
     }
 
     use super::*;
