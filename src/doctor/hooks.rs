@@ -698,21 +698,35 @@ mod tests {
         unreadable: BTreeSet<PathBuf>,
     }
 
+    /// The entry for `path`, matched component by component. The keys are POSIX literals
+    /// (`/h/.claude/x`) while `join` and `with_file_name` build `\`-separated paths on Windows;
+    /// a lookup through the map's ordering did not find those there.
+    fn lookup<'a, V>(map: &'a BTreeMap<PathBuf, V>, path: &Path) -> Option<&'a V> {
+        map.iter()
+            .find(|(key, _)| key.components().eq(path.components()))
+            .map(|(_, v)| v)
+    }
+
     impl Fs for Mock {
         fn canonical(&self, path: &Path) -> PathBuf {
             path.to_path_buf()
         }
         fn read(&self, path: &Path) -> io::Result<String> {
-            if self.unreadable.contains(path) {
+            if self
+                .unreadable
+                .iter()
+                .any(|p| p.components().eq(path.components()))
+            {
                 return Err(io::Error::from(io::ErrorKind::PermissionDenied));
             }
-            self.files
-                .get(path)
+            lookup(&self.files, path)
                 .cloned()
                 .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
         }
         fn kind(&self, path: &Path) -> PathKind {
-            self.kinds.get(path).cloned().unwrap_or(PathKind::Missing)
+            lookup(&self.kinds, path)
+                .cloned()
+                .unwrap_or(PathKind::Missing)
         }
     }
     impl Env for Mock {
