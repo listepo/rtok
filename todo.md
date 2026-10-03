@@ -20,7 +20,6 @@
 - T283.2. `--host <id>` in every host's MCP entry
 - T283.3. MCP link rule (b): the nearest common host ancestor pid
 - T284. See what every agent is doing: ids, worktree and activity in `rtok agents sessions`, `rtok agents show`
-- T285. Worktree claims: `rtok worktree add` hands the worktree to the calling agent; MCP `worktree_add`
 - T286. `rtok worktree remove` and MCP `worktree_remove`: an agent removes its own worktree
 - T287. Messages between agents and the user: `rtok agents send`, `rtok agents inbox`, MCP `agent_send`, `agent_inbox`
 - T288. Push unread messages to hooked agents
@@ -78,4 +77,6 @@
 - T358.4. `rtok agents usage` readers: Grok, ZCode, Kimi, pi, Antigravity
 - T358.5. The Usage page on `rtok web` and `rtok tui`
 - T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
-- T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
+- T361. `rtok memory import` reports success for a missing or unreadable file
+- T366. `rtok run` / `rtok mcp -- …` report exit 1 for a child killed by a signal
+- T367. `rtok graph index <path>` exits 0 for a path that does not exist
