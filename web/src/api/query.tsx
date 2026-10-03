@@ -13,7 +13,7 @@ import {
     useQuery,
 } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
-import type { SetRequest, Snapshot } from "./snapshot.gen";
+import type { ProjectRequest, SetRequest, Snapshot } from "./snapshot.gen";
 import type { Connect, Connection, ConnectionState, Frame } from "./ws";
 
 export const snapshotKey = ["snapshot"] as const;
@@ -27,6 +27,7 @@ export interface Api {
     close(): void;
     expand(id: string): Promise<string>;
     set(request: SetRequest): Promise<void>;
+    project(request: ProjectRequest): Promise<void>;
 }
 
 interface PendingExpand {
@@ -115,6 +116,9 @@ export function createApi(
         async set(request) {
             if (!connection?.send({ set: request })) throw new Error("not connected");
         },
+        async project(request) {
+            if (!connection?.send({ project: request })) throw new Error("not connected");
+        },
     };
 }
 
@@ -154,6 +158,11 @@ export const useServerMessage = () => useQuery<string>(pushed(messageKey)).data;
 export function useSetMutation() {
     const api = useApi();
     return useMutation({ mutationFn: (request: SetRequest) => api.set(request) });
+}
+
+export function useProjectMutation() {
+    const api = useApi();
+    return useMutation({ mutationFn: (request: ProjectRequest) => api.project(request) });
 }
 
 export function useExpandMutation() {

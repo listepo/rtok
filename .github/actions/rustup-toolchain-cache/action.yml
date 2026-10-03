@@ -9,8 +9,8 @@ description: >-
 inputs:
   extra:
     description: >-
-      Components or targets the job adds to the toolchain itself (comma-separated), e.g. the
-      wasm32 target of `just webui-check`. Part of the key, so the saved toolchain has them.
+      Components or targets the job adds to the toolchain itself (comma-separated), e.g. a
+      cross-compilation target. Part of the key, so the saved toolchain has them.
     required: false
     default: ""
 

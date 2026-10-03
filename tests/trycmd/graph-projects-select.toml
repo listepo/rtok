@@ -1,0 +1,14 @@
+bin.name = "rtok"
+args = "graph projects select 9999"
+status.code = 1
+stderr = """
+Error: no project `9999`; see `rtok graph projects`
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t3292-projects"
+RTOK_HOME = "target/tmp/t3292-projects"
