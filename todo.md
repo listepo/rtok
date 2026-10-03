@@ -38,7 +38,7 @@
 - T329.17. Graph alerts: linked project down or unreachable
 - T329.18. Graph diff: compare before and after a change
 - T329.19. Graph health score per project
-- T329.20. SPA graph page links panel: link, unlink, both ways, project badges
+- T329.21. Project badges in the graph page lists
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 - T330.2. Junk: every host as an agent row, folders from `research.md` §22
 - T330.3. Junk: `cache`, `temp`, `build`, `locks`, `swap` kinds and rtok's own caches
