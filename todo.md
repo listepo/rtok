@@ -50,6 +50,11 @@
 - T329.19. Graph health score per project
 - T329.21. Project badges in the graph page lists
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
+- T330.2. Junk: every host as an agent row, folders from `research.md` §22
+- T330.3. Junk: `cache`, `temp`, `build`, `locks`, `swap` kinds and rtok's own caches
+- T330.4. Junk `clear`: `--agent`, `--kind`, `--include review`, `--older-than`, `--trash`, re-check, exit codes
+- T330.5. Junk: review kinds (`sessions`, `stale-worktrees`, `stale-tokens`, `crash-dumps`, `snapshots`, `logs`, `deps`, `backups`, `index`) and `[agents.junk]` config
+- T330.6. Junk: item breakdown, `doctor` line, web card
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
 - T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 - T333. Investigate: T271 desktop-entry sweep vs D33/T275
@@ -73,8 +78,5 @@
 - T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
 - T358.4. `rtok agents usage` readers: Grok, ZCode, Kimi, pi, Antigravity
 - T358.5. The Usage page on `rtok web` and `rtok tui`
-- T358.6. `rtok agents usage`: `--by`, saved columns and the `skipped` list
 - T359. `docs/config.md`: the reference TOML fence swallows the semantic-cache section and breaks the landing build
-- T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
 - T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
-- T367. `rtok graph index <path>` exits 0 for a path that does not exist

@@ -495,6 +495,8 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     // the Hosts page rides the snapshot since T231, so both render it
     ("agents list", "hosts"),
     ("agents info", "hosts"),
+    // T330.1: the junk list is a section of the Hosts page text
+    ("agents junk list", "hosts"),
     // the Config page rides the snapshot since T228, so both render it
     ("config show", "config"),
     ("config get", "config"),
@@ -769,6 +771,7 @@ const JSON_READERS: &[&str] = &[
     "plugins",
     "agents list",
     "agents info",
+    "agents junk list",
     "agents sessions",
     "agents whoami",
     "agents show",
