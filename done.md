@@ -7882,6 +7882,14 @@ Result (2026-10-03, Claude Code / sonnet-5): `--by model` swaps the middle table
 Status: done 2026-10-03
 Model: Claude Code / claude-sonnet-5
 
+### T358.5. The Usage page on `rtok web` and `rtok tui`
+
+Scope: the T358.5 bullet under "Split when claiming" in T358. T358.1 lists `agents usage` in `EXEMPT` in `tests/surface_parity.rs` with this task as the reason; this task moves it to `COMMAND_PAGES`.
+
+Check: `surface_parity` passes with `agents usage` in `COMMAND_PAGES`; the page shows the CLI's rows on web and tui; `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): the model has a Usage page: `pages()` offers `("usage", "agent_usage")` (the key `usage` is the Overview's) and the snapshot carries `UsagePage { text, report }`, both from the one `agents::usage::report` call `rtok agents usage` makes over `[agents.usage]`: `text` is `Report::to_text()` (the CLI's screen), `report` the same rows as data, so nothing is aggregated twice. The read runs in a `Background` thread with its own 120 s TTL like Hosts and Worktrees (agent logs are slow); the first ticks say "reading usage…", and a bad `[agents.usage]` value or an unopenable store becomes the page's text instead of a failed snapshot. `Report` and its row types derive `JsonSchema`; `ws.schema.json` and `snapshot.gen.ts` are regenerated. The tui renders `text` verbatim (`"usage" =>` in `view.rs`), the Slint page the same text (`usage_text`) until T310.12 removes it, and the SPA gets `web/src/pages/Usage.tsx` on `report`: KPIs (tokens, estimated cost, sessions, daily rows, rtok saved), the unpriced-model warning, the per-agent table (`via rtok`/`coverage` only for `both`, saved columns only unless `logs`) or per-model table (`--by model`), the daily or monthly totals with share bars, and the unreadable hosts; `usageFixtures.ts` feeds `?sample`, the stories (default, light, logs only, by model, nothing recorded, reading, failed) and Vitest. `tests/surface_parity.rs`: `agents usage` leaves `EXEMPT` for `COMMAND_PAGES` and `JSON_READERS`, plus `usage_page_exists_on_both_surfaces`. Checked: model unit tests (`usage_page_carries_the_cli_report_and_its_text`, `usage_page_names_a_failed_read`), tui `usage_tab_renders_the_cli_screen`, `surface_parity`, `web`, `web_e2e`, `worktree`, `config_coverage` (44 passed), the schema test, the `rtok-webui` crate's own tests, spa-typecheck, spa-test (105), `just js`, spa-build, spa-stories (93).
+
 ### T325. Bash rewrite keeps `cd` in the host shell; shell-state builtins stay unwrapped
 
 Found by a bug-hunt pass over `src/plugins/cmd/hook.rs`. The PreToolUse rewrite turned `cd crates/x && cargo test` into `rtok run -- 'cd crates/x && cargo test'`, so the `cd` ran in `rtok run`'s child shell. Hosts that keep the shell's cwd between Bash calls (Claude Code) lost it: the next call ran in the old directory. `export`, `source`, `unset`, `alias`, `pushd`/`popd` had the same problem.

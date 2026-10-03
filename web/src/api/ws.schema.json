@@ -20,6 +20,82 @@
     "client"
   ],
   "$defs": {
+    "Agent": {
+      "description": "Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in\nthe row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).",
+      "type": "object",
+      "properties": {
+        "cache_read": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache_write": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "coverage": {
+          "description": "`both` only: `through_rtok_tokens` over the logs' tokens, so an agent that bypasses\nthe proxy reads low. `None` when the logs hold no tokens for it.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "host": {
+          "type": "string"
+        },
+        "input": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "name": {
+          "type": "string"
+        },
+        "output": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "saved_tokens": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "saved_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "through_rtok_tokens": {
+          "description": "`both` only: tokens of this agent that also passed through rtok.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "tokens": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "host",
+        "name",
+        "tokens",
+        "input",
+        "cache_write",
+        "cache_read",
+        "output",
+        "cost_usd"
+      ]
+    },
     "AgentModules": {
       "type": "object",
       "properties": {
@@ -281,6 +357,51 @@
         "auto"
       ]
     },
+    "ModelRow": {
+      "description": "Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in\nthe row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).",
+      "type": "object",
+      "properties": {
+        "cache_read": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache_write": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "input": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "model": {
+          "type": "string"
+        },
+        "output": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "tokens": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "model",
+        "tokens",
+        "input",
+        "cache_write",
+        "cache_read",
+        "output",
+        "cost_usd"
+      ]
+    },
     "ModuleRow": {
       "description": "One [`MODULES`] row of a host variant: its state and the note printed after it — the flag\nthat would install it, or the reason it cannot be installed.",
       "type": "object",
@@ -384,6 +505,51 @@
         "rows",
         "ctt",
         "turns"
+      ]
+    },
+    "Period": {
+      "description": "Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in\nthe row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).",
+      "type": "object",
+      "properties": {
+        "cache_read": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache_write": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "input": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "output": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "period": {
+          "type": "string"
+        },
+        "tokens": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "period",
+        "tokens",
+        "input",
+        "cache_write",
+        "cache_read",
+        "output",
+        "cost_usd"
       ]
     },
     "PluginPage": {
@@ -802,6 +968,79 @@
         "agents"
       ]
     },
+    "Report2": {
+      "type": "object",
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Agent"
+          }
+        },
+        "models": {
+          "description": "`--by model` only: the model rows the middle table shows instead of `agents`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ModelRow"
+          }
+        },
+        "periods": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Period"
+          }
+        },
+        "skipped": {
+          "description": "Hosts whose files exist but could not be read: named, counted nowhere.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Skipped"
+          }
+        },
+        "source": {
+          "type": "string"
+        },
+        "through": {
+          "description": "The last day with usage, in `tz`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "totals": {
+          "$ref": "#/$defs/Totals"
+        },
+        "tz": {
+          "type": "string"
+        },
+        "unpriced": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Unpriced"
+          }
+        },
+        "unpriced_models": {
+          "description": "Distinct model ids without a price.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "source",
+        "tz",
+        "through",
+        "totals",
+        "unpriced_models",
+        "unpriced",
+        "agents",
+        "periods",
+        "skipped"
+      ]
+    },
     "ServerFrame": {
       "description": "A frame the server pushes besides the [`Snapshot`] itself.",
       "oneOf": [
@@ -1114,10 +1353,34 @@
         "rows"
       ]
     },
+    "Skipped": {
+      "description": "A host whose session files exist but could not be read: named once, counted nowhere.",
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "reason",
+        "path"
+      ]
+    },
     "Snapshot": {
       "description": "Everything a surface needs for one refresh. `Default` is the empty frame a surface\npaints while its first read is still running.",
       "type": "object",
       "properties": {
+        "agent_usage": {
+          "description": "Usage page (T358.5): what `rtok agents usage` reports, through [`usage_page`]. The\noverview's own `usage` key is the proxy's totals, so this one carries the page's name\nin its own words.",
+          "$ref": "#/$defs/UsagePage"
+        },
         "calls": {
           "description": "Calls page (T15.5): the last [`CALLS_ROWS`] ledger rows, newest first.",
           "type": "array",
@@ -1252,7 +1515,8 @@
         "hosts",
         "config",
         "services",
-        "worktrees"
+        "worktrees",
+        "agent_usage"
       ]
     },
     "Stats": {
@@ -1297,6 +1561,115 @@
         "est_before",
         "est_after",
         "rows"
+      ]
+    },
+    "Totals": {
+      "description": "Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in\nthe row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).",
+      "type": "object",
+      "properties": {
+        "cache_read": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache_write": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "daily_rows": {
+          "description": "Distinct `(agent, day)` pairs with usage, what ccusage calls daily rows.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "input": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "output": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "saved_tokens": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "saved_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "sessions": {
+          "description": "Distinct session ids.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "tokens": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "tokens",
+        "input",
+        "cache_write",
+        "cache_read",
+        "output",
+        "cost_usd",
+        "sessions",
+        "daily_rows"
+      ]
+    },
+    "Unpriced": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "tokens": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "model",
+        "host",
+        "tokens"
+      ]
+    },
+    "UsagePage": {
+      "description": "The Usage page: one [`usage::Report`] — the call `rtok agents usage` makes — read once and\ncarried twice. `text` is that command's screen ([`usage::Report::to_text`]) for the tui and\nthe Slint page; `report` is the same rows as data for the SPA's tables. Nothing is summed\na second time (D27). Both are empty-handed while the first read runs or after it fails:\n`report` is `None` and `text` says why.",
+      "type": "object",
+      "properties": {
+        "report": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Report2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "report"
       ]
     }
   }

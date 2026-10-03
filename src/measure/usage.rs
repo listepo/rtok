@@ -10,12 +10,13 @@
 
 use super::{codex, jsonl, subagents};
 use crate::store::UsageSlice;
+use schemars::JsonSchema;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 /// A host whose session files exist but could not be read: named once, counted nowhere.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Skipped {
     pub host: String,
     pub reason: &'static str,

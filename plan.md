@@ -79,7 +79,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T358 | todo | P2 | 4 | 0% | |
 | T358.3 | todo | P2 | 4 | 0% | |
 | T358.4 | todo | P2 | 3 | 0% | |
-| T358.5 | todo | P2 | 3 | 0% | |
 
 
 
@@ -1621,12 +1620,6 @@ Check: one fixture per host pins its totals; each reader was run against that ho
 Scope: the T358.4 bullet under "Split when claiming" in T358.
 
 Check: one fixture per host pins its totals; `unsupported` hosts are listed in `docs/agents.md`; `just check`.
-
-### T358.5. The Usage page on `rtok web` and `rtok tui`
-
-Scope: the T358.5 bullet under "Split when claiming" in T358. T358.1 lists `agents usage` in `EXEMPT` in `tests/surface_parity.rs` with this task as the reason; this task moves it to `COMMAND_PAGES`.
-
-Check: `surface_parity` passes with `agents usage` in `COMMAND_PAGES`; the page shows the CLI's rows on web and tui; `just check`.
 
 ## Reference
 

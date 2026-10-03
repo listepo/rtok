@@ -73,4 +73,3 @@
 - T358. `rtok agents usage`: tokens and estimated cost across every coding agent
 - T358.3. `rtok agents usage` readers: Droid, OpenCode, Kilo, Copilot CLI, Gemini CLI
 - T358.4. `rtok agents usage` readers: Grok, ZCode, Kimi, pi, Antigravity
-- T358.5. The Usage page on `rtok web` and `rtok tui`
