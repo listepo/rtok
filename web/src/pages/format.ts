@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
-// Number and time formatting shared by the pages; ported from admin.js in design/html.
+// Number and time formatting shared by the pages.
 const nf = new Intl.NumberFormat("en-US");
 
 export const fmt = (n: number | null | undefined): string => (n == null ? "-" : nf.format(n));
@@ -41,3 +41,5 @@ export function ago(ts: number, now: number): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
+
+export const nowSecs = (): number => Math.floor(Date.now() / 1000);

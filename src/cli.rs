@@ -79,7 +79,7 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
+    /// Local web UI over the same data as `rtok tui` (WebSocket API + React SPA)
     Web {
         /// Override `[web] host`
         #[arg(long)]

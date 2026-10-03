@@ -328,7 +328,7 @@ Batch, Flex, and model routing on the proxy (pass-through vs rewrite, what is pl
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |
 | `rtok mcp -- <server argv>` | wrap a foreign stdio MCP server: long `tools/call` text blocks are archived and cut by the `[mcp]` rule, everything else passes byte-for-byte, `rtok expand <id>` returns the raw block |
 | `rtok proxy` | capture API usage; optionally archive older tool results |
-| `rtok web` | local Slint/WASM UI + WebSocket API at `http://127.0.0.1:3333` (default `[web] host`/`port`; `--host`, `--port`; `rtok dashboard` is the deprecated spelling). Open it as `127.0.0.1`/`localhost`: `/ws` refuses cross-site and DNS-name origins |
+| `rtok web` | local React UI (embedded in the binary) + WebSocket API at `http://127.0.0.1:3333` (default `[web] host`/`port`; `--host`, `--port`; `rtok dashboard` is the deprecated spelling). Open it as `127.0.0.1`/`localhost`: `/ws` refuses cross-site and DNS-name origins |
 | `rtok stats` | report transcript and proxy measurements |
 | `rtok agents usage` | tokens and estimated cost per agent and month or day, from what passed through rtok (`--tz`, `--since`, `--daily`, `--unpriced`, `--json`) |
 | `rtok bench` | run the fixed A/B schedule |
