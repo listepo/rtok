@@ -275,7 +275,10 @@ pub fn memory_status(
     since: Option<&str>,
 ) -> Result<MemoryStatus> {
     let since_label = since.unwrap_or(&cfg.stats.since);
-    let span = stats::parse_since(since_label)?;
+    let span = match since {
+        Some(flag) => stats::parse_since(flag)?,
+        None => stats::parse_since_from(&cfg.stats.since, "stats.since")?,
+    };
     let since_unix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -385,7 +388,7 @@ pub fn sessions(cfg: &Config, since: i64) -> Result<Vec<SessionTotals>> {
 /// `usage`, D27) is the Sessions page T25.1 adds; both definitions live here, one per page,
 /// rather than one number quietly serving two questions.
 pub fn stats_report(cfg: &Config) -> Result<stats::Report> {
-    let since = stats::parse_since(&cfg.stats.since)?;
+    let since = stats::parse_since_from(&cfg.stats.since, "stats.since")?;
     let mut report = stats::collect(
         &cfg.stats.transcripts_dir,
         since,
@@ -629,7 +632,8 @@ fn report_window(
 ) -> Result<ReportWindow> {
     let since = cfg.report.since.clone();
     let to_unix = crate::log::now() as i64;
-    let span = i64::try_from(stats::parse_since(&since)?.as_secs()).unwrap_or(i64::MAX);
+    let span = i64::try_from(stats::parse_since_from(&since, "report.since")?.as_secs())
+        .unwrap_or(i64::MAX);
     let from_unix = to_unix.saturating_sub(span);
     let date = |secs: i64| crate::log::stamp(secs.max(0) as u64)[..10].to_string();
     Ok(ReportWindow {
@@ -1230,7 +1234,12 @@ fn hosts_page_text(cfg: &Config) -> String {
     static HOSTS: Background<String> = Background::new();
     let cfg = cfg.clone();
     HOSTS
-        .get(DOCTOR_SNAPSHOT_TTL, move || crate::agents::list(&cfg))
+        .get(DOCTOR_SNAPSHOT_TTL, move || {
+            // T330.1: the junk list rides this page (D27), in the same background read as the
+            // host probes, so its disk walk never blocks a tick.
+            let junk = crate::agents::junk::to_list(&crate::agents::junk::report(&cfg), false);
+            format!("{}\njunk\n{junk}", crate::agents::list(&cfg))
+        })
         .unwrap_or_else(|| "probing hosts…\n".to_string())
 }
 
