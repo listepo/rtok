@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Agent hosts (`rtok agents install|remove|list`).
 //!
 //! Everything the hosts share — backup, the dry-run/idempotence write gate, `mcpServers`
@@ -24,6 +28,7 @@ pub mod jsonc;
 pub mod junk;
 pub mod kilo;
 pub mod kimi;
+pub mod link;
 pub(crate) mod mcp;
 pub mod mimo;
 pub mod omp;
@@ -35,6 +40,7 @@ pub(crate) mod plugin_install;
 pub(crate) mod plugin_version;
 pub mod restart;
 pub mod skill;
+pub mod usage;
 pub mod vscode;
 pub mod windsurf;
 pub mod zcode;

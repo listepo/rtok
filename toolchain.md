@@ -56,11 +56,26 @@ Project programs and direct packages from the manifests.
 | vite | local | https://github.com/vitejs/vite | T310.1: SPA dev server + build (`just spa-dev` / `just spa-build`) |
 | @vitejs/plugin-react | local | https://github.com/vitejs/vite-plugin-react | T310.1: React fast refresh + JSX transform for Vite |
 | json-schema-to-typescript | local | https://github.com/bcherny/json-schema-to-typescript | T310.2: `web/src/api/snapshot.gen.ts` from the `/ws` JSON Schema (`npm run gen:api`) |
+| @tanstack/react-query | local | https://github.com/TanStack/query | T310.3: query cache the `/ws` snapshot is pushed into, plus the `set` / `expand` mutations |
+| vitest | local | https://github.com/vitest-dev/vitest | T310.3: web/src unit tests (`just spa-test`), run on web's own `vite.config.ts`, not the root `vitest.config.mjs` |
 | typescript | local | https://github.com/microsoft/TypeScript | T310.1: strict typecheck (`just spa-typecheck`) |
 | @types/react | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.1: React types |
 | @types/react-dom | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T310.1: React DOM types |
 | tailwindcss | local | https://github.com/tailwindlabs/tailwindcss | T310.1: utility CSS, themed from the design tokens |
 | @tailwindcss/vite | local | https://github.com/tailwindlabs/tailwindcss | T310.1: Tailwind v4 Vite plugin |
+| @tanstack/react-router | local | https://github.com/TanStack/router | T310.4: code-based route tree built from the page list |
+| @tanstack/react-table | local | https://github.com/TanStack/table | T310.5: headless model for `DataTable` (v9: `useTable`, `tableFeatures`) |
+| @tanstack/react-virtual | local | https://github.com/TanStack/virtual | T310.5: windowed rows for `DataTable` |
+| storybook | local | https://github.com/storybookjs/storybook | T310.5: UI kit workshop and static build (`just spa-storybook`) |
+| @storybook/react-vite | local | https://github.com/storybookjs/storybook | T310.5: Storybook framework for React on Vite |
+| @storybook/addon-vitest | local | https://github.com/storybookjs/storybook | T310.5: runs every story as a Vitest browser test (`just spa-stories`) |
+| @storybook/addon-a11y | local | https://github.com/storybookjs/storybook | T310.5: axe checks on every story; a violation fails the run |
+| @vitest/browser | local | https://github.com/vitest-dev/vitest | T310.5: browser mode for the story tests |
+| @vitest/browser-playwright | local | https://github.com/vitest-dev/vitest | T310.5: Playwright provider for browser mode |
+| playwright | local | https://github.com/microsoft/playwright | T310.5: drives Chromium for the story tests |
+| @testing-library/react | local | https://github.com/testing-library/react-testing-library | T310.4: renders the shell and routes in Vitest |
+| @testing-library/dom | local | https://github.com/testing-library/dom-testing-library | T310.4: peer of @testing-library/react (queries, events) |
+| happy-dom | local | https://github.com/capricorn86/happy-dom | T310.4: DOM for component tests (`// @vitest-environment happy-dom`, faster than jsdom) |
 
 ## cargo
 
@@ -89,6 +104,7 @@ Project programs and direct packages from the manifests.
 | ignore | local | https://crates.io/crates/ignore | Rust dependency |
 | indicatif | local | https://crates.io/crates/indicatif | Rust dependency |
 | insta | local | https://crates.io/crates/insta | Snapshot tests for stable text output |
+| jiff | local | https://crates.io/crates/jiff | T358: IANA time zones with DST for `rtok agents usage` day and month buckets (`--tz`); already in the lock as a transitive dep of env_logger |
 | js-sys | local | https://crates.io/crates/js-sys | JS bindings for the Slint web UI (T222) |
 | jsonc-parser | local | https://crates.io/crates/jsonc-parser | JSONC parse for Zed settings (T222) |
 | libfuzzer-sys | local | https://crates.io/crates/libfuzzer-sys | `fuzz/`: libFuzzer runtime for the cargo-fuzz targets |

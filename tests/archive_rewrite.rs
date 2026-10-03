@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T70.2: `rtok archive rewrite --stdin` — the pi `context` carrier, through the binary.
 //!
 //! The card's Check: a 3-turn fixture keeps turns 0–1 whole, the pointer appears

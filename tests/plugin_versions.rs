@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T279: `plugins/<host>/.rtok-plugin-version` and every plugin manifest's `version` field must
 //! equal the running rtok version, so a host that caches a plugin by its manifest version (Claude
 //! Code) sees a new build as a new version. `tools/plugin-versions.sh --set` writes both from
@@ -375,12 +379,23 @@ fn write_version_file(dir: &Path, host: &str, version: &str) {
 }
 
 fn run_outdated(args: &[&str], cfg: &Path, home: &Path) -> (String, i32) {
-    let path = if cfg!(windows) {
-        std::ffi::OsString::from(r"C:\Windows\System32")
+    let mut path = std::ffi::OsString::new();
+    let fake = home.join(".fake-bin");
+    if fake.is_dir() {
+        path.push(&fake);
+        path.push(if cfg!(windows) { ";" } else { ":" });
+    }
+    path.push(if cfg!(windows) {
+        r"C:\Windows\System32"
     } else {
-        std::ffi::OsString::from("/usr/bin:/bin")
-    };
-    let out = Command::new(bin())
+        "/usr/bin:/bin"
+    });
+    // A closed port: a command that reached for the network would fail here, not pass quietly.
+    let mut cmd = Command::new(bin());
+    for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
+        cmd.env(var, "http://127.0.0.1:9");
+    }
+    let out = cmd
         .args(["--config", cfg.to_str().unwrap()])
         .args(args)
         .env("PATH", path)
@@ -458,6 +473,15 @@ fn outdated_all_current_summary_line() {
         )),
         "{text}"
     );
+    let (json, code) = run_outdated(
+        &["agents", "outdated", "cursor", "--json", "--exit-code"],
+        &cfg,
+        &home,
+    );
+    assert_eq!(code, 0, "{json}");
+    let v: Value = serde_json::from_str(json.trim()).expect(&json);
+    assert!(v["outdated"].as_array().unwrap().is_empty(), "{json}");
+    assert_eq!(v["installed"], 2);
 }
 
 #[test]
@@ -485,8 +509,11 @@ fn outdated_lists_only_behind_rows() {
     )
     .unwrap();
     let (text, _) = run_outdated(&["agents", "outdated"], &cfg, &home);
-    assert!(text.contains("claude"), "{text}");
-    assert!(text.contains("legacy"), "{text}");
+    let claude = text.lines().find(|l| l.starts_with("claude")).expect(&text);
+    assert!(
+        claude.contains("0.0.1") && !claude.contains("legacy"),
+        "{text}"
+    );
     assert!(!text.lines().any(|l| l.starts_with("cursor ")), "{text}");
 }
 
@@ -494,9 +521,15 @@ fn outdated_lists_only_behind_rows() {
 fn outdated_legacy_install_shows_legacy() {
     let home = tmp("outdated-legacy");
     let cfg = cfg_with_receipt(&home);
-    claude_plugin_installed(&home, "0.0.1", None);
+    // No version file, no receipt and a host record without a usable version.
+    claude_plugin_installed(&home, "", None);
     let (text, _) = run_outdated(&["agents", "outdated", "claude"], &cfg, &home);
-    assert!(text.contains("legacy"), "{text}");
+    let row = text.lines().find(|l| l.starts_with("claude")).expect(&text);
+    assert!(row.contains("legacy"), "{text}");
+    let (json, _) = run_outdated(&["agents", "outdated", "claude", "--json"], &cfg, &home);
+    let v: Value = serde_json::from_str(json.trim()).unwrap();
+    assert_eq!(v["outdated"][0]["installed"], "legacy");
+    assert_eq!(v["outdated"][0]["legacy"], true);
 }
 
 #[test]
@@ -557,10 +590,10 @@ fn outdated_json_schema_and_exit_code() {
     let row = &v["outdated"][0];
     assert_eq!(row["agent"], "claude");
     assert_eq!(row["variant"], "cli");
-    assert_eq!(row["installed"], "legacy");
+    assert_eq!(row["installed"], "0.0.1");
     assert_eq!(row["available"], target());
     assert_eq!(row["source"], "github");
-    assert_eq!(row["legacy"], true);
+    assert_eq!(row["legacy"], false);
     let home2 = tmp("outdated-json-ok");
     let cfg2 = cfg_with_receipt(&home2);
     let (_, ok2) = run_outdated(
@@ -581,12 +614,31 @@ fn update_check_matches_outdated_output() {
     assert_eq!(a, b);
 }
 
+/// Fake host CLIs that log every call, `--version` included, so "no host CLI is spawned" is
+/// something the log can disprove (`run_outdated` also points the proxy at a closed port).
+#[cfg(unix)]
 #[test]
 fn outdated_does_not_spawn_host_cli() {
+    use std::os::unix::fs::PermissionsExt;
     let home = tmp("outdated-offline");
     let cfg = cfg_with_receipt(&home);
     claude_plugin_installed(&home, "0.0.1", None);
-    let _ = run_outdated(&["agents", "outdated", "claude"], &cfg, &home);
-    let log = home.join("claude.log");
-    assert!(!log.exists() || fs::read_to_string(&log).unwrap_or_default().is_empty());
+    let bin_dir = home.join(".fake-bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    for host_cli in ["claude", "codex", "gemini", "cursor-agent", "copilot"] {
+        let shim = bin_dir.join(host_cli);
+        fs::write(
+            &shim,
+            "#!/bin/sh\necho \"$0 $*\" >> \"$HOME/host-cli.log\"\n",
+        )
+        .unwrap();
+        fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let (text, _) = run_outdated(&["agents", "outdated"], &cfg, &home);
+    assert!(
+        text.contains("claude"),
+        "the run must reach a real listing: {text}"
+    );
+    let log = fs::read_to_string(home.join("host-cli.log")).unwrap_or_default();
+    assert_eq!(log, "", "agents outdated spawned a host CLI");
 }

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! D23's gate: `rtok web` and `rtok tui` are two renderings of one operator model, so
 //! a page that exists on one surface and not the other is a defect. Each surface
 //! contributes its own set here and the assert fails naming the page that drifted;
@@ -59,6 +63,30 @@ fn web_serves_exactly_the_pages_the_model_offers() {
         model_pages(),
         web_pages(&cfg),
         "a page exists on one surface and not the other (D23)"
+    );
+}
+
+/// T310.4: the React SPA's route tree, nav and tab bar are `PAGES` in `web/src/pages.ts`, a
+/// TypeScript copy of `model::pages()`. Both the id and the snapshot field must match, in
+/// order, so a page added to the model cannot be missing from the SPA.
+#[test]
+fn spa_page_list_matches_the_model() {
+    let src = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("web/src/pages.ts"),
+    )
+    .expect("web/src/pages.ts is readable");
+    let re = regex::Regex::new(r#"\{ id: "([^"]+)", field: "([^"]+)" \}"#).unwrap();
+    let spa: Vec<(String, String)> = re
+        .captures_iter(&src)
+        .map(|c| (c[1].to_string(), c[2].to_string()))
+        .collect();
+    let model: Vec<(String, String)> = model::pages()
+        .iter()
+        .map(|(page, field)| (page.to_string(), field.to_string()))
+        .collect();
+    assert_eq!(
+        spa, model,
+        "web/src/pages.ts PAGES drifted from model::pages() (id, snapshot field, in order)"
     );
 }
 
@@ -605,6 +633,11 @@ const EXEMPT: &[(&str, &str)] = &[
         "agents inbox",
         "one agent's framed message queue, marked read when the agent reads its own (T287); \
          not a shared model page",
+    ),
+    (
+        "agents usage",
+        "reading command whose Usage page on `rtok web` / `rtok tui` is T358.5 (D23/D27); it \
+         moves to COMMAND_PAGES with it",
     ),
     (
         "info",

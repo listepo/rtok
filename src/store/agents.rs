@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T282 (D34): the rtok agent id. The host's own session id collides across hosts and is
 //! missing on several (`research.md` §26), so rtok issues its own random UUIDv4 per host session,
 //! shown as its first 8 hex chars and resolved from any unique prefix of 4+ hex chars.
@@ -324,6 +328,17 @@ impl Store {
             .into_iter()
             .map(row_from)
             .collect())
+    }
+
+    /// Test-only: place `last_seen` at an exact time, so a fixture can say "seen before the
+    /// MCP process started" without sleeping.
+    #[cfg(test)]
+    pub(crate) fn set_agent_last_seen(&self, id: &str, ts: i64) -> Result<()> {
+        let mut conn = self.lock()?;
+        diesel::update(agents::table.filter(agents::id.eq(id)))
+            .set(agents::last_seen.eq(ts))
+            .execute(&mut *conn)?;
+        Ok(())
     }
 
     /// Test/debug: one row by its exact id. `pub(crate)` so `hooks::mod`'s dispatch-level

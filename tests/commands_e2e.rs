@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T38.1/T38.5: e2e for the commands without direct coverage — `hook`, `run`,
 //! `expand`, `plugins`, `config`, `bench --dry-run`, `doctor`, `stats` — driven
 //! through `assert_cmd` (plan Working agreement).
@@ -181,6 +185,22 @@ fn run_echo_prints_its_output() {
     let _ = fs::remove_dir_all(&home);
 }
 
+/// T366: a command killed by a signal exits `128 + signal` like a shell, not `1`; a plain
+/// non-zero exit keeps its code. The `kill` targets the test's own `sh` (`$$`).
+#[cfg(unix)]
+#[test]
+fn run_reports_128_plus_the_signal_for_a_killed_command() {
+    let home = tmp("signal");
+    for (script, code) in [
+        ("kill -TERM $$", 143),
+        ("kill -KILL $$", 137),
+        ("exit 7", 7),
+    ] {
+        cmd(&["run", "sh", "-c", script], &home).assert().code(code);
+    }
+    let _ = fs::remove_dir_all(&home);
+}
+
 #[test]
 fn run_long_output_then_expand_round_trips() {
     let home = tmp("expand");
@@ -314,6 +334,43 @@ fn info_counts_error_lines_and_json_parses() {
     assert_eq!(v["otel"]["enabled"], false);
     assert!(v["db"]["bytes"].is_number(), "{v}");
     let _ = fs::remove_dir_all(&home);
+}
+
+/// T367: every path-taking graph subcommand fails on a missing path, naming it, before walking.
+#[test]
+fn graph_subcommands_reject_a_missing_path() {
+    let home = tmp("graph-missing-home");
+    let missing = home.join("nonexistent");
+    let missing = missing.to_str().unwrap();
+    for args in [
+        vec!["graph", "index", missing],
+        vec!["graph", "dead", missing],
+        vec!["graph", "status", missing],
+        vec!["graph", "impact", "main", missing],
+    ] {
+        let out = cmd(&args, &home).assert().failure().get_output().clone();
+        let err = String::from_utf8_lossy(&out.stderr);
+        // Only the path: the OS error text differs (Windows says "cannot find the file").
+        assert!(err.contains(missing), "{args:?}: {err}");
+        assert!(out.stdout.is_empty(), "{args:?}: {:?}", out.stdout);
+    }
+}
+
+#[test]
+fn graph_index_rejects_a_file_path_and_still_indexes_a_project() {
+    let home = tmp("graph-file-home");
+    let project = tmp("graph-project");
+    let file = project.join("a.rs");
+    fs::write(&file, "fn alpha() {}\n").unwrap();
+    let err = cmd(&["graph", "index", file.to_str().unwrap()], &home)
+        .assert()
+        .failure()
+        .get_output()
+        .stderr
+        .clone();
+    assert!(String::from_utf8_lossy(&err).contains("not a directory"));
+    let out = ok(&["graph", "index", project.to_str().unwrap()], &home);
+    assert!(out.contains("indexed 1 files"), "{out}");
 }
 
 /// T362: the first `config validate` on an empty HOME creates the default file like every other

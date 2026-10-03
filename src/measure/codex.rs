@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Codex CLI session usage (plan T49.2). `~/.codex/sessions/**/*.jsonl` writes one
 //! `event_msg` line of `payload.type == "token_count"` per API request; its
 //! `last_token_usage` is that request's counters (`input_tokens` includes
@@ -43,34 +47,94 @@ pub(crate) fn jsonl_paths(dir: &Path, cutoff: SystemTime) -> Vec<PathBuf> {
     out
 }
 
-/// Sum of `last_token_usage` over every `token_count` line, as an `ApiRow` in the
-/// proxy's vocabulary: `input` is the uncached part, `cache_read` the cached part,
-/// `cache_create` Codex's `cache_write_input_tokens`. `None` when no line was found.
-pub fn collect(dir: &Path, cutoff: SystemTime) -> Option<ApiRow> {
-    let mut row = ApiRow::default();
-    let mut lines = 0u64;
-    for p in jsonl_paths(dir, cutoff) {
+/// One `token_count` line: a single API request, in the proxy's vocabulary (`input` is the
+/// uncached part, `cache_read` the cached part, `cache_create` Codex's
+/// `cache_write_input_tokens`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Request {
+    /// The `session_meta` id, else the rollout file's stem.
+    pub session: String,
+    /// The latest `turn_context` (or `session_meta`) model seen before this line.
+    pub model: Option<String>,
+    /// Unix seconds of the line; 0 when it carries none.
+    pub ts: i64,
+    pub input: i64,
+    pub cache_read: i64,
+    pub cache_create: i64,
+    pub output: i64,
+}
+
+/// Every `token_count` request under `dir`, oldest file first, and the first rollout that
+/// could not be read or held no JSON line at all (T358.6: `rtok agents usage` names it).
+/// `collect` sums these and `measure::usage` buckets them (T358.2), so there is one parser
+/// for the format.
+pub fn requests(dir: &Path, cutoff: SystemTime) -> (Vec<Request>, Option<PathBuf>) {
+    let mut paths = jsonl_paths(dir, cutoff);
+    paths.sort();
+    let mut out = Vec::new();
+    let mut unreadable = None;
+    for p in paths {
         let Ok(text) = std::fs::read_to_string(&p) else {
+            unreadable.get_or_insert(p);
             continue;
         };
+        let mut json_lines = 0;
+        let stem = p
+            .file_stem()
+            .and_then(OsStr::to_str)
+            .unwrap_or_default()
+            .to_string();
+        let (mut session, mut model) = (stem, None);
         for line in text.lines() {
             let Ok(v) = serde_json::from_str::<Value>(line) else {
                 continue;
             };
+            json_lines += 1;
+            let kind = v.pointer("/payload/type").and_then(Value::as_str);
+            if let Some(m) = v.pointer("/payload/model").and_then(Value::as_str) {
+                model = Some(m.to_string());
+            }
+            if v.get("type").and_then(Value::as_str) == Some("session_meta")
+                && let Some(id) = v.pointer("/payload/id").and_then(Value::as_str)
+            {
+                session = id.to_string();
+            }
             let Some(u) = v.pointer("/payload/info/last_token_usage") else {
                 continue;
             };
-            if v.pointer("/payload/type").and_then(Value::as_str) != Some("token_count") {
+            if kind != Some("token_count") {
                 continue;
             }
             let n = |k: &str| u.get(k).and_then(Value::as_i64).unwrap_or(0);
             let cached = n("cached_input_tokens");
-            row.input += n("input_tokens").saturating_sub(cached);
-            row.cache_read += cached;
-            row.cache_create += n("cache_write_input_tokens");
-            row.output += n("output_tokens");
-            lines += 1;
+            out.push(Request {
+                session: session.clone(),
+                model: model.clone(),
+                ts: super::jsonl::line_ts(&v),
+                input: n("input_tokens").saturating_sub(cached),
+                cache_read: cached,
+                cache_create: n("cache_write_input_tokens"),
+                output: n("output_tokens"),
+            });
         }
+        if json_lines == 0 && !text.trim().is_empty() {
+            unreadable.get_or_insert(p);
+        }
+    }
+    (out, unreadable)
+}
+
+/// Sum of `last_token_usage` over every `token_count` line, as an `ApiRow` in the
+/// proxy's vocabulary. `None` when no line was found.
+pub fn collect(dir: &Path, cutoff: SystemTime) -> Option<ApiRow> {
+    let mut row = ApiRow::default();
+    let mut lines = 0u64;
+    for r in requests(dir, cutoff).0 {
+        row.input += r.input;
+        row.cache_read += r.cache_read;
+        row.cache_create += r.cache_create;
+        row.output += r.output;
+        lines += 1;
     }
     if lines == 0 {
         return None;
