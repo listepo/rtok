@@ -2146,7 +2146,6 @@ Deviations: edge width is a constant, because the snapshot carries no cross-proj
 
 Status: done 2026-10-03 · Model: Claude Code / sonnet-5
 
-
 ## T329.7 — Reference discovery from manifests (Cargo, npm, Go, Python, submodules)
 
 T329 §4b sources, in the card's order: Cargo `path`/`[patch]`/out-of-root workspace members, npm/pnpm/yarn `file:`/`link:`/`workspace:`, Go `replace` and `go.work`, Python path dependencies, `.gitmodules`. A pure function from a project root to a list of `(directory, reason)`, plus warnings for paths that do not exist. Import-resolver references are left to a later sub-id once T329.9 lands. Fixture repos only; no registry writes.
@@ -2160,6 +2159,9 @@ Sources (checked 2026-10-03): Cargo path dependencies, https://doc.rust-lang.org
 Unverified, handled anyway: workspace members outside the root and `path` in `[workspace.dependencies]` (the Cargo docs read did not state either), the `workspace:../x` relative form of pnpm, PEP 508 `name @ file:…` with a relative path, the `link:` prefix, and `-e`/`./` lines of `requirements.txt`. Not covered: `**` in a workspace glob is matched as one level, `yarn` `portal:`, `[replace]` of Cargo, npm `overrides`/`resolutions`, Python `file:` URLs with a host, Go module `vendor`.
 
 Deviations: the card lists "Python path dependencies"; `requirements.txt` paths are included as well. The 300-line budget is met per ecosystem file, not for the whole feature (about 530 lines in five files, tests excluded).
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet-5
+
 ## T48.7 — aider host
 
 **T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
