@@ -158,7 +158,7 @@ fn agent_id_injection(agent: Option<&str>) -> Option<Injection> {
     Some(Injection {
         plugin: "agent_id",
         text: format!(
-            "rtok agent id: {short} (full: {id}). Use it with rtok's agent_* and worktree_* MCP tools."
+            "rtok agent id: {short} (full: {id}). Use it with rtok's agent_* and worktree_* MCP tools; agent_inbox reads messages sent to you."
         ),
         // Highest offered priority (`Inject`'s own compact/startup recall tops out at 9): a
         // few words wide, so it never meaningfully competes with a real offering for budget,
@@ -483,7 +483,8 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         .then(|| cx.host_id())
         .flatten()
         .and_then(|host_id| {
-            cx.store
+            let id = cx
+                .store
                 .register_agent(
                     host_id,
                     &cx.session,
@@ -491,7 +492,17 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
                     cx.cwd.as_deref(),
                     agent_activity(input).as_deref(),
                 )
-                .ok()
+                .ok()?;
+            // T283.3: what lets an `rtok mcp` process find this row by its host ancestor.
+            if let Some(pid) = cx
+                .config
+                .hook_client_pid
+                .and_then(|p| i32::try_from(p).ok())
+            {
+                let chain = rtok_sys::ancestors(pid, crate::agents::link::ANCESTORS);
+                let _ = cx.store.set_agent_ancestors(&id, &chain);
+            }
+            Some(id)
         });
     let parent = match cx.record_call("hook", "hook", Some(&input.hook_event_name)) {
         Ok(id) => Some(id),
@@ -1779,6 +1790,26 @@ mod tests {
         );
     }
 
+    /// T283.3: a hook that knows its client's pid records the ancestors above it on the agent
+    /// row; a hook without one (an old client) leaves the row without any.
+    #[test]
+    fn a_known_client_pid_records_its_ancestors_on_the_agent_row() {
+        let me = std::process::id();
+        let chain = rtok_sys::ancestors(me as i32, crate::agents::link::ANCESTORS);
+        let ancestors_after = |pid: Option<u32>, session: &str| {
+            let (_, stdin, input, mut cx) = agent_fixture(session);
+            cx.config.hook_client_pid = pid;
+            let _ = dispatch(&stdin, &input, &cx);
+            let id = cx
+                .store
+                .register_agent(cx.host_id().unwrap(), &cx.session, None, None, None)
+                .unwrap();
+            cx.store.agent_row(&id).unwrap().unwrap().ancestors
+        };
+        assert_eq!(ancestors_after(Some(me), "anc-sess-1"), chain);
+        assert!(ancestors_after(None, "anc-sess-2").is_empty());
+    }
+
     #[test]
     fn a_sub_agent_hook_event_registers_a_child_row_under_its_parent() {
         let (v, stdin, input, cx) = agent_fixture("agent-sess-2");
@@ -1916,7 +1947,7 @@ mod tests {
     /// spec's exact sentence, not just whatever the function happens to emit.
     fn expected_agent_line(id: &str) -> String {
         format!(
-            "rtok agent id: {} (full: {id}). Use it with rtok's agent_* and worktree_* MCP tools.",
+            "rtok agent id: {} (full: {id}). Use it with rtok's agent_* and worktree_* MCP tools; agent_inbox reads messages sent to you.",
             &id[..8]
         )
     }
@@ -2060,7 +2091,7 @@ mod tests {
             cx.store.send_message(None, &id, body).unwrap();
         }
         let f = frames(&cx, &id);
-        let more = |n| format!("… and {n} more: run rtok agents inbox");
+        let more = |n| format!("… and {n} more: call agent_inbox (or run rtok agents inbox)");
         cx.config.agents.push_bytes = (f[0].len() + more(3).len() + 1) as u32;
         let ctx = || additional_context(&dispatch(&stdin, &input, &cx));
         assert_eq!(ctx(), format!("{}{}", f[0], more(2)));
@@ -2075,7 +2106,10 @@ mod tests {
         cx.store.send_message(None, &id, "hello").unwrap();
         cx.config.agents.push_bytes = 64;
         let ctx = additional_context(&dispatch(&stdin, &input, &cx));
-        assert_eq!(ctx, "… and 1 more: run rtok agents inbox");
+        assert_eq!(
+            ctx,
+            "… and 1 more: call agent_inbox (or run rtok agents inbox)"
+        );
         assert_eq!(dispatch(&stdin, &input, &cx), b"{}");
         assert_eq!(cx.store.inbox(&id, true, false).unwrap().len(), 1);
     }

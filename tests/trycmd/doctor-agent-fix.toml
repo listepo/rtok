@@ -1,0 +1,13 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml doctor --fix --agent claude"
+stdout = """
+nothing to remove
+"""
+
+# One host's filter, hermetic like doctor-fix.toml: an empty home has nothing to fix.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t331-9-doctor-agent"
+RTOK_HOME = "target/tmp/t331-9-doctor-agent"

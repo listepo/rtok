@@ -434,7 +434,7 @@ fn doctor_fix_removes_only_the_broken_hook_after_a_backup() {
     let done = run(&["doctor", "--fix", "--yes"]);
     assert_eq!(done.status.code(), Some(0), "{done:?}");
     let text = String::from_utf8_lossy(&done.stdout);
-    assert!(text.contains("1 broken hook(s) removed, 0 left"), "{text}");
+    assert!(text.contains("1 entry removed, 0 left"), "{text}");
     let after = fs::read_to_string(&settings).unwrap();
     assert!(
         after.contains("// mine") && after.contains("echo done"),
@@ -447,7 +447,32 @@ fn doctor_fix_removes_only_the_broken_hook_after_a_backup() {
     assert_eq!(fs::read_to_string(bak).unwrap(), raw);
 
     let again = run(&["doctor", "--fix", "--yes"]);
-    assert!(String::from_utf8_lossy(&again.stdout).contains("no broken hooks to remove"));
+    assert!(String::from_utf8_lossy(&again.stdout).contains("nothing to remove"));
+}
+
+/// T331.6: `--only duplicate-mcp` removes the extra copy of a server from the host's JSON and
+/// keeps the rest of the file byte for byte, after a backup.
+#[cfg(unix)] // POSIX command paths
+#[test]
+fn doctor_fix_removes_an_extra_mcp_copy_and_nothing_else() {
+    let home = tmp("doctor-fix-mcp");
+    let json = home.join(".claude.json");
+    let before = "{\n  \"theme\": \"dark\",\n  \"mcpServers\": {\n    \"a\": {\"command\": \"/bin/tool\"},\n    \"b\": {\"command\": \"/bin/tool\"}\n  }\n}\n";
+    fs::write(&json, before).unwrap();
+    let mut c = cmd(
+        &["doctor", "--fix", "--yes", "--only", "duplicate-mcp"],
+        &home,
+    );
+    c.current_dir(&home);
+    let out = c.assert().get_output().clone();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{text}");
+    assert!(text.contains("1 entry removed, 0 left"), "{text}");
+    assert_eq!(
+        fs::read_to_string(&json).unwrap(),
+        "{\n  \"theme\": \"dark\",\n  \"mcpServers\": {\n    \"a\": {\"command\": \"/bin/tool\"}\n  }\n}\n"
+    );
+    let _ = fs::remove_dir_all(&home);
 }
 
 /// T365: a value `config validate` rejects in the file is rejected the same way when it arrives
@@ -477,6 +502,30 @@ fn config_validate_checks_env_overrides_and_names_the_layer() {
     assert!(
         stderr.contains("env: log.level must be error, warn, info, or debug"),
         "{stderr}"
+    );
+    let _ = fs::remove_dir_all(&home);
+}
+
+/// T379: a bad window is blamed on where it came from: the config key, or the flag.
+#[test]
+fn report_since_errors_name_their_source() {
+    let home = tmp("report-since");
+    let cfg = home.join("c.toml");
+    fs::write(&cfg, "[report]\nsince = \"7x\"\n").unwrap();
+    let cfg = cfg.to_str().unwrap();
+    let stderr = |args: &[&str]| {
+        let out = cmd(args, &home).assert().failure().get_output().clone();
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    let from_config = stderr(&["--config", cfg, "report"]);
+    assert!(
+        from_config.contains("report.since") && !from_config.contains("--since"),
+        "{from_config}"
+    );
+    let from_flag = stderr(&["report", "--since", "7x"]);
+    assert!(
+        from_flag.contains("--since") && !from_flag.contains("report.since"),
+        "{from_flag}"
     );
     let _ = fs::remove_dir_all(&home);
 }

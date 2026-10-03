@@ -167,7 +167,7 @@ fn strip_ours(apply: &Apply, path: &Path, hooks: &mut Value, timeout_s: u64) -> 
 
 /// The `mcpServers.rtok` entry [`register_mcp`] writes.
 fn mcp_entry(cmd: &str) -> Value {
-    json!({"command": cmd, "args": ["mcp"]})
+    json!({"command": cmd, "args": super::mcp_args("gemini")})
 }
 
 /// `mcpServers.rtok = {command, args}` — the minimal stdio shape the Gemini MCP docs show.
@@ -179,7 +179,7 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
         "mcpServers",
         NAME,
         mcp_entry(&bin),
-        &format!("{bin} mcp"),
+        &super::mcp_summary(&bin, "gemini"),
     )
 }
 

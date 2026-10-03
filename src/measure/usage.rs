@@ -4,18 +4,27 @@
 
 //! The agents' own session files as `rtok agents usage --source logs` rows (T358.2): one
 //! `UsageSlice` per request, read on the fly and never written to the store, so a re-read is
-//! idempotent (the T49.2 rule). Both readers sit on the parsers `rtok stats` already uses
-//! (`jsonl::parse_path`, `codex::requests`); this module only adds the host, session and
-//! window cut. A request with no usable timestamp is left out: it has no day to land on.
+//! idempotent (the T49.2 rule). Claude Code and Codex sit on the parsers `rtok stats` already
+//! uses (`jsonl::parse_path`, `codex::requests`); this module only adds the host, session and
+//! window cut. OpenCode, Kilo, Copilot CLI and Gemini CLI have a reader each in `usage/`
+//! (T358.3). A request with no usable timestamp is left out: it has no day to land on.
 
 use super::{codex, jsonl, subagents};
+use crate::config::Config;
 use crate::store::UsageSlice;
+use schemars::JsonSchema;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+mod copilot;
+mod gemini;
+mod kimi;
+mod pi;
+mod sqlite;
+
 /// A host whose session files exist but could not be read: named once, counted nowhere.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Skipped {
     pub host: String,
     pub reason: &'static str,
@@ -29,19 +38,73 @@ pub struct Logs {
     pub skipped: Vec<Skipped>,
 }
 
-/// Claude Code (`claude_dir`) and Codex (`codex_dir`) requests stamped at or after `since`.
-pub fn read(claude_dir: &Path, codex_dir: &Path, since: i64) -> Logs {
+/// Why a host's files are named without being counted: they exist but no request came out.
+const UNKNOWN: &str = "unknown format";
+
+/// Droid keeps token counts in `<session>.settings.json`, but Factory documents only that the
+/// file holds them, not under which keys, so a reader would be a guess (`research.md`).
+const DROID_UNSUPPORTED: &str = "unsupported: the session settings fields are not documented";
+
+/// xAI documents the session files' token counts only through `grok usage`, which says to use
+/// it "instead of reading session files"; rtok does not run another host's program (D6).
+const GROK_UNSUPPORTED: &str = "unsupported: xAI documents `grok usage`, not the session files";
+
+/// ZCode's usage page says it reads local session records but names no path or field.
+const ZCODE_UNSUPPORTED: &str = "unsupported: the session records are not documented";
+
+/// Google documents neither where Antigravity keeps its sessions nor their token fields.
+const ANTIGRAVITY_UNSUPPORTED: &str = "unsupported: the local session data is not documented";
+
+/// Every host's requests stamped at or after `since`: Claude Code and Codex from the `[stats]`
+/// directories, the others from `[agents.usage.dirs]`.
+pub fn read(cfg: &Config, since: i64) -> Logs {
+    let dirs = &cfg.agents.usage.dirs;
+    let cutoff = mtime_cutoff(since);
     let mut logs = Logs::default();
-    for (host, (slices, bad)) in [
-        ("claude", claude_slices(claude_dir, since)),
-        ("codex", codex_slices(codex_dir, since)),
+    let mut add =
+        |host: &str, reason: &'static str, (slices, bad): (Vec<UsageSlice>, Option<PathBuf>)| {
+            logs.slices.extend(slices);
+            logs.skipped.extend(bad.map(|path| Skipped {
+                host: host.into(),
+                reason,
+                path,
+            }));
+        };
+    add(
+        "claude",
+        UNKNOWN,
+        claude_slices(&cfg.stats.transcripts_dir, since),
+    );
+    add("codex", UNKNOWN, codex_slices(&cfg.stats.codex_dir, since));
+    add(
+        "opencode",
+        UNKNOWN,
+        sqlite::slices("opencode", &dirs.opencode, since),
+    );
+    add("kilo", UNKNOWN, sqlite::slices("kilo", &dirs.kilo, since));
+    add(
+        "copilot",
+        UNKNOWN,
+        copilot::slices(&dirs.copilot, since, cutoff),
+    );
+    add(
+        "gemini",
+        UNKNOWN,
+        gemini::slices(&dirs.gemini, since, cutoff),
+    );
+    add("pi", UNKNOWN, pi::slices(&dirs.pi, since, cutoff));
+    add("kimi", UNKNOWN, kimi::slices(&dirs.kimi, since, cutoff));
+    // Hosts whose format is not documented are named when they left files, never guessed at.
+    for (host, reason, list) in [
+        ("droid", DROID_UNSUPPORTED, &dirs.droid),
+        ("grok", GROK_UNSUPPORTED, &dirs.grok),
+        ("zcode", ZCODE_UNSUPPORTED, &dirs.zcode),
+        ("antigravity", ANTIGRAVITY_UNSUPPORTED, &dirs.antigravity),
     ] {
-        logs.slices.extend(slices);
-        logs.skipped.extend(bad.map(|path| Skipped {
-            host: host.into(),
-            reason: "unknown format",
-            path,
-        }));
+        let found = list
+            .iter()
+            .find(|d| std::fs::read_dir(d).is_ok_and(|mut rd| rd.next().is_some()));
+        add(host, reason, (Vec::new(), found.cloned()));
     }
     logs
 }
@@ -241,6 +304,69 @@ mod tests {
             ("sess-1", Some("gpt-5"), Some("codex"))
         );
         assert_eq!((r.input, r.cache_read, r.output), (60, 40, 7));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn read_names_unreadable_hosts_and_lists_undocumented_ones_as_unsupported() {
+        let dir = tmp("read");
+        let mut cfg = crate::testutil::config_in(&dir);
+        cfg.agents.usage.dirs.opencode = vec![dir.join("oc")];
+        cfg.agents.usage.dirs.copilot = vec![dir.join("cop")];
+        cfg.agents.usage.dirs.droid = vec![dir.join("droid"), dir.join("none")];
+        fs::create_dir_all(dir.join("oc")).unwrap();
+        fs::write(dir.join("oc/opencode.db"), "not sqlite").unwrap();
+        // A readable log with no shutdown counts nothing and is not a skip.
+        fs::create_dir_all(dir.join("cop/s")).unwrap();
+        fs::write(
+            dir.join("cop/s/events.jsonl"),
+            "{\"type\":\"session.start\"}\n",
+        )
+        .unwrap();
+        fs::create_dir_all(dir.join("droid/-proj")).unwrap();
+        fs::write(dir.join("droid/-proj/a.settings.json"), "{}").unwrap();
+        cfg.agents.usage.dirs.pi = vec![dir.join("pi")];
+        fs::create_dir_all(dir.join("pi/-proj")).unwrap();
+        fs::write(dir.join("pi/-proj/a.jsonl"), "not json\n").unwrap();
+        for (host, list) in [
+            ("grok", &mut cfg.agents.usage.dirs.grok),
+            ("zcode", &mut cfg.agents.usage.dirs.zcode),
+            ("antigravity", &mut cfg.agents.usage.dirs.antigravity),
+        ] {
+            *list = vec![dir.join(host)];
+            fs::create_dir_all(dir.join(host)).unwrap();
+            fs::write(dir.join(host).join("data"), "x").unwrap();
+        }
+        let logs = read(&cfg, 0);
+        assert!(logs.slices.is_empty());
+        let named: Vec<_> = logs
+            .skipped
+            .iter()
+            .map(|s| (s.host.as_str(), s.reason))
+            .collect();
+        assert_eq!(
+            named,
+            [
+                ("opencode", UNKNOWN),
+                ("pi", UNKNOWN),
+                ("droid", DROID_UNSUPPORTED),
+                ("grok", GROK_UNSUPPORTED),
+                ("zcode", ZCODE_UNSUPPORTED),
+                ("antigravity", ANTIGRAVITY_UNSUPPORTED),
+            ]
+        );
+        // Nothing to name when the directories are absent.
+        cfg.agents.usage.dirs.opencode = vec![dir.join("absent")];
+        for list in [
+            &mut cfg.agents.usage.dirs.droid,
+            &mut cfg.agents.usage.dirs.pi,
+            &mut cfg.agents.usage.dirs.grok,
+            &mut cfg.agents.usage.dirs.zcode,
+            &mut cfg.agents.usage.dirs.antigravity,
+        ] {
+            *list = vec![dir.join("absent")];
+        }
+        assert!(read(&cfg, 0).skipped.is_empty());
         fs::remove_dir_all(&dir).ok();
     }
 }

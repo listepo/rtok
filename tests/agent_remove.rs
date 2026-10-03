@@ -485,7 +485,11 @@ fn grok_remove_asks_before_taking_an_edited_mcp_entry() {
     rtok(&["agents", "install", "grok"], &cfg, &home);
     let raw = fs::read_to_string(&path).unwrap();
     assert!(raw.contains("[mcp_servers.rtok]"), "{raw}");
-    let edited = raw.replacen("args = [\"mcp\"]", "args = [\"mcp\"]\ntimeout = 30", 1);
+    let edited = raw.replacen(
+        "args = [\"mcp\", \"--host\", \"grok\"]",
+        "args = [\"mcp\", \"--host\", \"grok\"]\ntimeout = 30",
+        1,
+    );
     assert_ne!(edited, raw, "the fixture must actually gain a field: {raw}");
     fs::write(&path, edited).unwrap();
 

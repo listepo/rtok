@@ -113,12 +113,14 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --instructions   Also run the instruction-file audit (T7.2)
       --json           JSON instead of the table
-      --fix            Remove the hooks whose script no longer exists; prints the diff, writes only
-                       with --yes
+      --fix            Clean up broken hooks and duplicate hooks and MCP entries: a terminal gets a
+                       checklist, a pipe the diff; --yes writes without asking
       --yes            With --fix: write the changes (a copy goes to `_backup/` first)
       --dry-run        With --fix --yes: print the diffs and write nothing
-      --only <ONLY>    With --fix: which problems to fix (only `broken-hooks` for now) [default:
-                       broken-hooks] [possible values: broken-hooks]
+      --only <ONLY>    With --fix: limit it to these problems (repeatable; default: all of them)
+                       [possible values: broken-hooks, duplicate-hooks, duplicate-mcp]
+      --agent <HOST>   Check (and with --fix, repair) the hooks of one host only (an id of `rtok
+                       agents list`)
   -h, --help           Print help
 
 $ rtok info --help
@@ -146,8 +148,8 @@ Commands:
   info       One host: the same block `agents list` prints, just for that app
   sessions   What is running in this project: host, provider, model, tokens, start, run time
   usage      Tokens and estimated cost per agent and month (or day), from the agents' logs or rtok
-  junk       Junk rtok owns under its own home (log siblings, archive payloads past retention): list
-             or clear
+  junk       Junk and agent folders: `list` shows rtok's and every installed host's folders with
+             sizes, `clear` removes rtok's own junk
   whoami     This session's own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the
              store
   show       One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status
@@ -347,7 +349,8 @@ Options:
           Print help (see a summary with '-h')
 
 $ rtok agents junk --help
-Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear
+Junk and agent folders: `list` shows rtok's and every installed host's folders with sizes, `clear`
+removes rtok's own junk
 
 Usage: rtok agents junk [OPTIONS] <COMMAND>
 
@@ -369,6 +372,7 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --json           JSON instead of the text
       --bytes          Exact byte counts instead of KB/MB/GB
+      --all            Also the hosts that are not installed
   -h, --help           Print help
 
 $ rtok agents junk clear --help
@@ -1008,6 +1012,8 @@ Commands:
   add     Create the worktree for a task: one location, one name, one locked owner; prints its path
   claim   Bind an existing worktree to an agent: rewrites its lock only when unlocked or already
           yours
+  adopt   Bind the worktree you are in (made by a host's own tool) to your agent. A worktree in a
+          pool its host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only
   remove  Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when
           merged, release the claim; refuses dirty, foreign-locked or current worktrees
   list    Every worktree and orphan with its owner, state, source and build-cache bytes
@@ -1089,6 +1095,24 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --owner <OWNER>  The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> /
                        <model>` of the agent
+  -h, --help           Print help
+
+$ rtok worktree adopt --help
+Bind the worktree you are in (made by a host's own tool) to your agent. A worktree in a pool its
+host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only
+
+Usage: rtok worktree adopt [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]  The worktree, or a directory inside it; defaults to the current directory
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --task <TASK>    The task id, when the lock and the branch do not name one (a detached HEAD)
+      --agent <AGENT>  The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`
+      --owner <OWNER>  The owner the lock names, as `<provider> / <model>`. Defaults to `<host> /
+                       <model>` of the agent
+      --json           Print the result as JSON
   -h, --help           Print help
 
 $ rtok worktree remove --help

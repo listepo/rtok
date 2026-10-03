@@ -1,0 +1,15 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml doctor --agent no-such-host"
+status.code = 1
+stdout = ""
+stderr = """
+Error: unknown host `no-such-host`; valid hosts: claude, cursor, codex, [..], devin
+"""
+
+# The error names the valid ids, so the flag is self-documenting.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t331-9-doctor-agent"
+RTOK_HOME = "target/tmp/t331-9-doctor-agent"
