@@ -16,7 +16,6 @@
 - T279. One plugin version scheme for every install source (GitHub, local, marketplace), and `agents update` that skips an up-to-date plugin
 - T281. Probe: tie a host session's hooks and its rtok MCP server to one agent
 - T283. An agent learns its own rtok agent id
-- T283.3. MCP link rule (b): the nearest common host ancestor pid
 - T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 - T289.2. MCP `worktree_adopt`
 - T289.3. Post-create scripts: `rtok agents install <host> --project` for Cursor, Kilo and Devin/Windsurf

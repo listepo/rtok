@@ -22,7 +22,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T279 | in progress | P1 | 5 | 90% | Claude Code / claude-opus-5-5 |
 | T281 | in progress | P1 | 3 | 70% | Claude Code / claude-opus-5-5 |
 | T283 | in progress | P1 | 3 | 60% | Claude Code / sonnet-5 |
-| T283.3 | todo | P1 | 3 | 0% | |
 | T289 | in progress | P2 | 4 | 25% | Claude Code / sonnet-5 |
 | T289.2 | todo | P2 | 2 | 0% | |
 | T289.3 | todo | P2 | 3 | 0% | |
@@ -454,12 +453,6 @@ Check: hook fixture test: SessionStart output carries the line and it is identic
 Execution (2026-09-27): two PRs. PR 1, cut on top of T282's branch until #439 merges: the SessionStart line (step 2) inside the injection budget; `RTOK_AGENT_ID` through `CLAUDE_ENV_FILE` (step 3, cited from the Claude Code hooks docs); `rtok agents whoami [--json]` from `RTOK_AGENT_ID` (step 5); tests: hook fixture byte-stable but for the id, `enabled = false` prints nothing, trycmd, `surface_parity`, `config_coverage`, man page. PR 2, after T281's rules and T275's per-host PRs land: `rtok mcp` resolves its agent at `initialize`, `--host <id>` in every host's MCP entry, hook-less hosts register through MCP, MCP tool `whoami`; MCP e2e with a fake client.
 Progress (2026-09-28): PR 1 merged (#449): SessionStart line, `RTOK_AGENT_ID`, `rtok agents whoami` (host session id only in `--json`). Left: PR 2, the MCP link at `initialize` after T281's probe.
 Progress (2026-10-03): PR 2 is split into T283.1 (resolve the link, MCP `whoami`, `rtok mcp --host`), T283.2 (`--host` in every host's MCP entry) and T283.3 (the ancestor-pid rule, which needs the hook wire request to carry a pid). The link rule is derived from `research.md` §26's vendor docs and spawn code; the T281 live probe only confirms it.
-
-### T283.3. MCP link rule (b): the nearest common host ancestor pid
-
-PR 2 of T283, part 3. The hook wire request (`crates/rtok-hook`, `src/hooks/resident.rs`: `version, fingerprint, event, host, cwd, stdin`) carries no pid, and the resident hook process is not the host's child, so a hook cannot record its own ancestry today. Add the client's parent pid to the request (protocol version bump), store it on the agent row (migration), record it on registration, and let `link.rs` match it against the `rtok mcp` process's ancestor chain (nearest first; two agents behind one ancestor are ambiguous). Doc-derived like the rest of the rule order; the T281 probe confirms it per host.
-
-Check: wire round-trip test; store test; `link.rs` test with a seeded agent row and a fake ancestor chain; hook latency stays inside the 10 ms budget; `just check`.
 
 ### T289. Worktrees the host creates join rtok: `rtok worktree adopt` and the post-create hooks
 
