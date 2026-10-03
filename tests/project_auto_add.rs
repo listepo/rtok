@@ -61,6 +61,11 @@ fn rtok(home: &Path, cwd: &Path, args: &[&str], stdin: &str) -> std::process::Ou
     out
 }
 
+/// A root as the store spells it: `/` separators on every OS.
+fn spelled(p: &Path) -> String {
+    p.display().to_string().replace('\\', "/")
+}
+
 /// The only registered project: its root and origin, or nothing registered.
 fn only(home: &Path, on: bool) -> Option<(String, Origin)> {
     let got = projects(home);
@@ -83,7 +88,7 @@ fn a_session_in_a_new_directory_registers_it_only_when_on() {
             "source": "startup",
         });
         rtok(&home, &proj, &["hook", "SessionStart"], &start.to_string());
-        let want = on.then(|| (proj.display().to_string(), Origin::Session));
+        let want = on.then(|| (spelled(&proj), Origin::Session));
         assert_eq!(only(&home, on), want);
     }
 }
@@ -94,7 +99,7 @@ fn a_graph_mcp_call_registers_its_root_only_when_on() {
         let (home, proj) = scene(&format!("auto-add-mcp-{on}"), on);
         let call = [("symbol", r#"{"name":"nothing"}"#)];
         common::mcp::session(&home, &proj, || {}, &call);
-        let want = on.then(|| (proj.display().to_string(), Origin::Mcp));
+        let want = on.then(|| (spelled(&proj), Origin::Mcp));
         assert_eq!(only(&home, on), want);
     }
 }
