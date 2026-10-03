@@ -516,6 +516,19 @@ pub(crate) fn impact_lines_text(rows: &[(u32, String, String)]) -> String {
     out
 }
 
+/// T367: the graph root a CLI subcommand works on: `path`, else the cwd. A missing or non-directory
+/// path is an error naming it, so a typo cannot report an empty index with exit 0. The T356 refusal
+/// of `/` and `$HOME` stays in `index::run_with`.
+pub fn cli_root(path: Option<PathBuf>) -> Result<PathBuf> {
+    let root = match path {
+        Some(p) => p,
+        None => std::env::current_dir()?,
+    };
+    let meta = std::fs::metadata(&root).map_err(|e| anyhow::anyhow!("{}: {e}", root.display()))?;
+    anyhow::ensure!(meta.is_dir(), "{}: not a directory", root.display());
+    Ok(root)
+}
+
 /// One `dead()` row (T52.4 / T230): an unreferenced private definition's location.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DeadRow {
