@@ -761,6 +761,91 @@ fn claim_takes_a_free_or_own_worktree_and_refuses_a_foreign_owner() {
     assert!(String::from_utf8_lossy(&main.stderr).contains("not a linked worktree"));
 }
 
+/// T289: `adopt` binds the worktree a host's own tool made — from any directory inside it. A
+/// pool the host evicts gets a store claim and no lock; any other pool gets the v2 lock. A
+/// detached HEAD needs `--task`, a foreign lock is refused, and `list` shows the origin.
+#[test]
+fn adopt_binds_a_host_made_worktree_and_lists_its_origin() {
+    let tmp = rtok::testutil::tmp_dir("worktree-adopt");
+    run(&tmp, &["init", "-q", "work"]);
+    let work = tmp.join("work");
+    commit(&work, "a.txt");
+    let (store, ids) = agents(&tmp, &["sess-me"]);
+    let me = ids[0].as_str();
+    let cursor = tmp.join(".cursor/worktrees/work/abc");
+    let kilo = tmp.join(".kilo/worktrees/t7-x");
+    let held = tmp.join(".cursor/worktrees/work/held");
+    for (args, dir) in [
+        (vec!["--detach"], &cursor),
+        (vec!["-b", "t7-x"], &kilo),
+        (
+            vec![
+                "--detach",
+                "--lock",
+                "--reason",
+                "Cursor / grok | t3 | 2026-09-22",
+            ],
+            &held,
+        ),
+    ] {
+        let mut cmd = vec!["worktree", "add", "-q"];
+        cmd.extend(args);
+        cmd.push(dir.to_str().unwrap());
+        run(&work, &cmd);
+    }
+    let adopt = |dir: &Path, extra: &[&str]| {
+        let mut args = vec!["worktree", "adopt", "--json"];
+        args.extend(extra);
+        rtok_as(&tmp, dir, Some(me), &args, b"")
+    };
+
+    let out = adopt(&cursor, &[]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("pass --task"));
+    let out = adopt(&held, &["--task", "t9"]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("not taken"));
+
+    let out = adopt(&cursor, &["--task", "t9"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let got: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        (got["origin"].as_str(), got["locked"].as_bool()),
+        (Some("cursor"), Some(false))
+    );
+    let entries = inventory(&work).unwrap();
+    assert!(
+        find(&entries, "abc").record.locked.is_none(),
+        "a Cursor-pool worktree gets no lock"
+    );
+    let claims = store.open_worktree_claims().unwrap();
+    let want = cursor.canonicalize().unwrap().display().to_string();
+    assert!(
+        claims.iter().any(|(p, a)| *p == want && a == me),
+        "{claims:?}"
+    );
+
+    std::fs::create_dir(kilo.join("sub")).unwrap();
+    let out = adopt(&kilo.join("sub"), &[]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lock = lock_of(&work, "t7-x");
+    assert_eq!(
+        (lock.task.as_str(), lock.agent.as_deref()),
+        ("t7", Some(me))
+    );
+
+    let rows = json_in(&tmp, &work, &["worktree", "list", "--json"]);
+    for (name, origin) in [("work", "main"), ("abc", "cursor"), ("t7-x", "kilo")] {
+        assert_eq!(by_name(&rows, name)["origin"], origin, "{name}");
+    }
+}
+
 /// T285: `list --json` names the bound agent with its state — live, ended, none, or an old
 /// lock without one — and `gc` keeps a live agent's merged worktree.
 #[test]

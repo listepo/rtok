@@ -1002,6 +1002,8 @@ Commands:
   add     Create the worktree for a task: one location, one name, one locked owner; prints its path
   claim   Bind an existing worktree to an agent: rewrites its lock only when unlocked or already
           yours
+  adopt   Bind the worktree you are in (made by a host's own tool) to your agent. A worktree in a
+          pool its host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only
   remove  Remove your own finished worktree: unlock, `git worktree remove`, delete the branch when
           merged, release the claim; refuses dirty, foreign-locked or current worktrees
   list    Every worktree and orphan with its owner, state, source and build-cache bytes
@@ -1083,6 +1085,24 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --owner <OWNER>  The owner an old lock names, as `<provider> / <model>`. Defaults to `<host> /
                        <model>` of the agent
+  -h, --help           Print help
+
+$ rtok worktree adopt --help
+Bind the worktree you are in (made by a host's own tool) to your agent. A worktree in a pool its
+host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only
+
+Usage: rtok worktree adopt [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]  The worktree, or a directory inside it; defaults to the current directory
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --task <TASK>    The task id, when the lock and the branch do not name one (a detached HEAD)
+      --agent <AGENT>  The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`
+      --owner <OWNER>  The owner the lock names, as `<provider> / <model>`. Defaults to `<host> /
+                       <model>` of the agent
+      --json           Print the result as JSON
   -h, --help           Print help
 
 $ rtok worktree remove --help

@@ -487,6 +487,25 @@ enum WorktreeCmd {
         #[arg(long)]
         owner: Option<String>,
     },
+    /// Bind the worktree you are in (made by a host's own tool) to your agent. A worktree in a
+    /// pool its host evicts (Cursor, Codex, Windsurf, Devin) is claimed in the store only
+    Adopt {
+        /// The worktree, or a directory inside it; defaults to the current directory
+        path: Option<PathBuf>,
+        /// The task id, when the lock and the branch do not name one (a detached HEAD)
+        #[arg(long)]
+        task: Option<String>,
+        /// The rtok agent id (any unique prefix); defaults to `RTOK_AGENT_ID`
+        #[arg(long)]
+        agent: Option<String>,
+        /// The owner the lock names, as `<provider> / <model>`. Defaults to `<host> / <model>`
+        /// of the agent
+        #[arg(long)]
+        owner: Option<String>,
+        /// Print the result as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Remove your own finished worktree: unlock, `git worktree remove`, delete the branch
     /// when merged, release the claim; refuses dirty, foreign-locked or current worktrees
     Remove {
@@ -1254,10 +1273,35 @@ pub fn run() -> Result<()> {
             let Some(agent) = claim::caller(store.as_ref(), agent.as_deref())? else {
                 bail!("no agent to bind: pass --agent or set RTOK_AGENT_ID");
             };
-            let owner = claim::owner(owner, Some(&agent), store.as_ref())?;
-            let (path, task) = claim::run(&path, &owner, &agent.id)?;
-            claim::remember(store.as_ref(), &path, &agent.id, &task);
-            println!("{}", path.display());
+            let done = claim::bind(store.as_ref(), &path, &agent, owner, None, false)?;
+            println!("{}", done.path.display());
+        }
+        Cmd::Worktree {
+            action:
+                WorktreeCmd::Adopt {
+                    path,
+                    task,
+                    agent,
+                    owner,
+                    json,
+                },
+        } => {
+            use crate::worktree::claim;
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            let Some(agent) = claim::caller(store.as_ref(), agent.as_deref())? else {
+                bail!("no agent to bind: pass --agent or set RTOK_AGENT_ID");
+            };
+            let path = match path {
+                Some(path) => path,
+                None => std::env::current_dir()?,
+            };
+            let done = claim::bind(store.as_ref(), &path, &agent, owner, task.as_deref(), true)?;
+            if json {
+                print_json(&done)?;
+            } else {
+                println!("{}", done.path.display());
+            }
         }
         Cmd::Worktree {
             action:

@@ -7866,6 +7866,12 @@ Execution, step 4 (2026-10-03, Claude Code / sonnet-5): after T287 PR 2 shipped 
 
 Result (2026-10-03, Claude Code / sonnet-5): the push itself landed in #488; step 4 is this change. The user-facing statement that hosts without hooks are pull-only goes into the T290 docs task, which owns the agents and worktrees docs.
 
+### T289.1. `rtok worktree adopt` and the `origin` of every worktree
+
+Done means: `rtok worktree adopt [<path>] [--task <id>] [--agent] [--owner]` locks (or, in an evicting pool, claims in the store only) a host-made worktree for the calling agent; `worktree list` shows `origin`. Check: unit tests for the pool table; adopt e2e in a scratch repo with a worktree under a fake `$HOME/.cursor/worktrees/` (claim row, no lock) and under `.kilo/worktrees/` (v2 lock); detached HEAD with and without `--task`; a foreign lock is refused; list shows `origin`; trycmd and gates.
+
+Result (2026-10-03, Claude Code / sonnet-5): `rtok worktree adopt [<path>] [--task] [--agent] [--owner] [--json]` binds the linked worktree that holds the path (the cwd by default, any directory inside it). The task is `--task`, else the old lock's, else the branch's first `-` segment; a detached HEAD with none of them asks for `--task`. Pools whose host evicts worktrees to stay under a cap (Cursor, Codex, Windsurf/Devin) get a store claim and no git lock, since a lock's effect on that eviction is untested (the creator's live probe, T281, decides); every other pool gets the v2 lock like `claim`, and a foreign lock is refused either way. `worktree list` gained an `origin` column and JSON field (`main`, `cursor`, `windsurf`, `codex`, `claude`, `kilo`, `conductor`, `other`), read from where the worktree lives (`src/worktree/origin.rs`; `$CODEX_HOME` moves Codex's pool). `claim` and `adopt` share `claim::run` and `claim::bind`, which MCP `worktree_adopt` reuses in T289.2. The `source` name from the original plan is `origin`, because `source` is already the source-bytes column.
+
 ### T358.1. `rtok agents usage --source rtok`: CLI, `[agents.usage]` config and store reads
 
 First slice of T358: scope is the T358.1 bullet under "Split when claiming" there; the spec text stays in T358.
