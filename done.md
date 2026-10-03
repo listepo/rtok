@@ -4941,7 +4941,21 @@ Check: the "Duplicate MCP entries" and "MCP that must not be called duplicate" s
 
 Execution: `src/doctor/mcp_dupes.rs` reads every host surface `agents::mcp::surfaces` knows, plus Claude Code's project `.mcp.json` and local `projects.<cwd>.mcpServers`, through the new `rtok_mcp::config::read_servers` (the reader `read_entry` now sits on, so JSON, JSONC and TOML parse as `agents info` does). Entries are grouped per host client by normalized launch (command resolved through `Which` and `Fs::canonical`, `npx`/`bunx`/`pnpx`/`uvx` as the package, URL through `url::Url` with the trailing slash dropped, env keys and values compared but never printed). Same name in two scopes: the host uses local, then project, then user (research.md section 25), the others are reported as unused. Same package at different versions is a `conflicting-mcp` finding. A server with `disabled: true` or `enabled: false` is not compared. rtok's own entry is recognised with `rtok_agent_sdk::runs_bin` and `agents::is_rtok_bin`. Findings are `Problem { kind: "duplicate-mcp" | "conflicting-mcp", group, keep }` rendered by the T331.3 renderer as "duplicate mcp servers".
 
-Result: `rtok doctor` (text, `--json`, Doctor page) lists the MCP servers a host would start twice, how many times, every copy with its file and key path, the copy to keep (project, then user, then local) and, for a same-name entry, which scope the host uses. Nothing is fixable before T331.6. Not covered: servers an enabled plugin provides (`.mcp.json` of Claude plugins), which T331.6 or a later card needs for the "plugin plus hand-written entry" case.
+Result: `rtok doctor` (text, `--json`, Doctor page) lists the MCP servers a host would start twice, how many times, every copy with its file and key path, the copy to keep (project, then user, then local) and, for a same-name entry, which scope the host uses. Nothing is fixable before T331.6. Servers an enabled plugin provides are T331.11.
+
+Model: Claude Code / sonnet-5
+
+### T331.11. Doctor: MCP servers from enabled Claude plugins in the duplicate check
+
+Part of T331, split out of T331.4. The "plugin plus hand-written entry" scenario: an enabled Claude plugin that provides an MCP server while the user also wrote the same server by hand starts it twice. P2, complexity 2.
+
+Check: a plugin server and a hand-written copy form one group, the plugin copy is kept and nothing is fixable; the same name in a plugin and a user file is not shadowing; a plugin that is disabled or gone is not read; `just check`.
+
+Execution: `hooks::check_with_plugins` returns the install directory of each enabled, present plugin (one per id) next to its findings, so the enumeration T331.2 wrote for plugin hooks is the only one; `check` delegates to it and `doctor::checks` passes the directories to `mcp_dupes::check`, which adds `<dir>/.mcp.json` (key `mcpServers`) as one more source of the Claude CLI set, read with the same `config::read_servers`. Each string of a plugin entry has `${CLAUDE_PLUGIN_ROOT}` replaced by the install directory before the launch is normalized. The server is named `plugin:<plugin>:<server>`, as Claude Code names it, so it never shadows a same-name entry of another scope. A plugin copy ranks first in the keep order, because the plugin owns that file and the hand-written entry is the one a user can remove; both stay not fixable (T331.6 owns fixing, and never a plugin's files). rtok's own entry stays excluded (T331.10).
+
+Result: `rtok doctor` reports a plugin server and an equal hand-written (or second plugin) entry as one `duplicate-mcp` group, with the plugin file as the kept copy; version conflicts include plugin servers.
+
+Sources, checked 2026-10-03: https://code.claude.com/docs/en/plugins-reference (a `.mcp.json` at the plugin root is the default MCP location; `${CLAUDE_PLUGIN_ROOT}` is the absolute path of the installed plugin version and resolves in an MCP server's `command`, `args`, `env`, `url` and `headers`) and https://code.claude.com/docs/en/mcp (`.mcp.json` has a top-level `mcpServers` object; plugin servers are scoped `plugin:<plugin-name>:<server-name>`; for plugin servers Claude Code matches duplicates by command or URL). Not covered, unverified or not read: `mcpServers` declared inside `plugin.json` (inline map, path, or an array of them), a flat `.mcp.json` without the `mcpServers` wrapper, bundle forms (`.mcpb`, `.dxt`), and `user_config` substitution; such a plugin is simply not compared.
 
 Model: Claude Code / sonnet-5
 

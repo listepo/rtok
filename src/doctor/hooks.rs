@@ -617,6 +617,12 @@ pub fn host_id(id: &str) -> Result<&'static str, String> {
 /// TOML config files the other hosts' installers write. A file that does not exist is skipped; one
 /// that cannot be read or parsed is reported and left alone.
 pub fn check(cfg: &Config, p: &Probes) -> Vec<Problem> {
+    check_with_plugins(cfg, p).0
+}
+
+/// [`check`], and the install directory of each enabled Claude plugin it found (one per plugin
+/// id, keyed by id), for the checks that read other files of the plugin.
+pub fn check_with_plugins(cfg: &Config, p: &Probes) -> (Vec<Problem>, Vec<(String, PathBuf)>) {
     let project = p.env.cwd().unwrap_or_default();
     let claude = Scope {
         project: &project,
@@ -658,7 +664,7 @@ pub fn check(cfg: &Config, p: &Probes) -> Vec<Problem> {
     plugins(cfg, p, &enabled, &claude, &mut acc);
     let dupes = super::dupes::find(&acc.seen);
     acc.problems.extend(dupes);
-    acc.problems
+    (acc.problems, acc.plugin_dirs)
 }
 
 /// What one pass over the config files collects: the findings, and every hook seen (the input
@@ -667,6 +673,7 @@ pub fn check(cfg: &Config, p: &Probes) -> Vec<Problem> {
 struct Acc {
     problems: Vec<Problem>,
     seen: Vec<Seen>,
+    plugin_dirs: Vec<(String, PathBuf)>,
 }
 
 /// One hook entry as found, whether or not it is a problem.
@@ -753,6 +760,9 @@ fn plugins(cfg: &Config, p: &Probes, enabled: &BTreeSet<String>, claude: &Scope,
                     ..problem("stale-plugin", "claude", &index)
                 });
                 continue;
+            }
+            if !acc.plugin_dirs.iter().any(|(known, _)| known == id) {
+                acc.plugin_dirs.push((id.clone(), dir.clone()));
             }
             let scope = Scope {
                 plugin_root: Some(&dir),
@@ -901,18 +911,6 @@ fn unreadable(agent: &'static str, source: &Path, why: &str) -> Problem {
         detail: format!("cannot read {}: {why}", source.display()),
         ..problem("unreadable-config", agent, source)
     }
-}
-
-/// [`check`] against this machine.
-pub fn check_real(cfg: &Config) -> Vec<Problem> {
-    check(
-        cfg,
-        &Probes {
-            fs: &super::probe::RealFs,
-            env: &super::probe::RealEnv,
-            which: &super::probe::RealWhich,
-        },
-    )
 }
 
 /// The `hooks check` lines of the doctor text: grouped by class, or "none found".
@@ -1602,6 +1600,38 @@ mod tests {
         );
         assert_eq!(found[0].source, "/h/plug/demo/hooks/hooks.json");
         assert!(!found[0].fixable);
+    }
+
+    #[test]
+    fn the_install_directory_of_each_enabled_present_plugin_is_returned() {
+        let mut m = Mock::default();
+        plugin_home(&mut m, true, true, "{}");
+        let probes = Probes {
+            fs: &m,
+            env: &m,
+            which: &m,
+        };
+        let (_, dirs) = check_with_plugins(&cfg(), &probes);
+        assert_eq!(
+            dirs,
+            [("demo@mkt".to_string(), PathBuf::from("/h/plug/demo"))]
+        );
+        // Disabled, and enabled but gone: nothing for a later check to read.
+        plugin_home(&mut m, false, true, "{}");
+        let probes = Probes {
+            fs: &m,
+            env: &m,
+            which: &m,
+        };
+        assert!(check_with_plugins(&cfg(), &probes).1.is_empty());
+        plugin_home(&mut m, true, false, "");
+        m.kinds.clear();
+        let probes = Probes {
+            fs: &m,
+            env: &m,
+            which: &m,
+        };
+        assert!(check_with_plugins(&cfg(), &probes).1.is_empty());
     }
 
     #[test]

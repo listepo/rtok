@@ -13,9 +13,13 @@
 //! marks disabled is not running and not compared. Env values take part in the comparison and are
 //! never printed. rtok's own entry waits for T332/T333 and is neither compared nor reported.
 //! Every copy is fixable (T331.6): `--fix` removes the ones that are not kept or used.
+//!
+//! A server of an enabled Claude plugin (T331.11) is read from the plugin's `.mcp.json`, with
+//! `${CLAUDE_PLUGIN_ROOT}` resolved, under the name `plugin:<plugin>:<server>` that Claude Code
+//! gives it; the plugin's copy is the one kept, and a plugin's file is never fixable.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rtok_mcp::config::{self, Fs as McpFs};
 use rtok_mcp::spec::McpSpec;
@@ -27,6 +31,9 @@ use super::probe::Fs;
 /// Where an entry lives, which decides the copy to keep and which same-name entry the host uses.
 #[derive(Clone, Copy, PartialEq)]
 enum Scope {
+    /// An enabled Claude plugin's `.mcp.json`. The plugin owns the file, so this copy is the one
+    /// kept (the hand-written entry is the one the user can remove).
+    Plugin,
     Project,
     User,
     Local,
@@ -41,9 +48,11 @@ impl Scope {
     /// Claude Code resolves a same-name entry by precedence: local, project, user.
     fn wins(self) -> u8 {
         match self {
-            Scope::Local => 2,
-            Scope::Project => 1,
-            Scope::User => 0,
+            Scope::Local => 3,
+            Scope::Project => 2,
+            Scope::User => 1,
+            // Plugin servers are named `plugin:<plugin>:<server>`, so they never share a name.
+            Scope::Plugin => 0,
         }
     }
 
@@ -52,6 +61,7 @@ impl Scope {
             Scope::Project => "shared project file",
             Scope::User => "user file",
             Scope::Local => "local scope",
+            Scope::Plugin => "enabled plugin",
         }
     }
 }
@@ -62,6 +72,8 @@ struct Source {
     set: String,
     spec: McpSpec,
     scope: Scope,
+    /// The plugin id and install directory for a plugin's file.
+    plugin: Option<(String, PathBuf)>,
 }
 
 /// An enabled server entry as found.
@@ -89,8 +101,9 @@ pub(super) struct Loc {
 }
 
 /// The location of every entry the check reads; a finding's `source` and `path` find it.
+/// A plugin's file is never edited (its copy is not fixable), so its entries are not read here.
 pub(super) fn locations(cfg: &crate::config::Config, p: &Probes) -> Vec<Loc> {
-    entries(cfg, p)
+    entries(cfg, p, &[])
         .into_iter()
         .map(|s| Loc {
             source: s.source,
@@ -113,7 +126,7 @@ impl McpFs for Reader<'_> {
     }
 }
 
-fn sources(cfg: &crate::config::Config, p: &Probes) -> Vec<Source> {
+fn sources(cfg: &crate::config::Config, p: &Probes, plugins: &[(String, PathBuf)]) -> Vec<Source> {
     let mut out: Vec<Source> = Vec::new();
     let cwd = p.env.cwd().filter(|d| !d.as_os_str().is_empty());
     for agent in crate::agents::HOSTS
@@ -123,7 +136,7 @@ fn sources(cfg: &crate::config::Config, p: &Probes) -> Vec<Source> {
         for v in agent.variants() {
             for s in crate::agents::mcp::surfaces(agent, cfg, v.kind) {
                 let set = format!("{}:{}", agent.id(), s.label);
-                let mut add = |spec: McpSpec, scope| {
+                let mut add = |spec: McpSpec, scope, plugin| {
                     let seen = |o: &Source| {
                         o.set == set
                             && o.spec.config_path == spec.config_path
@@ -135,6 +148,7 @@ fn sources(cfg: &crate::config::Config, p: &Probes) -> Vec<Source> {
                             set: set.clone(),
                             spec,
                             scope,
+                            plugin,
                         });
                     }
                 };
@@ -150,10 +164,18 @@ fn sources(cfg: &crate::config::Config, p: &Probes) -> Vec<Source> {
                             .into(),
                         ..s.spec.clone()
                     };
-                    add(project, Scope::Project);
-                    add(local, Scope::Local);
+                    add(project, Scope::Project, None);
+                    add(local, Scope::Local, None);
+                    for (id, dir) in plugins {
+                        let spec = McpSpec {
+                            config_path: dir.join(".mcp.json"),
+                            key_path: vec!["mcpServers".into()],
+                            ..s.spec.clone()
+                        };
+                        add(spec, Scope::Plugin, Some((id.clone(), dir.clone())));
+                    }
                 }
-                add(s.spec, Scope::User);
+                add(s.spec, Scope::User, None);
             }
         }
     }
@@ -228,21 +250,40 @@ fn launch(entry: &Value, p: &Probes) -> Option<(String, String, Option<String>)>
     Some((shown, format!("{program} {rest:?} {env:?}"), None))
 }
 
-fn entries(cfg: &crate::config::Config, p: &Probes) -> Vec<Srv> {
+/// `${CLAUDE_PLUGIN_ROOT}` in every string of a plugin's entry, as Claude Code resolves it.
+fn expand_root(v: &mut Value, root: &str) {
+    match v {
+        Value::String(s) => *s = s.replace("${CLAUDE_PLUGIN_ROOT}", root),
+        Value::Array(a) => a.iter_mut().for_each(|x| expand_root(x, root)),
+        Value::Object(o) => o.values_mut().for_each(|x| expand_root(x, root)),
+        _ => {}
+    }
+}
+
+fn entries(cfg: &crate::config::Config, p: &Probes, plugins: &[(String, PathBuf)]) -> Vec<Srv> {
     let mut out = Vec::new();
-    for s in sources(cfg, p) {
+    for s in sources(cfg, p, plugins) {
         // A file that does not parse is `agents info`'s to report, not a duplicate check's.
         let Ok(Some(servers)) = config::read_servers(&Reader(p.fs), &s.spec) else {
             continue;
         };
         for (name, entry) in &servers {
-            if let Some((shown, key, version)) = launch(entry, p) {
+            let mut entry = entry.clone();
+            // Claude Code scopes a plugin's server as `plugin:<plugin>:<server>`.
+            let name = match &s.plugin {
+                Some((id, dir)) => {
+                    expand_root(&mut entry, &dir.display().to_string());
+                    format!("plugin:{}:{name}", id.split('@').next().unwrap_or(id))
+                }
+                None => name.clone(),
+            };
+            if let Some((shown, key, version)) = launch(&entry, p) {
                 out.push(Srv {
                     agent: s.agent,
                     set: s.set.clone(),
                     source: s.spec.config_path.display().to_string(),
                     path: format!("{}.{name}", s.spec.key_path.join(".")),
-                    name: name.clone(),
+                    name,
                     shown,
                     key,
                     version,
@@ -265,15 +306,20 @@ fn problem(s: &Srv, kind: &'static str, group: u32, keep: bool, detail: String) 
         matcher: None,
         command: s.shown.clone(),
         detail,
-        fixable: kind == "duplicate-mcp",
+        // The plugin owns its `.mcp.json` (T331.11).
+        fixable: kind == "duplicate-mcp" && s.scope != Scope::Plugin,
         group: Some(group),
         keep,
     }
 }
 
 /// Every group of copies, shadowed entries and version conflicts as one finding per entry.
-pub fn check(cfg: &crate::config::Config, p: &Probes) -> Vec<Problem> {
-    let all = entries(cfg, p);
+pub fn check(
+    cfg: &crate::config::Config,
+    p: &Probes,
+    plugins: &[(String, PathBuf)],
+) -> Vec<Problem> {
+    let all = entries(cfg, p, plugins);
     let mut out = Vec::new();
     let mut group = 0u32;
     let mut next = || {
@@ -422,6 +468,10 @@ mod tests {
     }
 
     fn run(m: &Mock) -> Vec<Problem> {
+        run_with(m, &[])
+    }
+
+    fn run_with(m: &Mock, plugins: &[(String, PathBuf)]) -> Vec<Problem> {
         check(
             &cfg(),
             &Probes {
@@ -429,7 +479,14 @@ mod tests {
                 env: m,
                 which: m,
             },
+            plugins,
         )
+    }
+
+    fn plugin(m: &mut Mock, id: &str, mcp: &str) -> Vec<(String, PathBuf)> {
+        let dir = PathBuf::from("/h/plug").join(id.split('@').next().unwrap());
+        m.files.insert(dir.join(".mcp.json"), mcp.into());
+        vec![(id.to_string(), dir)]
     }
 
     fn user(m: &mut Mock, servers: &str) {
@@ -571,6 +628,86 @@ mod tests {
         assert!(found[1].path.starts_with("projects./proj.mcpServers"));
         assert!(found[0].detail.contains("unused"), "{}", found[0].detail);
         assert!(found.iter().all(|p| p.fixable));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_server_and_a_hand_written_copy_are_a_group_that_keeps_the_plugin() {
+        let mut m = Mock::default();
+        user(
+            &mut m,
+            r#""mine": {"command": "/h/plug/demo/bin/srv", "args": ["--x"]},
+               "other": {"command": "/bin/o"}"#,
+        );
+        let plugins = plugin(
+            &mut m,
+            "demo@mkt",
+            r#"{"mcpServers": {"srv": {"command": "${CLAUDE_PLUGIN_ROOT}/bin/srv", "args": ["--x"]},
+                               "other": {"command": "/bin/different"}}}"#,
+        );
+        let found = run_with(&m, &plugins);
+        assert_eq!(
+            shape(&found),
+            [
+                ("duplicate-mcp", "mine".into(), false),
+                ("duplicate-mcp", "plugin:demo:srv".into(), true)
+            ]
+        );
+        assert_eq!(
+            found[1].detail,
+            "runs 2 times; keep this copy (enabled plugin)"
+        );
+        assert_eq!(found[1].source, "/h/plug/demo/.mcp.json");
+        assert_eq!(found[1].command, "/h/plug/demo/bin/srv --x");
+        // A plugin's file is never ours to rewrite; the hand-written copy is (T331.6).
+        assert_eq!(
+            found.iter().map(|p| p.fixable).collect::<Vec<_>>(),
+            [true, false]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_server_is_not_shadowed_by_a_same_name_entry_and_rtoks_own_is_skipped() {
+        let mut m = Mock::default();
+        user(&mut m, r#""srv": {"command": "/bin/a"}"#);
+        let plugins = plugin(
+            &mut m,
+            "demo@mkt",
+            r#"{"mcpServers": {"srv": {"command": "/bin/b"},
+                               "rtok": {"command": "rtok", "args": ["mcp"]}}}"#,
+        );
+        assert!(run_with(&m, &plugins).is_empty());
+        // Without the plugin in the enabled set its file is not read, whatever it holds.
+        assert!(run_with(&m, &[]).is_empty());
+        user(&mut m, r#""srv": {"command": "/bin/b"}"#);
+        assert_eq!(run_with(&m, &plugins).len(), 2);
+        assert!(run_with(&m, &[]).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn two_plugins_providing_one_launch_keep_the_first_and_a_missing_file_is_skipped() {
+        let mut m = Mock::default();
+        let mut plugins = plugin(
+            &mut m,
+            "a@mkt",
+            r#"{"mcpServers": {"s": {"command": "npx", "args": ["-y", "pkg@1"]}}}"#,
+        );
+        plugins.extend(plugin(
+            &mut m,
+            "b@mkt",
+            r#"{"mcpServers": {"s": {"command": "npx", "args": ["-y", "pkg@1"]}}}"#,
+        ));
+        plugins.push(("c@mkt".into(), "/h/plug/c".into()));
+        let found = run_with(&m, &plugins);
+        assert_eq!(
+            shape(&found),
+            [
+                ("duplicate-mcp", "plugin:a:s".into(), true),
+                ("duplicate-mcp", "plugin:b:s".into(), false)
+            ]
+        );
     }
 
     #[cfg(unix)]
