@@ -118,6 +118,7 @@ Project programs and direct packages from the manifests.
 | pathdiff | local | https://crates.io/crates/pathdiff | Relative path between two paths |
 | printpdf | local | https://crates.io/crates/printpdf | Rust dependency |
 | proptest | local | https://crates.io/crates/proptest | T331.5: property test that `doctor --fix` leaves every byte outside the removed hook unchanged |
+| portable-pty | local | https://crates.io/crates/portable-pty | T331.7: pseudo-terminal for the `doctor --fix` checklist test (dev-dependency) |
 | ratatui | local | https://crates.io/crates/ratatui | TUI |
 | regex | local | https://crates.io/crates/regex | Rust dependency |
 | reqwest | local | https://crates.io/crates/reqwest | HTTP |

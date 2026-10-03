@@ -4971,6 +4971,19 @@ Result: `rtok doctor --fix` removes the extra copies of duplicate hooks and dupl
 Status: done 2026-10-03
 Model: Claude Code / claude-sonnet-5-5
 
+### T331.7. Doctor: interactive checklist, docs and property tests
+
+Part of T331. The terminal checklist with the injected `Prompt` trait (project files pre-unselected, toggles, change the kept copy, per-file diff, confirmation), `docs/agents.md` and the help text, the `proptest` invariants and the pseudo-terminal test. The "Fix selected" action on the web doctor page moved to T331.12; `docs/ru/` and `docs/uk/` do not exist. Depends on T331.6.
+
+Check: the scripted-prompt scenarios, the property tests, the pty test; `just check`.
+
+Execution (2026-10-03): (1) `doctor::checklist` holds the `Prompt` trait (`ask(screen) -> Option<line>`), the `Terminal` implementation (stdout and stdin) and the line-based checklist: a number toggles an item, `k N` makes copy N the kept one of its duplicate, `d` shows the diff of the current selection, `y` shows it again and asks `Write N change(s)? [y/N]`, `q` or the end of input cancels. A hook that is both broken and an extra copy is one line. Items in a shared project file (under the working directory, not `.local`, and the working directory is not `$HOME`) start unselected. (2) `fix::fix_found` is the T331.6 pipeline over a list of findings minus the deselected `(source, path)` keys; `fix_for` is now a wrapper, and `fix::interactive` runs the checklist and then `fix_found` with the writer. `fixable` of a duplicate now means "may be removed when it is not the kept copy" (the file is the user's JSON), so a swapped keep stays removable; a kept copy the user may not edit, a server the host resolves by scope, and a broken hook refuse `k`. (3) The CLI opens the checklist only when `--fix` runs without `--yes` on a terminal for both stdin and stdout; pipes, CI and `--yes` keep the dry run and the default selection of T331.6. (4) No prompt crate was added: the project has none and the checklist is line-based. `portable-pty` is a dev-dependency for the pseudo-terminal test.
+
+Result: `rtok doctor --fix` on a terminal asks what to remove and writes only what was confirmed. Tests: scripted-prompt scenarios (project file unselected, toggles, cancel, EOF, `n` at the confirmation, unknown answers, `k N`, refusals), a proptest over random answer lists (a duplicate never loses its last copy, an unrelated hook never moves), and two tests on a real pseudo-terminal (confirm and write, quit and write nothing).
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5-5
+
 ### T305. stats archive replay no longer double-counts short bodies
 
 `replay_ctt` (`src/measure/stats.rs`), which estimates what `rtok stats` calls `archive replay (estimate)` — the CTT the `archive` plugin (T5.3) leaves behind once a tool result ages past `keep_turns` — modelled the kept lines as `lines.iter().take(head_lines)` chained with `lines.iter().rev().take(tail_lines)`. When a result had fewer lines than `head_lines + tail_lines` (a single huge line, for example) the two slices overlapped, so `kept` counted those lines up to 2x and the estimate could land above not archiving at all. Fixed to mirror `archive::pointer`'s own guard: when `lines.len() <= head + tail`, sum each line once — through `archive::clip`, the same per-line truncation `pointer` applies — instead of taking overlapping head/tail slices; every shown line (head and tail too) goes through `archive::clip`, as `pointer` does. Also: the stats tests' `tempfile_dir` named directories by pid + nanos only, and macOS clocks tick in microseconds, so two parallel tests could share one directory (`compact_boundary_counts_once_per_event` failed intermittently); a counter now keeps them apart.

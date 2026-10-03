@@ -114,7 +114,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l agent -d 'Check (an
 complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l instructions -d 'Also run the instruction-file audit (T7.2)'
 complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l json -d 'JSON instead of the table'
-complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l fix -d 'Remove broken hooks and the extra copies of duplicate hooks and MCP entries; prints the diff, writes only with --yes'
+complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l fix -d 'Clean up broken hooks and duplicate hooks and MCP entries: a terminal gets a checklist, a pipe the diff; --yes writes without asking'
 complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l yes -d 'With --fix: write the changes (a copy goes to `_backup/` first)'
 complete -c rtok -n "__fish_rtok_using_subcommand doctor" -l dry-run -d 'With --fix --yes: print the diffs and write nothing'
 complete -c rtok -n "__fish_rtok_using_subcommand doctor" -s h -l help -d 'Print help'
