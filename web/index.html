@@ -7,20 +7,7 @@
   <meta name="theme-color" content="#06101A">
   <title>rtok</title>
   <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
-  <script>
-    // Theme before first paint, same localStorage key the Slint UI and the design
-    // reference use ('rtok-theme'); default follows prefers-color-scheme (T60.9).
-    (function () {
-      var s = null;
-      try { s = localStorage.getItem('rtok-theme'); } catch (e) {}
-      var dark = s ? s === 'dark' : !matchMedia('(prefers-color-scheme: light)').matches;
-      var root = document.documentElement;
-      root.classList.toggle('dark', dark);
-      root.classList.toggle('light', !dark);
-      root.setAttribute('data-theme', dark ? 'dark' : 'light');
-      try { if (localStorage.getItem('rtok-opaque') === 'on') root.classList.add('opaque'); } catch (e) {}
-    })();
-  </script>
+  <script src="/theme-init.js"></script>
 </head>
 <body>
   <div id="root"></div>

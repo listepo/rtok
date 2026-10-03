@@ -1,9 +1,8 @@
 # The binary crate is the workspace root (T23.1, D25). `rtok-plugin-sdk` is the published
-# plugin contract; `crates/rtok-webui` is excluded because it builds for wasm through its own
-# toolchain and must not join `cargo test` here; `fuzz` is the nightly-only cargo-fuzz crate.
+# plugin contract; `fuzz` is the nightly-only cargo-fuzz crate and stays out of `cargo test`.
 [workspace]
 members = ["crates/rtok-agent-sdk", "crates/rtok-hook", "crates/rtok-log", "crates/rtok-mcp", "crates/rtok-plugin-sdk", "crates/rtok-sys", "crates/rtok-wasm-demo-guest"]
-exclude = ["crates/rtok-webui", "fuzz"]
+exclude = ["fuzz"]
 
 [workspace.package]
 license = "GPL-3.0-or-later"
@@ -129,7 +128,8 @@ printpdf = "0.12.8" # paged-PDF renderer for `rtok report --format pdf` (T22.0 s
 regex = "1" # search pattern (T4.5)
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time", "fs"] }
 axum = { version = "0.8.9", features = ["ws"] } # dashboard WebSocket (P19); proxy HTTP unchanged
-tower-http = { version = "0.7", features = ["fs"] } # ServeDir for Slint WASM assets
+rust-embed = { version = "8.12", default-features = false, features = ["debug-embed", "interpolate-folder-path"] } # the React SPA inside the binary, every profile (T310.9)
+mime_guess = "2" # Content-Type for the SPA's files, embedded or read from RTOK_WEB_DIST
 futures-util = "0.3.34"
 ratatui = "0.30.2" # `rtok tui`, the terminal rendering of the D23 model (T15.1); default backend is crossterm
 crossterm = "0.29" # key and tick events for the TUI loop (T15.1); same major as ratatui 0.30's backend, so one copy links

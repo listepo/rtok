@@ -1,6 +1,6 @@
 /* rtok SPA — Tailwind CSS v4 entry.
- * Tokens: ./tokens.css, verbatim copy of design/html/css/tokens.css (design tokens).
- * @theme mapping below is ported from design/html/css/tailwind-v4.css. */
+ * Tokens: ./tokens.css (the design tokens). The @theme mapping below
+ * maps them onto Tailwind's scales. */
 @import "tailwindcss";
 @import "./tokens.css";
 @import "./fonts.css";
@@ -109,7 +109,7 @@
 }
 html.opaque .glass { background: var(--rtok-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
 
-/* Orb strength per theme and viewport, values from design/html/css/app.css. */
+/* Orb strength per theme and viewport, tuned by eye against the dark and light themes. */
 :root { --orb-opacity: 0.22; }
 :root.dark, :root[data-theme="dark"] { --orb-opacity: 0.42; }
 @media (max-width: 767px) {

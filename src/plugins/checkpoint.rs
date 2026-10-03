@@ -413,7 +413,7 @@ mod tests {
     /// its size, and the prompt list keeps only what the human typed.
     #[test]
     fn injected_skill_bodies_are_listed_not_quoted() {
-        let body = "Base directory for this skill: /home/u/.claude/skills/slint\n\n# Slint\n"
+        let body = "Base directory for this skill: /home/u/.claude/skills/pixel\n\n# Pixel\n"
             .to_string()
             + &"x".repeat(5000);
         let lines = [
@@ -426,7 +426,7 @@ mod tests {
         .join("\n");
         let cp = extract(&lines);
         assert_eq!(cp.skills.len(), 2, "{:?}", cp.skills);
-        assert_eq!(cp.skills[0].0, "slint");
+        assert_eq!(cp.skills[0].0, "pixel");
         assert_eq!(cp.skills[0].1, body.len() as u64);
         assert_eq!(cp.skills[1].0, "ponytail");
         assert_eq!(
@@ -434,7 +434,7 @@ mod tests {
             ["make it blue", "Base directory for this skill: /x/y"]
         );
         let text = cp.render();
-        assert!(text.contains("skills loaded before compaction: slint (5.0 KB), ponytail (0.1 KB) — re-invoke only what the next step needs\n"), "{text}");
+        assert!(text.contains("skills loaded before compaction: pixel (5.0 KB), ponytail (0.1 KB) — re-invoke only what the next step needs\n"), "{text}");
         assert!(!text.contains("xxxx"), "{text}");
     }
 
@@ -782,7 +782,7 @@ mod tests {
     #[test]
     fn prefilter_is_a_true_superset_on_fixtures_and_a_large_transcript() {
         let skill_fixture = {
-            let body = "Base directory for this skill: /home/u/.claude/skills/slint\n\n# Slint\n"
+            let body = "Base directory for this skill: /home/u/.claude/skills/pixel\n\n# Pixel\n"
                 .to_string()
                 + &"x".repeat(5000);
             [
