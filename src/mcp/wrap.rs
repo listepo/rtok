@@ -91,7 +91,7 @@ pub fn run(cfg: &Config, argv: &[String]) -> Result<i32> {
             break;
         }
     }
-    Ok(child.wait()?.code().unwrap_or(1))
+    Ok(crate::proc::exit_code(child.wait()?).unwrap_or(1))
 }
 
 /// One frame's JSON body without its framing, or (`Framing::Raw`) the exact bytes of a

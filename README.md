@@ -14,7 +14,7 @@ exist — including rtok's own.
 
 ## Install
 
-macOS on Apple silicon or Intel, and Linux x86-64. The script is POSIX `sh`, so it behaves the
+macOS on Apple silicon, and Linux x86-64. The script is POSIX `sh`, so it behaves the
 same whether your shell is bash or zsh; it puts `rtok` in `~/.cargo/bin`.
 
 ```bash
@@ -330,6 +330,7 @@ Batch, Flex, and model routing on the proxy (pass-through vs rewrite, what is pl
 | `rtok proxy` | capture API usage; optionally archive older tool results |
 | `rtok web` | local Slint/WASM UI + WebSocket API at `http://127.0.0.1:3333` (default `[web] host`/`port`; `--host`, `--port`; `rtok dashboard` is the deprecated spelling). Open it as `127.0.0.1`/`localhost`: `/ws` refuses cross-site and DNS-name origins |
 | `rtok stats` | report transcript and proxy measurements |
+| `rtok agents usage` | tokens and estimated cost per agent and month or day, from what passed through rtok (`--tz`, `--since`, `--daily`, `--unpriced`, `--json`) |
 | `rtok bench` | run the fixed A/B schedule |
 | `rtok doctor` | inspect hooks, MCP servers and the proxy chain |
 | `rtok worktree add <task-id> [<slug>] [--owner "<provider> / <model>"] [--agent <id>]` | create the task's worktree at `<root>/<repo>-<task-id>` on branch `<task-id>[-<slug>]` from a freshly fetched `origin/<default>`, locked with `<owner> \| <task-id> \| <date>[ \| agent <uuid>]`, no upstream; prints the path; binds it to the calling rtok agent (`--agent`, else `RTOK_AGENT_ID`) in the lock and the store, and `--owner` then defaults to `<host> / <model>`; refuses a second worktree for the same task or a root under a temp directory (`[worktree] root`) |
