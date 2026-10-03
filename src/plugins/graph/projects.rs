@@ -20,8 +20,8 @@ use crate::store::{LinkKind, Origin, Project, Store};
 
 /// `graph status` numbers for one project; absent for a missing root, which has nothing
 /// readable to count.
-#[derive(Serialize)]
-struct Index {
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ProjectIndex {
     rows: i64,
     files: i64,
     pending: usize,
@@ -30,16 +30,17 @@ struct Index {
 }
 
 /// One outgoing link of a project.
-#[derive(Serialize)]
-struct LinkRow {
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ProjectLink {
     to: i32,
     name: String,
     kind: LinkKind,
     reason: Option<String>,
 }
 
-#[derive(Serialize)]
-struct Row {
+/// One registry row as `graph projects` prints it and the `/ws` snapshot carries it.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ProjectRow {
     id: i32,
     name: String,
     root: String,
@@ -49,11 +50,11 @@ struct Row {
     state: &'static str,
     created_at: i64,
     last_used_at: i64,
-    index: Option<Index>,
-    links: Vec<LinkRow>,
+    index: Option<ProjectIndex>,
+    links: Vec<ProjectLink>,
 }
 
-fn link_rows(store: &Store, from: i32) -> Result<Vec<LinkRow>> {
+fn link_rows(store: &Store, from: i32) -> Result<Vec<ProjectLink>> {
     let mut out = Vec::new();
     for l in store
         .project_links()?
@@ -63,7 +64,7 @@ fn link_rows(store: &Store, from: i32) -> Result<Vec<LinkRow>> {
         let name = store
             .project(l.to)?
             .map_or_else(|| l.to.to_string(), |p| p.display_name().to_string());
-        out.push(LinkRow {
+        out.push(ProjectLink {
             to: l.to,
             name,
             kind: l.kind,
@@ -73,14 +74,14 @@ fn link_rows(store: &Store, from: i32) -> Result<Vec<LinkRow>> {
     Ok(out)
 }
 
-fn row(rt: &Runtime, p: Project) -> Result<Row> {
+fn row(rt: &Runtime, p: Project) -> Result<ProjectRow> {
     let cx = &Ctx::new(rt);
     let missing = p.missing();
     let index = if missing {
         None
     } else {
         let s = status::collect(cx, Path::new(&p.root))?;
-        Some(Index {
+        Some(ProjectIndex {
             rows: s.rows,
             files: s.files,
             pending: s.pending.len(),
@@ -94,7 +95,7 @@ fn row(rt: &Runtime, p: Project) -> Result<Row> {
         Some(i) if i.pending > 0 => "stale",
         Some(_) => "ok",
     };
-    Ok(Row {
+    Ok(ProjectRow {
         id: p.id,
         name: p.display_name().to_string(),
         root: p.root,
@@ -109,7 +110,7 @@ fn row(rt: &Runtime, p: Project) -> Result<Row> {
     })
 }
 
-fn render(rows: &[Row], json: bool) -> Result<String> {
+fn render(rows: &[ProjectRow], json: bool) -> Result<String> {
     if json {
         return Ok(serde_json::to_string_pretty(rows)? + "\n");
     }
@@ -133,7 +134,7 @@ fn render(rows: &[Row], json: bool) -> Result<String> {
     ];
     let mut cells = vec![head.map(String::from).to_vec()];
     for r in rows {
-        let n = |f: fn(&Index) -> String| r.index.as_ref().map_or("-".into(), f);
+        let n = |f: fn(&ProjectIndex) -> String| r.index.as_ref().map_or("-".into(), f);
         cells.push(vec![
             if r.selected { "*" } else { "" }.into(),
             r.id.to_string(),
@@ -155,14 +156,16 @@ fn render(rows: &[Row], json: bool) -> Result<String> {
         .collect())
 }
 
-fn list(rt: &Runtime, json: bool) -> Result<String> {
-    let rows = rt
-        .store
+pub fn rows(rt: &Runtime) -> Result<Vec<ProjectRow>> {
+    rt.store
         .projects()?
         .into_iter()
         .map(|p| row(rt, p))
-        .collect::<Result<Vec<_>>>()?;
-    render(&rows, json)
+        .collect()
+}
+
+fn list(rt: &Runtime, json: bool) -> Result<String> {
+    render(&rows(rt)?, json)
 }
 
 /// `<id|path>`: a number naming a known project is its id, anything else is a directory.
@@ -323,7 +326,7 @@ mod tests {
 
     #[test]
     fn nothing_registered_says_how_to_add() {
-        let rows: Vec<Row> = Vec::new();
+        let rows: Vec<ProjectRow> = Vec::new();
         assert!(render(&rows, false).unwrap().contains("graph projects add"));
         assert_eq!(render(&rows, true).unwrap(), "[]\n");
     }

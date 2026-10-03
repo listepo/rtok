@@ -33,7 +33,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T290 | todo | P1 | 3 | 0% | |
 | T310 | todo | P1 | 5 | 0% | |
 | T310.7 | todo | P2 | 3 | 0% | |
-| T310.8 | todo | P2 | 3 | 0% | |
 | T310.9 | todo | P1 | 4 | 0% | |
 | T310.10 | todo | P1 | 3 | 0% | |
 | T310.11 | todo | P2 | 3 | 0% | |
@@ -45,14 +44,13 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T329.9 | todo | P2 | 4 | 0% | |
 | T329.10 | todo | P3 | 3 | 0% | |
 | T329.11 | todo | P2 | 3 | 0% | |
-| T329.12 | todo | P2 | 3 | 0% | |
-| T329.13 | todo | P2 | 4 | 0% | |
 | T329.14 | todo | P2 | 4 | 0% | |
 | T329.15 | todo | P3 | 5 | 0% | |
 | T329.16 | todo | P3 | 3 | 0% | |
 | T329.17 | todo | P3 | 3 | 0% | |
 | T329.18 | todo | P3 | 4 | 0% | |
 | T329.19 | todo | P3 | 3 | 0% | |
+| T329.20 | todo | P2 | 2 | 0% | |
 | T330 | todo | P2 | 4 | 0% | |
 | T330.2 | todo | P2 | 3 | 0% | |
 | T330.3 | todo | P2 | 3 | 0% | |
@@ -594,10 +592,6 @@ Check: `rtok web` from a release build shows every page of `model::pages()` from
 
 Check: each page matches `design/html/admin/<page>.html` in dark and light at 375 and 1280 px on sample data; stories and Vitest for page logic.
 
-### T310.8. Pages: skills, stats, graph, hosts, config, services, worktrees
-
-Check: each page matches `design/html/admin/<page>.html` in dark and light at 375 and 1280 px on sample data; stories and Vitest for page logic.
-
 ### T310.9. Serve the SPA from `rtok web`
 
 Embed `web/dist` in the binary (hashed assets, precompressed, SPA fallback, CSP), keep `RTOK_WEB_PKG`-style dev override for a local `dist`, build the SPA in CI and release before cargo. Rewrite `tests/web.rs`, `tests/web_e2e.rs`, `tests/release_bundle.rs` and `tests/surface_parity.rs` for the SPA (parity reads the SPA's page list).
@@ -628,7 +622,7 @@ Ivan, 2026-10-01: in the web UI's graph tab, the graph is built for a project th
 
 Today the graph plugin (`src/plugins/graph/`) always works on one root: the process's current directory. The index is keyed by that root (`index::canon(root)` in `src/store/symbols.rs`), and the MCP tools `symbol`, `callers`, `impact`, `outline` and `explore`, plus `dead` and `affected`, only see that root. The graph page shows the same single root (`root .`). There is no way to pick another project and no way to follow a call into a dependency's source.
 
-Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.19 in dependency order (T329.1 to T329.3 are already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
+Split (2026-10-03, complexity 5): one subtask = one PR, T329.1 to T329.20 in dependency order (T329.1 to T329.3 and T329.12 are already in `done.md`). This card stays the specification; each subtask reads the section it names and updates `docs/` (en, ru, uk) for its own part. Open questions T334, T336 and T337 gate T329.9, T329.4 and T329.11/T329.17.
 
 #### Terms
 
@@ -979,18 +973,6 @@ T329 §6b: an in-memory per-project (and language) record of which mode works, s
 
 Check: a test counts probes, 100 requests after the first run zero lookups or spawns; restarting picks up a newly installed server; a `backend` change re-checks only affected projects; concurrent first requests run one check; `just check`.
 
-### T329.12. `/ws` project messages and the SPA graph page selector, indicator and links panel
-
-T329 §2, §3, §5 page parts and §8 `/ws` messages (project list, selection changed, links changed, per-project index progress). Builds on the SPA graph page of T310.8 (PR #655): selector with search above about ten projects, current-project header with the index status and the not-indexed/indexing/stale/failed/missing states, links panel with link, unlink and "link both ways", project badges in the lists, selection synced between tabs. Playwright covers it. Depends on T329.3, T310.8.
-
-Check: Playwright covers the selector, the indicator and its five states, link and unlink, project badges and selection syncing between two tabs; Vitest for the reducers; `just check`.
-
-### T329.13. Graph page level 1: 3D projects overview (Three.js, 2D fallback)
-
-T329 §8a level 1 and the rendering section: node per project, edges per link (dashed auto, solid manual, thickness by cross-project references), scope emphasis, node menu, filter, clustered layout above about 50 projects, 3D with Three.js (pick the library, record it and its bundle size in `toolchain.md`) with the 2D fallback and toggle, layout in a web worker, disposal on leaving the page, list view for accessibility. Depends on T329.12.
-
-Check: Vitest for the data-to-scene mapping without WebGL; Playwright with software WebGL sees a non-empty canvas, selects a node by click and shows the 2D fallback and notice with WebGL off; the 2D/3D choice survives a reload; `just check`.
-
 ### T329.14. Graph page level 2: drill-down into one project
 
 T329 §8a level 2: files, modules, types and functions with contains/calls/implements/imports edges, URL-carried drill-down state and breadcrumb, expand and focus, calls into linked projects ending at that project's node, side panel, search-to-focus, the 500-node cap with "+N more", live updates under `watch`. Depends on T329.13, T329.5.
@@ -1026,6 +1008,12 @@ Check: a signature change in B shows in `rtok graph diff --from HEAD` from A wit
 T329 §8f: the 0 to 100 score with freshness, backend and link components, reasons and fixes, the scope's lowest score, the MCP health note and the `rtok doctor` list. Depends on T329.11.
 
 Check: a fully indexed A with LSP and intact links scores 100; 30% of files pending drops it below 80 with the reason; tree-sitter fallback reads 0.6 on the backend component; a broken link lowers the links component; the scope shows the lowest score; `just check`.
+
+### T329.20. SPA graph page links panel: link, unlink, both ways, project badges
+
+Second half of the original T329.12 (split because the whole was over 300 LOC). Adds `ProjectRequest::Link` and `Unlink` (`from`, `to`, `both`) to the `/ws` protocol, handled in `project_write` through `graph::projects::run` as `rtok graph projects link` and `unlink` do; the links panel under the current-project header (linked projects with their kind and reason, an unlink button each, a "link to" picker and "both ways" for the rest); the reducer cases for the sample server; project badges in the lists once T329.4 and T329.5 scope them. The full first draft of this half is on the local branch `t329.20-spa-links-panel` (commit `d8e0d14a`, never pushed): reuse it, rebase it on `main` once T329.12 lands, and re-check it against the schema. Depends on T329.12, T329.3.
+
+Check: Vitest for the link and unlink requests (a pushed snapshot shows the result), a Storybook play through the sample server (link both ways, unlink), the `/ws` integration test with link and unlink, `just check`.
 
 ### T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
 

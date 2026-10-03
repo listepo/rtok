@@ -76,6 +76,9 @@ Project programs and direct packages from the manifests.
 | @testing-library/react | local | https://github.com/testing-library/react-testing-library | T310.4: renders the shell and routes in Vitest |
 | @testing-library/dom | local | https://github.com/testing-library/dom-testing-library | T310.4: peer of @testing-library/react (queries, events) |
 | happy-dom | local | https://github.com/capricorn86/happy-dom | T310.4: DOM for component tests (`// @vitest-environment happy-dom`, faster than jsdom) |
+| three | local | https://github.com/mrdoob/three.js | T329.13: WebGL scene of the projects overview (lazy chunk `Scene3D`, 575 kB, 143 kB gzip; the first bundle does not grow) |
+| d3-force-3d | local | https://github.com/vasturiano/d3-force-3d | T329.13: force layout run in a web worker (`layout.worker`, 29 kB); `3d-force-graph` would simulate on the main thread, and this is the engine it uses. Last push 2025-04-09, so watch its upkeep |
+| @types/three | local | https://github.com/DefinitelyTyped/DefinitelyTyped | T329.13: Three.js types |
 
 ## cargo
 
