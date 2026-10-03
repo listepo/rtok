@@ -5,7 +5,8 @@
 // Offline data source (`?sample`) and the snapshot fixture shared by Storybook, Vitest and
 // offline e2e. Typed as `Snapshot`, so a schema change breaks `tsc` here instead of drifting.
 import type { Connect, Connection } from "./ws";
-import { call, plugin, stats } from "./sampleRows";
+import { call, plugin, project, stats } from "./sampleRows";
+import { applyProject } from "../pages/projectLogic";
 import type { Report, Snapshot } from "./snapshot.gen";
 // The text pages have no live source offline, so `?sample` shows the same made-up text the
 // page stories use; every value is sample data.
@@ -173,6 +174,13 @@ export const sampleSnapshot: Snapshot = {
   config: configText,
   doctor,
   graph: graphText,
+  projects: [
+    project(1, "rtok", {
+      selected: true,
+      links: [{ kind: "manual", name: "ketch", reason: "shared store", to: 2 }],
+    }),
+    project(2, "ketch", { state: "stale", index: null }),
+  ],
   hosts: hostsText,
   logs: [
     "rtok hook PostToolUse ok 4 ms",
@@ -295,6 +303,14 @@ export const connectSample: Connect = (handlers) => {
       if ("expand" in message) {
         const { expand: id } = message;
         later(() => handlers.onFrame({ type: "expand", id, text: `sample payload for ${id}` }));
+        return true;
+      }
+      if ("project" in message) {
+        snapshot = {
+          ...snapshot,
+          projects: applyProject(snapshot.projects ?? [], message.project),
+        };
+        later(emit);
         return true;
       }
       const { key, value } = message.set;

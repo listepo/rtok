@@ -44,7 +44,9 @@ fn web_pages(cfg: &Config) -> Vec<String> {
         .as_object()
         .expect("frame is an object")
         .keys()
-        .filter(|key| *key != "type" && *key != "ref_ids") // envelope / T60.4 expand map, not pages
+        // Envelope, the T60.4 expand map and the T329.12 registry rows (data of the graph page,
+        // not a page of their own), not pages.
+        .filter(|key| !["type", "ref_ids", "projects"].contains(&key.as_str()))
         .map(|key| {
             model::pages()
                 .iter()
@@ -693,6 +695,30 @@ const EXEMPT: &[(&str, &str)] = &[
     ),
     ("graph impact", "need a target; CLI/MCP only"),
     ("graph affected", "need a target; CLI/MCP only"),
+    (
+        "graph projects",
+        "the registry's list and actions; the Graph page gets the selector in T329.12",
+    ),
+    (
+        "graph projects add",
+        "changes the registry; the selector is T329.12",
+    ),
+    (
+        "graph projects select",
+        "changes the registry; the selector is T329.12",
+    ),
+    (
+        "graph projects remove",
+        "changes the registry; the selector is T329.12",
+    ),
+    (
+        "graph projects link",
+        "changes the registry; the selector is T329.12",
+    ),
+    (
+        "graph projects unlink",
+        "changes the registry; the selector is T329.12",
+    ),
     (
         "logs export",
         "the same Logs selection, unnumbered and uncoloured",
