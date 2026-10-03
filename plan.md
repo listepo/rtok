@@ -46,7 +46,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T329.9 | todo | P2 | 4 | 0% | |
 | T329.10 | todo | P3 | 3 | 0% | |
 | T329.11 | todo | P2 | 3 | 0% | |
-| T329.13 | todo | P2 | 4 | 0% | |
 | T329.14 | todo | P2 | 4 | 0% | |
 | T329.15 | todo | P3 | 5 | 0% | |
 | T329.16 | todo | P3 | 3 | 0% | |
@@ -987,12 +986,6 @@ Check: a project in a language with no grammar answers from text search, tagged 
 T329 §6b: an in-memory per-project (and language) record of which mode works, single-flight first probes, downgrade once on failure, cleared for the affected projects when `backend` config changes, shown by `rtok graph projects --json` and the page. T337 (never re-probe vs alerts and health) must be answered first. Depends on T329.9.
 
 Check: a test counts probes, 100 requests after the first run zero lookups or spawns; restarting picks up a newly installed server; a `backend` change re-checks only affected projects; concurrent first requests run one check; `just check`.
-
-### T329.13. Graph page level 1: 3D projects overview (Three.js, 2D fallback)
-
-T329 §8a level 1 and the rendering section: node per project, edges per link (dashed auto, solid manual, thickness by cross-project references), scope emphasis, node menu, filter, clustered layout above about 50 projects, 3D with Three.js (pick the library, record it and its bundle size in `toolchain.md`) with the 2D fallback and toggle, layout in a web worker, disposal on leaving the page, list view for accessibility. Depends on T329.12.
-
-Check: Vitest for the data-to-scene mapping without WebGL; Playwright with software WebGL sees a non-empty canvas, selects a node by click and shows the 2D fallback and notice with WebGL off; the 2D/3D choice survives a reload; `just check`.
 
 ### T329.14. Graph page level 2: drill-down into one project
 

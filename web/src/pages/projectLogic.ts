@@ -18,7 +18,7 @@ const STATES: Record<string, { tone: PillTone; hint: string }> = {
   missing: { tone: "fail", hint: "the directory no longer exists" },
 };
 
-export function stateOf(p: ProjectRow) {
+export function stateOf(p: { state: string }) {
   return { label: p.state, ...(STATES[p.state] ?? { tone: "muted" as const, hint: "" }) };
 }
 
