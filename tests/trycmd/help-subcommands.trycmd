@@ -34,6 +34,8 @@ Options:
       --call <TOOL>    Call one listed tool and print the text result (pi `registerTool` shim,
                        T70.3)
       --json <ARGS>    JSON arguments for `--call`
+      --host <HOST>    The host this MCP entry belongs to (`claude`, `cursor`, `grok`, …): overlays
+                       `[hook] host` so the process can find its rtok agent (T283.1)
   -h, --help           Print help
 
 $ rtok proxy --help
