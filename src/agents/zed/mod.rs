@@ -100,7 +100,7 @@ impl Agent for Zed {
 
 /// The entry setup writes: the local-server shape from the Zed MCP docs.
 fn want_entry() -> Value {
-    json!({"command": super::rtok_command(), "args": ["mcp"]})
+    json!({"command": super::rtok_command(), "args": super::mcp_args("zed")})
 }
 
 /// True when `context_servers.rtok` is an object in the document (comments allowed); a
@@ -165,7 +165,7 @@ pub use super::jsonc::strip_comments;
 
 fn summary() -> String {
     let cmd = super::rtok_command();
-    format!("{cmd} mcp")
+    super::mcp_summary(&cmd, "zed")
 }
 
 #[cfg(test)]
@@ -195,7 +195,7 @@ mod tests {
         let (c, path) = cfg("dry", true);
         let out = register_mcp(&c).unwrap();
         assert!(out.starts_with("+ context_servers.rtok: "), "{out}");
-        assert!(out.ends_with(" mcp"), "{out}");
+        assert!(out.ends_with(" mcp --host zed"), "{out}");
         assert!(!path.exists());
         assert!(Zed.installed(&c, Kind::Cli).is_empty());
         let _ = fs::remove_dir_all(path.parent().unwrap());
@@ -208,7 +208,10 @@ mod tests {
         assert!(first.starts_with("+ context_servers.rtok: "), "{first}");
         assert_eq!(register_mcp(&c).unwrap(), NO_CHANGES);
         let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(root["context_servers"]["rtok"]["args"], json!(["mcp"]));
+        assert_eq!(
+            root["context_servers"]["rtok"]["args"],
+            json!(["mcp", "--host", "zed"])
+        );
         assert_eq!(Zed.installed(&c, Kind::Desktop), ["mcp"]);
         assert_eq!(unregister_mcp(&c).unwrap(), "- context_servers.rtok");
         assert!(!fs::read_to_string(&path).unwrap().contains("rtok"));
@@ -258,7 +261,10 @@ mod tests {
         assert!(raw.contains("// foreign"), "{raw}");
         assert!(raw.contains("\"other\""), "{raw}");
         let root: Value = serde_json::from_str(&strip_comments(&raw)).unwrap();
-        assert_eq!(root["context_servers"]["rtok"]["args"], json!(["mcp"]));
+        assert_eq!(
+            root["context_servers"]["rtok"]["args"],
+            json!(["mcp", "--host", "zed"])
+        );
         assert_eq!(root["context_servers"]["other"]["command"], "npx");
         assert_eq!(Zed.installed(&c, Kind::Cli), ["mcp"]);
 
@@ -323,7 +329,10 @@ mod tests {
         );
         assert!(raw.contains("\"other\""), "{raw}");
         let root = jsonc::parse(&raw).unwrap();
-        assert_eq!(root["context_servers"]["rtok"]["args"], json!(["mcp"]));
+        assert_eq!(
+            root["context_servers"]["rtok"]["args"],
+            json!(["mcp", "--host", "zed"])
+        );
         assert_eq!(root["context_servers"]["other"]["command"], "npx");
         assert_eq!(unregister_mcp(&c).unwrap(), "- context_servers.rtok");
         let raw = fs::read_to_string(&path).unwrap();
@@ -351,8 +360,25 @@ mod tests {
         assert!(raw.contains("// mine"), "{raw}");
         let root = jsonc::parse(&raw).unwrap();
         assert_eq!(root["theme"], json!("One Dark"));
-        assert_eq!(root["context_servers"]["rtok"]["args"], json!(["mcp"]));
+        assert_eq!(
+            root["context_servers"]["rtok"]["args"],
+            json!(["mcp", "--host", "zed"])
+        );
         assert_eq!(register_mcp(&c).unwrap(), NO_CHANGES);
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn an_entry_without_host_is_upgraded_and_still_removable() {
+        let (c, path) = cfg("legacy-host", false);
+        crate::agents::mcp::assert_legacy_entry_upgraded(
+            &path,
+            "// keep me\n{\"context_servers\": {\"other\": {\"command\": \"npx\"}, \"rtok\": {\"command\": \"rtok\", \"args\": [\"mcp\"]}}}\n",
+            "zed",
+            &["// keep me", "\"other\": {\"command\": \"npx\"}"],
+            || register_mcp(&c),
+            || unregister_mcp(&c),
+        );
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }

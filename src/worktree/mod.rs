@@ -11,7 +11,9 @@ pub mod claim;
 pub mod clean;
 pub mod gc;
 pub mod git;
+pub mod host;
 pub mod list;
+pub mod origin;
 pub mod remove;
 
 /// A `render::table` with one free-text note appended per line (after a `note` header),

@@ -403,8 +403,8 @@ pub fn agent_show_text(a: &AgentView, now: i64) -> String {
         .collect();
     format!(
         "id: {}\nhost: {}\nmodel: {}\nparent: {}\nsub-agents: {}\n\
-         cwd: {}\nworktree: {}\nstate: {}\nactivity: {}\nstatus: {}\nstarted: {}\n\
-         last seen: {} ({})\n",
+         cwd: {}\nworktree: {}\nclaimed: {}\nunread: {}\nstate: {}\nactivity: {}\nstatus: {}\n\
+         started: {}\nlast seen: {} ({})\n",
         d.id,
         d.host,
         or_dash(&a.model),
@@ -416,6 +416,12 @@ pub fn agent_show_text(a: &AgentView, now: i64) -> String {
         },
         or_dash(&d.cwd),
         or_dash(&a.worktree),
+        if a.worktrees.is_empty() {
+            "-".into()
+        } else {
+            a.worktrees.join(", ")
+        },
+        a.unread,
         a.state.as_str(),
         or_dash(&d.activity),
         or_dash(&d.status_text),

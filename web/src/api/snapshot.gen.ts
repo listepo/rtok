@@ -21,16 +21,29 @@ export type ClientMessage =
       doctor: DoctorRequest;
     };
 /**
- * The registry writes the graph page offers (links come with T329.20); `<project>` is an id or a
+ * The registry writes the graph page offers; `<project>` is an id or a
  * root path, as in `rtok graph projects`.
  *
  * This interface was referenced by `WsProtocol`'s JSON-Schema
  * via the `definition` "ProjectRequest".
  */
-export type ProjectRequest = {
-  action: "select";
-  project: string;
-};
+export type ProjectRequest =
+  | {
+      action: "select";
+      project: string;
+    }
+  | {
+      action: "link";
+      both: boolean;
+      from: string;
+      to: string;
+    }
+  | {
+      action: "unlink";
+      both: boolean;
+      from: string;
+      to: string;
+    };
 /**
  * This interface was referenced by `WsProtocol`'s JSON-Schema
  * via the `definition` "DoctorAction".
@@ -189,6 +202,7 @@ export interface Fixed {
  * via the `definition` "Snapshot".
  */
 export interface Snapshot {
+  agent_usage: UsagePage;
   /**
    * Calls page (T15.5): the last [`CALLS_ROWS`] ledger rows, newest first.
    */
@@ -282,6 +296,148 @@ export interface Snapshot {
    * stay CLI-only verdicts. `None` only when the current directory is unreadable.
    */
   worktrees: string | null;
+}
+/**
+ * Usage page (T358.5): what `rtok agents usage` reports, through [`usage_page`]. The
+ * overview's own `usage` key is the proxy's totals, so this one carries the page's name
+ * in its own words.
+ */
+export interface UsagePage {
+  report: Report2 | null;
+  text: string;
+}
+/**
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Report2".
+ */
+export interface Report2 {
+  agents: Agent[];
+  /**
+   * `--by model` only: the model rows the middle table shows instead of `agents`.
+   */
+  models?: ModelRow[] | null;
+  periods: Period[];
+  /**
+   * Hosts whose files exist but could not be read: named, counted nowhere.
+   */
+  skipped: Skipped[];
+  source: string;
+  /**
+   * The last day with usage, in `tz`.
+   */
+  through: string | null;
+  totals: Totals;
+  tz: string;
+  unpriced: Unpriced[];
+  /**
+   * Distinct model ids without a price.
+   */
+  unpriced_models: number;
+}
+/**
+ * Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in
+ * the row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Agent".
+ */
+export interface Agent {
+  cache_read: number;
+  cache_write: number;
+  cost_usd: number | null;
+  /**
+   * `both` only: `through_rtok_tokens` over the logs' tokens, so an agent that bypasses
+   * the proxy reads low. `None` when the logs hold no tokens for it.
+   */
+  coverage?: number | null;
+  host: string;
+  input: number;
+  name: string;
+  output: number;
+  saved_tokens?: number;
+  saved_usd?: number | null;
+  /**
+   * `both` only: tokens of this agent that also passed through rtok.
+   */
+  through_rtok_tokens?: number | null;
+  tokens: number;
+}
+/**
+ * Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in
+ * the row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "ModelRow".
+ */
+export interface ModelRow {
+  cache_read: number;
+  cache_write: number;
+  cost_usd: number | null;
+  input: number;
+  model: string;
+  output: number;
+  tokens: number;
+}
+/**
+ * Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in
+ * the row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Period".
+ */
+export interface Period {
+  cache_read: number;
+  cache_write: number;
+  cost_usd: number | null;
+  input: number;
+  output: number;
+  period: string;
+  tokens: number;
+}
+/**
+ * A host whose session files exist but could not be read: named once, counted nowhere.
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Skipped".
+ */
+export interface Skipped {
+  host: string;
+  path: string;
+  reason: string;
+}
+/**
+ * Token legs and the estimated cost of one table row. `cost_usd` is `None` when no model in
+ * the row has a price: `-` in the table, `null` in JSON, never `$0.00` (that means free).
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Totals".
+ */
+export interface Totals {
+  cache_read: number;
+  cache_write: number;
+  cost_usd: number | null;
+  /**
+   * Distinct `(agent, day)` pairs with usage, what ccusage calls daily rows.
+   */
+  daily_rows: number;
+  input: number;
+  output: number;
+  saved_tokens?: number;
+  saved_usd?: number | null;
+  /**
+   * Distinct session ids.
+   */
+  sessions: number;
+  tokens: number;
+}
+/**
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "Unpriced".
+ */
+export interface Unpriced {
+  host: string;
+  model: string;
+  tokens: number;
 }
 /**
  * One `calls` row as the Calls page serves it ([`Store::recent_calls`], T15.5): the
@@ -742,4 +898,18 @@ export interface SkillsPage1 {
    */
   header: string;
   rows: SkillPageRow[];
+}
+/**
+ * The Usage page: one [`usage::Report`] — the call `rtok agents usage` makes — read once and
+ * carried twice. `text` is that command's screen ([`usage::Report::to_text`]) for the tui and
+ * the Slint page; `report` is the same rows as data for the SPA's tables. Nothing is summed
+ * a second time (D27). Both are empty-handed while the first read runs or after it fails:
+ * `report` is `None` and `text` says why.
+ *
+ * This interface was referenced by `WsProtocol`'s JSON-Schema
+ * via the `definition` "UsagePage".
+ */
+export interface UsagePage1 {
+  report: Report2 | null;
+  text: string;
 }
