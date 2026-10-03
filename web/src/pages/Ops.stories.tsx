@@ -7,7 +7,7 @@ import { sampleSnapshot } from "../api/sample";
 import { Doctor } from "./Doctor";
 import { Logs } from "./Logs";
 import { Sessions } from "./Sessions";
-import { serve, withData } from "./storyKit";
+import { serve, withData } from "./storyData";
 
 const sample = serve(sampleSnapshot);
 

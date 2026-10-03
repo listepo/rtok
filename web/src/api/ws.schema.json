@@ -200,6 +200,18 @@
           "required": [
             "set"
           ]
+        },
+        {
+          "description": "Change the project registry (T329.12): select a project.",
+          "type": "object",
+          "properties": {
+            "project": {
+              "$ref": "#/$defs/ProjectRequest"
+            }
+          },
+          "required": [
+            "project"
+          ]
         }
       ]
     },
@@ -262,6 +274,13 @@
         "duplicates"
       ]
     },
+    "LinkKind": {
+      "type": "string",
+      "enum": [
+        "manual",
+        "auto"
+      ]
+    },
     "ModuleRow": {
       "description": "One [`MODULES`] row of a host variant: its state and the note printed after it — the flag\nthat would install it, or the reason it cannot be installed.",
       "type": "object",
@@ -288,6 +307,17 @@
         "installed",
         "not_installed",
         "not_supported"
+      ]
+    },
+    "Origin": {
+      "description": "How a project got into the registry (T329 §1).",
+      "type": "string",
+      "enum": [
+        "manual",
+        "session",
+        "worktree",
+        "mcp",
+        "reference"
       ]
     },
     "Overview": {
@@ -417,6 +447,156 @@
         "saves_tokens",
         "fields",
         "stats"
+      ]
+    },
+    "ProjectIndex": {
+      "description": "`graph status` numbers for one project; absent for a missing root, which has nothing\nreadable to count.",
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "indexed_at": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "pending": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "rows": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "watch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rows",
+        "files",
+        "pending",
+        "watch",
+        "indexed_at"
+      ]
+    },
+    "ProjectLink": {
+      "description": "One outgoing link of a project.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/LinkKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "to": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "to",
+        "name",
+        "kind",
+        "reason"
+      ]
+    },
+    "ProjectRequest": {
+      "description": "The registry writes the graph page offers (links come with T329.20); `<project>` is an id or a\nroot path, as in `rtok graph projects`.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "select"
+            },
+            "project": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "project"
+          ]
+        }
+      ]
+    },
+    "ProjectRow": {
+      "description": "One registry row as `graph projects` prints it and the `/ws` snapshot carries it.",
+      "type": "object",
+      "properties": {
+        "created_at": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "id": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectIndex"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_used_at": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectLink"
+          }
+        },
+        "missing": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/$defs/Origin"
+        },
+        "root": {
+          "type": "string"
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "root",
+        "origin",
+        "selected",
+        "missing",
+        "state",
+        "created_at",
+        "last_used_at",
+        "index",
+        "links"
       ]
     },
     "ReadShare": {
@@ -939,6 +1119,16 @@
             "$ref": "#/$defs/PluginPage"
           }
         },
+        "projects": {
+          "description": "Project registry (T329.12): every registered project with its index state and links,\nthe same rows `rtok graph projects --json` prints. `None` when the `graph` feature is\noff or the store read failed.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ProjectRow"
+          }
+        },
         "ref_ids": {
           "description": "Archive ids keyed by `calls[].id` (T60.4). Both surfaces read this map; neither\nqueries the store for an expand handle (D23 / D27).",
           "type": "object",
@@ -1002,6 +1192,7 @@
         "ref_ids",
         "stats",
         "graph",
+        "projects",
         "hosts",
         "config",
         "services",
