@@ -91,9 +91,24 @@ impl Store {
     /// rows come back as they were before that stamp, so `read_at: None` still tells which
     /// were new. The user peeking at an agent's queue passes `mark_read: false`.
     pub fn inbox(&self, to: &str, unread_only: bool, mark_read: bool) -> Result<Vec<Message>> {
+        self.inbox_limited(to, unread_only, mark_read, None)
+    }
+
+    /// [`Store::inbox`] with at most `limit` messages, the oldest. The cut is made before the
+    /// read mark, so a message that did not fit stays unread for the next call.
+    pub fn inbox_limited(
+        &self,
+        to: &str,
+        unread_only: bool,
+        mark_read: bool,
+        limit: Option<usize>,
+    ) -> Result<Vec<Message>> {
         let mut conn = self.lock()?;
         let only = if unread_only { Only::Unread } else { Only::All };
-        let rows = load(&mut conn, to, only)?;
+        let mut rows = load(&mut conn, to, only)?;
+        if let Some(limit) = limit {
+            rows.truncate(limit);
+        }
         if mark_read && !rows.is_empty() {
             let ids: Vec<i32> = rows.iter().map(|m| m.id).collect();
             diesel::update(messages::table.filter(messages::id.eq_any(ids)))
@@ -104,6 +119,17 @@ impl Store {
                 .execute(&mut *conn)?;
         }
         Ok(rows)
+    }
+
+    /// T284: how many unread messages each agent has, in one grouped query; an agent with none
+    /// is absent.
+    pub fn unread_counts(&self) -> Result<std::collections::HashMap<String, i64>> {
+        let rows: Vec<(String, i64)> = messages::table
+            .filter(messages::read_at.is_null())
+            .group_by(messages::to_agent)
+            .select((messages::to_agent, diesel::dsl::count_star()))
+            .load(&mut *self.lock()?)?;
+        Ok(rows.into_iter().collect())
     }
 
     /// T288: agent `to`'s messages no hook has pushed yet, in send order — one query on the
@@ -192,6 +218,20 @@ mod tests {
             .register_agent(claude, "m-b", None, None, None)
             .unwrap();
         (a, b)
+    }
+
+    #[test]
+    fn a_limited_read_marks_only_what_it_returned() {
+        let store = Store::open_in_memory().unwrap();
+        let (a, b) = two_agents(&store);
+        let ids: Vec<i32> = ["one", "two", "three"]
+            .iter()
+            .map(|t| store.send_message(Some(&a), &b, t).unwrap())
+            .collect();
+        let page = store.inbox_limited(&b, true, true, Some(2)).unwrap();
+        assert_eq!(page.iter().map(|m| m.id).collect::<Vec<_>>(), ids[..2]);
+        let rest = store.inbox(&b, true, false).unwrap();
+        assert_eq!(rest.iter().map(|m| m.id).collect::<Vec<_>>(), ids[2..]);
     }
 
     #[test]

@@ -12,7 +12,7 @@ installs and removes.
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | no | Zed has no shell hook events; its agent runs tools itself and takes external agents over ACP |
-| mcp | yes | `context_servers.rtok` → `rtok mcp` in `settings.json` as `{command, args}` (off with `[setup] mcp = false`) |
+| mcp | yes | `context_servers.rtok` → `rtok mcp --host zed` in `settings.json` as `{command, args}` (off with `[setup] mcp = false`) |
 | proxy | no | Zed serves hosted models or provider API keys; there is no documented base-URL setting to point at the proxy |
 | plugin | no | Zed extensions install from the marketplace; there is no local directory to link |
 

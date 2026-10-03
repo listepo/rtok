@@ -10,7 +10,7 @@ is documented.
 
 | Module | Support | Why |
 | --- | --- | --- |
-| mcp | yes | `mcp.rtok` → `{type: "local", command: [rtok, mcp], enabled: true}` — the same local-server shape OpenCode kept from upstream (off with `[setup] mcp = false`) |
+| mcp | yes | `mcp.rtok` → `{type: "local", command: [rtok, mcp, --host, mimo], enabled: true}` — the same local-server shape OpenCode kept from upstream (off with `[setup] mcp = false`) |
 | hooks | no | MiMo Code has no shell hook events; like OpenCode, tool.execute.before/after run in-process through a linked plugin, which this task does not ship |
 | proxy | no | MiMo Code has no documented base-URL override; MIMOCODE_HOME/MIMOCODE_CONFIG relocate config, not the model endpoint |
 | plugin | no | MiMo's in-process plugin package (the @mimo-ai/plugin analogue of @opencode-ai/plugin) is undocumented; linking one here would be a guess, not a verified path |

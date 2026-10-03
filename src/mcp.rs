@@ -22,6 +22,8 @@ pub mod wrap;
 
 pub mod ping;
 
+mod agents;
+mod messages;
 mod worktrees;
 
 use crate::agents::link;
@@ -374,6 +376,30 @@ impl Server {
                 plugin: "mcp",
                 def: worktrees::list_def(),
             },
+            Listed {
+                plugin: "mcp",
+                def: worktrees::remove_def(),
+            },
+            Listed {
+                plugin: "mcp",
+                def: messages::send_def(),
+            },
+            Listed {
+                plugin: "mcp",
+                def: messages::inbox_def(),
+            },
+            Listed {
+                plugin: "mcp",
+                def: agents::list_def(),
+            },
+            Listed {
+                plugin: "mcp",
+                def: agents::show_def(),
+            },
+            Listed {
+                plugin: "mcp",
+                def: agents::status_def(),
+            },
         ];
         let builtin: Vec<&str> = crate::plugins::all()
             .iter()
@@ -430,6 +456,7 @@ impl Server {
             own_session: &cx.session,
             idle: &cx.config.agents.idle,
             since: self.started,
+            ancestors: &rtok_sys::ancestors(std::process::id() as i32, link::ANCESTORS),
         };
         let found = link::resolve(&cx.store, &who, |k| std::env::var(k).ok()).unwrap_or_else(|e| {
             cx.log("warn", "mcp", "link", &format!("agent link failed: {e:#}"));
@@ -453,6 +480,20 @@ impl Server {
             "worktree_add" => self
                 .agent()
                 .and_then(|(agent, _)| worktrees::add(&self.cx, &agent, args)),
+            "worktree_remove" => self
+                .agent()
+                .and_then(|(agent, _)| worktrees::remove(&self.cx, &agent, args)),
+            "agent_send" => self
+                .agent()
+                .and_then(|(agent, _)| messages::send(&self.cx, &agent, args)),
+            "agent_inbox" => self
+                .agent()
+                .and_then(|(agent, _)| messages::inbox(&self.cx, &agent, args)),
+            "agents_list" => agents::list(&self.cx, args),
+            "agent_show" => agents::show(&self.cx, args),
+            "agent_status_set" => self
+                .agent()
+                .and_then(|(agent, _)| agents::set_status(&self.cx, &agent, args)),
             "worktree_list" => worktrees::list(&self.cx),
             _ => return invoke_text(&self.cx, name, args),
         };

@@ -87,6 +87,9 @@ const ALLOW_KEYS: &[&str] = &[
     "worktree.add.owner",
     // `worktree claim --owner` (T285): the name an old lock carries, per call like `add --owner`.
     "worktree.claim.owner",
+    // `worktree adopt` (T289): per call like `claim` — which task and whose lock.
+    "worktree.adopt.owner",
+    "worktree.adopt.task",
     // `worktree remove` (T286): per call like `claim` — whose old lock, and whether an
     // unmerged branch survives this one removal.
     "worktree.remove.owner",

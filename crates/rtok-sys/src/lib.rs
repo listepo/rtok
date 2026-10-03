@@ -86,6 +86,62 @@ pub fn parent_pid() -> Option<i32> {
     }
 }
 
+/// The parent pid of any process `pid`, read without spawning one (the hook client's budget
+/// leaves no room for `ps`). `None` when it cannot be read, the process is gone, or the
+/// platform has no reliable answer (Windows: a parent pid is never updated after the parent
+/// exits, so it says nothing).
+pub fn parent_of(pid: i32) -> Option<i32> {
+    if pid <= 0 {
+        return None;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        // `comm` (field 2) may hold spaces and parentheses, so fields count from the last `)`.
+        let rest = stat.get(stat.rfind(')')? + 1..)?;
+        rest.split_whitespace().nth(1)?.parse().ok()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+        let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+        // SAFETY: `info` is a writable buffer of exactly `size` bytes, and the call fills it
+        // completely or returns a length other than `size`, which is rejected below.
+        let got = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                info.as_mut_ptr().cast(),
+                size,
+            )
+        };
+        // SAFETY: a full-size return means the kernel initialised the whole struct.
+        (got == size).then(|| unsafe { info.assume_init() }.pbi_ppid as i32)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        None
+    }
+}
+
+/// Up to `max` ancestors of `pid`, nearest first, not counting `pid` itself. Stops at pid 1
+/// (the init process says nothing about a host), at an unreadable link, and at a loop.
+pub fn ancestors(pid: i32, max: usize) -> Vec<i32> {
+    let mut chain = Vec::new();
+    let mut at = pid;
+    while chain.len() < max {
+        match parent_of(at) {
+            Some(p) if p > 1 && p != pid && !chain.contains(&p) => {
+                chain.push(p);
+                at = p;
+            }
+            _ => break,
+        }
+    }
+    chain
+}
+
 /// Become a session leader so closing the terminal does not take the tree down.
 /// No-op on Windows.
 pub fn setsid() {
@@ -156,5 +212,26 @@ mod win {
         }
         let _ = unsafe { TerminateProcess(handle, 1) };
         unsafe { CloseHandle(handle) };
+    }
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_process_reads_its_own_parent_and_a_chain_starts_there() {
+        let me = std::process::id() as i32;
+        assert_eq!(parent_of(me), parent_pid());
+        let chain = ancestors(me, 3);
+        assert!(chain.len() <= 3 && !chain.contains(&me) && !chain.contains(&1));
+        assert_eq!(chain.first().copied(), parent_pid().filter(|p| *p > 1));
+    }
+
+    #[test]
+    fn a_missing_or_invalid_pid_has_no_parent() {
+        assert_eq!(parent_of(0), None);
+        assert_eq!(parent_of(-5), None);
+        assert!(ancestors(0, 3).is_empty());
     }
 }
