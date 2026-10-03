@@ -40,8 +40,7 @@ pub fn add(cx: &Runtime, agent: &AgentDetail, args: &Value) -> Result<String> {
     let Some(task) = arg(args, "task") else {
         bail!("`task` is required, e.g. T12");
     };
-    let cfg = &cx.config.worktree;
-    let root = Some(cfg.root.as_path()).filter(|r| !r.as_os_str().is_empty());
+    let root = claim::configured_root(&cx.config.worktree.root);
     let cwd = std::env::current_dir()?;
     let plan = claim::add(
         Some(&cx.store),

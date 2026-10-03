@@ -5,7 +5,6 @@
 - T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?
 
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
-- T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T262.3. Codex: spawn brief on `SubagentStart`
 - T261. CI takes ~9.5 min on macOS; the webui check recompiles 183 crates every run
 - T271. The Claude desktop Code tab sees rtok's MCP twice while the plugin is installed
@@ -39,15 +38,13 @@
 - T329.17. Graph alerts: linked project down or unreachable
 - T329.18. Graph diff: compare before and after a change
 - T329.19. Graph health score per project
-- T329.20. SPA graph page links panel: link, unlink, both ways, project badges
+- T329.21. Project badges in the graph page lists
 - T330. `rtok agents junk list` and `clear`: per-agent junk with folders, sizes and space freed
-- T330.2. Junk: every host as an agent row, folders from `research.md` §22
 - T330.3. Junk: `cache`, `temp`, `build`, `locks`, `swap` kinds and rtok's own caches
 - T330.4. Junk `clear`: `--agent`, `--kind`, `--include review`, `--older-than`, `--trash`, re-check, exit codes
-- T330.5. Junk: review kinds (`sessions`, `stale-worktrees`, `stale-tokens`, `crash-dumps`, `snapshots`, `logs`, `deps`, `backups`, `index`) and `[agents.junk]` config
+- T330.5. Junk: review and explicit kinds (`sessions`, `stale-worktrees`, `crash-dumps`, `snapshots`, `logs`, `deps`, `backups`, `index`) and `[agents.junk]` config
 - T330.6. Junk: item breakdown, `doctor` line, web card
 - T331. `rtok doctor`: broken hooks, duplicate hooks and duplicate MCP entries, with a selective fix
-- T331.3. Doctor: duplicate hooks
 - T331.4. Doctor: duplicate MCP entries
 - T331.5. Doctor `--fix` for broken hooks
 - T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
@@ -60,8 +57,6 @@
 - T335. Investigate: graph text mode spawns `rg`/`grep`/`ssh` vs D6/D18
 - T336. Investigate: T329: default project for CLI/MCP is the selected project or the cwd
 - T337. Investigate: T329: capability cache never re-probes vs alerts/health that need re-probing
-- T338. Investigate: T330 deletes sessions, tokens and snapshots vs research.md §22 "never junk"
-- T339. Investigate: T330 scans only §22 paths vs heuristic cache detection
 - T340. Investigate: T330 "never touch rtok.db" vs clearing rows inside it
 - T341. Investigate: T330 worktree removal vs T153 (prune, orphans) and its own edge case
 - T342. Investigate: T330 build/cache clearing vs T152 tagged-cache rules
@@ -73,4 +68,3 @@
 - T348. Investigate: `--agent` means an agent id, a host, or both
 - T356. Never index `$HOME` or `/` as a graph root
 - T358. `rtok agents usage`: tokens and estimated cost across every coding agent
-- T358.5. The Usage page on `rtok web` and `rtok tui`
