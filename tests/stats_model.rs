@@ -247,7 +247,7 @@ fn stats_renders_injected_skill_bodies() {
     fs::write(
         projects.join("sk.jsonl"),
         concat!(
-            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"k1\",\"name\":\"Skill\",\"input\":{\"skill\":\"slint\",\"args\":\"\"}}],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n",
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"k1\",\"name\":\"Skill\",\"input\":{\"skill\":\"pixel\",\"args\":\"\"}}],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n",
             "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"k1\",\"content\":\"ideas.md\"}]}}\n",
             "{\"type\":\"user\",\"isMeta\":true,\"sourceToolUseID\":\"k1\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"line one\\nline two\\nline three\\n\"}]}}\n",
             "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"working\"}],\"usage\":{\"input_tokens\":200,\"cache_read_input_tokens\":40,\"output_tokens\":2}}}\n",
@@ -256,7 +256,7 @@ fn stats_renders_injected_skill_bodies() {
     .unwrap();
     let table = rtok(&["stats"], &h);
     assert!(table.contains("resident"), "the skills table: {table}");
-    assert!(table.contains("slint"), "one row per skill: {table}");
+    assert!(table.contains("pixel"), "one row per skill: {table}");
     assert!(
         table.contains("lines 4"),
         "the isMeta record is one of the counted lines: {table}"
@@ -264,7 +264,7 @@ fn stats_renders_injected_skill_bodies() {
     let js = rtok(&["stats", "--json"], &h);
     for needle in [
         "\"skills\"",
-        "\"slint\"",
+        "\"pixel\"",
         "\"count\": 1",
         "\"bytes\": 29",
         "\"est_tokens\": 8",
