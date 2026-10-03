@@ -87,32 +87,53 @@ pub(super) fn find(seen: &[Seen]) -> Vec<Problem> {
 
 /// The `duplicate hooks` lines of the doctor text: each group once, its copies below it.
 pub(super) fn render(problems: &[Problem]) -> String {
+    render_kinds(problems, &["duplicate-hook"], "duplicate hooks")
+}
+
+/// The same for MCP servers (T331.4); a version conflict is listed with the duplicates.
+pub(super) fn render_mcp(problems: &[Problem]) -> String {
+    render_kinds(
+        problems,
+        &["duplicate-mcp", "conflicting-mcp"],
+        "duplicate mcp servers",
+    )
+}
+
+fn render_kinds(problems: &[Problem], kinds: &[&str], title: &str) -> String {
     let dupes: Vec<&Problem> = problems
         .iter()
-        .filter(|p| p.kind == "duplicate-hook")
+        .filter(|p| kinds.contains(&p.kind))
         .collect();
     if dupes.is_empty() {
-        return "duplicate hooks none found\n".into();
+        return format!("{title} none found\n");
     }
-    let mut out = String::from("duplicate hooks\n");
+    let mut out = format!("{title}\n");
     let mut last = None;
     for p in dupes {
-        if last != p.group {
-            last = p.group;
+        if last != Some((p.kind, p.group)) {
+            last = Some((p.kind, p.group));
             let matcher = p
                 .matcher
                 .as_deref()
                 .map(|m| format!("[{m}]"))
                 .unwrap_or_default();
+            let event = if p.event.is_empty() {
+                String::new()
+            } else {
+                format!("{} ", p.event)
+            };
             out.push_str(&format!(
-                "  {} {}{matcher} `{}`: {}\n",
+                "  {} {event}{matcher}`{}`: {}\n",
                 p.agent,
-                p.event,
                 p.command,
                 p.detail.split(';').next().unwrap_or_default()
             ));
         }
-        let role = if p.keep { "keep " } else { "extra" };
+        let role = match (p.kind, p.keep) {
+            ("conflicting-mcp", _) => "other",
+            (_, true) => "keep ",
+            _ => "extra",
+        };
         out.push_str(&format!("    {role} {} {}\n", p.source, p.path));
     }
     out

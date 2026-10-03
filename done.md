@@ -4923,6 +4923,18 @@ Result: broken, suspect and unverified hooks of the three TOML hosts are reporte
 
 Model: Claude Code / sonnet-5
 
+### T331.4. Doctor: duplicate MCP entries (servers other than rtok's own)
+
+Part of T331. Section 3 of T331 for every MCP server except rtok's own: same name in two loaded sources, different names with the same launch, normalization (PATH and symlink resolution, `npx pkg@x`, URL case and trailing slash, env values never printed), the not-duplicates cases and the keep recommendation. Report only. rtok's own entry is excluded and never reported; it moves to T331.10, which follows the T332 and T333 decisions. Depends on T331.1.
+
+Check: the "Duplicate MCP entries" and "MCP that must not be called duplicate" scenarios of T331 for servers other than rtok's; `just check`.
+
+Execution: `src/doctor/mcp_dupes.rs` reads every host surface `agents::mcp::surfaces` knows, plus Claude Code's project `.mcp.json` and local `projects.<cwd>.mcpServers`, through the new `rtok_mcp::config::read_servers` (the reader `read_entry` now sits on, so JSON, JSONC and TOML parse as `agents info` does). Entries are grouped per host client by normalized launch (command resolved through `Which` and `Fs::canonical`, `npx`/`bunx`/`pnpx`/`uvx` as the package, URL through `url::Url` with the trailing slash dropped, env keys and values compared but never printed). Same name in two scopes: the host uses local, then project, then user (research.md section 25), the others are reported as unused. Same package at different versions is a `conflicting-mcp` finding. A server with `disabled: true` or `enabled: false` is not compared. rtok's own entry is recognised with `rtok_agent_sdk::runs_bin` and `agents::is_rtok_bin`. Findings are `Problem { kind: "duplicate-mcp" | "conflicting-mcp", group, keep }` rendered by the T331.3 renderer as "duplicate mcp servers".
+
+Result: `rtok doctor` (text, `--json`, Doctor page) lists the MCP servers a host would start twice, how many times, every copy with its file and key path, the copy to keep (project, then user, then local) and, for a same-name entry, which scope the host uses. Nothing is fixable before T331.6. Not covered: servers an enabled plugin provides (`.mcp.json` of Claude plugins), which T331.6 or a later card needs for the "plugin plus hand-written entry" case.
+
+Model: Claude Code / sonnet-5
+
 ### T305. stats archive replay no longer double-counts short bodies
 
 `replay_ctt` (`src/measure/stats.rs`), which estimates what `rtok stats` calls `archive replay (estimate)` — the CTT the `archive` plugin (T5.3) leaves behind once a tool result ages past `keep_turns` — modelled the kept lines as `lines.iter().take(head_lines)` chained with `lines.iter().rev().take(tail_lines)`. When a result had fewer lines than `head_lines + tail_lines` (a single huge line, for example) the two slices overlapped, so `kept` counted those lines up to 2x and the estimate could land above not archiving at all. Fixed to mirror `archive::pointer`'s own guard: when `lines.len() <= head + tail`, sum each line once — through `archive::clip`, the same per-line truncation `pointer` applies — instead of taking overlapping head/tail slices; every shown line (head and tail too) goes through `archive::clip`, as `pointer` does. Also: the stats tests' `tempfile_dir` named directories by pid + nanos only, and macOS clocks tick in microseconds, so two parallel tests could share one directory (`compact_boundary_counts_once_per_event` failed intermittently); a counter now keeps them apart.

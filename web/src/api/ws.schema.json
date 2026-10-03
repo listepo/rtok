@@ -649,7 +649,7 @@
           "type": "boolean"
         },
         "kind": {
-          "description": "`broken-hook`, `suspect-hook`, `unverified-hook`, `duplicate-hook`, `stale-plugin` or\n`unreadable-config`.",
+          "description": "`broken-hook`, `suspect-hook`, `unverified-hook`, `duplicate-hook`, `duplicate-mcp`,\n`conflicting-mcp`, `stale-plugin` or `unreadable-config`.",
           "type": "string"
         },
         "matcher": {

@@ -46,10 +46,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T330.5 | todo | P2 | 4 | 0% | |
 | T330.6 | todo | P3 | 3 | 0% | |
 | T331 | todo | P1 | 4 | 0% | |
-| T331.4 | todo | P1 | 4 | 0% | |
 | T331.6 | todo | P1 | 4 | 0% | |
 | T331.7 | todo | P2 | 3 | 0% | |
 | T331.9 | todo | P2 | 3 | 0% | |
+| T331.10 | todo | P2 | 2 | 0% | |
 | T332 | todo | research | 1 | 0% | |
 | T333 | todo | research | 1 | 0% | |
 | T334 | todo | research | 1 | 0% | |
@@ -1206,17 +1206,11 @@ Dependencies: host adapters and config maps (`research.md`), JSONC/TOML editors,
 
 Check: all of the above pass on Linux, macOS and Windows CI; the "no real paths" guard test passes; `just check`.
 
-Split (epic, too large for one PR: three detectors, a fix engine, an interactive UI, ~15 host config shapes; each part ships read-only value or a tested edit and is one PR). Order: T331.1 broken hooks (read-only, the injected `Fs`/`Env`/`Which` seam every later part reuses), T331.2 JSON hook files of the other hosts and of Claude plugins, T331.8 TOML hook files, T331.9 `--agent` and Windows rules, T331.3 duplicate hooks, T331.4 duplicate MCP entries, T331.5 `--fix` for broken hooks (the edit/backup/race engine), T331.6 `--fix` for duplicates, T331.7 interactive checklist, web doctor action, docs and the property/pty tests. T331.4 and T331.6 touch rtok's own MCP entry and wait for the T332 and T333 decisions; everything else does not depend on them.
-
-### T331.4. Doctor: duplicate MCP entries
-
-Part of T331. Section 3 of T331: same name in two loaded sources, different names with the same launch, normalization (PATH and symlink resolution, `npx pkg@x`, URL case and trailing slash, env values never printed), the not-duplicates cases and the keep recommendation. Report only. rtok's own server follows the T332 and T333 decisions, not a guess. Depends on T331.1, T332 and T333.
-
-Check: the "Duplicate MCP entries" and "MCP that must not be called duplicate" scenarios of T331; `just check`.
+Split (epic, too large for one PR: three detectors, a fix engine, an interactive UI, ~15 host config shapes; each part ships read-only value or a tested edit and is one PR). Order: T331.1 broken hooks (read-only, the injected `Fs`/`Env`/`Which` seam every later part reuses), T331.2 JSON hook files of the other hosts and of Claude plugins, T331.8 TOML hook files, T331.9 `--agent` and Windows rules, T331.3 duplicate hooks, T331.4 duplicate MCP entries, T331.5 `--fix` for broken hooks (the edit/backup/race engine), T331.6 `--fix` for duplicates, T331.7 interactive checklist, web doctor action, docs and the property/pty tests. T331.10 (rtok's own MCP entry in the duplicate check) and the rtok part of T331.6 wait for the T332 and T333 decisions; everything else does not depend on them.
 
 ### T331.6. Doctor `--fix` for duplicate hooks and duplicate MCP entries
 
-Part of T331. Extends the T331.5 engine to the extra copies of T331.3 and T331.4: keep rules, choosing another copy, never the last copy, TOML `[mcp_servers.<name>]` removal, never a plugin's own files or a managed file. Depends on T331.3, T331.4 and T331.5.
+Part of T331. Extends the T331.5 engine to the extra copies of T331.3 and T331.4: keep rules, choosing another copy, never the last copy, TOML `[mcp_servers.<name>]` removal, never a plugin's own files or a managed file. Depends on T331.3, T331.4, T331.5 and, for rtok's own entry, T331.10.
 
 Check: the duplicate scenarios of "User selecting cleanup" and the combined case; `just check`.
 
@@ -1232,6 +1226,12 @@ Part of T331. `rtok doctor --agent <host>` limits the hooks check to one host (t
 
 Check: the host filter on mocks (known, unknown, a host without hooks), `PATHEXT` cases on a case-insensitive mock `Fs`; `just check`.
 
+
+### T331.10. Doctor: rtok's own MCP entry in the duplicate check
+
+Part of T331. T331.4 leaves rtok's own MCP server out of the duplicate check, because what to report depends on the T332 and T333 decisions (the T331 keep rule against D33/T275: a plugin serving MCP while a config entry also exists, and the Claude `plugin:rtok:rtok` namespacing). Once those are decided, include rtok's own entry (detected with `rtok_agent_sdk::runs_bin` and `agents::is_rtok_bin`, as T331.4 does to exclude it) in the detector and the keep recommendation of T331.4, with the decided rules. Depends on T331.4, T332 and T333.
+
+Check: the rtok scenarios of "Duplicate MCP entries" in T331 per host once T332 and T333 are decided; `just check`.
 
 ### T332. Investigate: rtok's own MCP duplicate: T331 keep rule vs D33/T275
 
