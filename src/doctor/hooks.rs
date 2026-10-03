@@ -1766,17 +1766,18 @@ mod tests {
             hooks_doc("Stop", None, &["jq .", "jq ."]),
         );
         m.path.insert("jq".into(), "/usr/bin/jq".into());
-        let fixable: Vec<(String, bool, bool)> = check_with(&m)
+        // Compared as paths: `join` writes `\` on Windows where the literals have `/`.
+        let fixable: Vec<(PathBuf, bool, bool)> = check_with(&m)
             .into_iter()
             .filter(|p| p.kind == "duplicate-hook")
-            .map(|p| (p.source, p.keep, p.fixable))
+            .map(|p| (PathBuf::from(p.source), p.keep, p.fixable))
             .collect();
         assert_eq!(
             fixable,
             vec![
-                ("/h/.claude/settings.json".into(), false, true),
-                ("/h/plug/demo/hooks/hooks.json".into(), true, false),
-                ("/h/plug/demo/hooks/hooks.json".into(), false, false),
+                (PathBuf::from("/h/.claude/settings.json"), false, true),
+                (PathBuf::from("/h/plug/demo/hooks/hooks.json"), true, false),
+                (PathBuf::from("/h/plug/demo/hooks/hooks.json"), false, false),
             ]
         );
     }
