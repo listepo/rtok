@@ -706,7 +706,7 @@ enum AgentCmd {
         #[arg(long)]
         json: bool,
     },
-    /// Junk rtok owns under its own home: log siblings and archive payloads past retention
+    /// Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear
     Junk {
         #[command(subcommand)]
         action: JunkCmd,
@@ -756,6 +756,15 @@ enum AgentCmd {
 
 #[derive(Subcommand)]
 enum JunkCmd {
+    /// Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free
+    List {
+        /// JSON instead of the text
+        #[arg(long)]
+        json: bool,
+        /// Exact byte counts instead of KB/MB/GB
+        #[arg(long)]
+        bytes: bool,
+    },
     /// List what `agents junk clear` would remove; `--yes` applies it
     Clear {
         /// Apply; without it this is a dry run that changes nothing
@@ -1028,6 +1037,10 @@ pub fn run() -> Result<()> {
                     // also appended to the log.
                     let layer = config_file.as_deref().or(Some(&path));
                     let cfg = crate::config::layers::load(&home, layer, None).unwrap_or_default();
+                    // Values from the project file, `.env` and the environment skip the file check.
+                    errs.extend(validate::layered_issues(crate::config::layers::sourced(
+                        &crate::config::layers::figment(&home, layer, None),
+                    )));
                     errs.extend(validate::rules_issues(
                         &cfg.plugins.cmd.rules,
                         &cfg.plugins.cmd.rules_dir,
@@ -1178,13 +1191,8 @@ pub fn run() -> Result<()> {
             let id = (task.as_str(), slug.as_deref());
             let store = crate::store::Store::open(&cfg.core.db_path).ok();
             let agent = claim::caller(store.as_ref(), agent.as_deref())?;
-            let owner = claim::owner(owner, agent.as_ref(), store.as_ref())?;
-            let agent_id = agent.as_ref().map(|a| a.id.as_str());
             let cwd = std::env::current_dir()?;
-            let plan = crate::worktree::add::run(&cwd, root, id, (&owner, agent_id))?;
-            if let Some(agent) = agent_id {
-                claim::remember(store.as_ref(), &plan.path, agent, &plan.task);
-            }
+            let plan = claim::add(store.as_ref(), &cwd, root, id, agent.as_ref(), owner)?;
             println!("{}", plan.path.display());
         }
         Cmd::Worktree {
@@ -1243,16 +1251,13 @@ pub fn run() -> Result<()> {
             action: WorktreeCmd::List { json },
         } => {
             let mut rows = crate::worktree::list::rows(&std::env::current_dir()?)?;
-            // T154: ownership from the sessions the hooks recorded. The listing must not
-            // depend on the store — without one it prints without attribution.
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            if let Ok(store) = crate::store::Store::open(&cfg.core.db_path)
-                && let Ok(seen) = store.sessions_by_cwd()
-            {
-                crate::worktree::list::attribute(&mut rows, &seen);
-                // T285: the bound agent's host and state; a store error leaves the ids bare.
-                let _ = crate::worktree::list::bind(&mut rows, &store, &cfg.agents.idle);
-            }
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            crate::worktree::list::attribute_with_store(
+                &mut rows,
+                store.as_ref(),
+                &cfg.agents.idle,
+            );
             if json {
                 print_json(&rows)?;
             } else {
@@ -1481,6 +1486,17 @@ pub fn run() -> Result<()> {
                     print!("{}", report.unpriced_text());
                 } else {
                     print!("{}", report.to_text());
+                }
+            }
+            AgentCmd::Junk {
+                action: JunkCmd::List { json, bytes },
+            } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let report = crate::agents::junk::report(&cfg);
+                if json {
+                    print_json(&report)?;
+                } else {
+                    print!("{}", crate::agents::junk::to_list(&report, bytes));
                 }
             }
             AgentCmd::Junk {
