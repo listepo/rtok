@@ -101,8 +101,9 @@ pub(super) struct Loc {
 }
 
 /// The location of every entry the check reads; a finding's `source` and `path` find it.
+/// A plugin's file is never edited (its copy is not fixable), so its entries are not read here.
 pub(super) fn locations(cfg: &crate::config::Config, p: &Probes) -> Vec<Loc> {
-    entries(cfg, p)
+    entries(cfg, p, &[])
         .into_iter()
         .map(|s| Loc {
             source: s.source,

@@ -187,8 +187,9 @@ pub const KINDS: [&str; 3] = ["broken-hook", "duplicate-hook", "duplicate-mcp"];
 
 /// The hook and MCP findings of this machine, for one host or all.
 fn findings(cfg: &Config, p: &Probes, agent: Option<&str>) -> Vec<Problem> {
-    let mut all = hooks::check_for(cfg, p, agent);
-    let mcp = mcp_dupes::check(cfg, p);
+    let (mut all, plugins) = hooks::check_with_plugins(cfg, p);
+    all.retain(|x| agent.is_none_or(|a| x.agent == a));
+    let mcp = mcp_dupes::check(cfg, p, &plugins);
     all.extend(
         mcp.into_iter()
             .filter(|x| agent.is_none_or(|a| x.agent == a)),
