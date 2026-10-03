@@ -79,7 +79,7 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
+    /// Local web UI over the same data as `rtok tui` (WebSocket API + React SPA)
     Web {
         /// Override `[web] host`
         #[arg(long)]
@@ -575,6 +575,14 @@ enum GraphCmd {
         to: Option<String>,
         path: Option<PathBuf>,
     },
+    /// The project registry: list, add, remove, select (T329.2)
+    Projects {
+        #[command(subcommand)]
+        action: Option<ProjectsCmd>,
+        /// JSON instead of a table
+        #[arg(long, global = true)]
+        json: bool,
+    },
     /// Tests that reach files changed in git (`git diff --name-only`)
     Affected {
         /// Diff against this ref
@@ -586,6 +594,48 @@ enum GraphCmd {
         /// JSON instead of `file ← via symbol` lines
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[cfg(feature = "graph")]
+#[derive(Subcommand)]
+enum ProjectsCmd {
+    /// Register a directory as a project (a known one only refreshes its last-used time)
+    Add { path: PathBuf },
+    /// Make a project the selected one; the page and later the CLI answer for it
+    Select {
+        /// Project id or directory
+        project: String,
+    },
+    /// Link a project into the selected one's graph scope (indexes it when it never was)
+    Link {
+        /// Project id or directory to link to
+        project: String,
+        /// Link from this project instead of the selected one
+        #[arg(long)]
+        from: Option<String>,
+        /// Also link the other way
+        #[arg(long)]
+        both: bool,
+        /// Why (shown next to the link)
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Remove a link; an auto link stays removed on re-index
+    Unlink {
+        /// Project id or directory to unlink
+        project: String,
+        /// Unlink from this project instead of the selected one
+        #[arg(long)]
+        from: Option<String>,
+        /// Also remove the link the other way
+        #[arg(long)]
+        both: bool,
+    },
+    /// Drop a project and its index rows; its files are never touched
+    Remove {
+        /// Project id or directory
+        project: String,
     },
 }
 
@@ -1040,6 +1090,10 @@ pub fn run() -> Result<()> {
                     // also appended to the log.
                     let layer = config_file.as_deref().or(Some(&path));
                     let cfg = crate::config::layers::load(&home, layer, None).unwrap_or_default();
+                    // Values from the project file, `.env` and the environment skip the file check.
+                    errs.extend(validate::layered_issues(crate::config::layers::sourced(
+                        &crate::config::layers::figment(&home, layer, None),
+                    )));
                     errs.extend(validate::rules_issues(
                         &cfg.plugins.cmd.rules,
                         &cfg.plugins.cmd.rules_dir,
@@ -1076,6 +1130,16 @@ pub fn run() -> Result<()> {
             }
         }
         Cmd::Hook { serve: true, .. } => crate::hooks::resident::serve()?,
+        // T159: these two events answer with a path and an exit code, not the JSON the hook
+        // dispatcher writes, so they skip it.
+        Cmd::Hook {
+            event: Some(event), ..
+        } if crate::worktree::host::handles(&event) => {
+            let cfg = Config::load_lenient(config_file.as_deref(), None);
+            if let Some(out) = crate::worktree::host::run(&event, io::stdin(), &cfg)? {
+                println!("{out}");
+            }
+        }
         Cmd::Hook { event, host, .. } => {
             let cfg = Config::load_lenient(config_file.as_deref(), hook_host_flag(host));
             crate::hooks::run(&event.unwrap_or_default(), io::stdin(), io::stdout(), &cfg);
@@ -1186,17 +1250,12 @@ pub fn run() -> Result<()> {
         } => {
             use crate::worktree::claim;
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let root = Some(cfg.worktree.root.as_path()).filter(|r| !r.as_os_str().is_empty());
             let id = (task.as_str(), slug.as_deref());
             let store = crate::store::Store::open(&cfg.core.db_path).ok();
             let agent = claim::caller(store.as_ref(), agent.as_deref())?;
-            let owner = claim::owner(owner, agent.as_ref(), store.as_ref())?;
-            let agent_id = agent.as_ref().map(|a| a.id.as_str());
             let cwd = std::env::current_dir()?;
-            let plan = crate::worktree::add::run(&cwd, root, id, (&owner, agent_id))?;
-            if let Some(agent) = agent_id {
-                claim::remember(store.as_ref(), &plan.path, agent, &plan.task);
-            }
+            let root = claim::configured_root(&cfg.worktree.root);
+            let plan = claim::add(store.as_ref(), &cwd, root, id, agent.as_ref(), owner)?;
             println!("{}", plan.path.display());
         }
         Cmd::Worktree {
@@ -1255,16 +1314,13 @@ pub fn run() -> Result<()> {
             action: WorktreeCmd::List { json },
         } => {
             let mut rows = crate::worktree::list::rows(&std::env::current_dir()?)?;
-            // T154: ownership from the sessions the hooks recorded. The listing must not
-            // depend on the store — without one it prints without attribution.
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            if let Ok(store) = crate::store::Store::open(&cfg.core.db_path)
-                && let Ok(seen) = store.sessions_by_cwd()
-            {
-                crate::worktree::list::attribute(&mut rows, &seen);
-                // T285: the bound agent's host and state; a store error leaves the ids bare.
-                let _ = crate::worktree::list::bind(&mut rows, &store, &cfg.agents.idle);
-            }
+            let store = crate::store::Store::open(&cfg.core.db_path).ok();
+            crate::worktree::list::attribute_with_store(
+                &mut rows,
+                store.as_ref(),
+                &cfg.agents.idle,
+            );
             if json {
                 print_json(&rows)?;
             } else {
@@ -1817,6 +1873,9 @@ pub fn run() -> Result<()> {
                         r.extension_mapped,
                     );
                     println!("{}", style::success(&summary));
+                    if !dry_run {
+                        crate::plugins::graph::follow::report(&cx, &root);
+                    }
                 }
                 GraphCmd::Dead { path, json } => {
                     let root = crate::plugins::graph::cli_root(path)?;
@@ -1830,6 +1889,36 @@ pub fn run() -> Result<()> {
                 }
                 GraphCmd::Status { path, json } => {
                     crate::plugins::graph::status::run(&cfg, path, json)?;
+                }
+                GraphCmd::Projects { action, json } => {
+                    use crate::plugins::graph::projects::{Action, run};
+                    let action = match action {
+                        None => Action::List,
+                        Some(ProjectsCmd::Add { path }) => Action::Add(path),
+                        Some(ProjectsCmd::Select { project }) => Action::Select(project),
+                        Some(ProjectsCmd::Remove { project }) => Action::Remove(project),
+                        Some(ProjectsCmd::Link {
+                            project,
+                            from,
+                            both,
+                            reason,
+                        }) => Action::Link {
+                            to: project,
+                            from,
+                            both,
+                            reason,
+                        },
+                        Some(ProjectsCmd::Unlink {
+                            project,
+                            from,
+                            both,
+                        }) => Action::Unlink {
+                            to: project,
+                            from,
+                            both,
+                        },
+                    };
+                    print!("{}", run(&cx, action, json)?);
                 }
                 GraphCmd::Impact {
                     name,
@@ -1975,6 +2064,11 @@ pub fn run() -> Result<()> {
             since,
             ai,
         } => {
+            // As for `stats`: the flag is parsed before it merges into `report.since`, so a later
+            // parse error can only come from the config or the environment and says so.
+            if let Some(s) = &since {
+                crate::measure::stats::parse_since(s)?;
+            }
             let cfg =
                 Config::load_with(config_file.as_deref(), report_flags(format, out, since, ai))?;
             // D24: the command picks the renderer and the sink; every number was already

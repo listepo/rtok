@@ -24,6 +24,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use crate::agents::usage;
 use crate::config::{Config, layers};
 use crate::demon::{self, Service};
 use crate::doctor;
@@ -74,6 +75,10 @@ pub struct Snapshot {
     /// this tick (no re-indexing). `None` when the `graph` feature is off or the store
     /// read failed.
     pub graph: Option<String>,
+    /// Project registry (T329.12): every registered project with its index state and links,
+    /// the same rows `rtok graph projects --json` prints. `None` when the `graph` feature is
+    /// off or the store read failed.
+    pub projects: Option<Vec<ProjectRow>>,
     /// Hosts page (T231): `agents list`'s blocks — kind, detected version, installed
     /// surfaces, config path — one per known host variant (D27), so `agents list` /
     /// `agents info` can join `COMMAND_PAGES`. [`hosts_page_text`] reuses the same
@@ -95,6 +100,21 @@ pub struct Snapshot {
     /// list` already calls (D27, no second reader or directory walk); `gc`/`clean`
     /// stay CLI-only verdicts. `None` only when the current directory is unreadable.
     pub worktrees: Option<String>,
+    /// Usage page (T358.5): what `rtok agents usage` reports, through [`usage_page`]. The
+    /// overview's own `usage` key is the proxy's totals, so this one carries the page's name
+    /// in its own words.
+    pub agent_usage: UsagePage,
+}
+
+/// The Usage page: one [`usage::Report`] — the call `rtok agents usage` makes — read once and
+/// carried twice. `text` is that command's screen ([`usage::Report::to_text`]) for the tui and
+/// the Slint page; `report` is the same rows as data for the SPA's tables. Nothing is summed
+/// a second time (D27). Both are empty-handed while the first read runs or after it fails:
+/// `report` is `None` and `text` says why.
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
+pub struct UsagePage {
+    pub text: String,
+    pub report: Option<usage::Report>,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -112,7 +132,7 @@ pub struct Stats {
 /// The Overview page (T15.3): the usage totals plus what the tab draws from them —
 /// context-token-turns and the per-turn series behind the sparkline. The totals stay
 /// flat under the `usage` key, so the `/ws` frame keeps the shape P19 pinned and the
-/// Slint UI reads on untouched.
+/// SPA reads on untouched.
 #[derive(Debug, Default, Serialize, JsonSchema)]
 pub struct Overview {
     #[serde(flatten)]
@@ -352,6 +372,7 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
         ("config", "config"),
         ("services", "services"),
         ("worktrees", "worktrees"),
+        ("usage", "agent_usage"),
     ]
 }
 
@@ -1181,6 +1202,24 @@ fn graph_page_text(cfg: &Config) -> Option<String> {
     Some(out)
 }
 
+/// What `/ws` carries per project; with `graph` off the registry is never built.
+#[cfg(feature = "graph")]
+pub use crate::plugins::graph::projects::ProjectRow;
+#[cfg(not(feature = "graph"))]
+#[derive(Debug, Serialize, JsonSchema)]
+pub enum ProjectRow {}
+
+#[cfg(feature = "graph")]
+fn project_rows(cfg: &Config) -> Option<Vec<ProjectRow>> {
+    let rt = crate::plugin::Runtime::open(cfg.clone(), "web-projects").ok()?;
+    crate::plugins::graph::projects::rows(&rt).ok()
+}
+
+#[cfg(not(feature = "graph"))]
+fn project_rows(_cfg: &Config) -> Option<Vec<ProjectRow>> {
+    None
+}
+
 #[cfg(not(feature = "graph"))]
 fn graph_page_text(_cfg: &Config) -> Option<String> {
     None
@@ -1337,6 +1376,43 @@ fn worktrees_page_text() -> Option<String> {
         .unwrap_or_else(|| Some("reading worktrees…\n".to_string()))
 }
 
+/// How long a snapshot may reuse the last usage read (T358.5). Reading every agent's session
+/// logs scales with the history on disk, and the numbers only move when a turn ends.
+const USAGE_TTL: Duration = Duration::from_secs(120);
+
+/// The Usage page (T358.5): [`usage::report`] over `[agents.usage]`, exactly what `rtok
+/// agents usage` prints. `--source logs` and `both` parse every session file in the window
+/// — far too slow for a 2 s tick — so this reuses [`Background`] with its own [`USAGE_TTL`]:
+/// a cold or stale entry never blocks the tick, which renders the last known page, or
+/// "reading usage…" before the first read lands.
+fn usage_page(cfg: &Config) -> UsagePage {
+    static USAGE: Background<UsagePage> = Background::new();
+    let cfg = cfg.clone();
+    USAGE
+        .get(USAGE_TTL, move || read_usage_page(&cfg))
+        .unwrap_or_else(|| UsagePage {
+            text: "reading usage…\n".into(),
+            report: None,
+        })
+}
+
+/// The read behind [`usage_page`], synchronous. A store that will not open or a bad
+/// `[agents.usage]` value is the page's text, not a failed snapshot.
+fn read_usage_page(cfg: &Config) -> UsagePage {
+    let report = Store::open(&cfg.core.db_path)
+        .and_then(|store| usage::report(cfg, &store, crate::log::now() as i64));
+    match report {
+        Ok(report) => UsagePage {
+            text: report.to_text(),
+            report: Some(report),
+        },
+        Err(e) => UsagePage {
+            text: format!("usage did not answer this tick: {e:#}\n"),
+            report: None,
+        },
+    }
+}
+
 /// One row of the `rtok config show` page: an effective key, its value, and which layer
 /// (`default|user|project|env|flag`) set it.
 #[derive(Debug, Serialize)]
@@ -1406,6 +1482,8 @@ impl<'a> Model<'a> {
             stats: stats_text,
             // T230: reads the store on this tick — see `graph_page_text`.
             graph: graph_page_text(self.cfg),
+            // T329.12: the registry, read fresh each tick so a second tab sees a selection.
+            projects: project_rows(self.cfg),
             // T231: cached in the background — see `hosts_page_text`.
             hosts: hosts_page_text(self.cfg),
             // T228: reads the layered figment fresh each tick — see `config_page_text`.
@@ -1414,6 +1492,8 @@ impl<'a> Model<'a> {
             services: services_page_text(self.cfg),
             // T232: cached briefly — see `worktrees_page_text`.
             worktrees: worktrees_page_text(),
+            // T358.5: logs are read off the tick — see `usage_page`.
+            agent_usage: usage_page(self.cfg),
         }
     }
 
@@ -1704,6 +1784,36 @@ mod tests {
         })
         .unwrap();
         cx
+    }
+
+    /// T358.5: the Usage page is `rtok agents usage`'s report and its text, read once.
+    #[test]
+    fn usage_page_carries_the_cli_report_and_its_text() {
+        let cfg = crate::testutil::config_in(&crate::testutil::tmp_dir("usage-page"));
+        let page = read_usage_page(&cfg);
+        let report = page.report.as_ref().expect("an empty home still reads");
+        assert_eq!(page.text, report.to_text());
+        assert!(
+            page.text.starts_with("rtok agents usage: "),
+            "{}",
+            page.text
+        );
+        let wire = serde_json::to_value(&page).unwrap();
+        assert!(wire["report"]["totals"]["tokens"].is_number(), "{wire}");
+    }
+
+    /// A bad `[agents.usage]` value is the page's text, never a failed snapshot.
+    #[test]
+    fn usage_page_names_a_failed_read() {
+        let mut cfg = crate::testutil::config_in(&crate::testutil::tmp_dir("usage-bad"));
+        cfg.agents.usage.tz = "Nowhere/Land".into();
+        let page = read_usage_page(&cfg);
+        assert!(page.report.is_none());
+        assert!(
+            page.text.starts_with("usage did not answer"),
+            "{}",
+            page.text
+        );
     }
 
     #[test]

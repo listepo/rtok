@@ -1,0 +1,67 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
+//! T285 (D34): MCP `worktree_add` and `worktree_list`, the agent-facing side of
+//! `rtok worktree add` / `list`. They call the same functions as the CLI; the only
+//! difference is who the agent is: the MCP session's link (T283.1), never an argument, so a
+//! model cannot claim a worktree in another agent's name or pick its own lock owner.
+
+use anyhow::{Result, bail};
+use serde_json::{Value, json};
+
+use crate::plugin::{Runtime, ToolDef};
+use crate::store::AgentDetail;
+use crate::worktree::{claim, list};
+
+pub fn add_def() -> ToolDef {
+    ToolDef {
+        name: "worktree_add",
+        description: "Create a git worktree for a task, locked and bound to this session's agent. Returns {path, branch, task, agent, note}; work only inside path.",
+        input_schema: json!({"type":"object","properties":{"task":{"type":"string","description":"task id, e.g. T12"},"slug":{"type":"string","description":"optional branch suffix"}},"required":["task"]}),
+    }
+}
+
+pub fn list_def() -> ToolDef {
+    ToolDef {
+        name: "worktree_list",
+        description: "Every worktree of this repository: path, branch, state, size, and the agent bound to it with its host and live/idle/ended state.",
+        input_schema: json!({"type":"object","properties":{}}),
+    }
+}
+
+fn arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
+    args.get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+}
+
+pub fn add(cx: &Runtime, agent: &AgentDetail, args: &Value) -> Result<String> {
+    let Some(task) = arg(args, "task") else {
+        bail!("`task` is required, e.g. T12");
+    };
+    let root = claim::configured_root(&cx.config.worktree.root);
+    let cwd = std::env::current_dir()?;
+    let plan = claim::add(
+        Some(&cx.store),
+        &cwd,
+        root,
+        (task, arg(args, "slug")),
+        Some(agent),
+        None,
+    )?;
+    Ok(json!({
+        "path": plan.path,
+        "branch": plan.branch,
+        "task": plan.task,
+        "agent": agent.id,
+        "note": "work only inside `path`; remove it with `worktree_remove` when merged",
+    })
+    .to_string())
+}
+
+pub fn list(cx: &Runtime) -> Result<String> {
+    let mut rows = list::rows(&std::env::current_dir()?)?;
+    list::attribute_with_store(&mut rows, Some(&cx.store), &cx.config.agents.idle);
+    Ok(serde_json::to_string(&rows)?)
+}

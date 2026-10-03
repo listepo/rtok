@@ -52,7 +52,7 @@ Options:
   -h, --help                 Print help
 
 $ rtok web --help
-Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
+Local web UI over the same data as `rtok tui` (WebSocket API + React SPA)
 
 Usage: rtok web [OPTIONS]
 
@@ -735,6 +735,7 @@ Commands:
   dead      List unreferenced private definitions (skips pub, trait impls, tests, macros)
   status    Index health for the current or given root (T68.3)
   impact    Symbol impact or call paths to a target (T68.4)
+  projects  The project registry: list, add, remove, select (T329.2)
   affected  Tests that reach files changed in git (`git diff --name-only`)
   help      Print this message or the help of the given subcommand(s)
 

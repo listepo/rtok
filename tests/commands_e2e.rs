@@ -403,3 +403,58 @@ fn config_validate_creates_the_default_file_but_not_an_explicit_one() {
         .clone();
     assert!(String::from_utf8_lossy(&out.stderr).contains(missing));
 }
+
+/// T365: a value `config validate` rejects in the file is rejected the same way when it arrives
+/// through the environment, and the message names that layer.
+#[test]
+fn config_validate_checks_env_overrides_and_names_the_layer() {
+    let home = tmp("config-validate-env");
+    let validate = |level: Option<&str>| {
+        let mut c = cmd(&["config", "validate"], &home);
+        c.env_remove("RTOK_CONFIG").env_remove("RTOK_LOG_LEVEL");
+        if let Some(level) = level {
+            c.env("RTOK_LOG_LEVEL", level);
+        }
+        c.assert().get_output().clone()
+    };
+
+    let clean = validate(None);
+    assert!(clean.status.success());
+    assert!(String::from_utf8_lossy(&clean.stdout).starts_with("ok "));
+
+    let good = validate(Some("debug"));
+    assert!(good.status.success(), "{good:?}");
+
+    let bad = validate(Some("verbose"));
+    assert!(!bad.status.success());
+    let stderr = String::from_utf8_lossy(&bad.stderr);
+    assert!(
+        stderr.contains("env: log.level must be error, warn, info, or debug"),
+        "{stderr}"
+    );
+    let _ = fs::remove_dir_all(&home);
+}
+
+/// T379: a bad window is blamed on where it came from: the config key, or the flag.
+#[test]
+fn report_since_errors_name_their_source() {
+    let home = tmp("report-since");
+    let cfg = home.join("c.toml");
+    fs::write(&cfg, "[report]\nsince = \"7x\"\n").unwrap();
+    let cfg = cfg.to_str().unwrap();
+    let stderr = |args: &[&str]| {
+        let out = cmd(args, &home).assert().failure().get_output().clone();
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    let from_config = stderr(&["--config", cfg, "report"]);
+    assert!(
+        from_config.contains("report.since") && !from_config.contains("--since"),
+        "{from_config}"
+    );
+    let from_flag = stderr(&["report", "--since", "7x"]);
+    assert!(
+        from_flag.contains("--since") && !from_flag.contains("report.since"),
+        "{from_flag}"
+    );
+    let _ = fs::remove_dir_all(&home);
+}
