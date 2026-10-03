@@ -48,7 +48,7 @@
 <p><code>rtok</code> reduces the context AI coding agents must carry. One Rust binary, three surfaces: Claude Code hooks, an MCP server, and an API proxy. Each reduction is measured; shortened payloads stay retrievable by id.</p>
 <div class="not-prose my-5 rounded-lg border border-warn/50 bg-warn/10 px-4 py-3 text-xs text-ink flex gap-3" role="note"><span class="pill-warn shrink-0">warning</span><p><strong>Status: v0.0.1.</strong> All ten plugins are implemented across the three surfaces. The committed A/B bench has only been run offline, so it reports zeros for both configurations. rtok's claim today is "measurable", not "cheaper".</p></div>
 <h2 id="install">Install</h2>
-<p>macOS (Apple silicon or Intel) and Linux x86-64 have prebuilt binaries. The installer is POSIX <code>sh</code> and puts <code>rtok</code> (plus <code>rtok-update</code>) in <code>~/.cargo/bin</code>.</p>
+<p>macOS (Apple silicon) and Linux x86-64 have prebuilt binaries. The installer is POSIX <code>sh</code> and puts <code>rtok</code> (plus <code>rtok-update</code>) in <code>~/.cargo/bin</code>.</p>
 <div class="relative group"><span class="absolute right-2 top-2 text-2xs text-ink-subtle">bash</span><pre class="pre"><code>curl --proto &#x27;=https&#x27; --tlsv1.2 -LsSf \
   https://github.com/pyrlyn/rtok/releases/latest/download/rtok-installer.sh | sh</code></pre></div>
 <p>Or with ketch, from the same release archives:</p>

@@ -444,6 +444,18 @@ Check: validate tests reject `7x` / `d` / `-1d` for `stats.since` and accept `30
 
 Result (2026-10-03, Claude Code / sonnet-5): `measure::stats::parse_since_from(s, source)` is the one parser and names its source in every error (`bad stats.since 7x`, `bad stats.since unit in 7x`, `stats.since 99999999999999999d is out of range`); `parse_since(s)` keeps the `--since` wording for the flag. `src/config/validate.rs` runs it on `stats.since`, so `config validate` reports `7x`, `d`, `-1d` and the empty string with `file:line`, and `config set` refuses them through the same `issues_in` (file unchanged). The readers that take the config value (`web::model::stats_report` and `memory_status`, `report_window` as `report.since`, `doctor`) pass their source; `rtok stats --since` is parsed in `Cmd::Stats` before it merges into the config, so an error from the merged value can only come from the config or `RTOK_STATS_SINCE` and says so. Checked: `a_malformed_stats_since_is_rejected` (rejects `7x`, `d`, `-1d`, empty; accepts `30d`, `12h`, `7`; `set` refuses `7x` and leaves the file byte-identical), `parse_since_names_its_source`, the existing `bad-args` trycmd for `--since 5x` unchanged, `cargo test --lib` 20 passed for the three filters, `just check`.
 
+### T365. `RTOK_*` env overrides skip every value check, and `config validate` still says ok
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). Values `config validate` rejects in the file are taken as-is from the environment: `RTOK_LOG_LEVEL=verbose` ranks as most severe in `crates/rtok-log` and silently drops everything below error, yet `rtok config validate` prints `ok`, so it cannot explain why logs went quiet. `ConfigCmd::Validate` (`src/cli.rs`) runs `validate::issues` on the file path only; env values come in through `layers::load` (`src/config/layers.rs`), which deserializes them with type checks and no value rules.
+
+Repro: `RTOK_LOG_LEVEL=verbose rtok config get log.level` prints `verbose`; `RTOK_LOG_LEVEL=verbose rtok config validate` prints `ok …/config.toml`, exit 0 (the same value in `config.toml` is reported).
+
+Done when: `config validate` runs the same per-key rules over the merged config (file + project + env, `layers::load`) and names the source of each bad value (the data `config show --sources` already has). Split from the file check only if the change exceeds 300 LOC / 10 files.
+
+Check: a test with `RTOK_LOG_LEVEL=verbose` in the child env gets a non-zero `config validate` whose message names the env source; a clean env still prints `ok`; `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `layers::sourced(fig)` now returns the typed `(key, value, source layer)` triples that `layers::entries` used to render straight to strings (`entries` is a thin renderer over it, so `config show --sources` is unchanged). `validate::layered_issues` takes the triples whose layer is not `default` or `user` (project file, `.env`, environment), rebuilds each layer as a small TOML document and runs it through the existing `issues_in`, so the one rule table in `validate.rs` applies and no rule is copied; a message reads `env: log.level must be error, warn, info, or debug`. The `ConfigCmd::Validate` arm adds those issues to the file's. The user file is not re-reported (`issues` already read it with real line numbers). Checked: unit test `layered_values_are_checked_and_name_their_layer` (it caught a `to_i128` None for unsigned numbers, which would have skipped every unsigned key such as `proxy.port`), e2e `config_validate_checks_env_overrides_and_names_the_layer` (`RTOK_LOG_LEVEL=verbose` in the child env exits non-zero naming `env`; `debug` and a clean env print `ok`), `just check`.
+
 ### T225. Debug log on stderr: `log` + `env_logger` behind `RUST_LOG`, tailspin viewer
 
 Creator request 2026-09-23: add env_logger for debugging, configurable; add tailspin, or replace env_logger if it is worse. Tailspin is a log highlighter (`tspin`), not a logger, so both went in. `crate::log::init_stderr` (first thing in `cli::run`) installs env_logger with the filter defaulting to `off`, so nothing changes on stderr until `RUST_LOG` is set; `RUST_LOG` rather than `RTOK_LOG` because the config env layer owns `RTOK_<SECTION>_<KEY>` and `RTOK_LOG` would shadow the `[log]` table. `cli::run` logs argv at debug; every D26 line is mirrored to the facade (target `rtok::log`) before the `[log] level` gate, so the file keeps its level while stderr shows what `RUST_LOG` asks for. Tailspin is pinned in `mise.toml` (`ubi:bensadeh/tailspin`); `just logs [flags]` opens `~/.rtok/logs/rtok.log` in it. Docs: `docs/config.md` → "Debug log (`RUST_LOG`)".
@@ -2056,6 +2068,19 @@ Found by the 2026-10-01 bug hunt. `graph::lsp::kind_name` mapped LSP SymbolKind 
 Fix: `kind_name` follows the spec; a `has_test_attr` helper walks the whole attribute/comment block above a definition (`#[test`, `#[cfg(test`, `#[rstest`, `#[case`, any `::test`); the skill id is cut on chars; a lone overflowing title is halved until the index fits, and dropped only if an empty title still does not.
 
 Check: `kind_name_follows_the_lsp_symbol_kind_numbers`, `dead_lists_only_the_private_orphan` (new `param.rs` fixture), `a_non_ascii_skill_id_is_shortened_on_a_char_boundary`, `a_single_long_title_cannot_break_the_index_cap`; `just check`.
+
+## T329.1 — Project registry in the store: `projects` table, canonical dedup, selection, missing, remove
+
+T329 §1 and the storage half of §2, with no CLI, links or page (those are T329.2 onward). Migration `0027_projects` creates `projects` (id, canonical root, optional display name, origin `manual|session|worktree|mcp|reference`, created and last-used times, `selected`) with a partial unique index so at most one row is selected, and backfills one project per root already in the symbol index, the most recently indexed one selected, so an existing store keeps working. `Store` gets `register_project`, `projects`, `project`, `project_by_root`, `rename_project`, `selected_project`, `select_project`, `resolve_project` and `remove_project`.
+
+Execution: `migrations/0027_projects/up.sql`, `src/store/projects.rs` (new), `schema.rs`, `schema_snapshot.txt`. Roots are canonicalised with `graph::index::canon`, the key the symbol index already uses, so symlinks and `..` spellings are one project and the first origin stands. "Missing" is read from the filesystem on every call, never stored. `resolve_project(cwd)` keeps a live stored selection, otherwise selects the cwd's registered project and reports `fell_back` when it replaced a stored selection that is gone. `remove_project` drops the project's `symbols`, `extractor` and `symbol_stale` rows and the registry row in one transaction and never touches files.
+
+Check: `projects::tests` (dedup through symlink and `..`, selection exclusivity and unknown id, rename, missing, cwd fallback, remove leaving other roots' index alone) and `migration_0027_registers_the_roots_the_store_already_indexed` (previous-schema db, selected = newest `indexed_at`, empty store gets no project); schema snapshot re-blessed; `just check`.
+
+Deviations: none from the card; the registry stores no index status (rows, files, pending, watch, last error), which T329.2 computes from the index when it lists projects.
+
+Status: done 2026-10-03 · Model: Claude Code / sonnet-5
+
 
 ## T48.7 — aider host
 
@@ -6123,6 +6148,7 @@ Result: New Worktrees page ("worktrees","worktrees") on both surfaces: model::wo
 
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
+
 ### T183. Python utility: publish host plugins to marketplaces (per agent, via CI)
 
 Creator request 2026-09-22 (voice): a single Python script that publishes an agent plugin to a marketplace — only for hosts that support marketplace publishing. For each AirTalk/rtok host that has this capability, implement a corresponding Python module with that host's publish logic. Invoking the script with the key `all` or a specific agent name deploys/publishes that agent's plugin to its marketplace via CI, triggered from Python.
@@ -7049,6 +7075,18 @@ Result: Added `rtok agents junk clear`: a dry run by default, `--yes` applies, `
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T330.1. `rtok agents junk list`: rtok's own junk with folders, sizes and space freed
+
+First slice of T330 (too large for one PR: complexity 4, six areas). Adds the read-only `rtok agents junk list [--json] [--bytes]` over the junk `clear` already knows (the T182 `rtok-own` kind: `rtok.log.<N>` past `[log] files`, archive payloads past `core.retain_calls_days`): one `rtok` agent row with its folders (the log and archive directories, disk usage: allocated blocks, a hard link once, symlinks not followed), each kind with items and size, and "Freed by `clear`". The list is a section of the Hosts page text (`web::model::hosts_page_text`), so `agents junk list` maps to the `hosts` page in `surface_parity` (D27). `clear` is unchanged.
+
+Done when: `list` prints the `rtok` row with exact sizes (`--bytes`) equal to what the `clear` dry run plans; `--json` carries `agents[] { name, folders[], kinds[], freed_default_bytes }` and `freed_default_bytes`; `list` deletes nothing; the Hosts page shows the same text; `surface_parity`, `config_coverage` and the trycmd fence pass.
+
+Check: `tests/agents_junk.rs` (fixture home: stale log, JSON and `--bytes`, file still there), unit tests in `src/agents/junk.rs` (disk usage with a hard link and a symlink, report sums equal the plan); `just check`.
+
+Execution: `src/agents/junk.rs` gets `Report`/`AgentJunk`/`Folder`/`KindRow`, `disk_usage`, `report(cfg)` (built from `scan`, no second scan) and `to_list`; `src/cli.rs` gets `JunkCmd::List`; `src/web/model.rs` appends the text to the cached hosts page; `tests/surface_parity.rs` maps the command to `hosts` and gates `--json`; `tests/config_coverage.rs` allows `junk.bytes`; trycmd/completions regenerated.
+
+**Result (2026-10-03, Claude Code / sonnet-5):** `rtok agents junk list [--json] [--bytes]` (`src/agents/junk.rs`, `src/cli.rs`) prints the `rtok` row: its log and archive directories with disk usage (allocated blocks on Unix, a hard link once, symlinks not followed; a directory nested in another is folded), each kind with items and size, and "Freed by `clear`", built from the same `scan` the `clear` dry run uses so the numbers match. `--json` carries `agents[] { name, folders[], kinds[], freed_default_bytes }` and `freed_default_bytes`. The text is also appended to the Hosts page (`web::model::hosts_page_text`, inside the existing background read), so `surface_parity` maps `agents junk list` to `hosts` and gates its `--json`; `config_coverage` allows `junk.bytes`. `clear` is untouched. Checked by two unit tests in `src/agents/junk.rs` (hard link and symlink in `disk_usage`; report sums equal the plan and the text), one e2e test in `tests/agents_junk.rs` (JSON and `--bytes` on a fixture home, nothing deleted) and `just check`. The remaining slices are T330.2 to T330.6.
 
 ### T248. Plugin READMEs must link the host's official documentation
 
