@@ -20,6 +20,36 @@ Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree uncha
 
 Result (2026-09-26, Cursor / grok 4.7): live check passed under a throwaway `HOME` (real `~/.config/kilo` and `~/.local/share/kilo` unchanged). `rtok agents install kilo --yes` linked `plugins/opencode/rtok.ts` and wrote `mcp.rtok`. Kilo 7.7.5 rejected the old bare-function default export (`failed to load plugin` / `plugin config hook failed`); the shared plugin now exports `{ id: "rtok", server }` and rewrites bash in `tool.execute.before` to `rtok run -- '…'`. `kilo run --auto -m vercel/alibaba/qwen3.5-flash` invoked bash with `rtok run -- 'echo rtok-t97'`; tool output carried the expand trailer; `RTOK_HOME=… rtok stats --plugin cmd --json` showed one `cmd`/`rule` row (`ref_id` `echo:301a303c…`). OpenAI env key had no credits; Vercel AI Gateway worked. Extension (b) not re-probed here — same files as CLI. Unit: `agents::kilo` 6/6, `opencode_plugin`+`filter` 6/6 (vitest 21/21), `readme_tables_match_support` green.
 
+### T279.1. `rtok agents outdated`: list only the hosts whose rtok plugin is older than the running rtok
+
+Name: `rtok agents outdated`, the word `npm outdated`, `cargo outdated` and `brew outdated` use for exactly this list, next to the `agents list` / `info` / `update` it belongs with. `rtok agents update --check` is an alias that prints the same thing (for people who look under `update`). `versions` was rejected: it reads as "show every version", while this command hides everything that needs no action.
+
+Behaviour:
+- Walks every host rtok supports (the host registry `agents list` uses), not only the ones in the receipt, so a plugin installed by hand or by an older rtok is found too.
+- For each host it reads the installed plugin's version with T279 step 2's lookup: `.rtok-plugin-version` in the installed copy, then the receipt, then the host's own record (Claude `installed_plugins.json`). The source comes from the same lookup (`github`, `local`, `marketplace`).
+- Target version is the running binary's `CARGO_PKG_VERSION`. The command reads local files only: no network, no host CLI call, no marketplace refresh, so it is fast and works offline.
+- A host is listed only when the plugin is installed and its version is lower than the target by SemVer, ignoring build metadata (a local `0.10.0+g12c7e91` on rtok `0.10.0` is current). An install with no version file and no recorded version counts as `0.0.0` and is listed as `legacy`. Hosts without the plugin, with the same version, or with a newer one are not printed.
+- Selection flags as in `update`: an optional host list (`rtok agents outdated claude,cursor`), `--cli` / `--desktop`.
+
+Output:
+- A table with columns `agent`, `installed`, `available`, `source`, one row per outdated host and variant, for example `claude  0.0.1  0.10.0  github` and `gemini  legacy  0.10.0  marketplace`. A footer names the next step: `run: rtok agents update claude,gemini`.
+- Nothing to update, some plugins installed: `all rtok plugins are up to date (3 installed, rtok 0.10.0)`.
+- No plugin installed anywhere: `no rtok plugins installed`.
+- `--json`: `{"rtok":"0.10.0","outdated":[{"agent":"claude","variant":"cli","installed":"0.0.1","available":"0.10.0","source":"github","legacy":false}],"installed":3}`, with `outdated` empty in both "nothing to do" cases; the human messages are not printed.
+- Exit code 0 by default, so scripts that only read the output keep working; `--exit-code` returns 10 when at least one host is outdated, for CI and hooks.
+
+Implementation: one function `outdated(cfg, selection) -> Vec<Outdated>` built on T279's version lookup and comparison (the same pure function `update` uses, so both always agree on "outdated"); the table uses the existing `render` table helpers; the `demon` and web UI can call the same function later for an "updates available" badge.
+
+Tests (`Vfs` fixtures): no plugins prints `no rtok plugins installed` and `outdated: []`; all current prints the up-to-date line; one outdated and one current prints only the outdated row; a legacy install without a version file is listed as `legacy`; a newer installed plugin is not listed; local build metadata on the same version is not listed; `--json` matches the schema above; `--exit-code` gives 10 and 0 in the matching cases; `agents update --check` output equals `agents outdated`; no host CLI is spawned (fake CLI on `PATH` logs nothing).
+
+Documentation and tests (required): this command has its own section in `docs/plugin-versions.md` (T279 step 7, section 6) and its cases in T279 step 8 (the `outdated` and `offline` groups, the `--exit-code` and alias checks). T279.1 is not done until both are in and green.
+
+Check: on the creator's machine today `rtok agents outdated` prints `claude 0.0.1 0.10.0 github`; after `rtok agents update claude` it prints the up-to-date line; `just check`.
+
+Execution: the code landed earlier through `fb214cf9` ("merge open pull requests into main", the work of the closed PR #513): `src/agents/outdated.rs` (`outdated`/`report`/`print_human`), the `agents outdated` subcommand and `agents update --check` in `src/cli.rs`, the `src/ui/agents.rs` wording, the `docs/agents.md` section and the first `outdated_*` tests in `tests/plugin_versions.rs`. This PR verifies that code against the card item by item and closes the card: it fixes the one behavioural mismatch found, closes the test gaps the card names, and writes the `docs/plugin-versions.md` section the card requires. Fixture homes only, no real agent.
+
+Result (2026-10-03, Claude Code / sonnet-5): checked against `fb214cf9`: the no-plugins and all-current messages, the table columns, the `run: rtok agents update <hosts>` footer, `--json` schema, `--exit-code` 10/0, host list and `--cli`/`--desktop` selection, `update --check` equal to `outdated`, SemVer comparison that ignores build metadata and hides newer installs, and the surface_parity, `cli_trycmd`, `completions`/man and `config_coverage` gates (all green without a golden change, the CLI surface did not change). Mismatch fixed: a Claude install with no version file but a dated host record (`installed_plugins.json` says `0.0.1`) was printed as `legacy`; the card lists `legacy` only when nothing records a version, and its Check prints `claude 0.0.1 0.10.0 github`, so `installed_row` now treats a receipt row or a parseable host-record version as recorded (JSON `legacy: false`, `installed: "0.0.1"`); `agents info`'s "legacy (no version file)" is a different state and is unchanged. Test gaps closed in `tests/plugin_versions.rs`: the "no host CLI is spawned" test had no fake CLI on `PATH`, so it could not fail; it now puts logging shims for `claude`, `codex`, `gemini`, `cursor-agent` and `copilot` first on `PATH` (unix) and asserts the log is empty after a run that lists a row, and every `run_outdated` call points `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` at a closed port (the card's offline case); the legacy test uses an install with no recorded version and checks the human row and the JSON; the all-current case also checks `--json --exit-code` (`outdated: []`, exit 0, `installed: 2`). `docs/plugin-versions.md` "Listing outdated plugins" (the placeholder) is written from real runs against a fixture home: what is listed and hidden, `legacy`, both "nothing to do" messages, host selection, `--json` fields, `--exit-code`, why it works offline; `docs/agents.md` links to it, `README.md` and `docs/release.md` already linked the page, and `CHANGELOG.md` is generated from commit subjects. Fail-first: with the old `outdated.rs` the json and mixed-table tests fail, with the fix they pass. Checked: `tests/plugin_versions.rs` 16 passed (9 `outdated_*`), the rest of 33 across `plugin_versions`, `surface_parity` and `config_coverage` passed, `cli_trycmd` and `completions` 6 passed; the touched binary run against a fixture home printed the table, the up-to-date line, `no rtok plugins installed`, the `legacy` row and `exit=10`. Not done: nothing the card requires; the T279 progress note's open items (the installed copy's version file is only read through the install probe, Codex, Copilot and Gemini are not wired into the plugin lookup) belong to T279 itself, so `agents outdated` lists those hosts only as far as T279's lookup knows them.
+
 ### T163. Replace raw SQL in `src/store/` with Diesel's query builder
 
 Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 104 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2 (`symbols.rs`'s 15 are done — T163.1). Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`; creator approved wiring it into rtok on 2026-09-23). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
@@ -387,6 +417,18 @@ Done when: float range rules (`as_float()`) reject `threshold` and `delta_max_ra
 Check: new negative cases in the validate tests for all three keys (`-1`, `0`, `5`, `-3`, `openai`) plus the accepted defaults; `config set` of each bad value exits non-zero and leaves the file unchanged; `just check`.
 
 Result (2026-10-03, Claude Code / sonnet-5): `src/config/validate.rs` gains `UNIT_RATIO_KEYS` (`plugins.proxy.semantic_cache.threshold`, `plugins.read.delta_max_ratio`), checked as `(0, 1]` for floats and integers alike (NaN, 0, negatives and values above 1 are rejected), and `plugins.proxy.semantic_cache.embed_backend` joins `CHOICES` with the only supported value `hash`. `config set` already re-runs `issues_in` on the edited text, so it uses the same table and a refused value leaves the file untouched. Checked: new test `unit_ratio_keys_and_embed_backend_are_range_checked` (`-1`, `0`, `5`, `1.5`, `-3`, `0.0`, `openai` rejected by validate; `-1`, `0`, `5`, `-3`, `openai` rejected by `set` with the file byte-identical; `0.99`, `1`, `0.6`, `hash` accepted), `cargo test --lib config::validate` 16 passed, `just check`.
+
+### T364. `config validate` accepts a malformed `stats.since`; `rtok stats` then blames a flag nobody passed
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). `stats.since = "7x"` passes `config set` and `config validate`; then `rtok stats` fails with `Error: bad --since unit in 7x`, `rtok report` silently falls back to 30 days, `doctor` silently skips its check (`.ok()?` in `src/doctor.rs`), and the web/TUI model returns the error (`?` in `src/web/model.rs`). `src/config/validate.rs` has no rule for `stats.since`; the only parser, `measure::stats::parse_since` (`src/measure/stats.rs:799,803`), hard-codes `--since` in its messages.
+
+Repro: `rtok config set stats.since 7x` (exit 0), `rtok config validate` (`ok`, exit 0), `rtok stats` (`Error: bad --since unit in 7x`, exit 1).
+
+Done when: `validate.rs` runs `measure::stats::parse_since` on `stats.since` (accepts `<n>`, `<n>d`, `<n>h`), so `set` and `validate` reject `7x`; `parse_since` names its source (`stats.since` vs `--since`) in the error.
+
+Check: validate tests reject `7x` / `d` / `-1d` for `stats.since` and accept `30d`, `12h`, `7`; a `parse_since` unit test asserts the message names `stats.since` when it comes from config and `--since` from the flag; `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `measure::stats::parse_since_from(s, source)` is the one parser and names its source in every error (`bad stats.since 7x`, `bad stats.since unit in 7x`, `stats.since 99999999999999999d is out of range`); `parse_since(s)` keeps the `--since` wording for the flag. `src/config/validate.rs` runs it on `stats.since`, so `config validate` reports `7x`, `d`, `-1d` and the empty string with `file:line`, and `config set` refuses them through the same `issues_in` (file unchanged). The readers that take the config value (`web::model::stats_report` and `memory_status`, `report_window` as `report.since`, `doctor`) pass their source; `rtok stats --since` is parsed in `Cmd::Stats` before it merges into the config, so an error from the merged value can only come from the config or `RTOK_STATS_SINCE` and says so. Checked: `a_malformed_stats_since_is_rejected` (rejects `7x`, `d`, `-1d`, empty; accepts `30d`, `12h`, `7`; `set` refuses `7x` and leaves the file byte-identical), `parse_since_names_its_source`, the existing `bad-args` trycmd for `--since 5x` unchanged, `cargo test --lib` 20 passed for the three filters, `just check`.
 
 ### T225. Debug log on stderr: `log` + `env_logger` behind `RUST_LOG`, tailspin viewer
 
@@ -7514,6 +7556,57 @@ Check: store unit tests (register is idempotent, sub-agent row, resolve prefix /
 Status: done 2026-09-27 (#439; hook bench p95 9.10 ms PreToolUse, 9.51 ms PostToolUse)
 Model: Claude Code / claude-opus-5-5
 
+### T283.1. MCP agent link: `rtok mcp --host`, the doc-derived link rule, MCP `whoami`
+
+PR 2 of T283, part 1. The link rule is **derived from the vendor docs and open-source spawn code of `research.md` §26, not from a live run**; the T281 probe (the creator's manual sessions) only confirms it, and a probe row that disagrees changes the rule for that host. Rule order: (a) the host's session-id env var in the `rtok mcp` process (only Grok Build has one that reaches an MCP child: `GROK_SESSION_ID`); (b) the nearest common host ancestor pid shared by hook processes and the MCP process (T283.3); (c) cwd plus host, with the live agents of that host in that cwd; one match links, two or more are **ambiguous** and bind nothing. A hook-less host (`Agent::support(_, "hook")` is `No` for every variant) registers its own agent row from the MCP process.
+
+Done when: `rtok mcp --host <id>` sets `[hook] host` for the process; `src/agents/link.rs` resolves `Link { id, rule }` (`env`, `cwd`) or `Ambiguous { candidates }` or nothing, from the store, the host slug, the env and the cwd; the server resolves at `initialize` and again on demand until it is linked (hooks may fire after the MCP process starts), caching a link only; MCP tool `whoami` returns `{id, short, host, host_session, cwd, rule, worktrees}`, or an error `not linked to an agent session` or `ambiguous: agents <short ids> share this cwd; use RTOK_AGENT_ID`; an entry without `--host` reads as the default `[hook] host`, as `record` attributes calls today (T283.2 closes that); `research.md` §26 and this card say the rule is doc-derived.
+
+Check: `link.rs` unit tests over a seeded store (env rule, cwd single, cwd ambiguous, no match, ended agents ignored, other host ignored); MCP e2e with a fake client: `initialize` then `tools/call whoami` returns the registered agent; a hook-less fake host registers through MCP alone; `surface_parity`, `config_coverage`, man page; touched test binaries.
+
+Execution (2026-10-03): (1) `src/agents/link.rs`: a pure `resolve(store, host_slug, env, cwd)` returning the rule that matched or the ambiguous candidate list, plus `register_own` for hook-less hosts; the env-var rule table starts with `grok` / `GROK_SESSION_ID`. (2) `rtok mcp --host <id>` overlays `[hook] host` in `cli.rs`. (3) `Server` keeps the resolved agent in a `Mutex<Option<..>>`: tried at `initialize`, retried by `whoami` until linked; `whoami` is built-in beside `ping`, always listed. (4) `research.md` §26 gets one sentence that the rule is doc-derived and the probe only confirms it. (5) Tests as in Check; `surface_parity`/`config_coverage` only if a gate fires. Touched test binaries only while disk is tight.
+
+Result (2026-10-03, Claude Code / sonnet-5): `src/agents/link.rs` resolves the link with rule (a) `GROK_SESSION_ID` for `grok` and rule (c) the host's live agents in the cwd (one links, several are ambiguous and bind nothing); a cwd candidate must have been seen since this MCP process started (an ended session's row inside `[agents] idle` is never linked to its successor), and a cwd link is re-run on every call, never cached (only `env` and `own` are); a host whose every variant has no `hooks` support registers its own row. `rtok mcp --host <id>` overlays `[hook] host` (`config_coverage` maps it to `hook.host`). The server resolves at `initialize` and again on every `whoami` until linked; MCP tool `whoami` is built in beside `ping` and survives the `[mcp] tools` allow-list. `research.md` §26 and the card say the rule is doc-derived and only confirmed by the T281 probe. Rule (b) moved to T283.3 because the hook wire request carries no pid. Tests: seven `link` unit tests and five MCP e2e tests (cwd link, late registration, ambiguity, hook-less host, registry off); `just check` green (2165 passed). The one-shot `tools/list` fixtures and shell completions were regenerated for the new tool and flag.
+
+### T358.1. `rtok agents usage --source rtok`: CLI, `[agents.usage]` config and store reads
+
+First slice of T358: scope is the T358.1 bullet under "Split when claiming" there; the spec text stays in T358.
+
+Moved out of the first slice (to keep it near 300 LOC), all to T358.2 unless noted: `--by agent|model`; the saved tokens / saved estimate columns and the `rtok saved` summary line (they come from the `measurements` ledger and are only needed once `both` exists); display names (`Claude Code`; this slice prints the host id); the JSON `skipped` field; flipping the `[agents.usage] source` default from `rtok` to `logs` (the default is `rtok` until logs exist). The store read groups by session, model and timestamp, not by quarter hour: Diesel 2.3 cannot `GROUP BY` a computed `ts / N` (the gap `Store::usage_by_model` documents), so the grain is the request; revisit if a large store makes it slow.
+
+Check: the items of T358's Check list that apply to `--source rtok` (fixture totals in text and JSON, unpriced warning, `--tz` and DST, match with `stats --price`, config rows); `just check`.
+
+Execution:
+
+1. `jiff` (already in the lock through env_logger) as a direct dependency for IANA zones with DST; row in `toolchain.md`.
+2. `[agents.usage]` in `src/config/mod.rs` (schema from the types), `config/default.toml` and `docs/config.md` rows.
+3. `Store::usage_slices` (Diesel, no raw SQL) in `src/store/mod.rs`; `src/agents/usage.rs` builds the report, reusing `row_cost` and `[stats.prices]` from `measure::stats` and the `render::table` helper.
+4. CLI: `rtok agents usage` in `src/cli.rs` with the `[agents.usage]` flag overlay.
+5. Gates: `tests/config_coverage.rs` (flag to key mapping), `tests/surface_parity.rs` (EXEMPT until T358.5), trycmd cases and regenerated goldens, README row.
+6. Verify with the `agents::usage` unit tests (golden text, JSON field names, zone and DST cases), then `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `rtok agents usage` now prints the T358 screen for what passed through rtok: header with the last day and zone, summary (tokens, estimated cost, sessions, daily rows), the unpriced warning, the per-agent table and monthly (or `--daily`) totals; `--json` carries the same rows with the four token legs, `--unpriced` lists the models without a price. Flags `--source`, `--host`, `--since`, `--until`, `--daily` / `--monthly`, `--tz` map to `[agents.usage]` (`source`, `hosts`, `since`, `until`, `period`, `tz`), with `default.toml` and `docs/config.md` rows. `Store::usage_slices` reads the `usage` rows through Diesel; `src/agents/usage.rs` buckets them by day and month in `--tz` with `jiff` (DST-aware, new direct dependency, already in the lock) and prices them through `measure::stats::row_cost` and `[stats.prices]`, with provider prefix and date suffix stripped before the lookup. Checked: seven `agents::usage` unit tests (golden screen text, JSON field names, a request across UTC midnight, month edges before and after the Kyiv DST change, host and window filters, total equal to the `stats --price` arithmetic), trycmd cases for the empty store and `--help`, and the `config_coverage` and `surface_parity` gates (`agents usage` is `EXEMPT` until T358.5 adds its page). The cut-out parts are recorded in the T358.1 card above and landed in the T358.2 card.
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
+
+### T358.2. `rtok agents usage --source logs|both` for Claude Code and Codex
+
+Scope: the T358.2 bullet under "Split when claiming" in T358 (`--source logs` for Claude Code and Codex on the existing transcript readers, and `--source both`), plus the `source` default flip to `logs` and display names. Moved to T358.6 to stay near 300 LOC: `--by agent|model`, the saved columns and `rtok saved` line, the JSON `skipped` field, and agents that exist only in the store when `both` is used. `[agents.usage.dirs]` moves to T358.3: the two hosts here read the existing `[stats] transcripts_dir` and `codex_dir`.
+
+Check: the T358 Check items for `logs` and `both` on fixture homes for Claude Code and Codex; `just check`.
+
+Execution:
+
+1. Stack on T358.1 (#656). `jsonl::Usage` gains `ts` and `model` (the parser already dedups streamed messages by `message.id`); `codex::requests` returns one record per `token_count` line and `codex::collect` sums it, so there is one Codex parser.
+2. `measure::usage` turns both into `UsageSlice` rows (sub-agent transcripts join the parent's session); `agents::usage::report` takes its rows from the logs, the store, or both and fills `through_rtok_tokens` and `coverage` per agent for `both`.
+3. Fixture logs under `tests/trycmd/input/usage-logs/`, unit tests, trycmd goldens, `just check`.
+
+Result (2026-10-03, Claude Code / sonnet-5): `rtok agents usage` now defaults to `--source logs`: the Claude Code transcripts (`[stats] transcripts_dir`) and Codex rollouts (`[stats] codex_dir`) are read on the fly, never written to the store, and bucketed per request by day and month in `--tz`, priced through `[stats.prices]` like the `rtok` source. Agents print with their display names (`Claude Code`, `Codex`; JSON carries `host` and `name`). `--source both` keeps the logs' totals and costs and adds `Through rtok` and `Coverage` columns (JSON `through_rtok_tokens`, `coverage`), so an agent that bypasses the proxy reads low. Reused, not rewritten: `jsonl::parse_path` (message-id dedup), `codex::jsonl_paths`, `subagents::is_subagent`, `stats::row_cost` and `parse_since`. Known limits: a Claude Code session resumed into a second file is counted in both (dedup is per file, as in `rtok stats`); a request with no parsable timestamp is left out. Checked: unit tests for both readers (streamed duplicate, `<synthetic>` zero turn, sub-agent session, model from the latest `turn_context`, unparsable timestamp), logs totals with one unpriced model across the UTC and Kyiv month edge, `both` coverage, trycmd cases `agents-usage-logs` and `agents-usage-both` on fixture files, `config_coverage` and `surface_parity`.
+
+Status: done 2026-10-03
+Model: Claude Code / claude-sonnet-5
+
 ### T325. Bash rewrite keeps `cd` in the host shell; shell-state builtins stay unwrapped
 
 Found by a bug-hunt pass over `src/plugins/cmd/hook.rs`. The PreToolUse rewrite turned `cd crates/x && cargo test` into `rtok run -- 'cd crates/x && cargo test'`, so the `cd` ran in `rtok run`'s child shell. Hosts that keep the shell's cwd between Bash calls (Claude Code) lost it: the next call ran in the old directory. `export`, `source`, `unset`, `alias`, `pushd`/`popd` had the same problem.
@@ -7545,6 +7638,18 @@ Check: `an_empty_rtok_home_falls_back_to_the_user_home`, `a_dotenv_directory_doe
 
 Status: done 2026-10-01
 Model: Claude Code / sonnet (reviewed by Claude Code / claude-opus-5-5)
+
+### T362. `rtok config validate` fails with ENOENT on a fresh install
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). The first command the reference file header tells a new user to run fails with a raw OS error, while the failed run still leaves `config.toml` behind, so a second run passes. `ConfigCmd::Validate` (`src/cli.rs:974`) calls `validate::issues(&path)`, which reads the file (`src/config/validate.rs:16`) without the `Config::ensure_user_file` step that every other subcommand gets through `Config::load_with`.
+
+Repro: `mkdir /tmp/h1 && HOME=/tmp/h1 rtok config validate; echo $?` → `Error: /tmp/h1/.rtok/config.toml … No such file or directory (os error 2)`, exit 1; the same command again prints `ok`, exit 0.
+
+Done when: with no explicit path, `config validate` first calls `Config::ensure_user_file(&home, config_file.as_deref())` (the default file is created as `load_with` does) and prints `ok …/config.toml` on the first run; an explicit missing path still errors with its name.
+
+Check: a trycmd or `tests/` case on an empty temp `HOME` gets `ok` and exit 0 on the first `config validate`, and an explicit missing path still exits non-zero; `just check`.
+
+**Result (2026-10-03, Claude Code / sonnet-5):** `ConfigCmd::Validate` (`src/cli.rs`) calls `Config::ensure_user_file(&home, config_file.as_deref())` when no path argument is given, the same call `load_with` makes, so the first `config validate` on an empty home creates the default file and prints `ok <home>/config.toml`. A path typed as the argument is not created: a missing one still fails naming it, and `--config`/`RTOK_CONFIG` stay untouched because `ensure_user_file` skips them. The rule tables in `src/config/validate.rs` are not touched. Checked by `config_validate_creates_the_default_file_but_not_an_explicit_one` in `tests/commands_e2e.rs` (empty temp HOME: `ok`, exit 0, file created; explicit missing path exits non-zero naming it) and `just check`.
 
 ### T349. Hooks never reach the fast client: ketch links `rtok` but not `rtok-hook`
 
@@ -7656,6 +7761,18 @@ Execution plan:
 
 Status: done 2026-10-02
 Model: Claude Code / claude-opus-5-5
+
+### T367. `rtok graph index <path>` exits 0 for a path that does not exist
+
+Found 2026-10-01 (QA audit, #601; still present on `main` @ `aecab806`). A typo prints `indexed 0 files · 0 rows …` with exit 0, so a script or agent thinks the index was built. `src/cli.rs` (the `graph index` arm, `index::run_with` at `:1684`) passes `path` as-is and the walker yields nothing for a missing root. The sibling graph subcommands in `src/cli.rs` and `src/plugins/graph/status.rs` resolve `path` the same unchecked way (suspected, not reproduced).
+
+Repro: `rtok graph index /nonexistent; echo $?` prints the zero counts and `0`.
+
+Done when: every graph subcommand that takes a path checks it is an existing directory (or canonicalizes with the path as context) before walking, and exits non-zero with `Error: /nonexistent: No such file or directory`; the T356 home/`/` refusal stays as it is.
+
+Check: tests for `graph index` and each sibling path-taking graph subcommand with a missing path exit non-zero naming the path; indexing a temp project is unchanged; `just check`.
+
+**Result (2026-10-03, Claude Code / sonnet-5):** one `graph::cli_root` helper (`src/plugins/graph/mod.rs`) resolves the path (cwd by default) and fails on a missing or non-directory path with `<path>: No such file or directory (os error 2)` / `<path>: not a directory` before any walk; `graph index`, `dead`, `impact` (`src/cli.rs`) and `status` (`graph::status::run`) all call it. `index::run_with` keeps the T356 refusal of `/` and `$HOME` unchanged. Checked by two e2e tests in `tests/commands_e2e.rs` (a missing path for all four subcommands exits non-zero naming the path with empty stdout; a file path is rejected and a temp project still indexes) and `just check`.
 
 ### T357. rtok links `rtok-hook` next to itself on PATH
 
