@@ -44,6 +44,7 @@ hosts  = []                           # [] = every host; else host ids, e.g. ["c
 since  = ""                           # "" = all time; a date (2026-09-01, whole days in tz) or a duration (30d)
 until  = ""                           # "" = through today; a date, inclusive
 period = "monthly"                    # monthly | daily: the bottom table
+by     = "agent"                      # agent | model: what the middle table groups by
 tz     = ""                           # IANA zone for day and month boundaries; "" = the system zone
 
 [mcp]                                 # rtok mcp

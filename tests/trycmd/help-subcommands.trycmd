@@ -140,7 +140,8 @@ Commands:
   info       One host: the same block `agents list` prints, just for that app
   sessions   What is running in this project: host, provider, model, tokens, start, run time
   usage      Tokens and estimated cost per agent and month (or day), from the agents' logs or rtok
-  junk       Junk rtok owns under its own home: log siblings and archive payloads past retention
+  junk       Junk rtok owns under its own home (log siblings, archive payloads past retention): list
+             or clear
   whoami     This session's own rtok agent id (T283, D34): `RTOK_AGENT_ID`, resolved through the
              store
   show       One agent by id prefix: host, model, ids, parent and sub-agents, cwd, activity, status
@@ -324,6 +325,9 @@ Options:
       --monthly
           Bottom table by month (the default)
 
+      --by <AGENT|MODEL>
+          Middle table grouping: `agent` (the default) or `model`
+
       --tz <ZONE>
           IANA time zone for day and month boundaries (default: the system zone)
 
@@ -337,16 +341,28 @@ Options:
           Print help (see a summary with '-h')
 
 $ rtok agents junk --help
-Junk rtok owns under its own home: log siblings and archive payloads past retention
+Junk rtok owns under its own home (log siblings, archive payloads past retention): list or clear
 
 Usage: rtok agents junk [OPTIONS] <COMMAND>
 
 Commands:
+  list   Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free
   clear  List what `agents junk clear` would remove; `--yes` applies it
   help   Print this message or the help of the given subcommand(s)
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok agents junk list --help
+Folders, junk kinds and sizes per agent, and the space `agents junk clear` would free
+
+Usage: rtok agents junk list [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the text
+      --bytes          Exact byte counts instead of KB/MB/GB
   -h, --help           Print help
 
 $ rtok agents junk clear --help

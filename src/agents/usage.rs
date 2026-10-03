@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use crate::config::{Config, ModelPrice};
 use crate::measure::stats::{parse_since, row_cost};
-use crate::measure::usage::{claude_slices, codex_slices};
+use crate::measure::usage::{Skipped, read};
 use crate::render::{Col, table};
 use crate::store::{Store, UsageSlice};
 
@@ -56,6 +56,20 @@ pub struct Totals {
     pub sessions: usize,
     /// Distinct `(agent, day)` pairs with usage, what ccusage calls daily rows.
     pub daily_rows: usize,
+    /// `rtok` and `both`: what the ledger says rtok removed, net of `expand`.
+    #[serde(flatten)]
+    pub saved: Option<Saved>,
+}
+
+/// Tokens rtok saved (`est_before - est_after` over the `measurements` ledger) and their
+/// worth at the average input price the same host's requests paid; `usd` is `None` when no
+/// model of that host has a price. An estimate, never a measurement.
+#[derive(Debug, Serialize)]
+pub struct Saved {
+    #[serde(rename = "saved_tokens")]
+    pub tokens: i64,
+    #[serde(rename = "saved_usd")]
+    pub usd: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -71,6 +85,15 @@ pub struct Agent {
     /// the proxy reads low. `None` when the logs hold no tokens for it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coverage: Option<f64>,
+    #[serde(flatten)]
+    pub saved: Option<Saved>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ModelRow {
+    pub model: String,
+    #[serde(flatten)]
+    pub row: Row,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,7 +121,12 @@ pub struct Report {
     pub unpriced_models: usize,
     pub unpriced: Vec<Unpriced>,
     pub agents: Vec<Agent>,
+    /// `--by model` only: the model rows the middle table shows instead of `agents`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<Vec<ModelRow>>,
     pub periods: Vec<Period>,
+    /// Hosts whose files exist but could not be read: named, counted nowhere.
+    pub skipped: Vec<Skipped>,
     #[serde(skip)]
     daily: bool,
 }
@@ -118,6 +146,10 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
         "daily" => true,
         other => bail!("agents.usage.period `{other}`: expected `monthly` or `daily`"),
     };
+    let by = match o.by.as_str() {
+        by @ ("agent" | "model") => by,
+        other => bail!("agents.usage.by `{other}`: expected `agent` or `model`"),
+    };
     if let Some(bad) = o.hosts.iter().find(|h| !super::HOSTS.contains(&h.as_str())) {
         bail!(
             "unknown host `{bad}` in agents.usage.hosts; known: {}",
@@ -136,30 +168,58 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
         }
     };
 
-    let (mut totals, mut sessions, mut days) = (Row::default(), BTreeSet::new(), BTreeSet::new());
-    let (mut agents, mut periods): (BTreeMap<String, Row>, BTreeMap<String, Row>) =
-        (BTreeMap::new(), BTreeMap::new());
-    let mut unpriced: BTreeMap<(String, String), i64> = BTreeMap::new();
-    let logs = || {
-        let mut v = claude_slices(&cfg.stats.transcripts_dir, since);
-        v.extend(codex_slices(&cfg.stats.codex_dir, since));
-        v.retain(|b| b.ts < until);
-        v
-    };
     let wanted = |h: &str| o.hosts.is_empty() || o.hosts.iter().any(|w| w == h);
-    let (primary, rtok) = match source {
-        "rtok" => (store.usage_slices(since, until)?, None),
-        "logs" => (logs(), None),
-        _ => (logs(), Some(store.usage_slices(since, until)?)),
+    let mut skipped = Vec::new();
+    let mut from_logs = || {
+        let mut l = read(&cfg.stats.transcripts_dir, &cfg.stats.codex_dir, since);
+        l.slices.retain(|b| b.ts < until);
+        skipped = l.skipped.into_iter().filter(|s| wanted(&s.host)).collect();
+        l.slices
     };
-    let mut through_rtok: BTreeMap<String, i64> = BTreeMap::new();
-    for b in rtok.into_iter().flatten() {
-        let host = host_label(&b);
-        if wanted(&host) {
-            *through_rtok.entry(host).or_default() +=
+    let (primary, rtok) = match source {
+        "rtok" => (store.usage_slices(since, until)?, true),
+        "logs" => (from_logs(), false),
+        _ => (from_logs(), true),
+    };
+    // What passed through rtok, per host, and the input price those requests paid on
+    // average: the rate the saved tokens are valued at (an estimate, labelled as one).
+    let mut through: BTreeMap<String, i64> = BTreeMap::new();
+    let mut input_rate: BTreeMap<String, (i64, f64)> = BTreeMap::new();
+    let mut saved_by_host: BTreeMap<String, i64> = BTreeMap::new();
+    let mut saved_unattributed = 0;
+    if rtok {
+        let slices = if source == "rtok" {
+            primary.clone()
+        } else {
+            store.usage_slices(since, until)?
+        };
+        for b in slices {
+            let host = host_label(&b);
+            if !wanted(&host) {
+                continue;
+            }
+            *through.entry(host.clone()).or_default() +=
                 b.input + b.cache_create + b.cache_read + b.output;
+            if let Some(p) = price(&cfg.stats.prices, b.model.as_deref().unwrap_or("unknown")) {
+                let e = input_rate.entry(host).or_default();
+                e.0 += b.input;
+                e.1 += b.input as f64 * p.input;
+            }
+        }
+        for (host, saved) in store.measurement_saved_by_host(since, until)? {
+            match host {
+                Some(h) if wanted(&h) => *saved_by_host.entry(h).or_default() += saved,
+                Some(_) => {}
+                None if o.hosts.is_empty() => saved_unattributed += saved,
+                None => {}
+            }
         }
     }
+
+    let (mut totals, mut sessions, mut days) = (Row::default(), BTreeSet::new(), BTreeSet::new());
+    let mut rows: [BTreeMap<String, Row>; 3] = Default::default();
+    let [agents, periods, models] = &mut rows;
+    let mut unpriced: BTreeMap<(String, String), i64> = BTreeMap::new();
     for b in primary {
         let host = host_label(&b);
         if !wanted(&host) {
@@ -186,39 +246,62 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
         totals.add(&b, cost);
         agents.entry(host.clone()).or_default().add(&b, cost);
         periods.entry(period).or_default().add(&b, cost);
+        models.entry(model.to_string()).or_default().add(&b, cost);
         sessions.insert(b.session);
         days.insert((host, day));
     }
+    // `both` lists an agent that only passed through rtok too, with no logged tokens.
+    if source == "both" {
+        for host in through.keys() {
+            agents.entry(host.clone()).or_default();
+        }
+    }
 
-    let through = days.iter().map(|(_, d)| d.clone()).max();
-    let mut agents: Vec<Agent> = agents
+    let saved = |host: &str, tokens: i64| Saved {
+        tokens,
+        usd: input_rate
+            .get(host)
+            .filter(|(n, _)| *n > 0)
+            .map(|(n, cost)| round6(tokens as f64 * (cost / *n as f64) / 1e6)),
+    };
+    let through_day = days.iter().map(|(_, d)| d.clone()).max();
+    let mut agents: Vec<Agent> = std::mem::take(agents)
         .into_iter()
         .map(|(host, row)| {
-            let rtok = (source == "both").then(|| through_rtok.get(&host).copied().unwrap_or(0));
+            let via = (source == "both").then(|| through.get(&host).copied().unwrap_or(0));
             Agent {
                 name: name(&host),
-                through_rtok_tokens: rtok,
-                coverage: rtok
+                through_rtok_tokens: via,
+                coverage: via
                     .filter(|_| row.tokens > 0)
                     .map(|t| (t as f64 / row.tokens as f64 * 1e4).round() / 1e4),
+                saved: rtok.then(|| saved(&host, saved_by_host.get(&host).copied().unwrap_or(0))),
                 host,
                 row: row.rounded(),
             }
         })
         .collect();
-    // Dearest first; an unpriced agent (`None`) sorts below every priced one.
-    agents.sort_by(|a, b| {
-        let by_cost = b
-            .row
-            .cost_usd
-            .unwrap_or(-1.0)
-            .total_cmp(&a.row.cost_usd.unwrap_or(-1.0));
-        by_cost.then(b.row.tokens.cmp(&a.row.tokens))
+    agents.sort_by(|a, b| dearest(&a.row, &b.row));
+    let mut models: Vec<ModelRow> = std::mem::take(models)
+        .into_iter()
+        .map(|(model, row)| ModelRow {
+            model,
+            row: row.rounded(),
+        })
+        .collect();
+    models.sort_by(|a, b| dearest(&a.row, &b.row));
+    let total_saved = rtok.then(|| Saved {
+        tokens: saved_by_host.values().sum::<i64>() + saved_unattributed,
+        usd: agents
+            .iter()
+            .filter_map(|a| a.saved.as_ref()?.usd)
+            .reduce(|x, y| x + y)
+            .map(round6),
     });
     Ok(Report {
         source,
         tz: tz.iana_name().unwrap_or("local").to_string(),
-        through,
+        through: through_day,
         unpriced_models: unpriced
             .keys()
             .map(|(m, _)| m)
@@ -236,17 +319,34 @@ pub fn report(cfg: &Config, store: &Store, now: i64) -> Result<Report> {
             row: totals.rounded(),
             sessions: sessions.len(),
             daily_rows: days.len(),
+            saved: total_saved,
         },
         agents,
-        periods: periods
+        models: (by == "model").then_some(models),
+        periods: std::mem::take(periods)
             .into_iter()
             .map(|(period, row)| Period {
                 period,
                 row: row.rounded(),
             })
             .collect(),
+        skipped,
         daily,
     })
+}
+
+/// Dearest first, then most tokens; a row with no priced model (`None`) sorts below every
+/// priced one.
+fn dearest(a: &Row, b: &Row) -> std::cmp::Ordering {
+    let by_cost = b
+        .cost_usd
+        .unwrap_or(-1.0)
+        .total_cmp(&a.cost_usd.unwrap_or(-1.0));
+    by_cost.then(b.tokens.cmp(&a.tokens))
+}
+
+fn round6(x: f64) -> f64 {
+    (x * 1e6).round() / 1e6
 }
 
 /// The agent a request belongs to: its host id, else `unattributed (<api>)` for a proxy
@@ -345,8 +445,10 @@ fn usd(cost: Option<f64>) -> String {
     let Some(c) = cost else {
         return "-".into();
     };
-    let cents = (c * 100.0).round() as u64;
-    format!("${}.{:02}", grouped(cents / 100), cents % 100)
+    // A negative estimate (more `expand` than savings) keeps its sign.
+    let cents = (c.abs() * 100.0).round() as u64;
+    let sign = if c < 0.0 && cents > 0 { "-" } else { "" };
+    format!("{sign}${}.{:02}", grouped(cents / 100), cents % 100)
 }
 
 impl Report {
@@ -362,6 +464,52 @@ impl Report {
             "both" => format!("{logs} and through rtok"),
             _ => "through rtok".into(),
         }
+    }
+
+    /// The middle table: one row per model with `--by model`, else one per agent, with the
+    /// `Through rtok` / `Coverage` (`both`) and `Saved` (`rtok`, `both`) columns.
+    fn middle_table(&self) -> String {
+        if let Some(models) = &self.models {
+            let cols = [Col::left(0), Col::right(0), Col::right(0)];
+            let mut rows = vec![vec![
+                "Model".into(),
+                "Tokens".into(),
+                "Estimated cost".into(),
+            ]];
+            rows.extend(
+                models
+                    .iter()
+                    .map(|m| vec![m.model.clone(), units(m.row.tokens), usd(m.row.cost_usd)]),
+            );
+            return table(&cols, &rows);
+        }
+        let both = self.source == "both";
+        let saved = self.source != "logs";
+        let mut head: Vec<String> = ["Agent", "Tokens", "Estimated cost"].map(Into::into).into();
+        let mut cols = vec![Col::left(0), Col::right(0), Col::right(0)];
+        if both {
+            head.extend(["Through rtok".into(), "Coverage".into()]);
+        }
+        if saved {
+            head.extend(["Saved tokens".into(), "Saved est.".into()]);
+        }
+        cols.resize_with(head.len(), || Col::right(0));
+        let mut rows = vec![head];
+        rows.extend(self.agents.iter().map(|a| {
+            let mut r = vec![a.name.clone(), units(a.row.tokens), usd(a.row.cost_usd)];
+            if both {
+                r.push(units(a.through_rtok_tokens.unwrap_or(0)));
+                r.push(
+                    a.coverage
+                        .map_or_else(|| "-".into(), |c| format!("{:.0}%", c * 100.0)),
+                );
+            }
+            if let Some(s) = &a.saved {
+                r.extend([units(s.tokens), usd(s.usd)]);
+            }
+            r
+        }));
+        table(&cols, &rows)
     }
 
     /// The default screen: header, summary, the unpriced warning, per-agent table, then the
@@ -383,6 +531,16 @@ impl Report {
             grouped(t.sessions as u64),
             grouped(t.daily_rows as u64),
         );
+        if let Some(s) = &t.saved {
+            out.push_str(&format!(
+                "  rtok saved {} tokens ({})\n",
+                units(s.tokens),
+                s.usd.map_or_else(
+                    || "no price for an estimate".into(),
+                    |u| format!("≈ {}", usd(Some(u)))
+                ),
+            ));
+        }
         if self.unpriced_models > 0 {
             let n = self.unpriced_models;
             out.push_str(&format!(
@@ -392,26 +550,7 @@ impl Report {
             ));
         }
         let cols = [Col::left(0), Col::right(0), Col::right(0)];
-        let both = self.source == "both";
-        let mut head: Vec<String> = ["Agent", "Tokens", "Estimated cost"].map(Into::into).into();
-        let mut agent_cols = vec![Col::left(0), Col::right(0), Col::right(0)];
-        if both {
-            head.extend(["Through rtok".into(), "Coverage".into()]);
-            agent_cols.extend([Col::right(0), Col::right(0)]);
-        }
-        let mut rows = vec![head];
-        rows.extend(self.agents.iter().map(|a| {
-            let mut r = vec![a.name.clone(), units(a.row.tokens), usd(a.row.cost_usd)];
-            if both {
-                r.push(units(a.through_rtok_tokens.unwrap_or(0)));
-                r.push(
-                    a.coverage
-                        .map_or_else(|| "-".into(), |c| format!("{:.0}%", c * 100.0)),
-                );
-            }
-            r
-        }));
-        out.push_str(&format!("\n{}", table(&agent_cols, &rows)));
+        out.push_str(&format!("\n{}", self.middle_table()));
         let (label, head) = if self.daily {
             ("Daily totals", "Day")
         } else {
@@ -515,6 +654,32 @@ mod tests {
                 .insert_usage_at(session, host, model, at(utc), legs)
                 .unwrap();
         }
+        // The ledger: a filter that saved 4M estimated tokens and an `expand` that cost 0.5M
+        // back (the claude session), and an `expand` alone on the codex one.
+        for (session, plugin, kind, before, after) in [
+            ("s1", "cmd", "filter", 5_000_000, 1_000_000),
+            ("s1", "expand", "expand", 0, 500_000),
+            ("s2", "expand", "expand", 0, 2_000),
+        ] {
+            store
+                .insert_measurement(
+                    session,
+                    &crate::plugin::Measurement {
+                        plugin,
+                        kind,
+                        before_bytes: 0,
+                        after_bytes: 0,
+                        est_before: before,
+                        est_after: after,
+                        ref_id: None,
+                        call_id: None,
+                    },
+                )
+                .unwrap();
+            store
+                .set_measurement_ts(session, at("2026-10-01T22:30:00Z"))
+                .unwrap();
+        }
         (cfg, store)
     }
 
@@ -536,14 +701,15 @@ rtok agents usage: through rtok, up to 2026-10-02 (Europe/Kyiv)
   $6.20 estimated cost
   3 sessions
   3 daily rows
+  rtok saved 3.5M tokens (≈ $3.50)
 
 ! Cost is incomplete: 1 model has no price in [stats.prices], so its tokens are not in
   the estimate. `rtok agents usage --unpriced` lists them.
 
-Agent                    Tokens Estimated cost
-Codex                      1.2M          $4.00
-Claude Code                3.6M          $2.20
-unattributed (anthropic)     2K          $0.00
+Agent                    Tokens Estimated cost Saved tokens Saved est.
+Codex                      1.2M          $4.00        -2000      $0.00
+Claude Code                3.6M          $2.20         3.5M      $3.50
+unattributed (anthropic)     2K          $0.00            0      $0.00
 
 Monthly totals
 Month   Tokens Estimated cost
@@ -672,6 +838,121 @@ Month   Tokens Estimated cost
     }
 
     #[test]
+    fn saved_tokens_are_the_net_ledger_per_agent_priced_at_its_input_rate() {
+        let (cfg, store) = fixture();
+        let v = serde_json::to_value(report(&cfg, &store, 0).unwrap()).unwrap();
+        // 5M - 1M saved by the filter, 0.5M given back by `expand`; claude-test input is $1/MTok.
+        assert_eq!(v["totals"]["saved_tokens"], 3_498_000);
+        let claude = v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["host"] == "claude")
+            .unwrap();
+        assert_eq!(claude["saved_tokens"], 3_500_000);
+        assert_eq!(claude["saved_usd"], 3.5);
+        // The codex session saw only an `expand`: a negative saving, priced at gpt-x's $2.
+        let codex = &v["agents"][0];
+        assert_eq!(
+            (codex["saved_tokens"].as_i64(), codex["saved_usd"].as_f64()),
+            (Some(-2000), Some(-0.004))
+        );
+        // Outside the window the ledger rows are not counted.
+        let mut late = cfg;
+        late.agents.usage.since = "2026-10-03".into();
+        let r = report(&late, &store, 0).unwrap();
+        assert_eq!(r.totals.saved.map(|s| s.tokens), Some(0));
+    }
+
+    #[test]
+    fn by_model_groups_the_middle_table_by_model() {
+        let (mut cfg, store) = fixture();
+        cfg.agents.usage.by = "model".into();
+        let r = report(&cfg, &store, 0).unwrap();
+        let models: Vec<_> = r
+            .models
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|m| m.model.as_str())
+            .collect();
+        // Dearest first; the unpriced `mystery` is last, and the raw ids are kept.
+        assert_eq!(models, ["openai/gpt-x-20260901", "claude-test", "mystery"]);
+        let text = r.to_text();
+        assert!(text.contains("Model "), "{text}");
+        assert!(!text.contains("Saved tokens"), "{text}");
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(v["models"][0]["model"], "openai/gpt-x-20260901");
+        cfg.agents.usage.by = "agent".into();
+        assert!(
+            serde_json::to_value(report(&cfg, &store, 0).unwrap())
+                .unwrap()
+                .get("models")
+                .is_none()
+        );
+        cfg.agents.usage.by = "day".into();
+        assert!(report(&cfg, &store, 0).is_err());
+    }
+
+    #[test]
+    fn both_lists_an_agent_that_only_passed_through_rtok() {
+        let cfg = logs_config("both");
+        let store = Store::open_in_memory().unwrap();
+        store
+            .insert_usage_at(
+                "s9",
+                Some("cursor"),
+                "claude-test",
+                at("2026-10-01T09:00:00Z"),
+                [10, 0, 0, 0],
+            )
+            .unwrap();
+        let r = report(&cfg, &store, 0).unwrap();
+        let cursor = r.agents.iter().find(|a| a.host == "cursor").unwrap();
+        assert_eq!((cursor.row.tokens, cursor.row.cost_usd), (0, None));
+        assert_eq!(
+            (cursor.through_rtok_tokens, cursor.coverage),
+            (Some(10), None)
+        );
+        assert_eq!(r.agents.last().unwrap().host, "cursor");
+        assert!(r.to_text().contains("Saved tokens"));
+    }
+
+    #[test]
+    fn a_log_dir_that_holds_no_json_is_named_not_counted() {
+        let dir = tmp_dir("usage-skipped");
+        std::fs::create_dir_all(dir.join("claude/p")).unwrap();
+        std::fs::create_dir_all(dir.join("codex")).unwrap();
+        std::fs::write(dir.join("claude/p/s.jsonl"), "not json\nstill not\n").unwrap();
+        std::fs::write(dir.join("codex/rollout.jsonl"), "{broken\n").unwrap();
+        let mut cfg = logs_config("logs");
+        cfg.stats.transcripts_dir = dir.join("claude");
+        cfg.stats.codex_dir = dir.join("codex");
+        let store = Store::open_in_memory().unwrap();
+        let r = report(&cfg, &store, 0).unwrap();
+        let named: Vec<_> = r
+            .skipped
+            .iter()
+            .map(|s| (s.host.as_str(), s.reason))
+            .collect();
+        assert_eq!(
+            named,
+            [("claude", "unknown format"), ("codex", "unknown format")]
+        );
+        assert_eq!(r.totals.row.tokens, 0);
+        cfg.agents.usage.hosts = vec!["codex".into()];
+        assert_eq!(report(&cfg, &store, 0).unwrap().skipped.len(), 1);
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(v["skipped"][0]["host"], "claude");
+        assert!(
+            v["skipped"][0]["path"]
+                .as_str()
+                .unwrap()
+                .ends_with("s.jsonl")
+        );
+    }
+
+    #[test]
     fn month_edges_follow_the_daylight_saving_offset() {
         let (mut cfg, _) = fixture();
         let store = Store::open_in_memory().unwrap();
@@ -749,6 +1030,7 @@ Month   Tokens Estimated cost
             [
                 "agents",
                 "periods",
+                "skipped",
                 "source",
                 "through",
                 "totals",
@@ -766,6 +1048,8 @@ Month   Tokens Estimated cost
                 "daily_rows",
                 "input",
                 "output",
+                "saved_tokens",
+                "saved_usd",
                 "sessions",
                 "tokens"
             ]
@@ -780,6 +1064,8 @@ Month   Tokens Estimated cost
                 "input",
                 "name",
                 "output",
+                "saved_tokens",
+                "saved_usd",
                 "tokens"
             ]
         );
