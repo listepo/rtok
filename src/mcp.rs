@@ -460,6 +460,7 @@ impl Server {
             own_session: &cx.session,
             idle: &cx.config.agents.idle,
             since: self.started,
+            ancestors: &rtok_sys::ancestors(std::process::id() as i32, link::ANCESTORS),
         };
         let found = link::resolve(&cx.store, &who, |k| std::env::var(k).ok()).unwrap_or_else(|e| {
             cx.log("warn", "mcp", "link", &format!("agent link failed: {e:#}"));

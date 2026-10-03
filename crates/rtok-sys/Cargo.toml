@@ -9,6 +9,10 @@ license = "MIT"
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["process", "fs"] }
 
+# `proc_pidinfo` reads another process's parent pid on macOS; rustix has only the caller's own.
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",

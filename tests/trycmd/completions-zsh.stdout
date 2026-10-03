@@ -156,9 +156,13 @@ _arguments "${_arguments_options[@]}" : /
 ;;
 (doctor)
 _arguments "${_arguments_options[@]}" : /
+'--only=[With --fix/: which problems to fix (only /`broken-hooks/` for now)]:ONLY:(broken-hooks)' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--instructions[Also run the instruction-file audit (T7.2)]' /
-'--json[JSON instead of the table]' /
+'(--fix)--json[JSON instead of the table]' /
+'--fix[Remove the hooks whose script no longer exists; prints the diff, writes only with --yes]' /
+'--yes[With --fix/: write the changes (a copy goes to /`_backup//` first)]' /
+'--dry-run[With --fix --yes/: print the diffs and write nothing]' /
 '-h[Print help]' /
 '--help[Print help]' /
 && ret=0
@@ -505,6 +509,7 @@ _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--json[JSON instead of the text]' /
 '--bytes[Exact byte counts instead of KB/MB/GB]' /
+'--all[Also the hosts that are not installed]' /
 '-h[Print help]' /
 '--help[Print help]' /
 && ret=0
@@ -903,6 +908,7 @@ _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--json[JSON instead of the text]' /
 '--bytes[Exact byte counts instead of KB/MB/GB]' /
+'--all[Also the hosts that are not installed]' /
 '-h[Print help]' /
 '--help[Print help]' /
 && ret=0
@@ -2678,7 +2684,7 @@ _rtok__subcmd__agents_commands() {
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
 'usage:Tokens and estimated cost per agent and month (or day), from the agents'/'' logs or rtok' /
-'junk:Junk rtok owns under its own home (log siblings, archive payloads past retention)/: list or clear' /
+'junk:Junk and agent folders/: /`list/` shows rtok'/''s and every installed host'/''s folders with sizes, /`clear/` removes rtok'/''s own junk' /
 'whoami:This session'/''s own rtok agent id (T283, D34)/: /`RTOK_AGENT_ID/`, resolved through the store' /
 'show:One agent by id prefix/: host, model, ids, parent and sub-agents, cwd, activity, status' /
 'status:Say what this agent (/`RTOK_AGENT_ID/`) is busy with/: plain text, at most 120 chars' /
@@ -2699,7 +2705,7 @@ _rtok__subcmd__agents__subcmd__help_commands() {
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
 'usage:Tokens and estimated cost per agent and month (or day), from the agents'/'' logs or rtok' /
-'junk:Junk rtok owns under its own home (log siblings, archive payloads past retention)/: list or clear' /
+'junk:Junk and agent folders/: /`list/` shows rtok'/''s and every installed host'/''s folders with sizes, /`clear/` removes rtok'/''s own junk' /
 'whoami:This session'/''s own rtok agent id (T283, D34)/: /`RTOK_AGENT_ID/`, resolved through the store' /
 'show:One agent by id prefix/: host, model, ids, parent and sub-agents, cwd, activity, status' /
 'status:Say what this agent (/`RTOK_AGENT_ID/`) is busy with/: plain text, at most 120 chars' /
@@ -3466,7 +3472,7 @@ _rtok__subcmd__help__subcmd__agents_commands() {
 'info:One host/: the same block /`agents list/` prints, just for that app' /
 'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
 'usage:Tokens and estimated cost per agent and month (or day), from the agents'/'' logs or rtok' /
-'junk:Junk rtok owns under its own home (log siblings, archive payloads past retention)/: list or clear' /
+'junk:Junk and agent folders/: /`list/` shows rtok'/''s and every installed host'/''s folders with sizes, /`clear/` removes rtok'/''s own junk' /
 'whoami:This session'/''s own rtok agent id (T283, D34)/: /`RTOK_AGENT_ID/`, resolved through the store' /
 'show:One agent by id prefix/: host, model, ids, parent and sub-agents, cwd, activity, status' /
 'status:Say what this agent (/`RTOK_AGENT_ID/`) is busy with/: plain text, at most 120 chars' /

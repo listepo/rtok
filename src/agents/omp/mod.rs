@@ -114,7 +114,7 @@ pub fn plugin_dest(cfg: &Config) -> PathBuf {
 
 /// The `mcpServers.rtok` entry [`register_mcp`] writes.
 fn mcp_entry(cmd: &str) -> Value {
-    json!({"command": cmd, "args": ["mcp"]})
+    json!({"command": cmd, "args": super::mcp_args("omp")})
 }
 
 /// `mcpServers.rtok = {command, args}` — omp's documented shape carries no `type`.
@@ -126,7 +126,7 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
         "mcpServers",
         NAME,
         mcp_entry(&cmd),
-        &format!("{cmd} mcp"),
+        &super::mcp_summary(&cmd, "omp"),
     )
 }
 
@@ -190,7 +190,10 @@ mod tests {
         assert!(PLUGIN.linked(&c));
         let doc: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(&c.setup.omp.mcp_path).unwrap()).unwrap();
-        assert_eq!(doc["mcpServers"]["rtok"]["args"], json!(["mcp"]));
+        assert_eq!(
+            doc["mcpServers"]["rtok"]["args"],
+            json!(["mcp", "--host", "omp"])
+        );
         assert!(doc["mcpServers"]["rtok"].get("type").is_none());
         assert_eq!(Omp.installed(&c, Kind::Cli), vec!["plugin", "mcp"]);
 

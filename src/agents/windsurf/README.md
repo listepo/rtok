@@ -10,7 +10,7 @@ show, with no `type` field. Foreign servers survive installs and removes.
 | Module | Support | Why |
 | --- | --- | --- |
 | hooks | no | Cascade hooks speak agent_action_name/tool_info, not hook_event_name/tool_name; rtok hook has no --host windsurf mapping |
-| mcp | yes | `mcpServers.rtok` → `rtok mcp` in `mcp_config.json` as `{command, args}` (off with `[setup] mcp = false`) |
+| mcp | yes | `mcpServers.rtok` → `rtok mcp --host windsurf` in `mcp_config.json` as `{command, args}` (off with `[setup] mcp = false`) |
 | proxy | no | Windsurf serves its own models; there is no documented base-URL setting to point at the proxy |
 | plugin | no | Cascade has no local plugin directory to link; rules and memories live in .windsurf/ |
 
